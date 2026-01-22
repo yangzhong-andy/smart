@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { Megaphone, Pencil, Trash2, Search, X, Download, Wallet, Globe, Building2, Users } from "lucide-react";
-import { type Store, getStores, saveStores } from "@/lib/store-store";
-import { type BankAccount, getAccounts, saveAccounts } from "@/lib/finance-store";
+import { type Store } from "@/lib/store-store";
+import { type BankAccount } from "@/lib/finance-store";
 import { COUNTRIES, getCurrencyByCountry, getCountriesByRegion, getCountryByCode, type Country } from "@/lib/country-config";
 import { getInfluencerStats } from "@/lib/influencer-bd-store";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import useSWR from "swr";
 
 const formatDate = (dateString: string): string => {
   try {
@@ -23,11 +24,11 @@ const formatDate = (dateString: string): string => {
   }
 };
 
+// SWR fetcher
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
 export default function StoresPage() {
   const router = useRouter();
-  const [stores, setStores] = useState<Store[]>([]);
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [storesReady, setStoresReady] = useState(false);
   const [influencerStats, setInfluencerStats] = useState({ pendingSample: 0, creating: 0 });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editStore, setEditStore] = useState<Store | null>(null);
@@ -47,6 +48,23 @@ export default function StoresPage() {
     taxId: ""
   });
 
+  // 使用 SWR 从 API 加载账户数据
+  const { data: accountsData = [], isLoading: accountsLoading } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    keepPreviousData: true
+  });
+
+  // 使用 SWR 从 API 加载店铺数据
+  const { data: storesData = [], isLoading: storesLoading, mutate: mutateStores } = useSWR<Store[]>('/api/stores', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    keepPreviousData: true
+  });
+
+  const accounts = accountsData || [];
+  const stores = storesData || [];
+
   const countriesByRegion = useMemo(() => getCountriesByRegion(), []);
 
   // 当选择国家时，自动关联货币
@@ -65,67 +83,7 @@ export default function StoresPage() {
     // 获取达人统计
     const stats = getInfluencerStats();
     setInfluencerStats(stats);
-    
-    let loaded = getStores();
-    const loadedAccounts = getAccounts();
-    
-    // 兼容旧数据：将 shopName 迁移到 storeId
-    const needsMigration = loadedAccounts.some((acc) => (acc as any).shopName && !acc.storeId);
-    if (needsMigration && loaded.length > 0) {
-      // 尝试根据 shopName 匹配现有店铺
-      loadedAccounts.forEach((acc) => {
-        const oldShopName = (acc as any).shopName;
-        if (oldShopName && !acc.storeId) {
-          const matchingStore = loaded.find((s) => s.name === oldShopName);
-          if (matchingStore) {
-            (acc as any).storeId = matchingStore.id;
-            delete (acc as any).shopName;
-          }
-        }
-      });
-      saveAccounts(loadedAccounts);
-    }
-    
-    // 修复现有店铺的 country 字段（如果缺失）
-    let needsSave = false;
-    loaded.forEach((store) => {
-      if (!store.country) {
-        needsSave = true;
-        // 根据店铺名称推断国家
-        if (store.name.includes("UK") || store.currency === "GBP") {
-          store.country = "UK";
-        } else if (store.name.includes("US") || store.currency === "USD") {
-          store.country = "US";
-        } else if (store.name.includes("JP") || store.currency === "JPY") {
-          store.country = "JP";
-        } else if (store.name.includes("DE") || store.currency === "EUR") {
-          store.country = "DE";
-        } else if (store.name.includes("AU") || store.currency === "AUD") {
-          store.country = "AU";
-        } else {
-          // 默认值
-          store.country = "US";
-        }
-      }
-    });
-    
-    if (needsSave) {
-      saveStores(loaded);
-    }
-    
-    // 不再自动创建测试店铺，所有店铺数据由用户手动创建
-    
-    setStores(loaded);
-    setAccounts(loadedAccounts);
-    setStoresReady(true);
   }, []);
-
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!storesReady) return;
-    saveStores(stores);
-  }, [stores, storesReady]);
 
   const resetForm = () => {
     setForm({
@@ -140,43 +98,49 @@ export default function StoresPage() {
     setEditStore(null);
   };
 
-  const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!form.name.trim()) {
-      alert("店铺名称是必填项");
+      toast.error("店铺名称是必填项", { icon: "⚠️", duration: 3000 });
       return;
     }
-    if (!form.accountId) {
-      toast.error("请选择关联收款账户", { icon: "⚠️", duration: 3000 });
-      return;
-    }
-    const account = accounts.find((a) => a.id === form.accountId);
-    if (!account) {
-      toast.error("账户不存在", { icon: "⚠️", duration: 3000 });
-      return;
-    }
+    // 关联收款账户改为可选
+    const account = form.accountId ? accounts.find((a) => a.id === form.accountId) : null;
 
     if (!form.country) {
       toast.error("请选择国家", { icon: "⚠️", duration: 3000 });
       return;
     }
 
-    const newStore: Store = {
-      id: crypto.randomUUID(),
-      name: form.name.trim(),
-      platform: form.platform,
-      country: form.country,
-      currency: form.currency,
-      accountId: form.accountId,
-      accountName: account.name,
-      vatNumber: form.vatNumber.trim() || undefined,
-      taxId: form.taxId.trim() || undefined,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const response = await fetch('/api/stores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          platform: form.platform,
+          country: form.country,
+          currency: form.currency,
+          accountId: form.accountId || null,
+          accountName: account?.name || null,
+          vatNumber: form.vatNumber.trim() || null,
+          taxId: form.taxId.trim() || null
+        })
+      });
 
-    setStores((prev) => [...prev, newStore]);
-    resetForm();
-    setIsModalOpen(false);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建失败');
+      }
+
+      await mutateStores(); // 重新获取店铺列表
+      toast.success("店铺创建成功");
+      resetForm();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      console.error('Failed to create store:', error);
+      toast.error(error.message || '创建店铺失败');
+    }
   };
 
   const handleEdit = (store: Store) => {
@@ -193,52 +157,71 @@ export default function StoresPage() {
     setIsModalOpen(true);
   };
 
-  const handleUpdate = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editStore) return;
     if (!form.name.trim()) {
-      alert("店铺名称是必填项");
+      toast.error("店铺名称是必填项", { icon: "⚠️", duration: 3000 });
       return;
     }
-    if (!form.accountId) {
-      toast.error("请选择关联收款账户", { icon: "⚠️", duration: 3000 });
-      return;
-    }
-    const account = accounts.find((a) => a.id === form.accountId);
-    if (!account) {
-      toast.error("账户不存在", { icon: "⚠️", duration: 3000 });
-      return;
-    }
+    // 关联收款账户改为可选
+    const account = form.accountId ? accounts.find((a) => a.id === form.accountId) : null;
 
     if (!form.country) {
       toast.error("请选择国家", { icon: "⚠️", duration: 3000 });
       return;
     }
 
-    setStores((prev) =>
-      prev.map((s) =>
-        s.id === editStore.id
-          ? {
-              ...s,
-              name: form.name.trim(),
-              platform: form.platform,
-              country: form.country,
-              currency: form.currency,
-              accountId: form.accountId,
-              accountName: account.name,
-              vatNumber: form.vatNumber.trim() || undefined,
-              taxId: form.taxId.trim() || undefined
-            }
-          : s
-      )
-    );
-    resetForm();
-    setIsModalOpen(false);
+    try {
+      const response = await fetch(`/api/stores/${editStore.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          platform: form.platform,
+          country: form.country,
+          currency: form.currency,
+          accountId: form.accountId || null,
+          accountName: account?.name || null,
+          vatNumber: form.vatNumber.trim() || null,
+          taxId: form.taxId.trim() || null
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '更新失败');
+      }
+
+      await mutateStores(); // 重新获取店铺列表
+      toast.success("店铺更新成功");
+      resetForm();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      console.error('Failed to update store:', error);
+      toast.error(error.message || '更新店铺失败');
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("确定要删除这个店铺吗？")) return;
-    setStores((prev) => prev.filter((s) => s.id !== id));
+    
+    try {
+      const response = await fetch(`/api/stores/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '删除失败');
+      }
+
+      await mutateStores(); // 重新获取店铺列表
+      toast.success("店铺删除成功");
+    } catch (error: any) {
+      console.error('Failed to delete store:', error);
+      toast.error(error.message || '删除店铺失败');
+    }
   };
 
   // 统计数据
@@ -527,7 +510,11 @@ export default function StoresPage() {
       </div>
 
       {/* 店铺卡片网格 */}
-      {filteredAndSortedStores.length === 0 ? (
+      {storesLoading ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-12 text-center">
+          <p className="text-slate-400">加载中...</p>
+        </div>
+      ) : filteredAndSortedStores.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-12 text-center">
           <Megaphone className="h-12 w-12 text-slate-500 mx-auto mb-4" />
           <p className="text-slate-400">
@@ -788,13 +775,12 @@ export default function StoresPage() {
 
               <label className="space-y-1 block">
                 <span className="text-slate-300">
-                  关联收款账户 <span className="text-rose-400">*</span>
+                  关联收款账户
                 </span>
                 <select
                   value={form.accountId}
                   onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                  required
                 >
                   <option value="">请选择</option>
                   {accounts.map((acc) => (

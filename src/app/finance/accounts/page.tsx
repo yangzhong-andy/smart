@@ -242,6 +242,32 @@ export default function BankAccountsPage() {
     }, 0);
   }, [accounts]);
 
+  // 计算USD账户的预估RMB金额（按汇率折算）
+  const totalUSDRMB = useMemo(() => {
+    return accounts.reduce((sum, acc) => {
+      // 只统计USD账户
+      if (acc.currency === "USD") {
+        const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+        const rmbValue = accountTotal * (acc.exchangeRate || 1);
+        return sum + rmbValue;
+      }
+      return sum;
+    }, 0);
+  }, [accounts]);
+
+  // 计算JPY账户的预估RMB金额（按汇率折算）
+  const totalJPYRMB = useMemo(() => {
+    return accounts.reduce((sum, acc) => {
+      // 只统计JPY账户
+      if (acc.currency === "JPY") {
+        const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+        const rmbValue = accountTotal * (acc.exchangeRate || 1);
+        return sum + rmbValue;
+      }
+      return sum;
+    }, 0);
+  }, [accounts]);
+
   // 筛选后的账户树（只显示主账户和独立账户，子账号通过树形结构显示）
   const filteredAccountTree = useMemo(() => {
     let filtered = accounts.filter((acc) => {
@@ -410,12 +436,6 @@ export default function BankAccountsPage() {
       return;
     }
     
-    // VIRTUAL 账户必须绑定店铺
-    if (form.accountCategory === "VIRTUAL" && !form.storeId) {
-      toast.error("虚拟子账号必须关联一个店铺");
-      return;
-    }
-    
     // VIRTUAL 账户必须关联父账户
     if (form.accountCategory === "VIRTUAL" && !form.parentId) {
       toast.error("虚拟子账号必须关联一个主账户");
@@ -513,12 +533,6 @@ export default function BankAccountsPage() {
     if (!editAccount) return;
     if (!form.name.trim()) {
       toast.error("账户名称是必填项");
-      return;
-    }
-    
-    // VIRTUAL 账户必须绑定店铺
-    if (form.accountCategory === "VIRTUAL" && !form.storeId) {
-      toast.error("虚拟子账号必须关联一个店铺");
       return;
     }
     
@@ -815,6 +829,13 @@ export default function BankAccountsPage() {
             >
               {currency(totalUSD, "USD")}
             </div>
+            <div className="mb-1 text-xs text-white/60">预估 RMB</div>
+            <div
+              className="mb-2 text-xl font-semibold text-white/90"
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            >
+              {currency(totalUSDRMB, "CNY")}
+            </div>
             <div className="text-xs text-white/60">USD 账户原币余额</div>
           </div>
         </div>
@@ -841,6 +862,13 @@ export default function BankAccountsPage() {
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
             >
               ¥{formatNumber(totalJPY)} JPY
+            </div>
+            <div className="mb-1 text-xs text-white/60">预估 RMB</div>
+            <div
+              className="mb-2 text-xl font-semibold text-white/90"
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            >
+              {currency(totalJPYRMB, "CNY")}
             </div>
             <div className="text-xs text-white/60">JPY 账户原币余额</div>
           </div>
@@ -1082,7 +1110,7 @@ export default function BankAccountsPage() {
               const trendData = accountTrendData[acc.id] || [];
               // 显示余额 = 初始资金 + 当前余额
               const displayBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
-              const purposeLabel = acc.accountPurpose || "其他";
+              const purposeLabel = acc.accountPurpose;
               const associatedStore = acc.storeId ? stores.find((s) => s.id === acc.storeId) : null;
               const accountCountry = COUNTRIES.find((c) => c.code === (acc.country || "CN"));
               const isHovered = hoveredAccountId === acc.id;
@@ -1215,11 +1243,36 @@ export default function BankAccountsPage() {
                         <div className="text-xs text-white/70 font-mono">{formatAccountNumber(acc.accountNumber)}</div>
                       </div>
                     </div>
-                    {purposeLabel && (
-                      <div className="mt-2">
+                    {/* 账号类型和用途标签 */}
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      {acc.accountType && (
+                        <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium backdrop-blur-sm ${
+                          acc.accountType === "对公" 
+                            ? "bg-blue-500/30 text-blue-200 border border-blue-400/30" 
+                            : acc.accountType === "对私"
+                            ? "bg-purple-500/30 text-purple-200 border border-purple-400/30"
+                            : "bg-amber-500/30 text-amber-200 border border-amber-400/30"
+                        }`}>
+                          {acc.accountType}
+                        </span>
+                      )}
+                      {purposeLabel && (
                         <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">
                           {purposeLabel}
                         </span>
+                      )}
+                    </div>
+                    {/* 子账号信息 */}
+                    {childCount > 0 && (
+                      <div className="mt-2 text-xs text-white/70">
+                        <span className="text-white/50">子账户：</span>
+                        <span className="text-primary-300 font-medium ml-1">{childCount} 个</span>
+                      </div>
+                    )}
+                    {parentAccount && (
+                      <div className="mt-2 text-xs text-white/70">
+                        <span className="text-white/50">父账户：</span>
+                        <span className="text-blue-300 font-medium ml-1 truncate">{parentAccount.name}</span>
                       </div>
                     )}
                   </div>
@@ -1627,15 +1680,14 @@ export default function BankAccountsPage() {
                 {form.accountCategory === "VIRTUAL" && (
                   <label className="space-y-1 col-span-2">
                     <span className="text-slate-300">
-                      关联店铺 <span className="text-rose-400">*</span>
+                      关联店铺
                     </span>
                     <select
                       value={form.storeId}
                       onChange={(e) => setForm((f) => ({ ...f, storeId: e.target.value }))}
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                      required
                     >
-                      <option value="">请选择店铺（必填）</option>
+                      <option value="">不关联店铺（可选）</option>
                       {stores.map((store) => {
                         const country = getCountryByCode(store.country);
                         return (

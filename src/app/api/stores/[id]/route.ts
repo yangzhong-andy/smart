@@ -19,10 +19,19 @@ export async function GET(
       )
     }
 
+    // 转换平台格式：数据库枚举转前端字符串
+    const platformToFrontend: Record<Platform, string> = {
+      [Platform.TIKTOK]: 'TikTok',
+      [Platform.AMAZON]: 'Amazon',
+      [Platform.INSTAGRAM]: 'Instagram',
+      [Platform.YOUTUBE]: 'YouTube',
+      [Platform.OTHER]: '其他'
+    };
+
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: store.platform,
+      platform: platformToFrontend[store.platform] as 'TikTok' | 'Amazon' | '其他',
       country: store.country,
       currency: store.currency,
       accountId: store.accountId,
@@ -48,13 +57,22 @@ export async function PUT(
   try {
     const body = await request.json()
 
+    // 转换平台格式：前端使用 "TikTok", "Amazon" 等，数据库使用 Platform 枚举
+    const platformToEnum: Record<string, Platform> = {
+      'TikTok': Platform.TIKTOK,
+      'Amazon': Platform.AMAZON,
+      'Instagram': Platform.INSTAGRAM,
+      'YouTube': Platform.YOUTUBE,
+      '其他': Platform.OTHER
+    };
+
     const updateData: any = {}
     if (body.name !== undefined) updateData.name = body.name
-    if (body.platform !== undefined) updateData.platform = body.platform as Platform
+      if (body.platform !== undefined) updateData.platform = platformToEnum[body.platform] || Platform.OTHER
     if (body.country !== undefined) updateData.country = body.country
     if (body.currency !== undefined) updateData.currency = body.currency
-    if (body.accountId !== undefined) updateData.accountId = body.accountId
-    if (body.accountName !== undefined) updateData.accountName = body.accountName
+    if (body.accountId !== undefined) updateData.accountId = body.accountId || null
+    if (body.accountName !== undefined) updateData.accountName = body.accountName || null
     if (body.vatNumber !== undefined) updateData.vatNumber = body.vatNumber || null
     if (body.taxId !== undefined) updateData.taxId = body.taxId || null
 
@@ -63,10 +81,19 @@ export async function PUT(
       data: updateData
     })
 
+    // 转换平台格式：数据库枚举转前端字符串
+    const platformToFrontend: Record<Platform, string> = {
+      [Platform.TIKTOK]: 'TikTok',
+      [Platform.AMAZON]: 'Amazon',
+      [Platform.INSTAGRAM]: 'Instagram',
+      [Platform.YOUTUBE]: 'YouTube',
+      [Platform.OTHER]: '其他'
+    };
+
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: store.platform,
+      platform: platformToFrontend[store.platform] as 'TikTok' | 'Amazon' | '其他',
       country: store.country,
       currency: store.currency,
       accountId: store.accountId,
