@@ -96,19 +96,32 @@ export async function GET() {
     return NextResponse.json(transformed)
   } catch (error: any) {
     console.error('Error fetching products:', error)
+    console.error('DATABASE_URL exists:', !!process.env.DATABASE_URL)
+    console.error('NODE_ENV:', process.env.NODE_ENV)
     
     // 检查是否是数据库连接错误
+    if (!process.env.DATABASE_URL) {
+      return NextResponse.json(
+        { 
+          error: '数据库连接失败',
+          details: 'DATABASE_URL 环境变量未配置。请在 Vercel 项目设置中添加 DATABASE_URL 环境变量，然后重新部署。',
+          env: process.env.NODE_ENV
+        },
+        { status: 503 }
+      )
+    }
+    
     if (error.message?.includes('TLS connection') || 
         error.message?.includes('connection') ||
         error.message?.includes('ECONNREFUSED') ||
-        error.code === 'P1001' ||
-        !process.env.DATABASE_URL) {
+        error.code === 'P1001') {
       return NextResponse.json(
         { 
           error: '数据库连接失败',
           details: process.env.NODE_ENV === 'production' 
-            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置'
-            : '请检查 .env.local 中的 DATABASE_URL 配置'
+            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置是否正确，然后重新部署'
+            : '请检查 .env.local 中的 DATABASE_URL 配置',
+          env: process.env.NODE_ENV
         },
         { status: 503 }
       )
