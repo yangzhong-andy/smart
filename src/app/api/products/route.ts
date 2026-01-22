@@ -49,13 +49,18 @@ export async function GET() {
     }
 
     // 确保数据库连接
-    await prisma.$connect().catch(() => {
-      // 连接失败时继续尝试查询，Prisma 会自动重连
-    })
+    try {
+      await prisma.$connect()
+    } catch (connectError: any) {
+      console.error('数据库连接失败:', connectError)
+      // 继续尝试查询，Prisma 可能会自动重连
+    }
 
     const products = await prisma.product.findMany({
       orderBy: { createdAt: 'desc' }
     })
+    
+    console.log(`成功查询到 ${products.length} 个产品`)
     
     // 转换格式以匹配前端 Product 类型
     const transformed = products.map(p => ({
