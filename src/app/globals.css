@@ -1,0 +1,229 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply text-slate-100;
+  background: 
+    radial-gradient(ellipse at top, rgba(0, 149, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom, rgba(139, 92, 246, 0.05) 0%, transparent 50%),
+    linear-gradient(180deg, #14161F 0%, #0B0C10 100%);
+  background-attachment: fixed;
+  position: relative;
+}
+
+/* 添加动态背景粒子效果（可选） */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(0, 149, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 输入框聚焦发光效果 */
+@layer utilities {
+  .input-glow {
+    @apply transition-all duration-300;
+  }
+  
+  .input-glow:focus {
+    @apply border-[#00E5FF] shadow-[0_0_0_3px_rgba(0,229,255,0.1)] outline-none;
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+  
+  .input-glow.error {
+    @apply border-rose-500;
+    animation: error-shake 0.5s ease-in-out;
+  }
+  
+  @keyframes glow-pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.1);
+    }
+    50% {
+      box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.2);
+    }
+  }
+  
+  @keyframes error-shake {
+    0%, 100% {
+      transform: translateX(0);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+    }
+    25% {
+      transform: translateX(-4px);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5);
+    }
+    75% {
+      transform: translateX(4px);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5);
+    }
+  }
+  
+  /* 数值跳动动画 */
+  @keyframes number-bounce {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.05);
+    }
+  }
+  
+  .number-preview {
+    animation: number-bounce 0.3s ease-out;
+  }
+  
+  /* 弹窗入场动画 */
+  @keyframes modal-enter {
+    0% {
+      opacity: 0;
+      transform: scale(0.95) translateY(-10px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+  
+  .modal-enter {
+    animation: modal-enter 0.3s ease-out;
+  }
+
+  /* 毛玻璃效果 */
+  .glass {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  /* 渐变文字效果 */
+  .gradient-text {
+    background: linear-gradient(135deg, #00E5FF 0%, #0095FF 50%, #8B5CF6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 发光效果 */
+  .glow {
+    box-shadow: 0 0 20px rgba(0, 149, 255, 0.3);
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px rgba(0, 149, 255, 0.4), 0 0 40px rgba(0, 149, 255, 0.2);
+  }
+
+  /* 悬浮卡片效果 */
+  .card-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  }
+
+  /* 优雅的滚动条 */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* 日期选择器中文显示优化 */
+input[type="date"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.8);
+}
+
+input[type="date"]::-webkit-datetime-edit-text {
+  color: rgb(203, 213, 225);
+}
+
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+  color: rgb(203, 213, 225);
+}
+
+/* 虚线流动动画 */
+@keyframes dash-flow {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 20px 20px;
+  }
+}
+
+.upload-area-dash {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(0, 229, 255, 0.1) 10px,
+    rgba(0, 229, 255, 0.1) 20px
+  );
+  background-size: 20px 20px;
+  animation: dash-flow 2s linear infinite;
+}
+
+/* Toast 动画优化 */
+@keyframes toast-enter {
+  0% {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toast-exit {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+}

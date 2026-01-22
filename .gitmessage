@@ -1,0 +1,23 @@
+# <type>: <subject>
+#
+# <body>
+#
+# <footer>
+
+# Type 类型:
+#   feat:     新功能
+#   fix:      修复 bug
+#   docs:     文档更新
+#   style:    代码格式（不影响功能）
+#   refactor: 重构代码
+#   perf:     性能优化
+#   test:     测试相关
+#   chore:    构建/工具/配置相关
+
+# Subject 主题（简短描述，不超过 50 字）
+
+# Body 详细描述（可选，可以多行）
+
+# Footer 脚注（可选）
+#   - 关闭的 Issue: Closes #123
+#   - 破坏性变更: BREAKING CHANGE: 描述

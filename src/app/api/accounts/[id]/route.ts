@@ -1,0 +1,101 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { AccountType, AccountCategory } from '@prisma/client'
+
+// PUT - 更新账户
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params
+    const body = await request.json()
+    
+    const updated = await prisma.bankAccount.update({
+      where: { id },
+      data: {
+        name: body.name,
+        accountNumber: body.accountNumber,
+        accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
+        accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
+        accountPurpose: body.accountPurpose,
+        currency: body.currency || 'RMB',
+        country: body.country || 'CN',
+        originalBalance: Number(body.originalBalance) || 0,
+        initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : undefined,
+        exchangeRate: Number(body.exchangeRate) || 1,
+        rmbBalance: Number(body.rmbBalance) || 0,
+        parentId: body.parentId || null,
+        storeId: body.storeId || null,
+        companyEntity: body.companyEntity || null,
+        notes: body.notes || '',
+        platformAccount: body.platformAccount || null,
+        platformPassword: body.platformPassword || null,
+        platformUrl: body.platformUrl || null,
+        updatedAt: new Date()
+      }
+    })
+    
+    // 转换返回格式
+    const transformed = {
+      id: updated.id,
+      name: updated.name,
+      accountNumber: updated.accountNumber,
+      accountType: updated.accountType === 'CORPORATE' ? '对公' as const : updated.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
+      accountCategory: updated.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
+      accountPurpose: updated.accountPurpose,
+      currency: updated.currency as 'RMB' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
+      country: updated.country,
+      originalBalance: Number(updated.originalBalance),
+      initialCapital: updated.initialCapital ? Number(updated.initialCapital) : undefined,
+      exchangeRate: Number(updated.exchangeRate),
+      rmbBalance: Number(updated.rmbBalance),
+      parentId: updated.parentId || undefined,
+      storeId: updated.storeId || undefined,
+      companyEntity: updated.companyEntity || undefined,
+      notes: updated.notes,
+      platformAccount: updated.platformAccount || undefined,
+      platformPassword: updated.platformPassword || undefined,
+      platformUrl: updated.platformUrl || undefined,
+      createdAt: updated.createdAt.toISOString()
+    }
+    
+    return NextResponse.json(transformed)
+  } catch (error: any) {
+    console.error(`Error updating account ${params.id}:`, error)
+    // 返回更详细的错误信息
+    const errorMessage = error?.message || `Failed to update account ${params.id}`
+    const errorCode = error?.code || 'UNKNOWN_ERROR'
+    
+    return NextResponse.json(
+      { 
+        error: errorMessage,
+        code: errorCode,
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE - 删除账户
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params
+    
+    await prisma.bankAccount.delete({
+      where: { id }
+    })
+    
+    return NextResponse.json({ message: 'Account deleted successfully' })
+  } catch (error) {
+    console.error(`Error deleting account ${params.id}:`, error)
+    return NextResponse.json(
+      { error: `Failed to delete account ${params.id}` },
+      { status: 500 }
+    )
+  }
+}
