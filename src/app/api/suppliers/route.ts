@@ -11,6 +11,11 @@ import {
 // GET - 获取所有供应商
 export async function GET() {
   try {
+    // 确保数据库连接
+    await prisma.$connect().catch(() => {
+      // 连接失败时继续尝试查询，Prisma 会自动重连
+    })
+
     const suppliers = await prisma.supplier.findMany({
       orderBy: { name: 'asc' }
     })
@@ -40,10 +45,28 @@ export async function GET() {
     }))
 
     return NextResponse.json(transformed)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching suppliers:', error)
+    
+    // 检查是否是数据库连接错误
+    if (error.message?.includes('TLS connection') || 
+        error.message?.includes('connection') ||
+        error.message?.includes('ECONNREFUSED') ||
+        error.code === 'P1001' ||
+        !process.env.DATABASE_URL) {
+      return NextResponse.json(
+        { 
+          error: '数据库连接失败',
+          details: process.env.NODE_ENV === 'production' 
+            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置'
+            : '请检查 .env.local 中的 DATABASE_URL 配置'
+        },
+        { status: 503 }
+      )
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to fetch suppliers' },
+      { error: 'Failed to fetch suppliers', details: error.message },
       { status: 500 }
     )
   }

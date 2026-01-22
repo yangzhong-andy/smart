@@ -50,4 +50,8 @@ backups/
 logs
 *.log
 
+# Documentation (只保留代码)
+*.md
+docs/
+
 /generated/prisma
