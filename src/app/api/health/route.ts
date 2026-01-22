@@ -42,10 +42,13 @@ export async function GET() {
     try {
       // 尝试查询一个简单的表
       const tableCount = await prisma.$queryRaw`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = 'public'`
+      const count = (tableCount as any[])[0]?.count
+      // 处理 BigInt，转换为字符串
+      const countValue = typeof count === 'bigint' ? count.toString() : Number(count) || 0
       diagnostics.tests.query = {
         success: true,
         message: '查询成功',
-        tableCount: (tableCount as any[])[0]?.count || 0,
+        tableCount: countValue,
       }
     } catch (error: any) {
       diagnostics.tests.query = {
@@ -61,9 +64,10 @@ export async function GET() {
   if (diagnostics.tests.query?.success) {
     try {
       const productCount = await prisma.product.count()
+      // 确保 count 是数字类型
       diagnostics.tests.productTable = {
         exists: true,
-        recordCount: productCount,
+        recordCount: Number(productCount),
       }
     } catch (error: any) {
       diagnostics.tests.productTable = {
