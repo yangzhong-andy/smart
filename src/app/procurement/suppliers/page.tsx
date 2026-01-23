@@ -385,8 +385,17 @@ export default function SuppliersPage() {
     setIsModalOpen(true);
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.warning("正在提交，请勿重复点击");
+      return;
+    }
+    
     if (!form.name.trim() || !form.contact.trim() || !form.phone.trim()) {
       toast.error("请填写供应商名称、联系人、手机号");
       return;
@@ -418,6 +427,7 @@ export default function SuppliersPage() {
       factoryImages: form.factoryImages || null,
     };
     
+    setIsSubmitting(true);
     try {
       let response;
       if (editingSupplier) {
@@ -458,6 +468,8 @@ export default function SuppliersPage() {
     } catch (error) {
       console.error('Error saving supplier:', error);
       toast.error("网络错误，请稍后重试");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1535,9 +1547,10 @@ export default function SuppliersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:shadow-primary-500/25 hover:from-primary-600 hover:to-primary-700 transition-all duration-200 active:translate-y-px"
+                  className="rounded-md bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:shadow-primary-500/25 hover:from-primary-600 hover:to-primary-700 transition-all duration-200 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmitting}
                 >
-                  {editingSupplier ? "更新" : "保存"}
+                  {isSubmitting ? (editingSupplier ? "更新中..." : "保存中...") : (editingSupplier ? "更新" : "保存")}
                 </button>
               </div>
             </form>

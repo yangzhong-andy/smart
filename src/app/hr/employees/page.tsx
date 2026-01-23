@@ -159,8 +159,16 @@ export default function EmployeesPage() {
     setIsModalOpen(true);
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
     
     if (!form.name.trim()) {
       toast.error("请填写员工姓名");
@@ -192,6 +200,7 @@ export default function EmployeesPage() {
       updatedAt: new Date().toISOString()
     };
     
+    setIsSubmitting(true);
     try {
       upsertEmployee(employeeData);
       const updatedEmployees = getEmployees();
@@ -202,6 +211,8 @@ export default function EmployeesPage() {
     } catch (error) {
       console.error("保存员工失败:", error);
       toast.error("保存失败，请重试");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -533,8 +544,8 @@ export default function EmployeesPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  {editingEmployee ? "更新" : "创建"}
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? (editingEmployee ? "更新中..." : "创建中...") : (editingEmployee ? "更新" : "创建")}
                 </ActionButton>
               </div>
             </form>

@@ -6,26 +6,31 @@ import { InventoryLocation, InventoryMovementType } from '@prisma/client'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const productId = searchParams.get('productId')
+    const variantId = searchParams.get('variantId') || searchParams.get('productId') // 向后兼容
     const location = searchParams.get('location')
     const movementType = searchParams.get('movementType')
 
     const where: any = {}
-    if (productId) where.productId = productId
+    if (variantId) where.variantId = variantId
     if (location) where.location = location as InventoryLocation
     if (movementType) where.movementType = movementType as InventoryMovementType
 
     const movements = await prisma.inventoryMovement.findMany({
       where,
       include: {
-        product: true
+        variant: {
+          include: {
+            product: true
+          }
+        }
       },
       orderBy: { operationDate: 'desc' }
     })
 
     const transformed = movements.map(m => ({
       id: m.id,
-      productId: m.productId,
+      variantId: m.variantId,
+      productId: m.variant.productId, // 向后兼容
       location: m.location,
       movementType: m.movementType,
       qty: m.qty,
@@ -58,9 +63,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
+    // 使用 variantId（向后兼容 productId）
+    const variantId = body.variantId || body.productId
+    if (!variantId) {
+      return NextResponse.json(
+        { error: 'variantId is required' },
+        { status: 400 }
+      )
+    }
+
     const movement = await prisma.inventoryMovement.create({
       data: {
-        productId: body.productId,
+        variantId: variantId,
         location: body.location as InventoryLocation,
         movementType: body.movementType as InventoryMovementType,
         qty: Number(body.qty),
@@ -75,12 +89,20 @@ export async function POST(request: NextRequest) {
         operator: body.operator || null,
         operationDate: new Date(body.operationDate),
         notes: body.notes || null
+      },
+      include: {
+        variant: {
+          include: {
+            product: true
+          }
+        }
       }
     })
 
     return NextResponse.json({
       id: movement.id,
-      productId: movement.productId,
+      variantId: movement.variantId,
+      productId: movement.variant.productId, // 向后兼容
       location: movement.location,
       movementType: movement.movementType,
       qty: movement.qty,

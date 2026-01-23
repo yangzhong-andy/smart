@@ -170,14 +170,24 @@ export default function WarehousePage() {
     setIsModalOpen(true);
   };
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // 保存仓库
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
 
     if (!form.name.trim()) {
       toast.error("请输入仓库名称");
       return;
     }
+    
+    setIsSubmitting(true);
 
     if (editingWarehouse) {
       // 更新
@@ -211,6 +221,7 @@ export default function WarehousePage() {
 
     setIsModalOpen(false);
     resetForm();
+    setIsSubmitting(false);
   };
 
   // 删除仓库
@@ -535,8 +546,8 @@ export default function WarehousePage() {
                 <ActionButton type="button" onClick={() => setIsModalOpen(false)} variant="secondary">
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  {editingWarehouse ? "保存" : "创建"}
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? (editingWarehouse ? "保存中..." : "创建中...") : (editingWarehouse ? "保存" : "创建")}
                 </ActionButton>
               </div>
             </form>

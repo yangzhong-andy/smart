@@ -14,10 +14,23 @@ export type PlatformSKUMapping = {
 export type Product = {
   // 基础信息
   sku_id: string; // 主键，SKU编码
-  name: string; // 产品名称
+  name: string; // 产品名称（SPU名称）
   main_image: string; // 主图（base64 或 URL）
   category?: string; // 分类
+  brand?: string; // 品牌（SPU字段）
+  description?: string; // 产品描述（SPU字段）
+  material?: string; // 材质（SPU字段）
+  customs_name_cn?: string; // 报关名（中文）（SPU字段）
+  customs_name_en?: string; // 报关名（英文）（SPU字段）
+  default_supplier_id?: string; // 默认供应商ID（SPU字段）
+  default_supplier_name?: string; // 默认供应商名称（冗余字段，便于显示）
   status: ProductStatus; // ACTIVE/INACTIVE
+  
+  // SKU 变体信息
+  color?: string; // 颜色（SKU字段）
+  size?: string; // 尺寸（SKU字段）
+  barcode?: string; // 条形码（SKU字段）
+  stock_quantity?: number; // 总库存数量（SKU字段）
   
   // 财务信息
   cost_price: number; // 参考拿货价
@@ -54,6 +67,10 @@ export type Product = {
   
   // 映射信息
   platform_sku_mapping?: PlatformSKUMapping[]; // 平台SKU映射（JSON数组）
+  
+  // 关联ID（新增）
+  product_id?: string; // Product (SPU) ID
+  variant_id?: string; // ProductVariant (SKU) ID
   
   // 元数据
   createdAt: string;

@@ -6,19 +6,23 @@ import { InventoryLocation } from '@prisma/client'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const productId = searchParams.get('productId')
+    const variantId = searchParams.get('variantId') || searchParams.get('productId') // 向后兼容
     const storeId = searchParams.get('storeId')
     const location = searchParams.get('location')
 
     const where: any = {}
-    if (productId) where.productId = productId
+    if (variantId) where.variantId = variantId
     if (storeId) where.storeId = storeId
     if (location) where.location = location as InventoryLocation
 
     const stocks = await prisma.inventoryStock.findMany({
       where,
       include: {
-        product: true,
+        variant: {
+          include: {
+            product: true
+          }
+        },
         store: true
       },
       orderBy: { updatedAt: 'desc' }
@@ -26,7 +30,8 @@ export async function GET(request: NextRequest) {
 
     const transformed = stocks.map(s => ({
       id: s.id,
-      productId: s.productId,
+      variantId: s.variantId,
+      productId: s.variant.productId, // 向后兼容
       storeId: s.storeId || undefined,
       location: s.location,
       qty: s.qty,
@@ -49,11 +54,20 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
+    // 使用 variantId（向后兼容 productId）
+    const variantId = body.variantId || body.productId
+    if (!variantId) {
+      return NextResponse.json(
+        { error: 'variantId is required' },
+        { status: 400 }
+      )
+    }
+
     // 使用 upsert 创建或更新库存
     const stock = await prisma.inventoryStock.upsert({
       where: {
-        productId_location_storeId: {
-          productId: body.productId,
+        variantId_location_storeId: {
+          variantId: variantId,
           location: body.location as InventoryLocation,
           storeId: body.storeId || null
         }
@@ -62,20 +76,25 @@ export async function POST(request: NextRequest) {
         qty: Number(body.qty)
       },
       create: {
-        productId: body.productId,
+        variantId: variantId,
         storeId: body.storeId || null,
         location: body.location as InventoryLocation,
         qty: Number(body.qty)
       },
       include: {
-        product: true,
+        variant: {
+          include: {
+            product: true
+          }
+        },
         store: true
       }
     })
 
     return NextResponse.json({
       id: stock.id,
-      productId: stock.productId,
+      variantId: stock.variantId,
+      productId: stock.variant.productId, // 向后兼容
       storeId: stock.storeId || undefined,
       location: stock.location,
       qty: stock.qty,

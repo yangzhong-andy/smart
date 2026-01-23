@@ -38,6 +38,7 @@ export default function StoresPage() {
   const [sortBy, setSortBy] = useState<"name" | "platform" | "created">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [hoveredStoreId, setHoveredStoreId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: "",
     platform: "TikTok" as Store["platform"],
@@ -100,6 +101,13 @@ export default function StoresPage() {
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击", { icon: "⚠️", duration: 3000 });
+      return;
+    }
+    
     if (!form.name.trim()) {
       toast.error("店铺名称是必填项", { icon: "⚠️", duration: 3000 });
       return;
@@ -112,6 +120,7 @@ export default function StoresPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const response = await fetch('/api/stores', {
         method: 'POST',
@@ -140,6 +149,8 @@ export default function StoresPage() {
     } catch (error: any) {
       console.error('Failed to create store:', error);
       toast.error(error.message || '创建店铺失败');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -159,6 +170,13 @@ export default function StoresPage() {
 
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击", { icon: "⚠️", duration: 3000 });
+      return;
+    }
+    
     if (!editStore) return;
     if (!form.name.trim()) {
       toast.error("店铺名称是必填项", { icon: "⚠️", duration: 3000 });
@@ -172,6 +190,7 @@ export default function StoresPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const response = await fetch(`/api/stores/${editStore.id}`, {
         method: 'PUT',
@@ -200,6 +219,8 @@ export default function StoresPage() {
     } catch (error: any) {
       console.error('Failed to update store:', error);
       toast.error(error.message || '更新店铺失败');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -801,9 +822,10 @@ export default function StoresPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
+                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmitting}
                 >
-                  {editStore ? "保存" : "创建"}
+                  {isSubmitting ? (editStore ? "保存中..." : "创建中...") : (editStore ? "保存" : "创建")}
                 </button>
               </div>
             </form>

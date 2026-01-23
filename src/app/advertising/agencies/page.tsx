@@ -132,6 +132,7 @@ export default function AdAgenciesPage() {
     voucher?: string;
     notes?: string;
   } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmRechargeModal, setConfirmRechargeModal] = useState<{
     open: boolean;
     accountName: string;
@@ -732,6 +733,13 @@ export default function AdAgenciesPage() {
 
   const handleCreateAgency = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击", { icon: "⚠️", duration: 3000 });
+      return;
+    }
+    
     if (!agencyForm.name.trim()) {
       toast.error("代理商名称是必填项", { icon: "⚠️", duration: 3000 });
       return;
@@ -759,8 +767,10 @@ export default function AdAgenciesPage() {
       createdAt: new Date().toISOString()
     };
 
-    setAgencies((prev) => [...prev, newAgency]);
-    saveAgencies([...agencies, newAgency]);
+    setIsSubmitting(true);
+    try {
+      setAgencies((prev) => [...prev, newAgency]);
+      saveAgencies([...agencies, newAgency]);
     setAgencyForm({ 
       name: "", 
       platform: "TikTok", 
@@ -773,6 +783,9 @@ export default function AdAgenciesPage() {
       notes: "" 
     });
     setIsAgencyModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleEditAgency = (agency: Agency) => {
@@ -793,6 +806,13 @@ export default function AdAgenciesPage() {
 
   const handleUpdateAgency = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击", { icon: "⚠️", duration: 3000 });
+      return;
+    }
+    
     if (!editAgency) return;
     if (!agencyForm.name.trim()) {
       toast.error("代理商名称是必填项", { icon: "⚠️", duration: 3000 });
@@ -824,8 +844,10 @@ export default function AdAgenciesPage() {
         : a
     );
 
-    setAgencies(updatedAgencies);
-    saveAgencies(updatedAgencies);
+    setIsSubmitting(true);
+    try {
+      setAgencies(updatedAgencies);
+      saveAgencies(updatedAgencies);
     
     // 更新关联的广告账户中的代理商名称
     const updatedAccounts = adAccounts.map((acc) =>
@@ -847,6 +869,9 @@ export default function AdAgenciesPage() {
     });
     setEditAgency(null);
     setIsAgencyModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDeleteAgency = (id: string) => {

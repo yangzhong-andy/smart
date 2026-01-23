@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/currency-utils";
 import { PRODUCT_STATUS_LABEL } from "@/lib/enum-mapping";
 import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash } from "lucide-react";
 import InventoryDistribution from "@/components/InventoryDistribution";
+import { useWeightCalculation } from "@/hooks/use-weight-calculation";
 
 // 格式化数字
 const formatNumber = (n: number) => {
@@ -16,10 +17,11 @@ const formatNumber = (n: number) => {
   return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 };
 
-// 计算体积重（千克）- 体积重公式返回的是克，需要除以1000转换为千克
+// 计算体积重（千克）- 公式：长(cm) × 宽(cm) × 高(cm) ÷ 体积重换算系数
 const calculateVolumetricWeight = (length: number, width: number, height: number, divisor: number = 5000): number => {
-  if (!length || !width || !height) return 0;
-  return (length * width * height) / divisor / 1000; // 转换为千克
+  if (!length || !width || !height || !divisor) return 0;
+  // 体积重 = 长 × 宽 × 高 ÷ 体积重换算系数（结果单位：千克）
+  return (length * width * height) / divisor;
 };
 
 // 计算计费重量（实际重量和体积重取较大值）
@@ -64,6 +66,7 @@ export default function ProductsPage() {
   const [productsReady, setProductsReady] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // 搜索、筛选、排序状态
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -79,6 +82,12 @@ export default function ProductsPage() {
     name: "",
     main_image: "",
     category: "",
+    brand: "",
+    description: "",
+    material: "",
+    customs_name_cn: "",
+    customs_name_en: "",
+    default_supplier_id: "",
     status: "ACTIVE" as ProductStatus,
     cost_price: "",
     target_roi: "",
@@ -88,6 +97,10 @@ export default function ProductsPage() {
     width: "",
     height: "",
     volumetric_divisor: "5000",
+    color: "",
+    size: "",
+    barcode: "",
+    stock_quantity: "",
     factory_id: "",
     moq: "",
     lead_time: "",
@@ -102,6 +115,15 @@ export default function ProductsPage() {
   });
 
   const { data: swrProducts, error: productsError, mutate: mutateProducts } = useSWR<Product[]>('/api/products');
+
+  // 使用重量计算 Hook - 自动计算体积重和计费重量
+  const weightCalculation = useWeightCalculation(
+    form.length,
+    form.width,
+    form.height,
+    form.volumetric_divisor,
+    form.weight_kg
+  );
 
   useEffect(() => {
     if (swrProducts) {
@@ -309,6 +331,12 @@ export default function ProductsPage() {
       name: "",
       main_image: "",
       category: "",
+      brand: "",
+      description: "",
+      material: "",
+      customs_name_cn: "",
+      customs_name_en: "",
+      default_supplier_id: "",
       status: "ACTIVE",
       cost_price: "",
       target_roi: "",
@@ -318,6 +346,10 @@ export default function ProductsPage() {
       width: "",
       height: "",
       volumetric_divisor: "5000",
+      color: "",
+      size: "",
+      barcode: "",
+      stock_quantity: "",
       factory_id: "",
       moq: "",
       lead_time: "",
@@ -334,6 +366,12 @@ export default function ProductsPage() {
         name: product.name,
         main_image: product.main_image || "",
         category: product.category || "",
+        brand: product.brand || "",
+        description: product.description || "",
+        material: product.material || "",
+        customs_name_cn: product.customs_name_cn || "",
+        customs_name_en: product.customs_name_en || "",
+        default_supplier_id: product.default_supplier_id || "",
         status: product.status,
         cost_price: product.cost_price.toString(),
         target_roi: product.target_roi?.toString() || "",
@@ -342,6 +380,10 @@ export default function ProductsPage() {
         length: product.length?.toString() || "",
         width: product.width?.toString() || "",
         height: product.height?.toString() || "",
+        color: product.color || "",
+        size: product.size || "",
+        barcode: product.barcode || "",
+        stock_quantity: product.stock_quantity?.toString() || "",
         volumetric_divisor: product.volumetric_divisor?.toString() || "5000",
         factory_id: product.factory_id || "",
         moq: product.moq?.toString() || "",
@@ -363,6 +405,12 @@ export default function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.warning("正在提交，请勿重复点击");
+      return;
+    }
     
     if (!form.sku_id.trim() || !form.name.trim()) {
       toast.error("请填写 SKU 编码与产品名称");
@@ -410,6 +458,12 @@ export default function ProductsPage() {
       name: form.name.trim(),
       main_image: form.main_image,
       category: form.category.trim() || undefined,
+      brand: form.brand.trim() || undefined,
+      description: form.description.trim() || undefined,
+      material: form.material.trim() || undefined,
+      customs_name_cn: form.customs_name_cn.trim() || undefined,
+      customs_name_en: form.customs_name_en.trim() || undefined,
+      default_supplier_id: form.default_supplier_id.trim() || undefined,
       status: form.status,
       cost_price: costPrice,
       target_roi: form.target_roi ? Number(form.target_roi) : undefined,
@@ -419,6 +473,10 @@ export default function ProductsPage() {
       width: form.width ? Number(form.width) : undefined,
       height: form.height ? Number(form.height) : undefined,
       volumetric_divisor: form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined,
+      color: form.color.trim() || undefined,
+      size: form.size.trim() || undefined,
+      barcode: form.barcode.trim() || undefined,
+      stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
       suppliers: suppliersList.length > 0 ? suppliersList : undefined,
     };
     
@@ -431,6 +489,7 @@ export default function ProductsPage() {
       ? products.map((p) => (p.sku_id === editingProduct.sku_id ? { ...productData } : p))
       : [...products, productData];
 
+    setIsSubmitting(true);
     try {
       const updated = await mutateProducts?.(
         async (prev = []) => {
@@ -461,6 +520,8 @@ export default function ProductsPage() {
     } catch (error: any) {
       console.error('Failed to save product:', error);
       toast.error(error.message || '保存产品失败');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1002,35 +1063,43 @@ export default function ProductsPage() {
                             {product.length && product.width && product.height && (
                               <>
                                 {(() => {
+                                  // 使用 Hook 计算重量（在组件外部需要手动调用计算逻辑）
+                                  const length = product.length;
+                                  const width = product.width;
+                                  const height = product.height;
                                   const divisor = product.volumetric_divisor || 5000;
-                                  const volumetricWeight = calculateVolumetricWeight(
-                                    product.length,
-                                    product.width,
-                                    product.height,
-                                    divisor
-                                  );
-                                  const chargeableWeight = calculateChargeableWeight(
-                                    product.weight_kg || 0,
-                                    volumetricWeight
-                                  );
+                                  const actualWeight = product.weight_kg || 0;
+                                  
+                                  // 计算体积重
+                                  const volumetricWeight = (length && width && height && divisor)
+                                    ? (length * width * height) / divisor
+                                    : 0;
+                                  
+                                  // 计算计费重量（取最大值）
+                                  const chargeableWeight = Math.max(actualWeight, volumetricWeight);
+                                  
+                                  if (!length || !width || !height || !divisor) {
+                                    return null;
+                                  }
+                                  
                                   return (
                                     <>
                                       <div className="flex items-center justify-between">
                                         <span className="text-slate-400">体积重：</span>
                                         <span className="text-white text-xs">
-                                          {formatNumber(volumetricWeight / 1000)}kg
+                                          {formatNumber(volumetricWeight)}kg
                                         </span>
                                       </div>
                                       <div className="flex items-center justify-between">
                                         <span className="text-slate-400 text-xs">计算公式：</span>
                                         <span className="text-slate-500 text-xs">
-                                          {formatNumber(product.length)} × {formatNumber(product.width)} × {formatNumber(product.height)} ÷ {divisor}
+                                          {formatNumber(length)} × {formatNumber(width)} × {formatNumber(height)} ÷ {divisor}
                                         </span>
                                       </div>
                                       <div className="flex items-center justify-between">
                                         <span className="text-slate-400">计费重量：</span>
                                         <span className="text-primary-300 font-semibold">
-                                          {formatNumber(chargeableWeight / 1000)}kg
+                                          {formatNumber(chargeableWeight)}kg
                                         </span>
                                       </div>
                                     </>
@@ -1210,6 +1279,24 @@ export default function ProductsPage() {
                   />
                 </label>
                 <label className="space-y-1">
+                  <span className="text-slate-300">品牌</span>
+                  <input
+                    value={form.brand}
+                    onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                    placeholder="产品品牌"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-slate-300">材质</span>
+                  <input
+                    value={form.material}
+                    onChange={(e) => setForm((f) => ({ ...f, material: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                    placeholder="如：棉、聚酯纤维等"
+                  />
+                </label>
+                <label className="space-y-1">
                   <span className="text-slate-300">状态</span>
                   <select
                     value={form.status}
@@ -1220,6 +1307,111 @@ export default function ProductsPage() {
                     <option value="INACTIVE">下架</option>
                   </select>
                 </label>
+              </div>
+
+              {/* 产品描述 */}
+              <label className="space-y-1">
+                <span className="text-slate-300">产品描述</span>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder="产品详细描述..."
+                  rows={3}
+                />
+              </label>
+
+              {/* 报关信息 */}
+              <div className="border-t border-slate-800 pt-4">
+                <h3 className="text-slate-300 font-medium mb-3">报关信息</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="space-y-1">
+                    <span className="text-slate-300">报关名（中文）</span>
+                    <input
+                      value={form.customs_name_cn}
+                      onChange={(e) => setForm((f) => ({ ...f, customs_name_cn: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      placeholder="中文报关名称"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-slate-300">报关名（英文）</span>
+                    <input
+                      value={form.customs_name_en}
+                      onChange={(e) => setForm((f) => ({ ...f, customs_name_en: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      placeholder="English Customs Name"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 默认供应商 */}
+              <div className="border-t border-slate-800 pt-4">
+                <h3 className="text-slate-300 font-medium mb-3">默认供应商</h3>
+                <label className="space-y-1">
+                  <span className="text-slate-300">默认供应商</span>
+                  <select
+                    value={form.default_supplier_id}
+                    onChange={(e) => setForm((f) => ({ ...f, default_supplier_id: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  >
+                    <option value="">请选择默认供应商</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    选择该产品的默认供应商（也可通过供应商列表设置主供应商）
+                  </p>
+                </label>
+              </div>
+
+              {/* SKU 变体信息 */}
+              <div className="border-t border-slate-800 pt-4">
+                <h3 className="text-slate-300 font-medium mb-3">SKU 变体信息</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <label className="space-y-1">
+                    <span className="text-slate-300">颜色</span>
+                    <input
+                      value={form.color}
+                      onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      placeholder="如：红色、蓝色等"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-slate-300">尺寸</span>
+                    <input
+                      value={form.size}
+                      onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      placeholder="如：S、M、L、XL等"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-slate-300">条形码</span>
+                    <input
+                      value={form.barcode}
+                      onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      placeholder="产品条形码"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-slate-300">总库存数量</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={form.stock_quantity}
+                      onChange={(e) => setForm((f) => ({ ...f, stock_quantity: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      placeholder="0"
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* 主图上传 */}
@@ -1339,45 +1531,38 @@ export default function ProductsPage() {
                     </select>
                   </label>
                 </div>
-                {/* 实时显示计算结果 */}
-                {form.length && form.width && form.height && (
+                {/* 实时显示计算结果 - 使用 Hook 自动计算 */}
+                {weightCalculation.hasValidDimensions && (
                   <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-3 space-y-2">
                     <div className="text-xs text-slate-400 mb-2">重量计算结果：</div>
-                    {(() => {
-                      const length = Number(form.length) || 0;
-                      const width = Number(form.width) || 0;
-                      const height = Number(form.height) || 0;
-                      const divisor = Number(form.volumetric_divisor) || 5000;
-                      const actualWeight = Number(form.weight_kg) || 0;
-                      const volumetricWeight = calculateVolumetricWeight(length, width, height, divisor);
-                      const chargeableWeight = calculateChargeableWeight(actualWeight, volumetricWeight);
-                      return (
-                        <>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-400">实际重量：</span>
-                            <span className="text-slate-200">{actualWeight > 0 ? `${formatNumber(actualWeight / 1000)}kg` : "未填写"}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-400">体积重：</span>
-                            <span className="text-slate-200">
-                              {formatNumber(volumetricWeight / 1000)}kg
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-slate-500">计算公式：</span>
-                            <span className="text-slate-400">
-                              {formatNumber(length)} × {formatNumber(width)} × {formatNumber(height)} ÷ {divisor}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-700">
-                            <span className="text-slate-300 font-medium">计费重量：</span>
-                            <span className="text-primary-300 font-semibold">
-                              {formatNumber(chargeableWeight / 1000)}kg
-                            </span>
-                          </div>
-                        </>
-                      );
-                    })()}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">实际重量：</span>
+                      <span className="text-slate-200">
+                        {weightCalculation.actualWeight > 0 
+                          ? `${formatNumber(weightCalculation.actualWeight)}kg` 
+                          : "未填写"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">体积重：</span>
+                      <span className="text-slate-200">
+                        {formatNumber(weightCalculation.volumetricWeight)}kg
+                      </span>
+                    </div>
+                    {weightCalculation.formula && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500">计算公式：</span>
+                        <span className="text-slate-400">
+                          {weightCalculation.formula}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-700">
+                      <span className="text-slate-300 font-medium">计费重量：</span>
+                      <span className="text-primary-300 font-semibold">
+                        {formatNumber(weightCalculation.chargeableWeight)}kg
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1635,9 +1820,10 @@ export default function ProductsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
+                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmitting}
                 >
-                  {editingProduct ? "更新" : "保存"}
+                  {isSubmitting ? (editingProduct ? "更新中..." : "保存中...") : (editingProduct ? "更新" : "保存")}
                 </button>
               </div>
             </form>

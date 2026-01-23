@@ -66,6 +66,25 @@ enum InventoryLocation {
   OVERSEAS
 }
 
+// 库存流水原因（入库/出库原因）
+enum StockLogReason {
+  // 入库原因
+  PURCHASE_INBOUND // 采购入库
+  RETURN_INBOUND // 退货入库
+  TRANSFER_INBOUND // 调拨入库
+  STOCKTAKE_ADJUSTMENT // 盘点调整（盘盈）
+  PRODUCTION_COMPLETE // 生产完工入库
+  SAMPLE_RETURN // 样品退回
+
+  // 出库原因
+  SALE_OUTBOUND // 销售出库
+  TRANSFER_OUTBOUND // 调拨出库
+  SAMPLE_OUTBOUND // 样品出库
+  DAMAGE_WRITE_OFF // 损坏报废
+  STOCKTAKE_LOSS // 盘点调整（盘亏）
+  RETURN_SUPPLIER // 退供应商
+}
+
 enum LogisticsStatus {
   PENDING
   IN_TRANSIT
@@ -117,115 +136,166 @@ enum SupplierLevel {
 }
 
 enum SettleBase {
-  SHIPMENT   // 发货
-  INBOUND    // 入库
+  SHIPMENT // 发货
+  INBOUND // 入库
 }
 
 enum InvoiceRequirement {
-  SPECIAL_INVOICE   // 专票
-  GENERAL_INVOICE   // 普票
-  NO_INVOICE        // 不开票
+  SPECIAL_INVOICE // 专票
+  GENERAL_INVOICE // 普票
+  NO_INVOICE // 不开票
 }
 
 enum ProductStatus {
-  ACTIVE    // 在售
-  INACTIVE  // 下架
+  ACTIVE // 在售
+  INACTIVE // 下架
 }
 
 enum AccountType {
-  CORPORATE  // 对公
-  PERSONAL   // 对私
-  PLATFORM   // 平台
+  CORPORATE // 对公
+  PERSONAL // 对私
+  PLATFORM // 平台
 }
 
 enum AccountCategory {
-  PRIMARY    // 主账户
-  VIRTUAL    // 虚拟子账号
+  PRIMARY // 主账户
+  VIRTUAL // 虚拟子账号
 }
 
 enum CashFlowType {
-  INCOME     // 收入
-  EXPENSE    // 支出
-  TRANSFER   // 划拨
+  INCOME // 收入
+  EXPENSE // 支出
+  TRANSFER // 划拨
 }
 
 enum CashFlowStatus {
-  CONFIRMED  // 已确认
-  PENDING    // 待核对
+  CONFIRMED // 已确认
+  PENDING // 待核对
 }
 
 enum RiskControlStatus {
-  PENDING    // 待评估
-  PASSED     // 通过
-  REJECTED   // 拒绝
+  PENDING // 待评估
+  PASSED // 通过
+  REJECTED // 拒绝
 }
 
 enum ApprovalStatus {
-  PENDING    // 待审批
-  PASSED     // 通过
-  REJECTED   // 拒绝
+  PENDING // 待审批
+  PASSED // 通过
+  REJECTED // 拒绝
 }
 
 enum Urgency {
-  NORMAL     // 普通
-  URGENT     // 紧急
-  CRITICAL   // 加急
+  NORMAL // 普通
+  URGENT // 紧急
+  CRITICAL // 加急
 }
 
 model Supplier {
-  id                String            @id @default(uuid())
-  name              String
-  contact           String
-  phone             String
-  depositRate       Decimal           @db.Decimal(5, 2)
-  tailPeriodDays    Int
-  settleBase        SettleBase
-  level             SupplierLevel?
-  category          String?
-  address           String?
-  bankAccount       String?
-  bankName          String?
-  taxId             String?
+  id                 String              @id @default(uuid())
+  name               String
+  contact            String
+  phone              String
+  depositRate        Decimal             @db.Decimal(5, 2)
+  tailPeriodDays     Int
+  settleBase         SettleBase
+  level              SupplierLevel?
+  category           String?
+  address            String?
+  bankAccount        String?
+  bankName           String?
+  taxId              String?
   invoiceRequirement InvoiceRequirement?
-  invoicePoint      Decimal?          @db.Decimal(5, 2)
-  defaultLeadTime   Int?
-  moq               Int?
-  factoryImages     Json?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  invoicePoint       Decimal?            @db.Decimal(5, 2)
+  defaultLeadTime    Int?
+  moq                Int?
+  factoryImages      Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
-  contracts PurchaseContract[] @relation("SupplierToContract")
+  contracts        PurchaseContract[] @relation("SupplierToContract")
   productSuppliers ProductSupplier[]
+  defaultProducts  Product[]          @relation("DefaultSupplier") // 作为默认供应商的产品
 }
 
+// Product (SPU - Standard Product Unit) - 产品
 model Product {
-  id                 String   @id @default(uuid())
-  skuId              String   @unique
-  name               String
-  mainImage          String?
-  category           String?
-  status             ProductStatus @default(ACTIVE)
-  currency           String   @default("CNY")
-  costPrice          Decimal? @db.Decimal(18, 2)
-  targetRoi          Decimal? @db.Decimal(5, 2)
-  weightKg           Decimal? @db.Decimal(10, 3)
-  lengthCm           Decimal? @db.Decimal(10, 2)
-  widthCm            Decimal? @db.Decimal(10, 2)
-  heightCm           Decimal? @db.Decimal(10, 2)
-  volumetricDivisor  Int?
-  atFactory          Int      @default(0)
-  atDomestic         Int      @default(0)
-  inTransit          Int      @default(0)
-  suppliers          Json?
-  platformSkuMapping Json?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id          String        @id @default(uuid())
+  name        String // 产品名称
+  category    String? // 分类
+  brand       String? // 品牌
+  description String? // 产品描述
+  mainImage   String? // 主图
+  material    String? // 材质
+  status      ProductStatus @default(ACTIVE) // 产品状态
+  suppliers   Json? // 供应商信息（JSON）
 
-  inventories InventoryStock[]
-  movements   InventoryMovement[]
-  videoTasks  VideoTask[]
+  // 报关信息
+  customsNameCN String? // 报关名（中文）
+  customsNameEN String? // 报关名（英文）
+
+  // 默认供应商（可选，也可以通过 ProductSupplier.isPrimary 获取）
+  defaultSupplierId String? // 默认供应商 ID
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 一对多关系：一个 Product 可以有多个 ProductVariant
+  variants ProductVariant[]
+
+  // 关联关系
+  videoTasks       VideoTask[]
   productSuppliers ProductSupplier[]
+
+  // 默认供应商关联（可选）
+  defaultSupplier Supplier? @relation("DefaultSupplier", fields: [defaultSupplierId], references: [id], onDelete: SetNull)
+
+  @@index([defaultSupplierId])
+}
+
+// ProductVariant (SKU - Stock Keeping Unit) - 产品变体
+model ProductVariant {
+  id            String   @id @default(uuid())
+  productId     String // 关联的 Product (SPU) ID
+  skuId         String   @unique // SKU 编码（唯一标识）
+  color         String? // 颜色
+  size          String? // 尺寸
+  weightKg      Decimal? @db.Decimal(10, 3) // 重量（千克）
+  barcode       String? // 条形码
+  costPrice     Decimal? @db.Decimal(18, 2) // 成本价
+  stockQuantity Int      @default(0) // 库存数量（总库存）
+
+  // 财务信息
+  currency  String   @default("CNY") // 货币
+  targetRoi Decimal? @db.Decimal(5, 2) // 目标 ROI
+
+  // 物理尺寸（用于运费计算）
+  lengthCm          Decimal? @db.Decimal(10, 2) // 长度（cm）
+  widthCm           Decimal? @db.Decimal(10, 2) // 宽度（cm）
+  heightCm          Decimal? @db.Decimal(10, 2) // 高度（cm）
+  volumetricDivisor Int? // 体积重换算系数
+
+  // 库存分布（轻量化实现）
+  atFactory  Int @default(0) // 工厂现货数量
+  atDomestic Int @default(0) // 国内待发数量
+  inTransit  Int @default(0) // 海运中数量
+
+  // 平台 SKU 映射
+  platformSkuMapping Json? // 平台 SKU 映射（JSON）
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关联关系
+  product       Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventories   InventoryStock[]
+  movements     InventoryMovement[]
+  stocks        Stock[] // 新库存表关联
+  stockLogs     StockLog[] // 新库存流水表关联
   contractItems PurchaseContractItem[]
+
+  @@index([productId])
+  @@index([skuId])
 }
 
 model Store {
@@ -242,38 +312,38 @@ model Store {
 
   inventoryStocks InventoryStock[]
   logistics       LogisticsTracking[]
-  bankAccounts    BankAccount[]     // 关联的银行账户
-  purchaseOrders  PurchaseOrder[]   // 关联的采购订单
+  bankAccounts    BankAccount[] // 关联的银行账户
+  purchaseOrders  PurchaseOrder[] // 关联的采购订单
 }
 
 model Influencer {
-  id                     String   @id @default(uuid())
-  accountName            String
-  platform               Platform
-  accountUrl             String?
-  followerCount          Int
-  contactInfo            String
-  category               String
-  cooperationStatus      String
-  sampleStatus           String
-  sampleOrderNumber      String?
-  sampleTrackingNumber   String?
-  sampleProductSku       String?
-  sampleProductId        String?
-  sampleSentAt           DateTime?
-  sampleReceivedAt       DateTime?
-  historicalEngagementRate Decimal? @db.Decimal(5, 2)
-  estimatedOrders        Int?
-  actualOrders           Int?
-  notes                  String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                       String    @id @default(uuid())
+  accountName              String
+  platform                 Platform
+  accountUrl               String?
+  followerCount            Int
+  contactInfo              String
+  category                 String
+  cooperationStatus        String
+  sampleStatus             String
+  sampleOrderNumber        String?
+  sampleTrackingNumber     String?
+  sampleProductSku         String?
+  sampleProductId          String?
+  sampleSentAt             DateTime?
+  sampleReceivedAt         DateTime?
+  historicalEngagementRate Decimal?  @db.Decimal(5, 2)
+  estimatedOrders          Int?
+  actualOrders             Int?
+  notes                    String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   videoTasks VideoTask[]
 }
 
 model Employee {
-  id                     String    @id @default(uuid())
+  id                     String           @id @default(uuid())
   name                   String
   employeeNumber         String?
   department             Department
@@ -286,11 +356,11 @@ model Employee {
   responsibleSuppliers   String[]
   responsibleStores      String[]
   notes                  String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
 
   commissionRecords CommissionRecord[]
-  videoTasks        VideoTask[] @relation("Assignee")
+  videoTasks        VideoTask[]        @relation("Assignee")
 }
 
 model CommissionRule {
@@ -313,37 +383,116 @@ model CommissionRule {
 }
 
 model CommissionRecord {
-  id           String    @id @default(uuid())
-  employeeId   String
-  ruleId       String
-  periodLabel  String
-  amount       Decimal   @db.Decimal(18, 2)
-  currency     String    @default("CNY")
-  details      Json?
-  generatedAt  DateTime  @default(now())
+  id          String   @id @default(uuid())
+  employeeId  String
+  ruleId      String
+  periodLabel String
+  amount      Decimal  @db.Decimal(18, 2)
+  currency    String   @default("CNY")
+  details     Json?
+  generatedAt DateTime @default(now())
 
   employee Employee       @relation(fields: [employeeId], references: [id])
   rule     CommissionRule @relation(fields: [ruleId], references: [id])
 }
 
-model InventoryStock {
-  id         String            @id @default(uuid())
-  productId  String
-  storeId    String?
-  location   InventoryLocation
-  qty        Int               @default(0)
-  updatedAt  DateTime          @updatedAt
-  createdAt  DateTime          @default(now())
+// 仓库表（Warehouse）
+model Warehouse {
+  id        String            @id @default(uuid())
+  code      String            @unique // 仓库编码（唯一标识）
+  name      String // 仓库名称
+  address   String? // 仓库地址
+  contact   String? // 联系人
+  phone     String? // 联系电话
+  manager   String? // 仓库管理员
+  location  InventoryLocation // 仓库位置类型（工厂/国内/在途/海外）
+  isActive  Boolean           @default(true) // 是否启用
+  capacity  Int? // 仓库容量（可选）
+  notes     String? // 备注
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
-  product Product @relation(fields: [productId], references: [id])
-  store   Store?  @relation(fields: [storeId], references: [id])
+  // 关联关系
+  stocks    Stock[] // 该仓库的库存记录
+  stockLogs StockLog[] // 该仓库的库存流水
 
-  @@unique([productId, location, storeId])
+  @@index([code])
+  @@index([location])
 }
 
+// 库存表（Stock）- 记录 SKU 在每个仓库的数量
+model Stock {
+  id           String   @id @default(uuid())
+  variantId    String // 关联到 ProductVariant (SKU)
+  warehouseId  String // 关联到 Warehouse
+  qty          Int      @default(0) // 库存数量
+  reservedQty  Int      @default(0) // 预留数量（已分配但未出库）
+  availableQty Int      @default(0) // 可用数量（qty - reservedQty，可计算字段）
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  // 关联关系
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  // 唯一约束：同一 SKU 在同一仓库只能有一条记录
+  @@unique([variantId, warehouseId])
+  @@index([variantId])
+  @@index([warehouseId])
+}
+
+// 保留原有的 InventoryStock 模型以保持向后兼容（可选，如果不需要可以删除）
+model InventoryStock {
+  id        String            @id @default(uuid())
+  variantId String // 关联到 ProductVariant (SKU)
+  storeId   String?
+  location  InventoryLocation
+  qty       Int               @default(0)
+  updatedAt DateTime          @updatedAt
+  createdAt DateTime          @default(now())
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  store   Store?         @relation(fields: [storeId], references: [id])
+
+  @@unique([variantId, location, storeId])
+  @@index([variantId])
+}
+
+// 库存流水表（StockLog）- 记录入库出库原因
+model StockLog {
+  id                 String                @id @default(uuid())
+  variantId          String // 关联到 ProductVariant (SKU)
+  warehouseId        String // 关联到 Warehouse
+  reason             StockLogReason // 入库/出库原因
+  movementType       InventoryMovementType // 移动类型（保留原有枚举）
+  qty                Int // 数量（正数表示入库，负数表示出库）
+  qtyBefore          Int // 变动前数量
+  qtyAfter           Int // 变动后数量
+  unitCost           Decimal?              @db.Decimal(18, 2) // 单价
+  totalCost          Decimal?              @db.Decimal(18, 2) // 总成本
+  currency           String? // 货币
+  operator           String? // 操作人
+  operationDate      DateTime // 操作日期
+  relatedOrderId     String? // 关联订单ID
+  relatedOrderType   String? // 关联订单类型
+  relatedOrderNumber String? // 关联订单号
+  notes              String? // 备注
+  createdAt          DateTime              @default(now())
+
+  // 关联关系
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+  @@index([warehouseId])
+  @@index([reason])
+  @@index([operationDate])
+}
+
+// 保留原有的 InventoryMovement 模型以保持向后兼容
 model InventoryMovement {
   id                 String                @id @default(uuid())
-  productId          String
+  variantId          String // 关联到 ProductVariant (SKU)
   location           InventoryLocation
   movementType       InventoryMovementType
   qty                Int
@@ -360,7 +509,9 @@ model InventoryMovement {
   notes              String?
   createdAt          DateTime              @default(now())
 
-  product Product @relation(fields: [productId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
 }
 
 model LogisticsChannel {
@@ -377,9 +528,9 @@ model LogisticsChannel {
 }
 
 model LogisticsTracking {
-  id                  String           @id @default(uuid())
+  id                  String          @id @default(uuid())
   internalOrderNumber String
-  trackingNumber      String           @unique
+  trackingNumber      String          @unique
   channelId           String
   storeId             String?
   currentStatus       LogisticsStatus
@@ -387,8 +538,8 @@ model LogisticsTracking {
   lastUpdatedAt       DateTime
   transportDays       Int?
   orderId             String?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   channel LogisticsChannel @relation(fields: [channelId], references: [id])
   store   Store?           @relation(fields: [storeId], references: [id])
@@ -396,7 +547,7 @@ model LogisticsTracking {
 }
 
 model TrackingEvent {
-  id          String           @id @default(uuid())
+  id          String          @id @default(uuid())
   trackingId  String
   timestamp   DateTime
   location    String?
@@ -405,7 +556,6 @@ model TrackingEvent {
 
   tracking LogisticsTracking @relation(fields: [trackingId], references: [id])
 }
-
 
 model PurchaseContract {
   id                  String                 @id @default(uuid())
@@ -422,20 +572,20 @@ model PurchaseContract {
   totalAmount         Decimal                @db.Decimal(18, 2)
   depositRate         Decimal                @db.Decimal(5, 2)
   depositAmount       Decimal                @db.Decimal(18, 2)
-  depositPaid         Decimal                @db.Decimal(18, 2) @default(0)
+  depositPaid         Decimal                @default(0) @db.Decimal(18, 2)
   tailPeriodDays      Int
   deliveryDate        DateTime?
   status              PurchaseContractStatus
   contractVoucher     String?
-  totalPaid           Decimal                @db.Decimal(18, 2) @default(0)
-  totalOwed           Decimal                @db.Decimal(18, 2) @default(0)
+  totalPaid           Decimal                @default(0) @db.Decimal(18, 2)
+  totalOwed           Decimal                @default(0) @db.Decimal(18, 2)
   relatedOrderIds     String[]
   relatedOrderNumbers String[]
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 
   deliveryOrders DeliveryOrder[]
-  orders         PurchaseOrder[]   // 通过 contractId 关联的采购订单
+  orders         PurchaseOrder[] // 通过 contractId 关联的采购订单
   items          PurchaseContractItem[] // 合同明细（支持多 SKU）
 }
 
@@ -449,7 +599,7 @@ model DeliveryOrder {
   shippedDate            DateTime?
   status                 DeliveryOrderStatus
   tailAmount             Decimal             @db.Decimal(18, 2)
-  tailPaid               Decimal             @db.Decimal(18, 2) @default(0)
+  tailPaid               Decimal             @default(0) @db.Decimal(18, 2)
   tailDueDate            DateTime?
   createdAt              DateTime            @default(now())
   updatedAt              DateTime            @updatedAt
@@ -477,99 +627,99 @@ model VideoTask {
 }
 
 model BankAccount {
-  id              String          @id @default(uuid())
-  name            String
-  accountNumber   String
-  accountType     AccountType
-  accountCategory AccountCategory
-  accountPurpose  String
-  currency        String          @default("RMB")
-  country         String          @default("CN")
-  originalBalance Decimal         @default(0) @db.Decimal(18, 2) // 当前原币余额（会随流水变化）
-  initialCapital  Decimal         @default(0) @db.Decimal(18, 2) // 原始资金（账户初始资金，固定值）
-  exchangeRate    Decimal         @default(1) @db.Decimal(10, 4)
-  rmbBalance      Decimal         @default(0) @db.Decimal(18, 2) // 计算字段，可冗余存储
-  parentId        String?         // 父账户ID（虚拟子账号关联主账户）
-  storeId         String?         // 关联店铺ID
-  companyEntity   String?
-  owner           String?         // 账号归属人
-  notes           String          @default("")
-  platformAccount String?
+  id               String          @id @default(uuid())
+  name             String
+  accountNumber    String
+  accountType      AccountType
+  accountCategory  AccountCategory
+  accountPurpose   String
+  currency         String          @default("RMB")
+  country          String          @default("CN")
+  originalBalance  Decimal         @default(0) @db.Decimal(18, 2) // 当前原币余额（会随流水变化）
+  initialCapital   Decimal         @default(0) @db.Decimal(18, 2) // 原始资金（账户初始资金，固定值）
+  exchangeRate     Decimal         @default(1) @db.Decimal(10, 4)
+  rmbBalance       Decimal         @default(0) @db.Decimal(18, 2) // 计算字段，可冗余存储
+  parentId         String? // 父账户ID（虚拟子账号关联主账户）
+  storeId          String? // 关联店铺ID
+  companyEntity    String?
+  owner            String? // 账号归属人
+  notes            String          @default("")
+  platformAccount  String?
   platformPassword String?
-  platformUrl     String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  platformUrl      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   // 自关联：主账户 -> 虚拟子账号
   parent   BankAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children BankAccount[] @relation("AccountHierarchy")
-  
+
   // 关联店铺
   store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
-  
+
   // 关联流水
   cashFlows CashFlow[]
 }
 
 model CashFlow {
-  id            String          @id @default(uuid())
-  uid           String?         @unique // 全局唯一业务ID（业财一体化）
-  date          DateTime
-  summary       String
-  category      String          // 分类：采购/物流/回款/划拨/手续费等（支持一级/二级）
-  type          CashFlowType
-  amount        Decimal         @db.Decimal(18, 2)
-  accountId     String
-  accountName   String          // 冗余字段，便于查询
-  currency      String          @default("CNY")
-  remark        String          @default("")
-  relatedId     String?         // 关联的采购单ID等
-  businessNumber String?         // 关联业务单号（如采购单号）
-  status        CashFlowStatus  @default(CONFIRMED)
-  isReversal    Boolean         @default(false)
-  reversedById  String?         // 被冲销的记录ID
-  voucher       String?         // 凭证（图片 base64 或 URL，建议存 URL）
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id             String         @id @default(uuid())
+  uid            String?        @unique // 全局唯一业务ID（业财一体化）
+  date           DateTime
+  summary        String
+  category       String // 分类：采购/物流/回款/划拨/手续费等（支持一级/二级）
+  type           CashFlowType
+  amount         Decimal        @db.Decimal(18, 2)
+  accountId      String
+  accountName    String // 冗余字段，便于查询
+  currency       String         @default("CNY")
+  remark         String         @default("")
+  relatedId      String? // 关联的采购单ID等
+  businessNumber String? // 关联业务单号（如采购单号）
+  status         CashFlowStatus @default(CONFIRMED)
+  isReversal     Boolean        @default(false)
+  reversedById   String? // 被冲销的记录ID
+  voucher        String? // 凭证（图片 base64 或 URL，建议存 URL）
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   // 关联账户
   account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  
+
   // 自关联：冲销关系
   reversedBy CashFlow?  @relation("Reversal", fields: [reversedById], references: [id], onDelete: SetNull)
   reversals  CashFlow[] @relation("Reversal")
 }
 
 model PurchaseOrder {
-  id                String              @id @default(uuid())
-  orderNumber       String              @unique
-  uid               String?             @unique // 全局唯一业务ID
+  id          String  @id @default(uuid())
+  orderNumber String  @unique
+  uid         String? @unique // 全局唯一业务ID
 
   // 下单信息（运营填写）
-  createdBy         String
-  platform          Platform
-  storeId           String?
-  storeName         String?
-  sku               String
-  skuId             String?
-  productName       String?
-  quantity          Int
+  createdBy            String
+  platform             Platform
+  storeId              String?
+  storeName            String?
+  sku                  String
+  skuId                String?
+  productName          String?
+  quantity             Int
   expectedDeliveryDate DateTime?
-  urgency           String              @default("普通")
-  notes             String?
+  urgency              String    @default("普通")
+  notes                String?
 
   // 风控评估
-  riskControlStatus String              @default("待评估")
-  riskControlBy     String?
-  riskControlAt     DateTime?
-  riskControlNotes  String?
-  riskControlSnapshot Json?             // 风控时的库存快照
+  riskControlStatus   String    @default("待评估")
+  riskControlBy       String?
+  riskControlAt       DateTime?
+  riskControlNotes    String?
+  riskControlSnapshot Json? // 风控时的库存快照
 
   // 审批流程
-  approvalStatus    String              @default("待审批")
-  approvedBy        String?
-  approvedAt        DateTime?
-  approvalNotes     String?
+  approvalStatus String    @default("待审批")
+  approvedBy     String?
+  approvedAt     DateTime?
+  approvalNotes  String?
 
   // 采购关联
   pushedToProcurementAt DateTime?
@@ -577,13 +727,13 @@ model PurchaseOrder {
   procurementNotes      String?
 
   // 合同关联（采购完成后）
-  contractId        String?             @unique
-  contract          PurchaseContract?   @relation(fields: [contractId], references: [id])
+  contractId String?           @unique
+  contract   PurchaseContract? @relation(fields: [contractId], references: [id])
 
   // 状态
-  status            PurchaseOrderStatus @default(PENDING_RISK)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  status    PurchaseOrderStatus @default(PENDING_RISK)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
 
   // 关联店铺
   store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
@@ -591,19 +741,19 @@ model PurchaseOrder {
 
 // 产品-供应商关联表（多对多关系）
 model ProductSupplier {
-  id          String   @id @default(uuid())
-  productId   String
-  supplierId  String
-  price       Decimal? @db.Decimal(18, 2) // 供应商对该产品的报价
-  moq         Int?     // 最小起订量
-  leadTime    Int?     // 交期（天）
-  isPrimary   Boolean  @default(false) // 是否为主供应商
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  id         String   @id @default(uuid())
+  productId  String
+  supplierId String
+  price      Decimal? @db.Decimal(18, 2) // 供应商对该产品的报价
+  moq        Int? // 最小起订量
+  leadTime   Int? // 交期（天）
+  isPrimary  Boolean  @default(false) // 是否为主供应商
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
   product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  
+
   @@unique([productId, supplierId])
   @@index([productId])
   @@index([supplierId])
@@ -611,22 +761,22 @@ model ProductSupplier {
 
 // 采购合同明细表（支持一个合同多个 SKU）
 model PurchaseContractItem {
-  id              String            @id @default(uuid())
-  contractId      String
-  skuId           String?           // 产品 SKU ID
-  sku             String            // SKU 名称（冗余字段）
-  unitPrice       Decimal           @db.Decimal(18, 2)
-  qty             Int
-  pickedQty       Int               @default(0) // 已取货数
-  finishedQty     Int               @default(0) // 工厂完工数
-  totalAmount     Decimal           @db.Decimal(18, 2)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  
+  id          String   @id @default(uuid())
+  contractId  String
+  variantId   String? // 产品变体 (SKU) ID
+  sku         String // SKU 编码（冗余字段）
+  unitPrice   Decimal  @db.Decimal(18, 2)
+  qty         Int
+  pickedQty   Int      @default(0) // 已取货数
+  finishedQty Int      @default(0) // 工厂完工数
+  totalAmount Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   contract PurchaseContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  product  Product?         @relation(fields: [skuId], references: [skuId], onDelete: SetNull)
-  
-  @@unique([contractId, skuId])
+  variant  ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@unique([contractId, variantId])
   @@index([contractId])
-  @@index([skuId])
+  @@index([variantId])
 }

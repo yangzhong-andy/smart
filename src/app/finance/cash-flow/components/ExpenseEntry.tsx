@@ -17,6 +17,7 @@ type ExpenseEntryProps = {
 };
 
 export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntryProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     summary: "",
@@ -68,8 +69,15 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
   const selectedAccount = accounts.find((a) => a.id === form.accountId);
   const selectedAdAccount = adAccounts.find((a) => a.id === form.adAccountId);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.warning("正在提交，请勿重复点击");
+      return;
+    }
+
     if (!form.accountId || !form.primaryCategory) {
       toast.error("请选择账户和费用分类");
       return;
@@ -167,7 +175,16 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
 
     // 自动生成唯一业务ID
     const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
-    onSave(flowWithUID, adAccountId, rebateAmount);
+    
+    // 防止重复提交
+    setIsSubmitting(true);
+    try {
+      onSave(flowWithUID, adAccountId, rebateAmount);
+      // 延迟重置状态，给父组件时间处理
+      setTimeout(() => setIsSubmitting(false), 1000);
+    } catch (error) {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -178,7 +195,14 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
             <h2 className="text-lg font-semibold text-slate-100">登记支出</h2>
             <p className="text-xs text-slate-400 mt-1">必须选择费用分类</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
+          <button 
+            onClick={() => {
+              setIsSubmitting(false);
+              onClose();
+            }} 
+            className="text-slate-400 hover:text-slate-200"
+            disabled={isSubmitting}
+          >
             ✕
           </button>
         </div>
@@ -488,17 +512,21 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+              onClick={() => {
+                setIsSubmitting(false);
+                onClose();
+              }}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              disabled={isSubmitting}
             >
               取消
             </button>
             <button
               type="submit"
-              className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600 active:translate-y-px"
-              disabled={!accounts.length}
+              className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!accounts.length || isSubmitting}
             >
-              确认登记
+              {isSubmitting ? "提交中..." : "确认登记"}
             </button>
           </div>
         </form>

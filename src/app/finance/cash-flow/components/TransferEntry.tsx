@@ -24,6 +24,7 @@ const currency = (n: number, curr: string = "CNY") =>
   );
 
 export default function TransferEntry({ accounts, onClose, onSave }: TransferEntryProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     fromAccountId: "",
@@ -82,8 +83,15 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     return received / amount;
   }, [form.amount, form.actualReceived]);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.warning("正在提交，请勿重复点击");
+      return;
+    }
+
     if (!form.fromAccountId || !form.toAccountId) {
       toast.error("请选择转出和转入账户");
       return;
@@ -101,8 +109,8 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       toast.error("账户不存在");
       return;
     }
-    // 计算转出账户总余额 = 初始资金 + 当前余额
-    const fromAccountTotalBalance = (fromAccount.initialCapital || 0) + (fromAccount.originalBalance || 0);
+    // 计算转出账户总余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+    const fromAccountTotalBalance = fromAccount.originalBalance || 0;
     if (fromAccountTotalBalance < amount) {
       toast.error("转出账户余额不足");
       return;
@@ -168,10 +176,20 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     const outFlowWithUID = enrichWithUID(outFlow, "CASH_FLOW");
     const inFlowWithUID = enrichWithUID(inFlow, "CASH_FLOW");
     
-    // 保存两条记录
-    onSave(outFlowWithUID);
-    // 延迟保存第二条，确保账户余额正确更新
-    setTimeout(() => onSave(inFlowWithUID), 100);
+    // 防止重复提交
+    setIsSubmitting(true);
+    try {
+      // 保存两条记录
+      onSave(outFlowWithUID);
+      // 延迟保存第二条，确保账户余额正确更新
+      setTimeout(() => {
+        onSave(inFlowWithUID);
+        // 延迟重置状态，给父组件时间处理
+        setTimeout(() => setIsSubmitting(false), 1000);
+      }, 100);
+    } catch (error) {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -182,7 +200,14 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
             <h2 className="text-lg font-semibold text-slate-100">内部划拨</h2>
             <p className="text-xs text-slate-400 mt-1">支持手动汇率和到账金额倒推</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
+          <button 
+            onClick={() => {
+              setIsSubmitting(false);
+              onClose();
+            }} 
+            className="text-slate-400 hover:text-slate-200"
+            disabled={isSubmitting}
+          >
             ✕
           </button>
         </div>
@@ -499,17 +524,21 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+              onClick={() => {
+                setIsSubmitting(false);
+                onClose();
+              }}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              disabled={isSubmitting}
             >
               取消
             </button>
             <button
               type="submit"
-              className="rounded-md bg-blue-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-blue-600 active:translate-y-px"
-              disabled={!form.fromAccountId || !form.toAccountId || !form.amount}
+              className="rounded-md bg-blue-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-blue-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!form.fromAccountId || !form.toAccountId || !form.amount || isSubmitting}
             >
-              确认划拨
+              {isSubmitting ? "提交中..." : "确认划拨"}
             </button>
           </div>
         </form>

@@ -452,8 +452,17 @@ export default function BankAccountsPage() {
     return CreditCard;
   };
 
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isCreating) {
+      toast.warning("正在创建，请勿重复点击");
+      return;
+    }
     if (!form.name.trim()) {
       toast.error("账户名称是必填项");
       return;
@@ -505,6 +514,7 @@ export default function BankAccountsPage() {
       platformPassword: form.accountType === "平台" ? (form.platformPassword.trim() || undefined) : undefined,
       platformUrl: form.accountType === "平台" ? (form.platformUrl.trim() || undefined) : undefined
     };
+    setIsCreating(true);
     try {
       const response = await fetch('/api/accounts', {
         method: 'POST',
@@ -525,6 +535,8 @@ export default function BankAccountsPage() {
     } catch (error: any) {
       console.error('Failed to create account:', error);
       toast.error(error.message || '创建账户失败');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -555,6 +567,13 @@ export default function BankAccountsPage() {
 
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isUpdating) {
+      toast.warning("正在更新，请勿重复点击");
+      return;
+    }
+    
     if (!editAccount) return;
     if (!form.name.trim()) {
       toast.error("账户名称是必填项");
@@ -608,6 +627,7 @@ export default function BankAccountsPage() {
         platformUrl: form.accountType === "平台" ? (form.platformUrl.trim() || undefined) : undefined
       };
       
+      setIsUpdating(true);
       const response = await fetch(`/api/accounts/${editAccount.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -628,6 +648,8 @@ export default function BankAccountsPage() {
     } catch (error: any) {
       console.error('Failed to update account:', error);
       toast.error(error.message || '更新账户失败');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -1947,9 +1969,12 @@ export default function BankAccountsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
+                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isCreating || isUpdating}
                 >
-                  {editAccount ? "保存修改" : "保存"}
+                  {isCreating || isUpdating 
+                    ? (editAccount ? "更新中..." : "创建中...") 
+                    : (editAccount ? "保存修改" : "保存")}
                 </button>
               </div>
             </form>

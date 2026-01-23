@@ -91,82 +91,206 @@ export async function PUT(
       return NextResponse.json(updated)
     }
 
+    // 查找现有的 ProductVariant (SKU)
+    const existingVariant = await prisma.productVariant.findUnique({
+      where: { skuId: decodeURIComponent(skuId) },
+      include: {
+        product: {
+          include: {
+            productSuppliers: {
+              include: {
+                supplier: true
+              }
+            }
+          }
+        }
+      }
+    })
+    
+    if (!existingVariant) {
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 404 }
+      )
+    }
+
     // 如果 sku_id 改变，检查新 SKU 是否已存在
     if (body.sku_id && body.sku_id !== skuId) {
-      const existing = await prisma.product.findUnique({
+      const duplicate = await prisma.productVariant.findUnique({
         where: { skuId: body.sku_id }
       })
       
-      if (existing) {
+      if (duplicate) {
         return NextResponse.json(
           { error: 'SKU already exists' },
           { status: 400 }
         )
       }
     }
-    
-    const updated = await prisma.product.update({
-      where: { skuId: decodeURIComponent(skuId) },
+
+    // 处理供应商信息
+    let suppliersData = null
+    if (body.suppliers && Array.isArray(body.suppliers) && body.suppliers.length > 0) {
+      suppliersData = body.suppliers
+    } else if (body.factory_id) {
+      // 兼容旧的单供应商模式
+      suppliersData = [{
+        id: body.factory_id,
+        name: body.factory_name || '',
+        price: body.cost_price,
+        moq: body.moq,
+        lead_time: body.lead_time,
+        isPrimary: true
+      }]
+    }
+
+    // 更新 Product (SPU)
+    const updatedProduct = await prisma.product.update({
+      where: { id: existingVariant.productId },
+      data: {
+        name: body.name,
+        category: body.category || null,
+        brand: body.brand !== undefined ? (body.brand || null) : undefined,
+        description: body.description !== undefined ? (body.description || null) : undefined,
+        mainImage: body.main_image !== undefined ? (body.main_image || null) : undefined,
+        material: body.material !== undefined ? (body.material || null) : undefined,
+        customsNameCN: body.customs_name_cn !== undefined ? (body.customs_name_cn || null) : undefined,
+        customsNameEN: body.customs_name_en !== undefined ? (body.customs_name_en || null) : undefined,
+        defaultSupplierId: body.default_supplier_id !== undefined ? (body.default_supplier_id || null) : undefined,
+        status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        suppliers: suppliersData ? JSON.parse(JSON.stringify(suppliersData)) : undefined
+      }
+    })
+
+    // 更新 ProductVariant (SKU)
+    const updatedVariant = await prisma.productVariant.update({
+      where: { id: existingVariant.id },
       data: {
         ...(body.sku_id && body.sku_id !== skuId ? { skuId: body.sku_id } : {}),
-        name: body.name,
-        mainImage: body.main_image || null,
-        category: body.category || null,
-        status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
-        currency: body.currency || 'CNY',
-        costPrice: body.cost_price ? Number(body.cost_price) : null,
-        targetRoi: body.target_roi ? Number(body.target_roi) : null,
-        weightKg: body.weight_kg ? Number(body.weight_kg) : null,
-        lengthCm: body.length ? Number(body.length) : null,
-        widthCm: body.width ? Number(body.width) : null,
-        heightCm: body.height ? Number(body.height) : null,
-        volumetricDivisor: body.volumetric_divisor ? Number(body.volumetric_divisor) : null,
+        color: body.color !== undefined ? (body.color || null) : undefined,
+        size: body.size !== undefined ? (body.size || null) : undefined,
+        weightKg: body.weight_kg !== undefined ? (body.weight_kg ? parseFloat(String(body.weight_kg)) : null) : undefined,
+        barcode: body.barcode !== undefined ? (body.barcode || null) : undefined,
+        costPrice: body.cost_price !== undefined ? (body.cost_price ? parseFloat(String(body.cost_price)) : null) : undefined,
+        stockQuantity: body.stock_quantity !== undefined 
+          ? body.stock_quantity 
+          : (body.at_factory !== undefined || body.at_domestic !== undefined || body.in_transit !== undefined)
+            ? (body.at_factory || 0) + (body.at_domestic || 0) + (body.in_transit || 0)
+            : undefined,
+        currency: body.currency || undefined,
+        targetRoi: body.target_roi !== undefined ? (body.target_roi ? parseFloat(String(body.target_roi)) : null) : undefined,
+        lengthCm: body.length !== undefined ? (body.length ? parseFloat(String(body.length)) : null) : undefined,
+        widthCm: body.width !== undefined ? (body.width ? parseFloat(String(body.width)) : null) : undefined,
+        heightCm: body.height !== undefined ? (body.height ? parseFloat(String(body.height)) : null) : undefined,
+        volumetricDivisor: body.volumetric_divisor !== undefined ? (body.volumetric_divisor ? parseInt(String(body.volumetric_divisor)) : null) : undefined,
         atFactory: body.at_factory !== undefined ? body.at_factory : undefined,
         atDomestic: body.at_domestic !== undefined ? body.at_domestic : undefined,
         inTransit: body.in_transit !== undefined ? body.in_transit : undefined,
-        suppliers: body.suppliers ? JSON.parse(JSON.stringify(body.suppliers)) : null,
-        platformSkuMapping: body.platform_sku_mapping ? JSON.parse(JSON.stringify(body.platform_sku_mapping)) : null,
-        updatedAt: new Date()
+        platformSkuMapping: body.platform_sku_mapping !== undefined 
+          ? (body.platform_sku_mapping ? JSON.parse(JSON.stringify(body.platform_sku_mapping)) : null) 
+          : undefined
       }
     })
-    
-    // 转换返回格式
-    const transformed = {
-      sku_id: updated.skuId,
-      name: updated.name,
-      main_image: updated.mainImage || '',
-      category: updated.category || undefined,
-      status: updated.status,
-      cost_price: updated.costPrice ? Number(updated.costPrice) : 0,
-      target_roi: updated.targetRoi ? Number(updated.targetRoi) : undefined,
-      currency: updated.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
-      weight_kg: updated.weightKg ? Number(updated.weightKg) : undefined,
-      length: updated.lengthCm ? Number(updated.lengthCm) : undefined,
-      width: updated.widthCm ? Number(updated.widthCm) : undefined,
-      height: updated.heightCm ? Number(updated.heightCm) : undefined,
-      volumetric_divisor: updated.volumetricDivisor || undefined,
-      at_factory: updated.atFactory || 0,
-      at_domestic: updated.atDomestic || 0,
-      in_transit: updated.inTransit || 0,
-      suppliers: updated.suppliers ? JSON.parse(JSON.stringify(updated.suppliers)) : undefined,
-      platform_sku_mapping: updated.platformSkuMapping ? JSON.parse(JSON.stringify(updated.platformSkuMapping)) : undefined,
-      factory_id: updated.suppliers && typeof updated.suppliers === 'object' && Array.isArray(updated.suppliers)
-        ? (updated.suppliers as any[]).find((s: any) => s.isPrimary)?.id || (updated.suppliers as any[])[0]?.id || undefined
-        : undefined,
-      factory_name: updated.suppliers && typeof updated.suppliers === 'object' && Array.isArray(updated.suppliers)
-        ? (updated.suppliers as any[]).find((s: any) => s.isPrimary)?.name || (updated.suppliers as any[])[0]?.name || undefined
-        : undefined,
-      moq: updated.suppliers && typeof updated.suppliers === 'object' && Array.isArray(updated.suppliers)
-        ? (updated.suppliers as any[]).find((s: any) => s.isPrimary)?.moq || undefined
-        : undefined,
-      lead_time: updated.suppliers && typeof updated.suppliers === 'object' && Array.isArray(updated.suppliers)
-        ? (updated.suppliers as any[]).find((s: any) => s.isPrimary)?.lead_time || undefined
-        : undefined,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString()
+
+    // 如果提供了供应商信息，更新 ProductSupplier 关联
+    if (suppliersData && Array.isArray(suppliersData)) {
+      // 先删除所有现有的关联
+      await prisma.productSupplier.deleteMany({
+        where: { productId: updatedProduct.id }
+      })
+      
+      // 重新创建关联
+      for (const supplier of suppliersData) {
+        if (supplier.id) {
+          try {
+            await prisma.productSupplier.create({
+              data: {
+                productId: updatedProduct.id,
+                supplierId: supplier.id,
+                price: supplier.price ? parseFloat(String(supplier.price)) : null,
+                moq: supplier.moq ? parseInt(String(supplier.moq)) : null,
+                leadTime: supplier.lead_time ? parseInt(String(supplier.lead_time)) : null,
+                isPrimary: supplier.isPrimary || false
+              }
+            })
+          } catch (err: any) {
+            console.error('更新 ProductSupplier 关联失败:', err)
+          }
+        }
+      }
     }
+
+    // 重新获取完整数据
+    const productWithVariant = await prisma.product.findUnique({
+      where: { id: updatedProduct.id },
+      include: {
+        variants: {
+          where: { id: updatedVariant.id }
+        },
+        productSuppliers: {
+          include: {
+            supplier: true
+          }
+        },
+        defaultSupplier: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    })
+
+    // 转换为前端格式
+    const primarySupplier = productWithVariant?.productSuppliers.find(ps => ps.isPrimary) || productWithVariant?.productSuppliers[0]
+    const v = updatedVariant
     
-    return NextResponse.json(transformed)
+    return NextResponse.json({
+      sku_id: v.skuId,
+      name: updatedProduct.name,
+      main_image: updatedProduct.mainImage || '',
+      category: updatedProduct.category || undefined,
+      brand: updatedProduct.brand || undefined,
+      description: updatedProduct.description || undefined,
+      material: updatedProduct.material || undefined,
+      customs_name_cn: updatedProduct.customsNameCN || undefined,
+      customs_name_en: updatedProduct.customsNameEN || undefined,
+      default_supplier_id: updatedProduct.defaultSupplierId || undefined,
+      default_supplier_name: productWithVariant?.defaultSupplier?.name || undefined,
+      status: updatedProduct.status,
+      cost_price: v.costPrice ? Number(v.costPrice) : 0,
+      target_roi: v.targetRoi ? Number(v.targetRoi) : undefined,
+      currency: v.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
+      weight_kg: v.weightKg ? Number(v.weightKg) : undefined,
+      length: v.lengthCm ? Number(v.lengthCm) : undefined,
+      width: v.widthCm ? Number(v.widthCm) : undefined,
+      height: v.heightCm ? Number(v.heightCm) : undefined,
+      volumetric_divisor: v.volumetricDivisor || undefined,
+      color: v.color || undefined,
+      size: v.size || undefined,
+      barcode: v.barcode || undefined,
+      stock_quantity: v.stockQuantity || 0,
+      at_factory: v.atFactory || 0,
+      at_domestic: v.atDomestic || 0,
+      in_transit: v.inTransit || 0,
+      suppliers: productWithVariant?.productSuppliers.map(ps => ({
+        id: ps.supplier.id,
+        name: ps.supplier.name,
+        price: ps.price ? Number(ps.price) : undefined,
+        moq: ps.moq || undefined,
+        lead_time: ps.leadTime || undefined,
+        isPrimary: ps.isPrimary
+      })),
+      platform_sku_mapping: v.platformSkuMapping ? JSON.parse(JSON.stringify(v.platformSkuMapping)) : undefined,
+      factory_id: primarySupplier?.supplier.id || undefined,
+      factory_name: primarySupplier?.supplier.name || undefined,
+      moq: primarySupplier?.moq || undefined,
+      lead_time: primarySupplier?.leadTime || undefined,
+      product_id: updatedProduct.id,
+      variant_id: v.id,
+      createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString()
+    })
   } catch (error) {
     console.error(`Error updating product ${params.skuId}:`, error)
     return NextResponse.json(
@@ -192,9 +316,36 @@ export async function DELETE(
       return NextResponse.json({ message: 'Product deleted successfully' })
     }
     
-    await prisma.product.delete({
-      where: { skuId: decodeURIComponent(skuId) }
+    // 查找 ProductVariant (SKU)
+    const variant = await prisma.productVariant.findUnique({
+      where: { skuId: decodeURIComponent(skuId) },
+      include: {
+        product: {
+          include: {
+            variants: true
+          }
+        }
+      }
     })
+    
+    if (!variant) {
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 404 }
+      )
+    }
+
+    // 删除 ProductVariant (SKU)
+    await prisma.productVariant.delete({
+      where: { id: variant.id }
+    })
+
+    // 如果这是该 Product (SPU) 的最后一个 variant，也删除 Product
+    if (variant.product.variants.length === 1) {
+      await prisma.product.delete({
+        where: { id: variant.productId }
+      })
+    }
     
     return NextResponse.json({ message: 'Product deleted successfully' })
   } catch (error) {

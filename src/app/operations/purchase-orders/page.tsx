@@ -133,9 +133,17 @@ export default function PurchaseOrdersNewPage() {
     return result;
   }, [orders, filterStatus, filterPlatform, searchKeyword]);
 
+  const [isCreating, setIsCreating] = useState(false);
+
   // 创建订单
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 防止重复提交
+    if (isCreating) {
+      toast.warning("正在创建，请勿重复点击");
+      return;
+    }
     
     if (!form.createdBy.trim()) {
       toast.error("请填写下单人姓名");
@@ -156,6 +164,7 @@ export default function PurchaseOrdersNewPage() {
     const selectedProduct = products.find((p) => p.sku_id === form.skuId);
     const selectedStore = stores.find((s) => s.id === form.storeId);
 
+    setIsCreating(true);
     try {
       const response = await fetch('/api/purchase-orders', {
         method: 'POST',
@@ -205,6 +214,8 @@ export default function PurchaseOrdersNewPage() {
     } catch (error: any) {
       console.error('Error creating purchase order:', error);
       toast.error(error.message || "创建订单失败");
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -570,8 +581,8 @@ export default function PurchaseOrdersNewPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  创建订单
+                <ActionButton type="submit" variant="primary" isLoading={isCreating} disabled={isCreating}>
+                  {isCreating ? "创建中..." : "创建订单"}
                 </ActionButton>
               </div>
             </form>

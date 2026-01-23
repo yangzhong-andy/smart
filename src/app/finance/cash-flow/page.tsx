@@ -173,7 +173,16 @@ export default function CashFlowPage() {
 
   // 余额计算已在账户页面通过 SWR 处理，无需在此更新
 
+  const [isSavingFlow, setIsSavingFlow] = useState(false);
+
   const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number) => {
+    // 防止重复提交
+    if (isSavingFlow) {
+      toast.warning("正在保存，请勿重复点击");
+      return;
+    }
+
+    setIsSavingFlow(true);
     try {
       const response = await fetch('/api/cash-flow', {
         method: 'POST',
@@ -224,6 +233,8 @@ export default function CashFlowPage() {
     } catch (error: any) {
       console.error('Failed to create cash flow:', error);
       toast.error(error.message || '创建流水记录失败');
+    } finally {
+      setIsSavingFlow(false);
     }
   };
 
