@@ -141,7 +141,7 @@ export default function PurchaseOrdersNewPage() {
     
     // 防止重复提交
     if (isCreating) {
-      toast.warning("正在创建，请勿重复点击");
+      toast.loading("正在创建，请勿重复点击");
       return;
     }
     

@@ -30,7 +30,11 @@ export async function GET(
       include: {
         items: {
           include: {
-            product: true
+            variant: {
+              include: {
+                product: true
+              }
+            }
           }
         },
         supplier: true,
@@ -55,8 +59,8 @@ export async function GET(
       contractNumber: contract.contractNumber,
       supplierId: contract.supplierId || '',
       supplierName: contract.supplierName,
-      sku: firstItem ? `${firstItem.skuId || firstItem.sku} / ${firstItem.sku}` : '',
-      skuId: firstItem?.skuId || undefined,
+      sku: firstItem ? `${firstItem.variant?.skuId || firstItem.sku} / ${firstItem.sku}` : '',
+      skuId: firstItem?.variant?.skuId || undefined,
       unitPrice: firstItem ? Number(firstItem.unitPrice) : 0,
       totalQty: totalQty,
       pickedQty: pickedQty,
@@ -111,7 +115,15 @@ export async function PUT(
       where: { id: params.id },
       data: updateData,
       include: {
-        items: true
+        items: {
+          include: {
+            variant: {
+              include: {
+                product: true
+              }
+            }
+          }
+        }
       }
     })
 
@@ -125,8 +137,8 @@ export async function PUT(
       contractNumber: contract.contractNumber,
       supplierId: contract.supplierId || '',
       supplierName: contract.supplierName,
-      sku: firstItem ? `${firstItem.skuId || firstItem.sku} / ${firstItem.sku}` : '',
-      skuId: firstItem?.skuId || undefined,
+      sku: firstItem ? `${firstItem.variant?.skuId || firstItem.sku} / ${firstItem.sku}` : '',
+      skuId: firstItem?.variant?.skuId || undefined,
       unitPrice: firstItem ? Number(firstItem.unitPrice) : 0,
       totalQty: totalQty,
       pickedQty: pickedQty,

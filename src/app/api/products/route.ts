@@ -383,6 +383,12 @@ export async function POST(request: NextRequest) {
           include: {
             supplier: true
           }
+        },
+        defaultSupplier: {
+          select: {
+            id: true,
+            name: true
+          }
         }
       }
     })

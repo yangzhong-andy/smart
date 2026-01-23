@@ -109,12 +109,13 @@ export async function POST(request: NextRequest) {
 
     if (!product) {
       console.log(`通过 id "${productId}" 未找到产品，尝试通过 skuId 查找...`);
-      // 如果通过 id 找不到，尝试通过 skuId 查找
-      const productBySku = await prisma.product.findUnique({
+      // 如果通过 id 找不到，尝试通过 skuId 查找 ProductVariant，然后获取关联的 Product
+      const variant = await prisma.productVariant.findUnique({
         where: { skuId: productId },
+        include: { product: true }
       });
       
-      if (!productBySku) {
+      if (!variant || !variant.product) {
         console.error(`产品不存在: id/skuId "${productId}"`);
         return NextResponse.json(
           { error: 'Product not found', details: `Product with id/skuId "${productId}" does not exist` },
@@ -123,10 +124,10 @@ export async function POST(request: NextRequest) {
       }
       
       // 使用找到的产品的 id
-      actualProductId = productBySku.id;
+      actualProductId = variant.product.id;
       console.log(`通过 skuId 找到产品，实际 productId: ${actualProductId}`);
     } else {
-      console.log(`找到产品: ${product.id} (${product.skuId})`);
+      console.log(`找到产品: ${product.id}`);
     }
 
     // 验证供应商是否存在

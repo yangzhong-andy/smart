@@ -11,7 +11,11 @@ export async function GET(
     const stock = await prisma.inventoryStock.findUnique({
       where: { id: params.id },
       include: {
-        product: true,
+        variant: {
+          include: {
+            product: true
+          }
+        },
         store: true
       }
     })
@@ -25,7 +29,8 @@ export async function GET(
 
     return NextResponse.json({
       id: stock.id,
-      productId: stock.productId,
+      variantId: stock.variantId,
+      productId: stock.variant.productId, // 向后兼容
       storeId: stock.storeId || undefined,
       location: stock.location,
       qty: stock.qty,
@@ -60,7 +65,8 @@ export async function PUT(
 
     return NextResponse.json({
       id: stock.id,
-      productId: stock.productId,
+      variantId: stock.variantId,
+      productId: stock.variantId, // 向后兼容（使用 variantId 作为 productId）
       storeId: stock.storeId || undefined,
       location: stock.location,
       qty: stock.qty,

@@ -46,7 +46,11 @@ export async function GET(request: NextRequest) {
       include: {
         items: {
           include: {
-            product: true
+            variant: {
+              include: {
+                product: true
+              }
+            }
           }
         },
         supplier: true,
@@ -64,8 +68,8 @@ export async function GET(request: NextRequest) {
 
       // 获取第一个 SKU 项的信息（向后兼容单 SKU 合同）
       const firstItem = contract.items[0]
-      const sku = firstItem ? `${firstItem.skuId || firstItem.sku} / ${firstItem.sku}` : ''
-      const skuId = firstItem?.skuId || undefined
+      const sku = firstItem ? `${firstItem.variant?.skuId || firstItem.sku} / ${firstItem.sku}` : ''
+      const skuId = firstItem?.variant?.skuId || undefined
       const unitPrice = firstItem ? Number(firstItem.unitPrice) : 0
 
       return {
@@ -160,6 +164,17 @@ export async function POST(request: NextRequest) {
     const depositRate = Number(body.depositRate) || 0
     const depositAmount = (totalAmount * depositRate) / 100
 
+    // 如果提供了 skuId，查找对应的 variantId
+    let variantId: string | null = null
+    if (body.skuId || body.variantId) {
+      const variant = await prisma.productVariant.findUnique({
+        where: { skuId: body.skuId || body.variantId }
+      })
+      if (variant) {
+        variantId = variant.id
+      }
+    }
+
     // 创建合同
     // 注意：PurchaseContract 模型中仍需要 sku, unitPrice, totalQty 字段（用于向后兼容）
     // 这些值从第一个 item 中获取
@@ -190,7 +205,7 @@ export async function POST(request: NextRequest) {
         items: {
           create: {
             sku: body.sku,
-            skuId: body.skuId || null,
+            variantId: variantId,
             unitPrice: Number(body.unitPrice),
             qty: Number(body.totalQty),
             pickedQty: 0,
@@ -200,7 +215,15 @@ export async function POST(request: NextRequest) {
         }
       },
       include: {
-        items: true
+        items: {
+          include: {
+            variant: {
+              include: {
+                product: true
+              }
+            }
+          }
+        }
       }
     })
 

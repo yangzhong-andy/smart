@@ -74,7 +74,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
     
     // 防止重复提交
     if (isSubmitting) {
-      toast.warning("正在提交，请勿重复点击");
+      toast.loading("正在提交，请勿重复点击");
       return;
     }
 

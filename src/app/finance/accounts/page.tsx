@@ -460,7 +460,7 @@ export default function BankAccountsPage() {
     
     // 防止重复提交
     if (isCreating) {
-      toast.warning("正在创建，请勿重复点击");
+      toast.loading("正在创建，请勿重复点击");
       return;
     }
     if (!form.name.trim()) {
@@ -570,7 +570,7 @@ export default function BankAccountsPage() {
     
     // 防止重复提交
     if (isUpdating) {
-      toast.warning("正在更新，请勿重复点击");
+      toast.loading("正在更新，请勿重复点击");
       return;
     }
     

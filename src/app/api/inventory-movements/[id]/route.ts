@@ -11,7 +11,11 @@ export async function GET(
     const movement = await prisma.inventoryMovement.findUnique({
       where: { id: params.id },
       include: {
-        product: true
+        variant: {
+          include: {
+            product: true
+          }
+        }
       }
     })
 
@@ -24,7 +28,8 @@ export async function GET(
 
     return NextResponse.json({
       id: movement.id,
-      productId: movement.productId,
+      variantId: movement.variantId,
+      productId: movement.variant.productId, // 向后兼容
       location: movement.location,
       movementType: movement.movementType,
       qty: movement.qty,

@@ -178,7 +178,7 @@ export default function CashFlowPage() {
   const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number) => {
     // 防止重复提交
     if (isSavingFlow) {
-      toast.warning("正在保存，请勿重复点击");
+      toast.loading("正在保存，请勿重复点击");
       return;
     }
 
