@@ -21,6 +21,8 @@ type CashFlow = {
   remark: string;
   relatedId?: string;
   status: "confirmed" | "pending";
+  isReversal?: boolean;
+  reversedById?: string;
   voucher?: string;
   createdAt: string;
 };
