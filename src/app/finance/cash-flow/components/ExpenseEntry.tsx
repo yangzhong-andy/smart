@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { enrichWithUID } from "@/lib/business-utils";
 import { EXPENSE_CATEGORIES, getSubCategories, type ExpenseSubCategory } from "@/lib/expense-categories";
 import useSWR from "swr";
+import ImageUploader from "@/components/ImageUploader";
 
 type ExpenseEntryProps = {
   accounts: BankAccount[];
@@ -25,7 +26,8 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
     accountId: "",
     businessNumber: "",
     remark: "",
-    adAccountId: "" // 广告账户ID（仅当分类为"广告费"时显示）
+    adAccountId: "", // 广告账户ID（仅当分类为"广告费"时显示）
+    voucher: "" // 凭证
   });
   
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
@@ -87,8 +89,8 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       toast.error("账户不存在");
       return;
     }
-    // 计算账户总余额 = 初始资金 + 当前余额
-    const totalBalance = (account.initialCapital || 0) + (account.originalBalance || 0);
+    // 账户总余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+    const totalBalance = account.originalBalance || 0;
     if (totalBalance < amount) {
       toast.error("账户余额不足");
       return;
@@ -159,6 +161,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       businessNumber: finalBusinessNumber,
       relatedId: relatedId,
       status: "confirmed",
+      voucher: form.voucher || undefined,
       createdAt: new Date().toISOString()
     };
 
@@ -398,8 +401,8 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                     return [
                       <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
                         {currencyAccounts.map((acc) => {
-                          // 计算显示余额 = 初始资金 + 当前余额
-                          const displayBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+                          // 显示余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+                          const displayBalance = acc.originalBalance || 0;
                           const accountTypeLabel = acc.accountCategory === "PRIMARY" ? "主账户" : acc.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
                           
                           // 格式化余额
@@ -424,13 +427,38 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                 })()}
               </select>
               {selectedAccount && (() => {
-                // 计算显示余额 = 初始资金 + 当前余额
-                const displayBalance = (selectedAccount.initialCapital || 0) + (selectedAccount.originalBalance || 0);
+                // 当前余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+                const currentBalance = selectedAccount.originalBalance || 0;
+                const amount = Number(form.amount) || 0;
+                // 计算变动后余额（支出时减少）
+                const afterBalance = currentBalance - amount;
+                
+                // 格式化余额显示
+                const formatBalance = (balance: number) => {
+                  if (selectedAccount.currency === "RMB") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
+                  } else if (selectedAccount.currency === "USD") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
+                  } else {
+                    return `${selectedAccount.currency} ${balance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  }
+                };
+                
                 return (
-                  <div className="text-xs text-slate-500 mt-1">
-                    账户余额：{displayBalance.toLocaleString()} {selectedAccount.currency}
-                    {displayBalance < Number(form.amount) && (
-                      <span className="text-rose-400 ml-2">余额不足</span>
+                  <div className="text-xs text-slate-500 mt-1 space-y-1">
+                    <div>
+                      当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span>
+                    </div>
+                    {amount > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span>变动后余额：</span>
+                        <span className={`font-medium ${afterBalance < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          {formatBalance(afterBalance)}
+                        </span>
+                        {afterBalance < 0 && (
+                          <span className="text-rose-400 text-xs">（余额不足）</span>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -443,6 +471,16 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                 onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                 placeholder="可选"
+              />
+            </label>
+            <label className="space-y-1 col-span-2">
+              <span className="text-slate-300">凭证</span>
+              <ImageUploader
+                value={form.voucher}
+                onChange={(value) => setForm((f) => ({ ...f, voucher: typeof value === "string" ? value : value[0] || "" }))}
+                multiple={false}
+                label="上传支出凭证"
+                placeholder="点击上传凭证或直接 Ctrl + V 粘贴图片"
               />
             </label>
           </div>

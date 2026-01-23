@@ -11,29 +11,55 @@ export async function PUT(
     const { id } = params
     const body = await request.json()
     
+    // 构建更新数据对象
+    const updateData: any = {
+      name: body.name,
+      accountNumber: body.accountNumber,
+      accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
+      accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
+      accountPurpose: body.accountPurpose,
+      currency: body.currency || 'RMB',
+      country: body.country || 'CN',
+      originalBalance: Number(body.originalBalance) || 0,
+      initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : undefined,
+      exchangeRate: Number(body.exchangeRate) || 1,
+      rmbBalance: Number(body.rmbBalance) || 0,
+      companyEntity: body.companyEntity || null,
+      owner: body.owner || null,
+      notes: body.notes || '',
+      platformAccount: body.platformAccount || null,
+      platformPassword: body.platformPassword || null,
+      platformUrl: body.platformUrl || null,
+      updatedAt: new Date()
+    }
+
+    // 处理 parentId 关系
+    if (body.parentId) {
+      updateData.parent = {
+        connect: { id: body.parentId }
+      }
+    } else {
+      // 清除关系时使用 disconnect
+      updateData.parent = {
+        disconnect: true
+      }
+    }
+
+    // 处理 storeId 关系
+    if (body.storeId) {
+      updateData.store = {
+        connect: { id: body.storeId }
+      }
+    } else {
+      // 清除关系时使用 disconnect
+      updateData.store = {
+        disconnect: true
+      }
+    }
+
     const updated = await prisma.bankAccount.update({
       where: { id },
-      data: {
-        name: body.name,
-        accountNumber: body.accountNumber,
-        accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
-        accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
-        accountPurpose: body.accountPurpose,
-        currency: body.currency || 'RMB',
-        country: body.country || 'CN',
-        originalBalance: Number(body.originalBalance) || 0,
-        initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : undefined,
-        exchangeRate: Number(body.exchangeRate) || 1,
-        rmbBalance: Number(body.rmbBalance) || 0,
-        parentId: body.parentId || null,
-        storeId: body.storeId || null,
-        companyEntity: body.companyEntity || null,
-        notes: body.notes || '',
-        platformAccount: body.platformAccount || null,
-        platformPassword: body.platformPassword || null,
-        platformUrl: body.platformUrl || null,
-        updatedAt: new Date()
-      }
+      data: updateData
     })
     
     // 转换返回格式
@@ -53,6 +79,7 @@ export async function PUT(
       parentId: updated.parentId || undefined,
       storeId: updated.storeId || undefined,
       companyEntity: updated.companyEntity || undefined,
+      owner: updated.owner || undefined,
       notes: updated.notes,
       platformAccount: updated.platformAccount || undefined,
       platformPassword: updated.platformPassword || undefined,

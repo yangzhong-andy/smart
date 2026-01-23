@@ -5,6 +5,7 @@ import { type BankAccount } from "@/lib/finance-store";
 import type { CashFlow } from "../page";
 import { toast } from "sonner";
 import { enrichWithUID } from "@/lib/business-utils";
+import ImageUploader from "@/components/ImageUploader";
 
 type TransferEntryProps = {
   accounts: BankAccount[];
@@ -24,13 +25,15 @@ const currency = (n: number, curr: string = "CNY") =>
 
 export default function TransferEntry({ accounts, onClose, onSave }: TransferEntryProps) {
   const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
     fromAccountId: "",
     toAccountId: "",
     amount: "",
     manualRate: false,
     exchangeRate: "",
     actualReceived: "",
-    remark: ""
+    remark: "",
+    voucher: "" // 凭证
   });
 
   useEffect(() => {
@@ -129,7 +132,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     // 生成两条关联记录
     const outFlow: CashFlow = {
       id: crypto.randomUUID(),
-      date: today,
+      date: form.date,
       summary: `内部划拨 - 转出至 ${toAccount.name}`,
       type: "expense",
       category: "内部划拨",
@@ -140,12 +143,13 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       remark: `划拨至 ${toAccount.name}，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
       status: "confirmed",
       relatedId: transferId,
+      voucher: form.voucher || undefined,
       createdAt: now
     };
 
     const inFlow: CashFlow = {
       id: crypto.randomUUID(),
-      date: today,
+      date: form.date,
       summary: `内部划拨 - 从 ${fromAccount.name} 转入`,
       type: "income",
       category: "内部划拨",
@@ -156,6 +160,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       remark: `从 ${fromAccount.name} 划拨，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
       status: "confirmed",
       relatedId: transferId,
+      voucher: form.voucher || undefined,
       createdAt: now
     };
 
@@ -185,7 +190,18 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
         <form onSubmit={handleSubmit} className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1">
-              <span className="text-slate-300">转出账户</span>
+              <span className="text-slate-300">日期</span>
+              <input
+                type="date"
+                lang="zh-CN"
+                value={form.date}
+                onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                required
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-slate-300">转出账户 <span className="text-rose-400">*</span></span>
               <select
                 value={form.fromAccountId}
                 onChange={(e) => setForm((f) => ({ ...f, fromAccountId: e.target.value }))}
@@ -221,18 +237,23 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
                     return [
                       <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
                         {currencyAccounts.map((acc) => {
+                          // 计算显示余额 = 初始资金 + 当前余额
                           const displayBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+                          const accountTypeLabel = acc.accountCategory === "PRIMARY" ? "主账户" : acc.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
+                          
+                          // 格式化余额
                           let balanceText = "";
                           if (acc.currency === "RMB") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
                           } else if (acc.currency === "USD") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
                           } else {
-                            balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN")}`;
+                            balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                           }
+                          
                           return (
                             <option key={acc.id} value={acc.id}>
-                              {acc.name} | 余额: {balanceText}
+                              {acc.name} | {accountTypeLabel} | 余额: {balanceText}
                             </option>
                           );
                         })}
@@ -241,9 +262,46 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
                   });
                 })()}
               </select>
+              {fromAccount && (() => {
+                // 计算当前余额 = 初始资金 + 当前余额
+                const currentBalance = (fromAccount.initialCapital || 0) + (fromAccount.originalBalance || 0);
+                const amount = Number(form.amount) || 0;
+                // 计算变动后余额（转出时减少）
+                const afterBalance = currentBalance - amount;
+                
+                // 格式化余额显示
+                const formatBalance = (balance: number) => {
+                  if (fromAccount.currency === "RMB") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
+                  } else if (fromAccount.currency === "USD") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
+                  } else {
+                    return `${fromAccount.currency} ${balance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  }
+                };
+                
+                return (
+                  <div className="text-xs text-slate-500 mt-1 space-y-1">
+                    <div>
+                      当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span>
+                    </div>
+                    {amount > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span>变动后余额：</span>
+                        <span className={`font-medium ${afterBalance < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          {formatBalance(afterBalance)}
+                        </span>
+                        {afterBalance < 0 && (
+                          <span className="text-rose-400 text-xs">（余额不足）</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </label>
             <label className="space-y-1">
-              <span className="text-slate-300">转入账户</span>
+              <span className="text-slate-300">转入账户 <span className="text-rose-400">*</span></span>
               <select
                 value={form.toAccountId}
                 onChange={(e) => setForm((f) => ({ ...f, toAccountId: e.target.value }))}
@@ -280,18 +338,23 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
                     return [
                       <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
                         {currencyAccounts.map((acc) => {
+                          // 计算显示余额 = 初始资金 + 当前余额
                           const displayBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+                          const accountTypeLabel = acc.accountCategory === "PRIMARY" ? "主账户" : acc.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
+                          
+                          // 格式化余额
                           let balanceText = "";
                           if (acc.currency === "RMB") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
                           } else if (acc.currency === "USD") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
                           } else {
-                            balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN")}`;
+                            balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                           }
+                          
                           return (
                             <option key={acc.id} value={acc.id}>
-                              {acc.name} | 余额: {balanceText}
+                              {acc.name} | {accountTypeLabel} | 余额: {balanceText}
                             </option>
                           );
                         })}
@@ -300,9 +363,43 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
                   });
                 })()}
               </select>
+              {toAccount && (() => {
+                // 计算当前余额 = 初始资金 + 当前余额
+                const currentBalance = (toAccount.initialCapital || 0) + (toAccount.originalBalance || 0);
+                const receivedAmount = form.actualReceived ? Number(form.actualReceived) : calculatedReceived;
+                // 计算变动后余额（转入时增加）
+                const afterBalance = currentBalance + receivedAmount;
+                
+                // 格式化余额显示
+                const formatBalance = (balance: number) => {
+                  if (toAccount.currency === "RMB") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
+                  } else if (toAccount.currency === "USD") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
+                  } else {
+                    return `${toAccount.currency} ${balance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  }
+                };
+                
+                return (
+                  <div className="text-xs text-slate-500 mt-1 space-y-1">
+                    <div>
+                      当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span>
+                    </div>
+                    {receivedAmount > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span>变动后余额：</span>
+                        <span className="text-emerald-400 font-medium">
+                          {formatBalance(afterBalance)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </label>
             <label className="space-y-1">
-              <span className="text-slate-300">划拨金额（原币）</span>
+              <span className="text-slate-300">划拨金额（原币） <span className="text-rose-400">*</span></span>
               <input
                 type="number"
                 step="0.01"
@@ -386,6 +483,16 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
               onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
               placeholder="可选"
+            />
+          </label>
+          <label className="space-y-1 block">
+            <span className="text-sm text-slate-300">凭证</span>
+            <ImageUploader
+              value={form.voucher}
+              onChange={(value) => setForm((f) => ({ ...f, voucher: typeof value === "string" ? value : value[0] || "" }))}
+              multiple={false}
+              label="上传划拨凭证"
+              placeholder="点击上传凭证或直接 Ctrl + V 粘贴图片"
             />
           </label>
 

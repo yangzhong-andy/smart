@@ -109,20 +109,16 @@ export default function FinanceDashboardPage() {
 
   const totalAssets = useMemo(() => {
     return accounts.reduce((sum, acc) => {
-      // 计算账户总余额 = 初始资金 + 当前余额
-      const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // originalBalance 已经包含了 initialCapital + 所有流水
       // 优先使用 rmbBalance（如果已计算），否则根据汇率计算
       if (acc.rmbBalance !== undefined) {
-        // rmbBalance 可能不包含 initialCapital，需要重新计算
-        const totalRmb = acc.currency === "RMB" 
-          ? accountTotal 
-          : accountTotal * (acc.exchangeRate || 1);
-        return sum + totalRmb;
+        // rmbBalance 已经包含了 initialCapital + 所有流水
+        return sum + (acc.rmbBalance || 0);
       }
       // 如果没有 rmbBalance，根据汇率计算
       const rmbValue = acc.currency === "RMB" 
-        ? accountTotal 
-        : accountTotal * (acc.exchangeRate || 1);
+        ? (acc.originalBalance || 0)
+        : (acc.originalBalance || 0) * (acc.exchangeRate || 1);
       return sum + rmbValue;
     }, 0);
   }, [accounts]);

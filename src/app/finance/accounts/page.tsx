@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 import useSWR, { mutate as swrMutate } from "swr";
 import {
   type BankAccount,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/finance-store";
 import { type Store, getStores, saveStores } from "@/lib/store-store";
 import { COUNTRIES, getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
-import { Wallet, CreditCard, Building2, Pencil, Trash2, List, TrendingUp, DollarSign, Coins, Search, X, SortAsc, SortDesc, Info, Download, Globe } from "lucide-react";
+import { Wallet, CreditCard, Building2, Pencil, Trash2, List, TrendingUp, DollarSign, Coins, Search, X, SortAsc, SortDesc, Info, Download, Globe, Calculator } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
 const currency = (n: number, curr: string = "CNY") =>
@@ -55,6 +56,8 @@ type CashFlow = {
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function BankAccountsPage() {
+  const router = useRouter();
+  
   // 使用 SWR 加载账户数据
   const { data: accountsData = [], isLoading: accountsLoading, mutate: mutateAccounts } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
     revalidateOnFocus: false,
@@ -73,7 +76,7 @@ export default function BankAccountsPage() {
   const accounts = useMemo(() => {
     if (!accountsData.length) return [];
     
-    // 重置所有账户的余额为初始余额或0（从流水记录重新计算）
+    // 重置所有账户的余额，从 initialCapital 开始重新计算（从流水记录重新计算）
     let updatedAccounts = accountsData.map((acc) => {
       const hasChildren = accountsData.some((a) => a.parentId === acc.id);
       if (acc.accountCategory === "PRIMARY" && hasChildren) {
@@ -81,21 +84,25 @@ export default function BankAccountsPage() {
         return {
           ...acc,
           originalBalance: 0,
-          rmbBalance: 0
+          rmbBalance: 0,
+          initialCapital: acc.initialCapital || 0
         };
       } else {
-        // 其他账户（独立账户、没有子账户的主账户、虚拟子账户），保留初始余额
-        // 注意：originalBalance 是当前余额（会随流水变化），不包含 initialCapital
+        // 其他账户（独立账户、没有子账户的主账户、虚拟子账户）
+        // 从 initialCapital 开始计算，originalBalance 会通过流水记录累加
+        const initialCapital = acc.initialCapital || 0;
         return {
           ...acc,
-          originalBalance: acc.originalBalance || 0,
-          rmbBalance: acc.rmbBalance || 0,
-          initialCapital: acc.initialCapital || 0
+          originalBalance: initialCapital, // 从初始资金开始
+          rmbBalance: acc.currency === "RMB" 
+            ? initialCapital 
+            : initialCapital * (acc.exchangeRate || 1),
+          initialCapital: initialCapital
         };
       }
     });
 
-    // 遍历所有流水记录，更新账户余额
+    // 遍历所有流水记录，更新账户余额（在 initialCapital 基础上累加）
     if (cashFlowData.length > 0) {
       cashFlowData.forEach((flow) => {
         if (flow.status === "confirmed" && !flow.isReversal && flow.accountId) {
@@ -105,8 +112,12 @@ export default function BankAccountsPage() {
             
             // 如果账户不是主账户，或者主账户没有子账户，则直接更新余额
             if (account.accountCategory !== "PRIMARY" || !hasChildren) {
-              const amount = Math.abs(flow.amount);
-              const change = flow.type === "income" ? amount : -amount;
+              // 直接使用 flow.amount，因为：
+              // - 收入类型：amount 是正数
+              // - 支出类型：amount 是负数（包括划拨转出）
+              // 不需要 Math.abs，直接相加即可
+              // 注意：originalBalance 已经包含了 initialCapital，所以直接累加流水即可
+              const change = Number(flow.amount);
               const newBalance = account.originalBalance + change;
               
               account.originalBalance = newBalance;
@@ -147,12 +158,18 @@ export default function BankAccountsPage() {
   const [selectedAccountForFlow, setSelectedAccountForFlow] = useState<BankAccount | null>(null);
   const [accountFlowModalOpen, setAccountFlowModalOpen] = useState(false);
   
-  // 从 SWR 数据中筛选出选中账户的流水
+  // 从 SWR 数据中筛选出选中账户的流水，并分类
   const accountFlows = useMemo(() => {
-    if (!selectedAccountForFlow || !cashFlowData.length) return [];
-    return cashFlowData
+    if (!selectedAccountForFlow || !cashFlowData.length) return { normal: [], transfers: [] };
+    const allFlows = cashFlowData
       .filter((flow) => flow.accountId === selectedAccountForFlow.id)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    // 分类：正常收入支出 和 划拨记录
+    const normal = allFlows.filter((flow) => flow.category !== "内部划拨");
+    const transfers = allFlows.filter((flow) => flow.category === "内部划拨");
+    
+    return { normal, transfers };
   }, [selectedAccountForFlow, cashFlowData]);
   
   // 新增状态：搜索、排序、快速筛选
@@ -175,6 +192,7 @@ export default function BankAccountsPage() {
     parentId: "",
     storeId: "",
     companyEntity: "",
+    owner: "",
     notes: "",
     platformAccount: "",
     platformPassword: "",
@@ -231,24 +249,26 @@ export default function BankAccountsPage() {
   // 使用 finance-store 的统计函数
   const { totalAssetsRMB, totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
 
-  // 计算人民币账户总金额（只统计币种为RMB的账户，包含初始资金）
+  // 计算人民币账户总金额（只统计币种为RMB的账户）
+  // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalRMBAccountBalance = useMemo(() => {
     return accounts.reduce((sum, acc) => {
       if (acc.currency === "RMB") {
-        const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
-        return sum + accountTotal;
+        // originalBalance 已经包含了 initialCapital + 所有流水
+        return sum + (acc.originalBalance || 0);
       }
       return sum;
     }, 0);
   }, [accounts]);
 
   // 计算USD账户的预估RMB金额（按汇率折算）
+  // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalUSDRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
       // 只统计USD账户
       if (acc.currency === "USD") {
-        const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
-        const rmbValue = accountTotal * (acc.exchangeRate || 1);
+        // originalBalance 已经包含了 initialCapital + 所有流水
+        const rmbValue = (acc.originalBalance || 0) * (acc.exchangeRate || 1);
         return sum + rmbValue;
       }
       return sum;
@@ -256,12 +276,13 @@ export default function BankAccountsPage() {
   }, [accounts]);
 
   // 计算JPY账户的预估RMB金额（按汇率折算）
+  // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalJPYRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
       // 只统计JPY账户
       if (acc.currency === "JPY") {
-        const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
-        const rmbValue = accountTotal * (acc.exchangeRate || 1);
+        // originalBalance 已经包含了 initialCapital + 所有流水
+        const rmbValue = (acc.originalBalance || 0) * (acc.exchangeRate || 1);
         return sum + rmbValue;
       }
       return sum;
@@ -345,19 +366,19 @@ export default function BankAccountsPage() {
     const primaryCount = flattenedAccounts.filter((acc) => acc.accountCategory === "PRIMARY").length;
     const virtualCount = flattenedAccounts.filter((acc) => acc.accountCategory === "VIRTUAL").length;
     
-    // 计算总余额（包含初始资金）
+    // 计算总余额（originalBalance 已经包含了 initialCapital）
     const totalBalance = flattenedAccounts.reduce((sum, acc) => {
-      const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
-      return sum + accountTotal;
+      // originalBalance 已经包含了 initialCapital + 所有流水
+      return sum + (acc.originalBalance || 0);
     }, 0);
     const avgBalance = totalCount > 0 ? totalBalance / totalCount : 0;
     
-    // 计算总RMB余额（包含初始资金）
+    // 计算总RMB余额（originalBalance 已经包含了 initialCapital）
     const totalRMBBalance = flattenedAccounts.reduce((sum, acc) => {
-      const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // originalBalance 已经包含了 initialCapital + 所有流水
       const rmbValue = acc.currency === "RMB" 
-        ? accountTotal 
-        : accountTotal * (acc.exchangeRate || 1);
+        ? (acc.originalBalance || 0)
+        : (acc.originalBalance || 0) * (acc.exchangeRate || 1);
       return sum + rmbValue;
     }, 0);
     const avgRMBBalance = totalCount > 0 ? totalRMBBalance / totalCount : 0;
@@ -384,9 +405,9 @@ export default function BankAccountsPage() {
 
     flattenedAccountsBase.forEach((acc) => {
       const trend: Array<{ date: string; balance: number }> = [];
-      // 获取账户初始余额 = 初始资金 + 当前余额（用于趋势图计算）
-      // 注意：趋势图显示的是包含初始资金的总余额
-      let baseBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // 获取账户初始余额 = 初始资金（用于趋势图计算）
+      // 注意：originalBalance 已经包含了 initialCapital + 所有流水，所以趋势图应该从 initialCapital 开始
+      let baseBalance = acc.initialCapital || 0;
 
       // 计算过去7天的日期
       for (let i = 6; i >= 0; i--) {
@@ -403,9 +424,11 @@ export default function BankAccountsPage() {
           return flowDate <= dateStr;
         });
 
+        // 从 initialCapital 开始，累加该日期之前的所有流水
         let balance = baseBalance;
         flowsBeforeDate.forEach((flow) => {
-          const change = flow.type === "income" ? Math.abs(flow.amount) : -Math.abs(flow.amount);
+          // 直接使用 flow.amount，因为收入是正数，支出是负数（包括划拨转出）
+          const change = Number(flow.amount);
           balance += change;
         });
 
@@ -475,6 +498,7 @@ export default function BankAccountsPage() {
       parentId: form.accountCategory === "VIRTUAL" ? form.parentId || undefined : undefined,
       storeId: form.accountCategory === "VIRTUAL" ? (form.storeId || undefined) : (form.storeId || undefined),
       companyEntity: form.companyEntity.trim() || undefined,
+      owner: form.owner.trim() || undefined,
       notes: form.notes.trim(),
       createdAt: new Date().toISOString(),
       platformAccount: form.accountType === "平台" ? (form.platformAccount.trim() || undefined) : undefined,
@@ -520,6 +544,7 @@ export default function BankAccountsPage() {
       parentId: account.parentId || "",
       storeId: account.storeId || "",
       companyEntity: account.companyEntity || "",
+      owner: account.owner || "",
       notes: account.notes,
       platformAccount: account.platformAccount || "",
       platformPassword: account.platformPassword || "",
@@ -576,6 +601,7 @@ export default function BankAccountsPage() {
         parentId: form.accountCategory === "VIRTUAL" ? form.parentId || undefined : undefined,
         storeId: form.storeId || undefined,
         companyEntity: form.companyEntity.trim() || undefined,
+        owner: form.owner.trim() || undefined,
         notes: form.notes.trim(),
         platformAccount: form.accountType === "平台" ? (form.platformAccount.trim() || undefined) : undefined,
         platformPassword: form.accountType === "平台" ? (form.platformPassword.trim() || undefined) : undefined,
@@ -641,6 +667,7 @@ export default function BankAccountsPage() {
       parentId: "",
       storeId: "",
       companyEntity: "",
+      owner: "",
       notes: "",
       platformAccount: "",
       platformPassword: "",
@@ -682,6 +709,7 @@ export default function BankAccountsPage() {
       "原币余额",
       "汇率",
       "折算RMB余额",
+      "账号归属人",
       "公司主体",
       "关联店铺",
       "父账户",
@@ -696,12 +724,13 @@ export default function BankAccountsPage() {
       const parentAccount = acc.parentId ? accounts.find((a) => a.id === acc.parentId) : null;
       const accountCountry = COUNTRIES.find((c) => c.code === (acc.country || "CN"));
       
-      // 计算显示余额 = 初始资金 + 当前余额
-      let displayBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // 计算显示余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+      // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
+      let displayBalance = acc.originalBalance || 0;
       if (acc.accountCategory === "PRIMARY") {
         const calculated = calculatePrimaryAccountBalance(acc, accounts);
-        // 主账户的初始资金也需要加上
-        displayBalance = (acc.initialCapital || 0) + (calculated.originalBalance || 0);
+        // 主账户的余额已经包含了子账户的 initialCapital + 流水
+        displayBalance = calculated.originalBalance || 0;
       }
 
       return [
@@ -715,6 +744,7 @@ export default function BankAccountsPage() {
         formatNumber(displayBalance),
         formatNumber(acc.exchangeRate || 1),
         formatNumber(acc.rmbBalance || 0),
+        acc.owner || "",
         acc.companyEntity || "",
         associatedStore ? associatedStore.name : "",
         parentAccount ? parentAccount.name : "",
@@ -1108,8 +1138,9 @@ export default function BankAccountsPage() {
             {flattenedAccounts.map((acc) => {
               const IconComponent = getAccountIcon(acc);
               const trendData = accountTrendData[acc.id] || [];
-              // 显示余额 = 初始资金 + 当前余额
-              const displayBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+              // 显示余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+              // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
+              const displayBalance = acc.originalBalance || 0;
               const purposeLabel = acc.accountPurpose;
               const associatedStore = acc.storeId ? stores.find((s) => s.id === acc.storeId) : null;
               const accountCountry = COUNTRIES.find((c) => c.code === (acc.country || "CN"));
@@ -1202,6 +1233,16 @@ export default function BankAccountsPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          router.push(`/finance/accounts/balance-detail?accountId=${acc.id}&name=${encodeURIComponent(acc.name)}`);
+                        }}
+                        className="rounded-lg bg-white/10 p-1.5 text-white/80 hover:bg-white/20 transition-colors backdrop-blur-sm"
+                        title="查看余额计算详情"
+                      >
+                        <Calculator className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleViewFlow();
                         }}
                         className="rounded-lg bg-white/10 p-1.5 text-white/80 hover:bg-white/20 transition-colors backdrop-blur-sm"
@@ -1241,6 +1282,12 @@ export default function BankAccountsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-white text-lg mb-1 truncate">{acc.name}</div>
                         <div className="text-xs text-white/70 font-mono">{formatAccountNumber(acc.accountNumber)}</div>
+                        {acc.owner && (
+                          <div className="text-xs text-white/60 mt-1">
+                            <span className="text-white/50">归属人：</span>
+                            <span className="text-amber-300 font-medium">{acc.owner}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     {/* 账号类型和用途标签 */}
@@ -1387,9 +1434,15 @@ export default function BankAccountsPage() {
                         </div>
 
                         {/* 关联信息 */}
-                        {(acc.companyEntity || accountCountry || associatedStore || parentAccount || childCount > 0) && (
+                        {(acc.owner || acc.companyEntity || accountCountry || associatedStore || parentAccount || childCount > 0) && (
                           <div className="pb-2 border-b border-white/10">
                             <div className="text-xs font-semibold text-slate-300 mb-2">关联信息</div>
+                            {acc.owner && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-400">账号归属人：</span>
+                                <span className="text-amber-300 font-medium">{acc.owner}</span>
+                              </div>
+                            )}
                             {acc.companyEntity && (
                               <div className="flex items-center justify-between">
                                 <span className="text-slate-400">公司主体：</span>
@@ -1442,8 +1495,8 @@ export default function BankAccountsPage() {
                             <span className="text-slate-400">折算RMB：</span>
                             <span className="text-emerald-300 font-medium" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                               {(() => {
-                                // 计算包含初始资金的 RMB 余额
-                                const totalOriginalBalance = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+                                // 计算 RMB 余额（originalBalance 已经包含了 initialCapital）
+                                const totalOriginalBalance = acc.originalBalance || 0;
                                 const totalRmbBalance = acc.currency === "RMB"
                                   ? totalOriginalBalance
                                   : totalOriginalBalance * (acc.exchangeRate || 1);
@@ -1637,6 +1690,15 @@ export default function BankAccountsPage() {
                     onChange={(e) => setForm((f) => ({ ...f, companyEntity: e.target.value }))}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                     placeholder="如：XX有限公司、XX贸易公司"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-slate-300">账号归属人</span>
+                  <input
+                    value={form.owner}
+                    onChange={(e) => setForm((f) => ({ ...f, owner: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                    placeholder="如：张三、李四"
                   />
                 </label>
                 <label className="space-y-1">
@@ -1925,28 +1987,33 @@ export default function BankAccountsPage() {
               </button>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-              {accountFlows.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">
-                  暂无流水记录
+            <div className="space-y-6">
+              {/* 正常收入支出 */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
+                <div className="bg-slate-800/60 px-4 py-3 border-b border-slate-700">
+                  <h3 className="text-sm font-semibold text-slate-200">正常收入支出</h3>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-slate-800/60">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">日期</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">类型</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">摘要</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">分类</th>
-                        <th className="px-3 py-2 text-right font-medium text-slate-400">金额</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">备注</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">状态</th>
-                        <th className="px-3 py-2 text-left font-medium text-slate-400">业务单号</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800">
-                      {accountFlows.map((flow) => (
+                {accountFlows.normal.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400">
+                    暂无收入支出记录
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-800/40">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">日期</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">类型</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">摘要</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">分类</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">金额</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">备注</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">状态</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">业务单号</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {accountFlows.normal.map((flow) => (
                         <tr key={flow.id} className="hover:bg-slate-800/40">
                           <td className="px-3 py-2 text-slate-300">
                             {new Date(flow.date).toLocaleDateString("zh-CN")}
@@ -1995,63 +2062,191 @@ export default function BankAccountsPage() {
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-slate-800/60">
-                      <tr>
-                        <td colSpan={4} className="px-3 py-2 text-right font-medium text-slate-300">
-                          合计：
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="space-y-1">
-                            <div className="text-emerald-300 font-medium">
-                              收入：{selectedAccountForFlow.currency === "RMB"
-                                ? currency(
-                                    accountFlows
-                                      .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
-                                      .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                    "CNY"
-                                  )
-                                : selectedAccountForFlow.currency === "USD"
+                      <tfoot className="bg-slate-800/40">
+                        <tr>
+                          <td colSpan={4} className="px-3 py-2 text-right font-medium text-slate-300">
+                            合计：
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="space-y-1">
+                              <div className="text-emerald-300 font-medium">
+                                收入：{selectedAccountForFlow.currency === "RMB"
                                   ? currency(
-                                      accountFlows
+                                      accountFlows.normal
                                         .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
                                         .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                      "USD"
+                                      "CNY"
                                     )
-                                  : `${formatNumber(
-                                      accountFlows
-                                        .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
-                                        .reduce((sum, f) => sum + Math.abs(f.amount), 0)
-                                    )} ${selectedAccountForFlow.currency}`}
-                            </div>
-                            <div className="text-rose-300 font-medium">
-                              支出：{selectedAccountForFlow.currency === "RMB"
-                                ? currency(
-                                    accountFlows
-                                      .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
-                                      .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                    "CNY"
-                                  )
-                                : selectedAccountForFlow.currency === "USD"
+                                  : selectedAccountForFlow.currency === "USD"
+                                    ? currency(
+                                        accountFlows.normal
+                                          .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0),
+                                        "USD"
+                                      )
+                                    : `${formatNumber(
+                                        accountFlows.normal
+                                          .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0)
+                                      )} ${selectedAccountForFlow.currency}`}
+                              </div>
+                              <div className="text-rose-300 font-medium">
+                                支出：{selectedAccountForFlow.currency === "RMB"
                                   ? currency(
-                                      accountFlows
+                                      accountFlows.normal
                                         .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
                                         .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                      "USD"
+                                      "CNY"
                                     )
-                                  : `${formatNumber(
-                                      accountFlows
-                                        .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
-                                        .reduce((sum, f) => sum + Math.abs(f.amount), 0)
-                                    )} ${selectedAccountForFlow.currency}`}
+                                  : selectedAccountForFlow.currency === "USD"
+                                    ? currency(
+                                        accountFlows.normal
+                                          .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0),
+                                        "USD"
+                                      )
+                                    : `${formatNumber(
+                                        accountFlows.normal
+                                          .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0)
+                                      )} ${selectedAccountForFlow.currency}`}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td colSpan={3}></td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                          </td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 内部划拨记录 */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
+                <div className="bg-slate-800/60 px-4 py-3 border-b border-slate-700">
+                  <h3 className="text-sm font-semibold text-slate-200">内部划拨记录</h3>
                 </div>
-              )}
+                {accountFlows.transfers.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400">
+                    暂无划拨记录
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-800/40">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">日期</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">类型</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">摘要</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">金额</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">备注</th>
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {accountFlows.transfers.map((flow) => (
+                          <tr key={flow.id} className="hover:bg-slate-800/40">
+                            <td className="px-3 py-2 text-slate-300">
+                              {new Date(flow.date).toLocaleDateString("zh-CN")}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  flow.type === "income"
+                                    ? "bg-blue-500/20 text-blue-300"
+                                    : "bg-purple-500/20 text-purple-300"
+                                }`}
+                              >
+                                {flow.type === "income" ? "划入" : "划出"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">{flow.summary}</td>
+                            <td
+                              className={`px-3 py-2 text-right font-medium ${
+                                flow.type === "income" ? "text-blue-300" : "text-purple-300"
+                              }`}
+                            >
+                              {flow.currency === "RMB"
+                                ? currency(Math.abs(flow.amount), "CNY")
+                                : flow.currency === "USD"
+                                  ? currency(Math.abs(flow.amount), "USD")
+                                  : `${formatNumber(Math.abs(flow.amount))} ${flow.currency}`}
+                            </td>
+                            <td className="px-3 py-2 text-slate-400 max-w-xs truncate" title={flow.remark}>
+                              {flow.remark || "-"}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs ${
+                                  flow.status === "confirmed"
+                                    ? "bg-blue-500/20 text-blue-300"
+                                    : "bg-amber-500/20 text-amber-300"
+                                }`}
+                              >
+                                {flow.status === "confirmed" ? "已确认" : "待核对"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-800/40">
+                        <tr>
+                          <td colSpan={2} className="px-3 py-2 text-right font-medium text-slate-300">
+                            合计：
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="space-y-1">
+                              <div className="text-blue-300 font-medium">
+                                划入：{selectedAccountForFlow.currency === "RMB"
+                                  ? currency(
+                                      accountFlows.transfers
+                                        .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
+                                        .reduce((sum, f) => sum + Math.abs(f.amount), 0),
+                                      "CNY"
+                                    )
+                                  : selectedAccountForFlow.currency === "USD"
+                                    ? currency(
+                                        accountFlows.transfers
+                                          .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0),
+                                        "USD"
+                                      )
+                                    : `${formatNumber(
+                                        accountFlows.transfers
+                                          .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0)
+                                      )} ${selectedAccountForFlow.currency}`}
+                              </div>
+                              <div className="text-purple-300 font-medium">
+                                划出：{selectedAccountForFlow.currency === "RMB"
+                                  ? currency(
+                                      accountFlows.transfers
+                                        .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
+                                        .reduce((sum, f) => sum + Math.abs(f.amount), 0),
+                                      "CNY"
+                                    )
+                                  : selectedAccountForFlow.currency === "USD"
+                                    ? currency(
+                                        accountFlows.transfers
+                                          .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0),
+                                        "USD"
+                                      )
+                                    : `${formatNumber(
+                                        accountFlows.transfers
+                                          .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
+                                          .reduce((sum, f) => sum + Math.abs(f.amount), 0)
+                                      )} ${selectedAccountForFlow.currency}`}
+                              </div>
+                            </div>
+                          </td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-4 flex justify-end">

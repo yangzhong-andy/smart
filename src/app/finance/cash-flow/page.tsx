@@ -1,7 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
-import { Download, TrendingUp, TrendingDown, DollarSign, FileText } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, DollarSign, FileText, Trash2 } from "lucide-react";
 
 import { useEffect, useMemo, useState } from "react";
 import useSWR, { mutate as swrMutate } from "swr";
@@ -80,7 +80,82 @@ export default function CashFlowPage() {
     keepPreviousData: true
   });
   
-  const accounts = accountsData;
+  // 基于 API 数据和流水重新计算余额（与账户列表页面保持一致）
+  const accounts = useMemo(() => {
+    if (!accountsData.length) return [];
+    
+    // 重置所有账户的余额，从 initialCapital 开始重新计算（从流水记录重新计算）
+    let updatedAccounts = accountsData.map((acc) => {
+      const hasChildren = accountsData.some((a) => a.parentId === acc.id);
+      if (acc.accountCategory === "PRIMARY" && hasChildren) {
+        // 主账户有子账户，余额应该从子账户汇总，先重置为0
+        return {
+          ...acc,
+          originalBalance: 0,
+          rmbBalance: 0,
+          initialCapital: acc.initialCapital || 0
+        };
+      } else {
+        // 其他账户（独立账户、没有子账户的主账户、虚拟子账户）
+        // 从 initialCapital 开始计算，originalBalance 会通过流水记录累加
+        const initialCapital = acc.initialCapital || 0;
+        return {
+          ...acc,
+          originalBalance: initialCapital, // 从初始资金开始
+          rmbBalance: acc.currency === "RMB" 
+            ? initialCapital 
+            : initialCapital * (acc.exchangeRate || 1),
+          initialCapital: initialCapital
+        };
+      }
+    });
+
+    // 遍历所有流水记录，更新账户余额（在 initialCapital 基础上累加）
+    if (Array.isArray(cashFlowData) && cashFlowData.length > 0) {
+      cashFlowData.forEach((flow) => {
+        if (flow.status === "confirmed" && !flow.isReversal && flow.accountId) {
+          const account = updatedAccounts.find((a) => a.id === flow.accountId);
+          if (account) {
+            const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
+            
+            // 如果账户不是主账户，或者主账户没有子账户，则直接更新余额
+            if (account.accountCategory !== "PRIMARY" || !hasChildren) {
+              // 直接使用 flow.amount，因为：
+              // - 收入类型：amount 是正数
+              // - 支出类型：amount 是负数（包括划拨转出）
+              // 不需要 Math.abs，直接相加即可
+              // 注意：originalBalance 已经包含了 initialCapital，所以直接累加流水即可
+              const change = Number(flow.amount);
+              const newBalance = account.originalBalance + change;
+              
+              account.originalBalance = newBalance;
+              account.rmbBalance = account.currency === "RMB"
+                ? newBalance
+                : newBalance * (account.exchangeRate || 1);
+            }
+          }
+        }
+      });
+    }
+    
+    // 重新计算所有主账户的余额（汇总子账户，如果有子账户的话）
+    updatedAccounts = updatedAccounts.map((acc) => {
+      if (acc.accountCategory === "PRIMARY") {
+        const hasChildren = updatedAccounts.some((a) => a.parentId === acc.id);
+        if (hasChildren) {
+          const calculated = calculatePrimaryAccountBalance(acc, updatedAccounts);
+          return {
+            ...acc,
+            originalBalance: calculated.originalBalance,
+            rmbBalance: calculated.rmbBalance
+          };
+        }
+      }
+      return acc;
+    });
+    
+    return updatedAccounts;
+  }, [accountsData, cashFlowData]);
   const cashFlowReady = !cashFlowLoading;
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [filterCurrency, setFilterCurrency] = useState<string>("all");
@@ -112,7 +187,7 @@ export default function CashFlowPage() {
       }
       
       await swrMutate('/api/cash-flow'); // 重新获取流水列表
-      // 账户余额会在账户页面自动重新计算
+      await swrMutate('/api/accounts'); // 重新获取账户列表，更新余额显示
       
       // 如果是广告充值，更新广告账户余额（包括返点）
       if (newFlow.category === "广告费" && adAccountId && typeof window !== "undefined") {
@@ -204,6 +279,7 @@ export default function CashFlowPage() {
       }
       
       await swrMutate('/api/cash-flow'); // 重新获取流水列表
+      await swrMutate('/api/accounts'); // 重新获取账户列表，更新余额显示
       toast.success("冲销成功！已生成红字反冲记录。");
     } catch (error: any) {
       console.error('Failed to create reversal flow:', error);
@@ -215,7 +291,8 @@ export default function CashFlowPage() {
     if (!Array.isArray(cashFlowData)) {
       return [];
     }
-    let filtered = [...cashFlowData];
+    // 排除内部划拨记录（内部划拨应该在专门的划拨管理页面查看）
+    let filtered = [...cashFlowData].filter((f) => f.category !== "内部划拨");
     if (filterCurrency !== "all") {
       filtered = filtered.filter((f) => f.currency === filterCurrency);
     }
@@ -344,7 +421,8 @@ export default function CashFlowPage() {
   const thisYear = new Date().getFullYear();
   const thisMonthFlow = (Array.isArray(cashFlowData) ? cashFlowData : []).filter((f) => {
     const d = new Date(f.date);
-    return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !f.isReversal;
+    // 排除内部划拨和冲销记录
+    return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !f.isReversal && f.category !== "内部划拨";
   });
   const thisMonthExpense = thisMonthFlow.filter((f) => f.type === "expense").reduce((sum, f) => sum + Math.abs(f.amount), 0);
 
@@ -478,12 +556,39 @@ export default function CashFlowPage() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `流水清单_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `流水明细_${new Date().toISOString().slice(0, 10)}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     toast.success("数据已导出");
+  };
+
+  const handleClearAll = async () => {
+    if (!confirm("确定要删除所有流水记录吗？此操作不可恢复！")) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/cash-flow/clear-all', {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '删除失败');
+      }
+
+      const result = await response.json();
+      toast.success(`已删除 ${result.deletedCount} 条流水记录，账户余额已重置为初始资金`);
+      
+      // 刷新数据
+      swrMutate('/api/cash-flow');
+      swrMutate('/api/accounts');
+    } catch (error: any) {
+      console.error('Failed to clear cash flows:', error);
+      toast.error(error.message || '删除失败');
+    }
   };
 
   const categories = {
@@ -499,6 +604,14 @@ export default function CashFlowPage() {
           <p className="mt-1 text-sm text-slate-400">统一管理所有资金变动，支持独立录入、自动平账与冲销功能</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleClearAll}
+            disabled={sortedFlow.length === 0}
+            className="flex items-center gap-2 rounded-lg border border-rose-800/50 bg-rose-900/30 px-4 py-2 text-sm font-medium text-rose-300 shadow-lg hover:bg-rose-900/50 hover:border-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+          >
+            <Trash2 className="h-4 w-4" />
+            清空所有记录
+          </button>
           <button
             onClick={handleExportData}
             disabled={sortedFlow.length === 0}

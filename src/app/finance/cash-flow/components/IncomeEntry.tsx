@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { type BankAccount, getAccounts } from "@/lib/finance-store";
-import { type Store, getStores } from "@/lib/store-store";
+import { type BankAccount } from "@/lib/finance-store";
+import { type Store } from "@/lib/store-store";
 import type { CashFlow } from "../page";
 import { toast } from "sonner";
 import { enrichWithUID } from "@/lib/business-utils";
 import { INCOME_CATEGORIES, getIncomeSubCategories, type IncomeSubCategory } from "@/lib/income-categories";
+import useSWR from "swr";
+import ImageUploader from "@/components/ImageUploader";
 
 type IncomeEntryProps = {
   accounts: BankAccount[];
@@ -14,8 +16,10 @@ type IncomeEntryProps = {
   onSave: (flow: CashFlow) => void;
 };
 
+// SWR fetcher
+const fetcher = (url: string) => fetch(url).then(res => res.json());
+
 export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryProps) {
-  const [stores, setStores] = useState<Store[]>([]);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     summary: "",
@@ -24,8 +28,18 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
     amount: "",
     storeId: "",
     accountId: "",
-    remark: ""
+    remark: "",
+    voucher: "" // 凭证
   });
+
+  // 使用 SWR 从 API 加载店铺数据
+  const { data: storesData = [] } = useSWR<Store[]>('/api/stores', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    keepPreviousData: true
+  });
+
+  const stores = storesData || [];
   
   // 获取当前一级分类下的二级分类选项
   const availableSubCategories = useMemo(() => {
@@ -40,11 +54,6 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
     }
     return form.primaryCategory; // 只有一级分类
   }, [form.primaryCategory, form.subCategory]);
-
-  useEffect(() => {
-    const loaded = getStores();
-    setStores(loaded);
-  }, []);
 
   // 根据选择的店铺自动带出币种和关联账户
   const selectedStore = useMemo(() => {
@@ -86,10 +95,6 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!form.storeId) {
-      toast.error("请选择所属店铺");
-      return;
-    }
     if (!form.accountId) {
       toast.error("请选择收款账户");
       return;
@@ -113,6 +118,14 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
       return;
     }
 
+    // 构建备注：如果有店铺，显示店铺名称；否则只显示备注
+    let remarkText = "";
+    if (selectedStore) {
+      remarkText = `${selectedStore.name} - ${form.remark.trim()}`;
+    } else {
+      remarkText = form.remark.trim();
+    }
+
     const newFlow: CashFlow = {
       id: crypto.randomUUID(),
       date: form.date,
@@ -123,8 +136,9 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
       accountId: form.accountId,
       accountName: account.name,
       currency: account.currency,
-      remark: `${selectedStore?.name || ""} - ${form.remark.trim()}`,
+      remark: remarkText,
       status: "confirmed",
+      voucher: form.voucher || undefined,
       createdAt: new Date().toISOString()
     };
 
@@ -139,7 +153,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-100">登记收入</h2>
-            <p className="text-xs text-slate-400 mt-1">选择店铺后自动带出币种和关联账户，自动折算RMB</p>
+            <p className="text-xs text-slate-400 mt-1">选择店铺后可自动带出币种和关联账户，自动折算RMB（店铺为可选项）</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
             ✕
@@ -199,14 +213,13 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
               </label>
             )}
             <label className="space-y-1 col-span-2">
-              <span className="text-slate-300">所属店铺 <span className="text-rose-400">*</span></span>
+              <span className="text-slate-300">所属店铺</span>
               <select
                 value={form.storeId}
                 onChange={(e) => setForm((f) => ({ ...f, storeId: e.target.value, accountId: "" }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                required
               >
-                <option value="">请选择</option>
+                <option value="">请选择（可选）</option>
                 {stores.map((store) => (
                   <option key={store.id} value={store.id}>
                     {store.name} ({store.platform}) - {store.currency}
@@ -229,20 +242,111 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
               <select
                 value={form.accountId}
                 onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
                 required
-                disabled={!selectedStore}
               >
-                <option value="">请选择</option>
-                {selectedStore && (
-                  <option value={selectedStore.accountId}>
-                    {selectedStore.accountName} ({selectedStore.currency})
-                  </option>
-                )}
+                <option value="">请选择账户</option>
+                {(() => {
+                  // 按币种分组账户
+                  const groupedAccounts = accounts.reduce((acc, account) => {
+                    const currency = account.currency || "OTHER";
+                    if (!acc[currency]) {
+                      acc[currency] = [];
+                    }
+                    acc[currency].push(account);
+                    return acc;
+                  }, {} as Record<string, typeof accounts>);
+
+                  // 币种显示顺序
+                  const currencyOrder = ["RMB", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
+                  const sortedCurrencies = Object.keys(groupedAccounts).sort((a, b) => {
+                    const aIndex = currencyOrder.indexOf(a);
+                    const bIndex = currencyOrder.indexOf(b);
+                    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    return aIndex - bIndex;
+                  });
+
+                  return sortedCurrencies.flatMap((currency) => {
+                    const currencyAccounts = groupedAccounts[currency];
+                    const currencyLabel = currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
+                    
+                    return [
+                      <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
+                        {currencyAccounts.map((account) => {
+                          // 显示余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+                          const displayBalance = account.originalBalance || 0;
+                          const accountTypeLabel = account.accountCategory === "PRIMARY" ? "主账户" : account.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
+                          
+                          // 格式化余额
+                          let balanceText = "";
+                          if (account.currency === "RMB") {
+                            balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
+                          } else if (account.currency === "USD") {
+                            balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
+                          } else {
+                            balanceText = `${account.currency} ${displayBalance.toLocaleString("zh-CN")}`;
+                          }
+                          
+                          const isRecommended = selectedStore && (
+                            (account.accountCategory === "VIRTUAL" && account.storeId === selectedStore.id) ||
+                            account.id === selectedStore.accountId
+                          );
+                          
+                          return (
+                            <option key={account.id} value={account.id}>
+                              {account.name} | {accountTypeLabel} | 余额: {balanceText}{isRecommended ? " ⭐推荐" : ""}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ];
+                  });
+                })()}
               </select>
-              {selectedStore && selectedAccount && (
-                <div className="text-xs text-slate-500 mt-1">
-                  币种：{selectedStore.currency} | 汇率：{selectedAccount.exchangeRate} | 折算RMB：¥{rmbAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {selectedAccount && (() => {
+                // 当前余额 = originalBalance（已经包含了 initialCapital + 所有流水）
+                const currentBalance = selectedAccount.originalBalance || 0;
+                const amount = Number(form.amount) || 0;
+                // 计算变动后余额（收入时增加）
+                const afterBalance = currentBalance + amount;
+                
+                // 格式化余额显示
+                const formatBalance = (balance: number) => {
+                  if (selectedAccount.currency === "RMB") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
+                  } else if (selectedAccount.currency === "USD") {
+                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
+                  } else {
+                    return `${selectedAccount.currency} ${balance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  }
+                };
+                
+                return (
+                  <div className="text-xs text-slate-500 mt-1 space-y-1">
+                    <div>
+                      当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span>
+                    </div>
+                    {amount > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span>变动后余额：</span>
+                        <span className="text-emerald-400 font-medium">
+                          {formatBalance(afterBalance)}
+                        </span>
+                      </div>
+                    )}
+                    {selectedStore && (
+                      <div className="text-slate-400">
+                        币种：{selectedAccount.currency} | 汇率：{selectedAccount.exchangeRate} | 折算RMB：¥{rmbAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              {accounts.length === 0 && (
+                <div className="text-xs text-amber-400 mt-1">
+                  暂无账户，请先前往"财务中心 - 账户列表"创建账户
                 </div>
               )}
             </label>
@@ -282,6 +386,16 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
                 onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                 placeholder="可选"
+              />
+            </label>
+            <label className="space-y-1 col-span-2">
+              <span className="text-slate-300">凭证</span>
+              <ImageUploader
+                value={form.voucher}
+                onChange={(value) => setForm((f) => ({ ...f, voucher: typeof value === "string" ? value : value[0] || "" }))}
+                multiple={false}
+                label="上传收入凭证"
+                placeholder="点击上传凭证或直接 Ctrl + V 粘贴图片"
               />
             </label>
           </div>

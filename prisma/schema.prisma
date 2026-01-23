@@ -492,6 +492,7 @@ model BankAccount {
   parentId        String?         // 父账户ID（虚拟子账号关联主账户）
   storeId         String?         // 关联店铺ID
   companyEntity   String?
+  owner           String?         // 账号归属人
   notes           String          @default("")
   platformAccount String?
   platformPassword String?

@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
+    // 创建流水记录
     const cashFlow = await prisma.cashFlow.create({
       data: {
         uid: body.uid || null,
@@ -113,6 +114,29 @@ export async function POST(request: NextRequest) {
         account: true
       }
     })
+    
+    // 更新账户余额（仅当状态为已确认时）
+    if (body.status === 'confirmed') {
+      const account = await prisma.bankAccount.findUnique({
+        where: { id: body.accountId }
+      })
+      
+      if (account) {
+        // 计算新的余额：当前余额 + 流水金额（收入为正，支出为负）
+        const newBalance = Number(account.originalBalance) + Number(body.amount)
+        
+        // 更新账户余额
+        await prisma.bankAccount.update({
+          where: { id: body.accountId },
+          data: {
+            originalBalance: newBalance,
+            rmbBalance: account.currency === 'RMB' 
+              ? newBalance 
+              : newBalance * Number(account.exchangeRate)
+          }
+        })
+      }
+    }
     
     // 转换返回格式
     const transformed = {

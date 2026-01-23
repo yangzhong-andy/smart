@@ -38,6 +38,7 @@ export async function GET() {
       parentId: acc.parentId || undefined,
       storeId: acc.storeId || undefined,
       companyEntity: acc.companyEntity || undefined,
+      owner: acc.owner || undefined,
       notes: acc.notes,
       platformAccount: acc.platformAccount || undefined,
       platformPassword: acc.platformPassword || undefined,
@@ -78,27 +79,43 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const account = await prisma.bankAccount.create({
-      data: {
-        name: body.name,
-        accountNumber: body.accountNumber,
-        accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
-        accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
-        accountPurpose: body.accountPurpose,
-        currency: body.currency || 'RMB',
-        country: body.country || 'CN',
-        originalBalance: Number(body.originalBalance) || 0,
-        initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : (Number(body.originalBalance) || 0),
-        exchangeRate: Number(body.exchangeRate) || 1,
-        rmbBalance: Number(body.rmbBalance) || 0,
-        parentId: body.parentId || null,
-        storeId: body.storeId || null,
-        companyEntity: body.companyEntity || null,
-        notes: body.notes || '',
-        platformAccount: body.platformAccount || null,
-        platformPassword: body.platformPassword || null,
-        platformUrl: body.platformUrl || null,
+    // 构建创建数据对象
+    const createData: any = {
+      name: body.name,
+      accountNumber: body.accountNumber,
+      accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
+      accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
+      accountPurpose: body.accountPurpose,
+      currency: body.currency || 'RMB',
+      country: body.country || 'CN',
+      originalBalance: Number(body.originalBalance) || 0,
+      initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : (Number(body.originalBalance) || 0),
+      exchangeRate: Number(body.exchangeRate) || 1,
+      rmbBalance: Number(body.rmbBalance) || 0,
+      companyEntity: body.companyEntity || null,
+      owner: body.owner || null,
+      notes: body.notes || '',
+      platformAccount: body.platformAccount || null,
+      platformPassword: body.platformPassword || null,
+      platformUrl: body.platformUrl || null,
+    }
+
+    // 处理 parentId 关系
+    if (body.parentId) {
+      createData.parent = {
+        connect: { id: body.parentId }
       }
+    }
+
+    // 处理 storeId 关系
+    if (body.storeId) {
+      createData.store = {
+        connect: { id: body.storeId }
+      }
+    }
+
+    const account = await prisma.bankAccount.create({
+      data: createData
     })
     
     // 转换返回格式
@@ -118,6 +135,7 @@ export async function POST(request: NextRequest) {
       parentId: account.parentId || undefined,
       storeId: account.storeId || undefined,
       companyEntity: account.companyEntity || undefined,
+      owner: account.owner || undefined,
       notes: account.notes,
       platformAccount: account.platformAccount || undefined,
       platformPassword: account.platformPassword || undefined,

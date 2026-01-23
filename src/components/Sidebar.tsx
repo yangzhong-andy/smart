@@ -100,7 +100,7 @@ const navItems: NavItem[] = [
     children: [
       { label: "月账单管理", labelEn: "", icon: Wallet, href: "/finance/monthly-bills" },
       { label: "对账中心", labelEn: "", icon: Wallet, href: "/finance/reconciliation" },
-      { label: "流水清单", labelEn: "", icon: Wallet, href: "/finance/cash-flow" },
+      { label: "流水明细", labelEn: "", icon: Wallet, href: "/finance/cash-flow" },
       { label: "利润看板", labelEn: "", icon: Wallet, href: "/finance/profit" },
       { label: "账户列表", labelEn: "", icon: Wallet, href: "/finance/accounts" },
       { label: "内部划拨", labelEn: "", icon: Wallet, href: "/finance/transfer" },

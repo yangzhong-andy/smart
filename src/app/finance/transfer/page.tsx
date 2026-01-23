@@ -1,9 +1,52 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { type BankAccount, getAccounts, saveAccounts, updateAccountBalance } from "@/lib/finance-store";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import useSWR, { mutate as swrMutate } from "swr";
+import { type BankAccount } from "@/lib/finance-store";
+import { ArrowRight, Search } from "lucide-react";
+import TransferEntry from "../cash-flow/components/TransferEntry";
 
-const CASH_FLOW_KEY = "cashFlow";
+type CashFlow = {
+  id: string;
+  uid?: string;
+  date: string;
+  summary: string;
+  category: string;
+  type: "income" | "expense";
+  amount: number;
+  accountId: string;
+  accountName: string;
+  currency: string;
+  remark: string;
+  relatedId?: string;
+  status: "confirmed" | "pending";
+  voucher?: string;
+  createdAt: string;
+};
+
+type TransferRecord = {
+  id: string; // relatedId
+  date: string;
+  fromAccountId: string;
+  fromAccountName: string;
+  fromCurrency: string;
+  fromAmount: number;
+  toAccountId: string;
+  toAccountName: string;
+  toCurrency: string;
+  toAmount: number;
+  exchangeRate: number;
+  isManualRate: boolean;
+  remark: string;
+  voucher?: string;
+  createdAt: string;
+  outFlowId: string;
+  inFlowId: string;
+};
+
+// SWR fetcher
+const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -11,368 +54,591 @@ const currency = (n: number, curr: string = "CNY") =>
   );
 
 const formatNumber = (n: number) => {
-  if (!Number.isFinite(n)) return "0.00";
+  if (!Number.isFinite(n)) return "0.0000";
   return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(n);
 };
 
-type TransferForm = {
-  fromAccountId: string;
-  toAccountId: string;
-  amount: string;
-  manualRate: boolean;
-  exchangeRate: string;
-  actualReceived: string;
-  remark: string;
+const formatDate = (d: string) => {
+  try {
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return d;
+    return date.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+  } catch (e) {
+    return d;
+  }
 };
 
-export default function InternalTransferPage() {
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [form, setForm] = useState<TransferForm>({
-    fromAccountId: "",
-    toAccountId: "",
-    amount: "",
-    manualRate: false,
-    exchangeRate: "",
-    actualReceived: "",
-    remark: ""
+export default function TransferPage() {
+  // 使用 SWR 加载流水数据
+  const { data: cashFlowData = [] } = useSWR<CashFlow[]>('/api/cash-flow', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    keepPreviousData: true
   });
+  
+  // 使用 SWR 加载账户数据
+  const { data: accountsData = [] } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    keepPreviousData: true
+  });
+  
+  const accounts = accountsData || [];
+  const [activeModal, setActiveModal] = useState<"transfer" | null>(null);
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [filterFromAccount, setFilterFromAccount] = useState<string>("all");
+  const [filterToAccount, setFilterToAccount] = useState<string>("all");
+  const [searchKeyword, setSearchKeyword] = useState<string>("");
+  const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loaded = getAccounts();
-    setAccounts(loaded);
-    if (loaded.length >= 2) {
-      setForm((f) => ({
-        ...f,
-        fromAccountId: loaded[0].id,
-        toAccountId: loaded[1].id
-      }));
-    }
-  }, []);
-
-  const fromAccount = accounts.find((a) => a.id === form.fromAccountId);
-  const toAccount = accounts.find((a) => a.id === form.toAccountId);
-
-  // 自动计算汇率（如果未手动输入）
-  const calculatedRate = useMemo(() => {
-    if (!fromAccount || !toAccount) return 0;
-    if (fromAccount.currency === toAccount.currency) return 1;
-    if (fromAccount.currency === "RMB") {
-      // 从RMB转出，使用目标币种的汇率倒数
-      return toAccount.exchangeRate > 0 ? 1 / toAccount.exchangeRate : 0;
-    }
-    if (toAccount.currency === "RMB") {
-      // 转入RMB，使用源币种的汇率
-      return fromAccount.exchangeRate;
-    }
-    // 跨币种：通过RMB中转
-    if (fromAccount.exchangeRate > 0 && toAccount.exchangeRate > 0) {
-      return fromAccount.exchangeRate / toAccount.exchangeRate;
-    }
-    return 0;
-  }, [fromAccount, toAccount]);
-
-  // 计算实收金额
-  const calculatedReceived = useMemo(() => {
-    const amount = Number(form.amount);
-    if (Number.isNaN(amount) || amount <= 0) return 0;
-    const rate = form.manualRate ? Number(form.exchangeRate) : calculatedRate;
-    if (!Number.isFinite(rate) || rate <= 0) return 0;
-    return amount * rate;
-  }, [form.amount, form.manualRate, form.exchangeRate, calculatedRate]);
-
-  // 反向倒推汇率
-  const reverseCalculatedRate = useMemo(() => {
-    const amount = Number(form.amount);
-    const received = Number(form.actualReceived);
-    if (Number.isNaN(amount) || Number.isNaN(received) || amount <= 0 || received <= 0) return 0;
-    return received / amount;
-  }, [form.amount, form.actualReceived]);
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!form.fromAccountId || !form.toAccountId) {
-      alert("请选择转出和转入账户");
-      return;
-    }
-    if (form.fromAccountId === form.toAccountId) {
-      alert("转出和转入账户不能相同");
-      return;
-    }
-    const amount = Number(form.amount);
-    if (Number.isNaN(amount) || amount <= 0) {
-      alert("划拨金额需大于 0");
-      return;
-    }
-    if (!fromAccount || !toAccount) {
-      alert("账户不存在");
-      return;
-    }
-    if (fromAccount.originalBalance < amount) {
-      alert("转出账户余额不足");
-      return;
-    }
-
-    const finalRate = form.manualRate
-      ? Number(form.exchangeRate)
-      : form.actualReceived
-        ? reverseCalculatedRate
-        : calculatedRate;
-
-    if (!Number.isFinite(finalRate) || finalRate <= 0) {
-      alert("汇率无效");
-      return;
-    }
-
-    const receivedAmount = form.actualReceived ? Number(form.actualReceived) : calculatedReceived;
-    if (receivedAmount <= 0) {
-      alert("实收金额无效");
-      return;
-    }
-
-    // 更新账户余额
-    const updatedAccounts = accounts.map((acc) => {
-      if (acc.id === form.fromAccountId) {
-        return {
-          ...acc,
-          originalBalance: acc.originalBalance - amount,
-          rmbBalance: (acc.originalBalance - amount) * (acc.currency === "RMB" ? 1 : acc.exchangeRate)
-        };
+  // 将两条流水记录合并为一条划拨记录
+  const transfers = useMemo(() => {
+    if (!Array.isArray(cashFlowData)) return [];
+    
+    // 筛选出内部划拨的记录
+    const transferFlows = cashFlowData.filter(
+      (flow) => flow.category === "内部划拨" && flow.relatedId && flow.status === "confirmed" && !flow.isReversal
+    );
+    
+    // 按 relatedId 分组
+    const grouped = transferFlows.reduce((acc, flow) => {
+      const relatedId = flow.relatedId!;
+      if (!acc[relatedId]) {
+        acc[relatedId] = [];
       }
-      if (acc.id === form.toAccountId) {
-        return {
-          ...acc,
-          originalBalance: acc.originalBalance + receivedAmount,
-          rmbBalance: (acc.originalBalance + receivedAmount) * (acc.currency === "RMB" ? 1 : acc.exchangeRate)
-        };
-      }
+      acc[relatedId].push(flow);
       return acc;
+    }, {} as Record<string, CashFlow[]>);
+    
+    // 将每组的两条记录合并为一条划拨记录
+    const transferRecords: TransferRecord[] = [];
+    
+    Object.entries(grouped).forEach(([relatedId, flows]) => {
+      if (flows.length !== 2) return; // 必须是两条记录（转出和转入）
+      
+      const outFlow = flows.find((f) => f.type === "expense");
+      const inFlow = flows.find((f) => f.type === "income");
+      
+      if (!outFlow || !inFlow) return;
+      
+      // 从备注中提取汇率信息
+      const rateMatch = outFlow.remark.match(/汇率\s*([\d.]+)/);
+      const exchangeRate = rateMatch ? Number(rateMatch[1]) : 0;
+      const isManualRate = outFlow.remark.includes("手动汇率");
+      
+      // 提取备注（去掉汇率信息）
+      const remarkMatch = outFlow.remark.match(/，(.+)$/);
+      const remark = remarkMatch ? remarkMatch[1].replace(/汇率\s*[\d.]+（手动汇率）?，?/g, "").trim() : "";
+      
+      transferRecords.push({
+        id: relatedId,
+        date: outFlow.date,
+        fromAccountId: outFlow.accountId,
+        fromAccountName: outFlow.accountName,
+        fromCurrency: outFlow.currency,
+        fromAmount: Math.abs(outFlow.amount),
+        toAccountId: inFlow.accountId,
+        toAccountName: inFlow.accountName,
+        toCurrency: inFlow.currency,
+        toAmount: inFlow.amount,
+        exchangeRate,
+        isManualRate,
+        remark,
+        voucher: outFlow.voucher || inFlow.voucher,
+        createdAt: outFlow.createdAt,
+        outFlowId: outFlow.id,
+        inFlowId: inFlow.id
+      });
     });
-    setAccounts(updatedAccounts);
-    saveAccounts(updatedAccounts);
-
-    // 生成两条关联流水记录
-    const transferId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const today = now.slice(0, 10);
-
-    const storedFlow = typeof window !== "undefined" ? window.localStorage.getItem(CASH_FLOW_KEY) : null;
-    const flowList = storedFlow ? JSON.parse(storedFlow) : [];
-
-    // 转出记录
-    flowList.push({
-      id: crypto.randomUUID(),
-      date: today,
-      type: "expense",
-      category: "内部划拨",
-      amount: -amount,
-      accountId: form.fromAccountId,
-      accountName: fromAccount.name,
-      currency: fromAccount.currency,
-      remark: `划拨至 ${toAccount.name}，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
-      relatedId: transferId,
-      createdAt: now
+    
+    // 按日期倒序排序
+    return transferRecords.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
     });
+  }, [cashFlowData]);
 
-    // 转入记录
-    flowList.push({
-      id: crypto.randomUUID(),
-      date: today,
-      type: "income",
-      category: "内部划拨",
-      amount: receivedAmount,
-      accountId: form.toAccountId,
-      accountName: toAccount.name,
-      currency: toAccount.currency,
-      remark: `从 ${fromAccount.name} 划拨，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
-      relatedId: transferId,
-      createdAt: now
+  // 筛选后的划拨记录
+  const filteredTransfers = useMemo(() => {
+    return transfers.filter((transfer) => {
+      // 日期筛选
+      if (filterDateFrom && transfer.date < filterDateFrom) return false;
+      if (filterDateTo && transfer.date > filterDateTo) return false;
+      
+      // 转出账户筛选
+      if (filterFromAccount !== "all" && transfer.fromAccountId !== filterFromAccount) return false;
+      
+      // 转入账户筛选
+      if (filterToAccount !== "all" && transfer.toAccountId !== filterToAccount) return false;
+      
+      // 关键词搜索
+      if (searchKeyword.trim()) {
+        const keyword = searchKeyword.toLowerCase();
+        return (
+          transfer.fromAccountName.toLowerCase().includes(keyword) ||
+          transfer.toAccountName.toLowerCase().includes(keyword) ||
+          transfer.remark.toLowerCase().includes(keyword)
+        );
+      }
+      
+      return true;
     });
+  }, [transfers, filterDateFrom, filterDateTo, filterFromAccount, filterToAccount, searchKeyword]);
 
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(flowList));
-    }
+  // 统计信息
+  const stats = useMemo(() => {
+    const totalCount = filteredTransfers.length;
+    const totalFromAmount = filteredTransfers.reduce((sum, t) => sum + t.fromAmount, 0);
+    const totalToAmount = filteredTransfers.reduce((sum, t) => sum + t.toAmount, 0);
+    
+    // 按币种统计转出金额
+    const fromAmountByCurrency = filteredTransfers.reduce((acc, t) => {
+      acc[t.fromCurrency] = (acc[t.fromCurrency] || 0) + t.fromAmount;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // 按币种统计转入金额
+    const toAmountByCurrency = filteredTransfers.reduce((acc, t) => {
+      acc[t.toCurrency] = (acc[t.toCurrency] || 0) + t.toAmount;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // 按账户统计划出和划入
+    const accountStats = accounts.map((account) => {
+      const transfersOut = filteredTransfers.filter((t) => t.fromAccountId === account.id);
+      const transfersIn = filteredTransfers.filter((t) => t.toAccountId === account.id);
+      
+      // 按币种统计划出金额
+      const outByCurrency = transfersOut.reduce((acc, t) => {
+        acc[t.fromCurrency] = (acc[t.fromCurrency] || 0) + t.fromAmount;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      // 按币种统计划入金额
+      const inByCurrency = transfersIn.reduce((acc, t) => {
+        acc[t.toCurrency] = (acc[t.toCurrency] || 0) + t.toAmount;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const totalOut = transfersOut.reduce((sum, t) => sum + t.fromAmount, 0);
+      const totalIn = transfersIn.reduce((sum, t) => sum + t.toAmount, 0);
+      const netAmount = totalIn - totalOut; // 净划入（正数表示净流入，负数表示净流出）
+      
+      return {
+        accountId: account.id,
+        accountName: account.name,
+        accountCurrency: account.currency,
+        outCount: transfersOut.length,
+        inCount: transfersIn.length,
+        totalOut,
+        totalIn,
+        netAmount,
+        outByCurrency,
+        inByCurrency
+      };
+    }).filter((stat) => stat.outCount > 0 || stat.inCount > 0); // 只显示有划拨记录的账户
+    
+    // 按净划入金额排序（从大到小）
+    accountStats.sort((a, b) => b.netAmount - a.netAmount);
+    
+    return {
+      totalCount,
+      totalFromAmount,
+      totalToAmount,
+      fromAmountByCurrency,
+      toAmountByCurrency,
+      accountStats
+    };
+  }, [filteredTransfers, accounts]);
 
-    alert("划拨成功！已自动更新账户余额并生成流水记录。");
-    setForm({
-      fromAccountId: form.fromAccountId,
-      toAccountId: form.toAccountId,
-      amount: "",
-      manualRate: false,
-      exchangeRate: "",
-      actualReceived: "",
-      remark: ""
-    });
+  const handleAddTransfer = async (outFlow: CashFlow, inFlow: CashFlow) => {
+    // 这个函数会被 TransferEntry 调用，但 TransferEntry 已经处理了保存逻辑
+    // 这里只需要关闭弹窗
+    setActiveModal(null);
   };
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
       <header className="flex items-baseline justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">内部划拨</h1>
+          <h1 className="text-2xl font-bold text-slate-100">内部划拨管理</h1>
           <p className="mt-1 text-sm text-slate-400">
-            支持跨币种划拨，手动输入结算汇率，自动更新账户余额并生成关联流水
+            统一管理所有内部账户划拨记录，清晰展示转出和转入信息
           </p>
         </div>
+        <button
+          onClick={() => setActiveModal("transfer")}
+          className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
+        >
+          + 新增划拨
+        </button>
       </header>
 
-      <section className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-1">
-              <span className="text-sm text-slate-300">转出账户</span>
-              <select
-                value={form.fromAccountId}
-                onChange={(e) => setForm((f) => ({ ...f, fromAccountId: e.target.value }))}
-                className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 outline-none focus:border-primary-500/50 focus:bg-slate-900 transition-all"
-                required
-              >
-                <option value="">请选择</option>
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.currency}) - 余额{" "}
-                    {acc.currency === "RMB"
-                      ? currency(acc.originalBalance, "CNY")
-                      : acc.currency === "USD"
-                        ? currency(acc.originalBalance, "USD")
-                        : acc.currency === "JPY"
-                          ? `¥${formatNumber(acc.originalBalance)}`
-                          : currency(acc.originalBalance, acc.currency)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-slate-300">转入账户</span>
-              <select
-                value={form.toAccountId}
-                onChange={(e) => setForm((f) => ({ ...f, toAccountId: e.target.value }))}
-                className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 outline-none focus:border-primary-500/50 focus:bg-slate-900 transition-all"
-                required
-              >
-                <option value="">请选择</option>
-                {accounts
-                  .filter((acc) => acc.id !== form.fromAccountId)
-                  .map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.name} ({acc.currency}) - 余额{" "}
-                      {acc.currency === "RMB"
-                        ? currency(acc.originalBalance, "CNY")
-                        : acc.currency === "USD"
-                          ? currency(acc.originalBalance, "USD")
-                          : acc.currency === "JPY"
-                            ? `¥${formatNumber(acc.originalBalance)}`
-                            : currency(acc.originalBalance, acc.currency)}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-slate-300">划拨金额（原币）</span>
-              <input
-                type="number"
-                step="0.01"
-                min={0}
-                value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 outline-none focus:border-primary-500/50 focus:bg-slate-900 transition-all"
-                placeholder="0.00"
-                required
-              />
-              {fromAccount && (
-                <div className="text-xs text-slate-500 mt-1">
-                  转出币种：{fromAccount.currency}
-                </div>
-              )}
-            </label>
-            <label className="space-y-1">
-              <span className="text-sm text-slate-300">实收金额（目标币种）</span>
-              <input
-                type="number"
-                step="0.01"
-                min={0}
-                value={form.actualReceived}
-                onChange={(e) => setForm((f) => ({ ...f, actualReceived: e.target.value }))}
-                className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 outline-none focus:border-primary-500/50 focus:bg-slate-900 transition-all"
-                placeholder="留空则自动计算"
-              />
-              {toAccount && (
-                <div className="text-xs text-slate-500 mt-1">
-                  转入币种：{toAccount.currency}
-                  {form.actualReceived && (
-                    <span className="text-amber-300 ml-2">
-                      反推汇率：{formatNumber(reverseCalculatedRate)}
-                    </span>
-                  )}
-                </div>
-              )}
-            </label>
+      {/* 统计卡片 */}
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="text-xs text-slate-400 mb-1">划拨总数</div>
+          <div className="text-2xl font-bold text-slate-100">{stats.totalCount}</div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="text-xs text-slate-400 mb-1">转出总额</div>
+          <div className="text-lg font-semibold text-rose-300">
+            {Object.entries(stats.fromAmountByCurrency).map(([curr, amount]) => (
+              <div key={curr}>
+                {curr === "RMB" ? currency(amount, "CNY") : curr === "USD" ? currency(amount, "USD") : `${curr} ${amount.toLocaleString("zh-CN")}`}
+              </div>
+            ))}
           </div>
-
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.manualRate}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    manualRate: e.target.checked,
-                    exchangeRate: e.target.checked ? formatNumber(calculatedRate) : ""
-                  }))
-                }
-                className="text-primary-500"
-              />
-              <span className="text-sm text-slate-300">手动输入结算汇率</span>
-            </label>
-            {form.manualRate && (
-              <label className="space-y-1">
-                <span className="text-sm text-slate-300">结算汇率</span>
-                <input
-                  type="number"
-                  step="0.0001"
-                  min={0}
-                  value={form.exchangeRate}
-                  onChange={(e) => setForm((f) => ({ ...f, exchangeRate: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 outline-none focus:border-primary-500/50 focus:bg-slate-900 transition-all"
-                  placeholder="如：7.2500"
-                  required
-                />
-                <div className="text-xs text-slate-500 mt-1">
-                  参考汇率：{formatNumber(calculatedRate)}（自动计算）
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="text-xs text-slate-400 mb-1">转入总额</div>
+          <div className="text-lg font-semibold text-emerald-300">
+            {Object.entries(stats.toAmountByCurrency).length > 0 ? (
+              Object.entries(stats.toAmountByCurrency).map(([curr, amount]) => (
+                <div key={curr}>
+                  {curr === "RMB" ? currency(amount, "CNY") : curr === "USD" ? currency(amount, "USD") : `${curr} ${amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </div>
-              </label>
+              ))
+            ) : (
+              <div className="text-slate-500">-</div>
             )}
-            {!form.manualRate && !form.actualReceived && (
-              <div className="text-sm text-slate-300">
-                <div>参考汇率：{formatNumber(calculatedRate)}（自动计算）</div>
-                <div className="mt-1 text-xs text-slate-500">
-                  预计实收：{toAccount ? currency(calculatedReceived, toAccount.currency) : "-"}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="text-xs text-slate-400 mb-1">平均汇率</div>
+          <div className="text-lg font-semibold text-slate-300">
+            {stats.totalCount > 0
+              ? formatNumber(
+                  filteredTransfers.reduce((sum, t) => sum + t.exchangeRate, 0) / stats.totalCount
+                )
+              : "0.0000"}
+          </div>
+        </div>
+      </section>
+
+      {/* 账户维度统计 */}
+      {stats.accountStats && stats.accountStats.length > 0 && (
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <h2 className="text-lg font-semibold text-slate-100 mb-4">账户划拨统计</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {stats.accountStats.map((accountStat) => (
+              <div
+                key={accountStat.accountId}
+                className="rounded-lg border border-slate-700 bg-slate-900/80 p-3 hover:bg-slate-800/60 transition-colors"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-semibold text-slate-200">{accountStat.accountName}</div>
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
+                      {accountStat.accountCurrency}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">划出次数：</span>
+                    <span className="text-rose-300 font-medium">{accountStat.outCount} 次</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">划出总额：</span>
+                    <div className="text-rose-300 font-medium text-right">
+                      {Object.entries(accountStat.outByCurrency).length > 0 ? (
+                        Object.entries(accountStat.outByCurrency).map(([curr, amount]) => (
+                          <div key={curr}>
+                            {curr === "RMB" ? currency(amount, "CNY") : curr === "USD" ? currency(amount, "USD") : `${curr} ${amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-700">
+                    <span className="text-slate-400">划入次数：</span>
+                    <span className="text-emerald-300 font-medium">{accountStat.inCount} 次</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">划入总额：</span>
+                    <div className="text-emerald-300 font-medium text-right">
+                      {Object.entries(accountStat.inByCurrency).length > 0 ? (
+                        Object.entries(accountStat.inByCurrency).map(([curr, amount]) => (
+                          <div key={curr}>
+                            {curr === "RMB" ? currency(amount, "CNY") : curr === "USD" ? currency(amount, "USD") : `${curr} ${amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-700 mt-1">
+                    <span className="text-slate-400">净划入：</span>
+                    <span className={`font-semibold ${accountStat.netAmount >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {accountStat.accountCurrency === "RMB"
+                        ? currency(accountStat.netAmount, "CNY")
+                        : accountStat.accountCurrency === "USD"
+                          ? currency(accountStat.netAmount, "USD")
+                          : `${accountStat.accountCurrency} ${accountStat.netAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  </div>
                 </div>
               </div>
-            )}
+            ))}
           </div>
+        </section>
+      )}
 
-          <label className="space-y-1 block">
-            <span className="text-sm text-slate-300">备注</span>
+      {/* 筛选区域 */}
+      <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">开始日期</label>
             <input
-              value={form.remark}
-              onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-              placeholder="可选"
+              type="date"
+              value={filterDateFrom}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             />
-          </label>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="submit"
-              className="rounded-md bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
-              disabled={!form.fromAccountId || !form.toAccountId || !form.amount}
-            >
-              确认划拨
-            </button>
           </div>
-        </form>
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">结束日期</label>
+            <input
+              type="date"
+              value={filterDateTo}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">转出账户</label>
+            <select
+              value={filterFromAccount}
+              onChange={(e) => setFilterFromAccount(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+            >
+              <option value="all">全部账户</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} ({acc.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">转入账户</label>
+            <select
+              value={filterToAccount}
+              onChange={(e) => setFilterToAccount(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+            >
+              <option value="all">全部账户</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} ({acc.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">关键词搜索</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                placeholder="搜索账户名称、备注..."
+                className="w-full rounded-md border border-slate-700 bg-slate-900 pl-9 pr-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              />
+            </div>
+          </div>
+        </div>
       </section>
+
+      {/* 划拨记录列表 */}
+      <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-800 text-xs">
+            <thead className="bg-slate-900">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-slate-400 w-32">日期</th>
+                <th className="px-3 py-2 text-left font-medium text-slate-400 min-w-[150px]">转出账户</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-400 w-32">转出金额</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-400 w-16"></th>
+                <th className="px-3 py-2 text-left font-medium text-slate-400 min-w-[150px]">转入账户</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-400 w-32">转入金额</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-400 w-24">汇率</th>
+                <th className="px-3 py-2 text-left font-medium text-slate-400 min-w-[120px]">备注</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-400 w-16">凭证</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800 bg-slate-900/40">
+              {filteredTransfers.length === 0 && (
+                <tr>
+                  <td className="px-3 py-8 text-center text-slate-500" colSpan={9}>
+                    暂无划拨记录
+                  </td>
+                </tr>
+              )}
+              {filteredTransfers.map((transfer) => (
+                <tr key={transfer.id} className="hover:bg-slate-800/40">
+                  <td className="px-3 py-2 text-slate-300">{formatDate(transfer.date)}</td>
+                  <td className="px-3 py-2">
+                    <div className="text-slate-200 font-medium">{transfer.fromAccountName}</div>
+                    <div className="text-xs text-slate-500">{transfer.fromCurrency}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="text-rose-300 font-medium">
+                      {transfer.fromCurrency === "RMB"
+                        ? currency(transfer.fromAmount, "CNY")
+                        : transfer.fromCurrency === "USD"
+                          ? currency(transfer.fromAmount, "USD")
+                          : `${transfer.fromCurrency} ${transfer.fromAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <ArrowRight className="inline text-blue-400" size={18} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="text-slate-200 font-medium">{transfer.toAccountName}</div>
+                    <div className="text-xs text-slate-500">{transfer.toCurrency}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="text-emerald-300 font-medium">
+                      {transfer.toCurrency === "RMB"
+                        ? currency(transfer.toAmount, "CNY")
+                        : transfer.toCurrency === "USD"
+                          ? currency(transfer.toAmount, "USD")
+                          : `${transfer.toCurrency} ${transfer.toAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <div className="text-slate-300 font-medium">{formatNumber(transfer.exchangeRate)}</div>
+                    {transfer.isManualRate && (
+                      <div className="text-xs text-amber-400">手动</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">{transfer.remark || "-"}</td>
+                  <td className="px-3 py-2 text-center">
+                    {transfer.voucher && transfer.voucher.length > 10 ? (
+                      <button
+                        onClick={() => setVoucherViewModal(transfer.voucher || null)}
+                        className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
+                      >
+                        查看
+                      </button>
+                    ) : (
+                      <span className="text-slate-500 text-xs">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* 凭证查看弹窗 */}
+      {voucherViewModal && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+          style={{ zIndex: 9999 }}
+          onClick={() => setVoucherViewModal(null)}
+        >
+          <div 
+            className="relative max-w-5xl max-h-[95vh] p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setVoucherViewModal(null)}
+              className="absolute top-2 right-2 text-white bg-black/50 rounded-full p-2 hover:bg-black/70 z-10"
+            >
+              ✕
+            </button>
+            <div className="bg-slate-900 rounded-lg p-4">
+              {(() => {
+                const isBase64 = voucherViewModal && (
+                  voucherViewModal.startsWith('data:image/') ||
+                  /^data:[^;]*;base64,/.test(voucherViewModal) ||
+                  /^[A-Za-z0-9+/=]+$/.test(voucherViewModal) && voucherViewModal.length > 100
+                );
+                const isUrl = voucherViewModal && (
+                  voucherViewModal.startsWith('http://') ||
+                  voucherViewModal.startsWith('https://') ||
+                  voucherViewModal.startsWith('/')
+                );
+                let imageSrc = voucherViewModal;
+                if (voucherViewModal && /^[A-Za-z0-9+/=]+$/.test(voucherViewModal) && voucherViewModal.length > 100 && !voucherViewModal.startsWith('data:')) {
+                  imageSrc = `data:image/jpeg;base64,${voucherViewModal}`;
+                }
+                return (
+                  <img 
+                    src={imageSrc || voucherViewModal} 
+                    alt="凭证" 
+                    className="max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = "none";
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('.error-message')) {
+                        const errorDiv = document.createElement("div");
+                        errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
+                        errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;
+                        parent.appendChild(errorDiv);
+                      }
+                    }}
+                  />
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 新增划拨弹窗 */}
+      {activeModal === "transfer" && (
+        <TransferEntry
+          accounts={accounts}
+          onClose={() => setActiveModal(null)}
+          onSave={async (flow: CashFlow) => {
+            // TransferEntry 会调用两次 onSave（转出和转入）
+            // 直接调用 API 保存
+            try {
+              const response = await fetch('/api/cash-flow', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(flow)
+              });
+              
+              if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || '创建失败');
+              }
+              
+              // 使用 SWR 的 mutate 刷新数据
+              swrMutate('/api/cash-flow');
+              swrMutate('/api/accounts');
+              
+              toast.success("划拨记录创建成功");
+            } catch (error: any) {
+              console.error('Failed to create transfer:', error);
+              toast.error(error.message || '创建划拨记录失败');
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

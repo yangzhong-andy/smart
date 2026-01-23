@@ -125,18 +125,18 @@ export default function FinanceWorkbenchPage() {
       .filter((f) => f.type === "expense" && f.date.startsWith(currentMonth))
       .reduce((sum, f) => sum + (f.amount || 0), 0);
 
-    // 账户总余额（使用RMB余额，已按汇率转换，包含初始资金）
+    // 账户总余额（使用RMB余额，已按汇率转换）
+    // originalBalance 已经包含了 initialCapital + 所有流水
     const totalBalance = accounts.reduce((sum, acc) => {
       // 只统计主账户和独立账户，不统计虚拟子账户（已被主账户汇总）
       if (acc.accountCategory === "VIRTUAL") {
         return sum;
       }
-      // 计算账户总余额 = 初始资金 + 当前余额
-      const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // originalBalance 已经包含了 initialCapital + 所有流水
       // 转换为RMB
       const rmbBal = acc.currency === "RMB" 
-        ? accountTotal 
-        : accountTotal * (acc.exchangeRate || 1);
+        ? (acc.originalBalance || 0)
+        : (acc.originalBalance || 0) * (acc.exchangeRate || 1);
       return sum + rmbBal;
     }, 0);
 
@@ -202,7 +202,7 @@ export default function FinanceWorkbenchPage() {
             </Link>
             <Link href="/finance/cash-flow">
               <ActionButton variant="secondary" icon={DollarSign}>
-                流水清单
+                流水明细
               </ActionButton>
             </Link>
           </>

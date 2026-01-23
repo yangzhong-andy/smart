@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR, { mutate as swrMutate } from "swr";
 import ImageUploader from "@/components/ImageUploader";
-import { Factory, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Building2, Package, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Factory, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Building2, Package, ChevronDown, ChevronUp, ExternalLink, MapPin } from "lucide-react";
 import { getProductsByFactoryId, getProducts, type Product } from "@/lib/products-store";
 import { SETTLE_BASE_LABEL, INVOICE_REQUIREMENT_LABEL } from "@/lib/enum-mapping";
 
@@ -887,6 +887,15 @@ export default function SuppliersPage() {
                       <span className="text-slate-400">手机号</span>
                       <span className="text-white font-mono text-xs">{supplier.phone}</span>
                     </div>
+                    {supplier.address && (
+                      <div className="flex items-start gap-2 text-sm pt-1">
+                        <MapPin className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-slate-400 block mb-1">工厂地址</span>
+                          <span className="text-white text-xs leading-relaxed break-words">{supplier.address}</span>
+                        </div>
+                      </div>
+                    )}
                     {(() => {
                       const productStats = getSupplierProductStats(supplier.id);
                       return (

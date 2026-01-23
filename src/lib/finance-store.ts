@@ -19,6 +19,7 @@ export type BankAccount = {
   parentId?: string; // 父账户ID（虚拟子账号关联主账户）
   storeId?: string; // 关联店铺ID（硬关联，VIRTUAL 必须绑定）
   companyEntity?: string; // 公司主体
+  owner?: string; // 账号归属人
   notes: string; // 使用说明（多行文本）
   createdAt: string;
   // 平台账号相关字段（仅当 accountType === "平台" 时使用）
@@ -129,26 +130,20 @@ export function getAccountStats(accounts: BankAccount[]) {
       // 主账户
       const hasChildren = accounts.some((a) => a.parentId === acc.id);
       if (hasChildren) {
-        // 有子账户：汇总子账户的余额（包含初始资金）
+        // 有子账户：汇总子账户的余额
+        // 注意：calculated.originalBalance 已经包含了子账户的 initialCapital + 所有流水
         const calculated = calculatePrimaryAccountBalance(acc, accounts);
-        // 计算子账户初始资金的RMB值
-        const children = accounts.filter((a) => a.parentId === acc.id);
-        const childrenInitialCapitalRMB = children.reduce((sum, child) => {
-          const childInitialCapital = child.initialCapital || 0;
-          const childInitialCapitalRMB = child.currency === "RMB" 
-            ? childInitialCapital 
-            : childInitialCapital * (child.exchangeRate || 1);
-          return sum + childInitialCapitalRMB;
-        }, 0);
         // 主账户自己的初始资金RMB值
         const primaryInitialCapitalRMB = (acc.initialCapital || 0) * (acc.currency === "RMB" ? 1 : (acc.exchangeRate || 1));
-        // 总RMB余额 = 子账户当前余额RMB + 子账户初始资金RMB + 主账户初始资金RMB
-        const rmbBal = calculated.rmbBalance + childrenInitialCapitalRMB + primaryInitialCapitalRMB;
+        // 总RMB余额 = 子账户余额RMB（已包含子账户的 initialCapital + 流水）+ 主账户初始资金RMB
+        const rmbBal = calculated.rmbBalance + primaryInitialCapitalRMB;
         totalAssetsRMB += Number.isFinite(rmbBal) ? rmbBal : 0;
         
-        // 对于各币种，统计子账户的余额（包含初始资金）
+        // 对于各币种，统计子账户的余额（originalBalance 已经包含了 initialCapital）
+        const children = accounts.filter((a) => a.parentId === acc.id);
         children.forEach((child) => {
-          const childTotal = (child.initialCapital || 0) + (child.originalBalance || 0);
+          // originalBalance 已经包含了 initialCapital + 所有流水
+          const childTotal = child.originalBalance || 0;
           if (Number.isFinite(childTotal)) {
             if (child.currency === "USD") {
               totalUSD += childTotal;
@@ -171,8 +166,8 @@ export function getAccountStats(accounts: BankAccount[]) {
           }
         }
       } else {
-        // 无子账户：使用主账户自己的余额（包含初始资金）
-        const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+        // 无子账户：使用主账户自己的余额（originalBalance 已经包含了 initialCapital）
+        const accountTotal = acc.originalBalance || 0;
         const rmbBal = acc.currency === "RMB" 
           ? accountTotal 
           : accountTotal * (acc.exchangeRate || 1);
@@ -193,8 +188,8 @@ export function getAccountStats(accounts: BankAccount[]) {
       // 如果某个虚拟子账户没有被主账户统计（异常情况），也不统计，因为它在逻辑上应该属于某个主账户
       // 这里不处理，避免重复统计
     } else if (!acc.parentId) {
-      // 独立账户：直接统计（包含初始资金）
-      const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // 独立账户：直接统计（originalBalance 已经包含了 initialCapital）
+      const accountTotal = acc.originalBalance || 0;
       const rmbBal = acc.currency === "RMB" 
         ? accountTotal 
         : accountTotal * (acc.exchangeRate || 1);
