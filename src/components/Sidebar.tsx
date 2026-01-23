@@ -5,6 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
 import { logout, getCurrentUser } from "@/lib/auth";
+
+// 版本号（从 package.json 读取，构建时注入）
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.1.0";
 import {
   LayoutDashboard,
   Package,
@@ -590,6 +593,20 @@ export default function Sidebar() {
             )}
           </span>
         </button>
+        
+        {/* 版本号 */}
+        <div className={`mt-3 pt-3 border-t border-white/5 ${isCollapsed ? "px-3" : "px-5"}`}>
+          {isCollapsed ? (
+            <div className="text-center">
+              <div className="text-[10px] text-slate-600 font-mono">v{APP_VERSION}</div>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-600 font-mono text-center">
+              <div>Version {APP_VERSION}</div>
+              <div className="text-[10px] text-slate-700 mt-0.5">TK Smart ERP</div>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
