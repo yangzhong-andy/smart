@@ -170,7 +170,7 @@ export default function OutboundPage() {
     if (searchKeyword.trim()) {
       const keyword = searchKeyword.toLowerCase();
       result = result.filter((o) => {
-        const product = products.find((p) => p.sku_id === o.skuId);
+        const product = productsData.find((p: any) => p.sku_id === o.skuId);
         return (
           o.outboundNumber.toLowerCase().includes(keyword) ||
           o.sku.toLowerCase().includes(keyword) ||
