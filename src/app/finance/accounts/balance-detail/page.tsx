@@ -245,7 +245,16 @@ export default function AccountBalanceDetailPage() {
               <tbody className="divide-y divide-slate-800 bg-slate-900/40">
                 {detail.flows.details.map((flow) => (
                   <tr key={flow.id} className="hover:bg-slate-800/40">
-                    <td className="px-3 py-2 text-slate-300">{flow.date}</td>
+                    <td className="px-3 py-2 text-slate-300">
+                      {new Date(flow.date).toLocaleString("zh-CN", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false
+                      })}
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -307,7 +316,16 @@ export default function AccountBalanceDetailPage() {
                         }`}>
                           {flow.type === "INCOME" ? "转入" : "转出"}
                         </span>
-                        <span className="text-slate-300">{flow.date}</span>
+                        <span className="text-slate-300">
+                          {new Date(flow.date).toLocaleString("zh-CN", {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: false
+                          })}
+                        </span>
                         <span className="text-slate-400">{flow.summary}</span>
                       </div>
                       <span className={`font-medium ${flow.amount >= 0 ? "text-emerald-300" : "text-rose-300"}`}>

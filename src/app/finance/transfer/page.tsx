@@ -496,7 +496,7 @@ export default function TransferPage() {
               )}
               {filteredTransfers.map((transfer) => (
                 <tr key={transfer.id} className="hover:bg-slate-800/40">
-                  <td className="px-3 py-2 text-slate-300">{formatDate(transfer.date)}</td>
+                  <td className="px-3 py-2 text-slate-300">{formatDate(transfer.createdAt)}</td>
                   <td className="px-3 py-2">
                     <div className="text-slate-200 font-medium">{transfer.fromAccountName}</div>
                     <div className="text-xs text-slate-500">{transfer.fromCurrency}</div>

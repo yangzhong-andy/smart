@@ -161,10 +161,53 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json(transformed, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating cash flow:', error)
+    
+    // 检查是否是数据库连接错误
+    if (error.message?.includes('TLS connection') || 
+        error.message?.includes('connection') ||
+        error.message?.includes('ECONNREFUSED') ||
+        error.code === 'P1001' ||
+        !process.env.DATABASE_URL) {
+      return NextResponse.json(
+        { 
+          error: '数据库连接失败',
+          details: process.env.NODE_ENV === 'production' 
+            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置'
+            : '请检查 .env.local 中的 DATABASE_URL 配置'
+        },
+        { status: 503 }
+      )
+    }
+    
+    // 检查是否是字段验证错误
+    if (error.code === 'P2002') {
+      return NextResponse.json(
+        { 
+          error: '创建失败：数据唯一性冲突',
+          details: error.meta?.target ? `字段 ${error.meta.target} 已存在` : '数据已存在'
+        },
+        { status: 400 }
+      )
+    }
+    
+    if (error.code === 'P2003') {
+      return NextResponse.json(
+        { 
+          error: '创建失败：关联数据不存在',
+          details: error.meta?.field_name ? `关联的 ${error.meta.field_name} 不存在` : '关联数据不存在'
+        },
+        { status: 400 }
+      )
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to create cash flow' },
+      { 
+        error: 'Failed to create cash flow',
+        details: error.message || '未知错误',
+        code: error.code || 'UNKNOWN'
+      },
       { status: 500 }
     )
   }

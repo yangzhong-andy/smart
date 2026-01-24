@@ -2041,7 +2041,14 @@ export default function BankAccountsPage() {
                         {accountFlows.normal.map((flow) => (
                         <tr key={flow.id} className="hover:bg-slate-800/40">
                           <td className="px-3 py-2 text-slate-300">
-                            {new Date(flow.date).toLocaleDateString("zh-CN")}
+                            {new Date(flow.createdAt || flow.date).toLocaleString("zh-CN", {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false
+                            })}
                           </td>
                           <td className="px-3 py-2">
                             <span
@@ -2172,7 +2179,14 @@ export default function BankAccountsPage() {
                         {accountFlows.transfers.map((flow) => (
                           <tr key={flow.id} className="hover:bg-slate-800/40">
                             <td className="px-3 py-2 text-slate-300">
-                              {new Date(flow.date).toLocaleDateString("zh-CN")}
+                              {new Date(flow.createdAt || flow.date).toLocaleString("zh-CN", {
+                                year: "numeric",
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: false
+                              })}
                             </td>
                             <td className="px-3 py-2">
                               <span

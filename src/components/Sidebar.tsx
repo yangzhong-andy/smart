@@ -24,6 +24,7 @@ import {
   LogOut
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import ExchangeRateBar from "./ExchangeRateBar";
 
 import { LucideIcon } from "lucide-react";
 
@@ -562,13 +563,6 @@ export default function Sidebar() {
 
       {/* 底部 */}
       <div className={`px-5 py-5 border-t border-white/10 relative z-10 space-y-2 ${isCollapsed ? "px-3" : ""}`}>
-        {!isCollapsed && (
-          <div className="text-xs text-slate-500 mb-3 leading-relaxed font-medium">
-            <div className="mb-1">为 TikTok Shop 打造</div>
-            <div>智能国内端管理中台</div>
-          </div>
-        )}
-        
         {/* 用户信息 */}
         {!isCollapsed && session?.user && (
           <div className="mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
@@ -617,6 +611,13 @@ export default function Sidebar() {
             )}
           </span>
         </button>
+        
+        {/* 汇率显示栏 */}
+        {!isCollapsed && (
+          <div className="-mx-5">
+            <ExchangeRateBar />
+          </div>
+        )}
         
         {/* 版本号 */}
         <div className={`mt-3 pt-3 border-t border-white/5 ${isCollapsed ? "px-3" : "px-5"}`}>

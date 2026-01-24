@@ -10,7 +10,7 @@ import ImageUploader from "@/components/ImageUploader";
 type TransferEntryProps = {
   accounts: BankAccount[];
   onClose: () => void;
-  onSave: (flow: CashFlow) => void;
+  onSave: (flow: CashFlow) => Promise<void>;
 };
 
 const formatNumber = (n: number) => {
@@ -179,16 +179,16 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     // 防止重复提交
     setIsSubmitting(true);
     try {
-      // 保存两条记录
-      onSave(outFlowWithUID);
+      // 保存两条记录（异步处理）
+      await onSave(outFlowWithUID);
       // 延迟保存第二条，确保账户余额正确更新
-      setTimeout(() => {
-        onSave(inFlowWithUID);
-        // 延迟重置状态，给父组件时间处理
-        setTimeout(() => setIsSubmitting(false), 1000);
-      }, 100);
-    } catch (error) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await onSave(inFlowWithUID);
       setIsSubmitting(false);
+      onClose();
+    } catch (error: any) {
+      setIsSubmitting(false);
+      toast.error(error.message || '创建划拨记录失败');
     }
   };
 

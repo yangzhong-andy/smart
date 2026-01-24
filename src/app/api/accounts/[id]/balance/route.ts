@@ -43,7 +43,7 @@ export async function GET(
       
       return {
         id: flow.id,
-        date: flow.date.toISOString().slice(0, 10),
+        date: flow.createdAt.toISOString(), // 使用 createdAt 的完整时间
         type: flow.type === 'INCOME' ? 'INCOME' : flow.type === 'EXPENSE' ? 'EXPENSE' : 'TRANSFER',
         category: flow.category,
         summary: flow.summary,
@@ -95,7 +95,7 @@ export async function GET(
           relatedId,
           flows: flows.map(f => ({
             id: f.id,
-            date: f.date.toISOString().slice(0, 10),
+            date: f.createdAt.toISOString(), // 使用 createdAt 的完整时间
             type: f.type,
             amount: Number(f.amount),
             summary: f.summary

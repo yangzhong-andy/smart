@@ -192,7 +192,8 @@ export default function CashFlowPage() {
       
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || '创建失败');
+        const errorMessage = error.details ? `${error.error}: ${error.details}` : (error.error || '创建失败');
+        throw new Error(errorMessage);
       }
       
       await swrMutate('/api/cash-flow'); // 重新获取流水列表
@@ -466,33 +467,45 @@ export default function CashFlowPage() {
     return thisMonthIncomeByCurrency.reduce((sum, stat) => sum + stat.rmb, 0);
   }, [thisMonthIncomeByCurrency]);
 
-  // 基于筛选后数据的统计
+  // 基于筛选后数据的统计（按货币分组）
   const filteredStats = useMemo(() => {
     const filtered = sortedFlow.filter(f => !f.isReversal);
     const income = filtered.filter(f => f.type === "income");
     const expense = filtered.filter(f => f.type === "expense");
     
-    // 计算总收入（按原币种）
-    const totalIncome = income.reduce((sum, f) => {
-      const account = accounts.find(a => a.id === f.accountId);
+    // 按货币统计收入
+    const incomeByCurrency: Record<string, { original: number; rmb: number }> = {};
+    income.forEach((f) => {
+      const curr = f.currency || "RMB";
       const amount = Math.abs(f.amount);
-      if (account) {
-        const exchangeRate = account.exchangeRate || (f.currency === "RMB" ? 1 : 7.25);
-        return sum + (f.currency === "RMB" ? amount : amount * exchangeRate);
+      const account = accounts.find(a => a.id === f.accountId);
+      const exchangeRate = account?.exchangeRate || (curr === "RMB" ? 1 : 7.25);
+      
+      if (!incomeByCurrency[curr]) {
+        incomeByCurrency[curr] = { original: 0, rmb: 0 };
       }
-      return sum + (f.currency === "RMB" ? amount : amount * 7.25);
-    }, 0);
+      incomeByCurrency[curr].original += amount;
+      incomeByCurrency[curr].rmb += curr === "RMB" ? amount : amount * exchangeRate;
+    });
     
-    // 计算总支出（按原币种）
-    const totalExpense = expense.reduce((sum, f) => {
-      const account = accounts.find(a => a.id === f.accountId);
+    // 按货币统计支出
+    const expenseByCurrency: Record<string, { original: number; rmb: number }> = {};
+    expense.forEach((f) => {
+      const curr = f.currency || "RMB";
       const amount = Math.abs(f.amount);
-      if (account) {
-        const exchangeRate = account.exchangeRate || (f.currency === "RMB" ? 1 : 7.25);
-        return sum + (f.currency === "RMB" ? amount : amount * exchangeRate);
+      const account = accounts.find(a => a.id === f.accountId);
+      const exchangeRate = account?.exchangeRate || (curr === "RMB" ? 1 : 7.25);
+      
+      if (!expenseByCurrency[curr]) {
+        expenseByCurrency[curr] = { original: 0, rmb: 0 };
       }
-      return sum + (f.currency === "RMB" ? amount : amount * 7.25);
-    }, 0);
+      expenseByCurrency[curr].original += amount;
+      expenseByCurrency[curr].rmb += curr === "RMB" ? amount : amount * exchangeRate;
+    });
+    
+    // 计算总金额（人民币）
+    const totalIncome = Object.values(incomeByCurrency).reduce((sum, stat) => sum + stat.rmb, 0);
+    const totalExpense = Object.values(expenseByCurrency).reduce((sum, stat) => sum + stat.rmb, 0);
     
     return {
       totalIncome,
@@ -500,7 +513,9 @@ export default function CashFlowPage() {
       netIncome: totalIncome - totalExpense,
       transactionCount: filtered.length,
       incomeCount: income.length,
-      expenseCount: expense.length
+      expenseCount: expense.length,
+      incomeByCurrency,
+      expenseByCurrency
     };
   }, [sortedFlow, accounts]);
 
@@ -517,7 +532,7 @@ export default function CashFlowPage() {
         业务ID: flow.uid || flow.id,
         类型: flow.type === "income" ? "收入" : "支出",
         收付款类型: flow.type === "income" ? "收款" : "付款",
-        日期: formatDate(flow.date),
+        日期: formatDate(flow.createdAt || flow.date),
         摘要: flow.summary || "",
         一级分类: (() => {
           try {
@@ -655,51 +670,87 @@ export default function CashFlowPage() {
       {/* 统计面板 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div
-          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-emerald-500/20"
           style={{
             background: "linear-gradient(135deg, #065f46 0%, #0f172a 100%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)"
+            border: "1px solid rgba(16, 185, 129, 0.2)"
           }}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 mb-1">筛选总收入</p>
-              <p className="text-2xl font-bold text-emerald-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex-1">
+              <p className="text-xs text-slate-400 mb-2 font-medium">筛选总收入</p>
+              <p className="text-2xl font-bold text-emerald-300 mb-3" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {currency(filteredStats.totalIncome, "CNY")}
               </p>
             </div>
-            <TrendingUp className="h-8 w-8 text-emerald-300 opacity-50" />
+            <TrendingUp className="h-8 w-8 text-emerald-300/60 flex-shrink-0" />
           </div>
+          {/* 货币明细 */}
+          {Object.keys(filteredStats.incomeByCurrency).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-emerald-500/20">
+              <div className="space-y-1.5">
+                {Object.entries(filteredStats.incomeByCurrency).map(([curr, stat]) => (
+                  <div key={curr} className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-300 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-200">
+                      {curr}
+                    </span>
+                    <span className="text-xs font-semibold text-emerald-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                      {curr === "RMB" ? currency(stat.original, "CNY") : `${curr} ${stat.original.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div
-          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-rose-500/20"
           style={{
             background: "linear-gradient(135deg, #7f1d1d 0%, #0f172a 100%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)"
+            border: "1px solid rgba(244, 63, 94, 0.2)"
           }}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400 mb-1">筛选总支出</p>
-              <p className="text-2xl font-bold text-rose-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex-1">
+              <p className="text-xs text-slate-400 mb-2 font-medium">筛选总支出</p>
+              <p className="text-2xl font-bold text-rose-300 mb-3" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {currency(filteredStats.totalExpense, "CNY")}
               </p>
             </div>
-            <TrendingDown className="h-8 w-8 text-rose-300 opacity-50" />
+            <TrendingDown className="h-8 w-8 text-rose-300/60 flex-shrink-0" />
           </div>
+          {/* 货币明细 */}
+          {Object.keys(filteredStats.expenseByCurrency).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-rose-500/20">
+              <div className="space-y-1.5">
+                {Object.entries(filteredStats.expenseByCurrency).map(([curr, stat]) => (
+                  <div key={curr} className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-300 px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-200">
+                      {curr}
+                    </span>
+                    <span className="text-xs font-semibold text-rose-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                      {curr === "RMB" ? currency(stat.original, "CNY") : `${curr} ${stat.original.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div
-          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02] hover:shadow-lg"
           style={{
             background: filteredStats.netIncome >= 0 
               ? "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)"
               : "linear-gradient(135deg, #7f1d1d 0%, #0f172a 100%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)"
+            border: filteredStats.netIncome >= 0 
+              ? "1px solid rgba(59, 130, 246, 0.2)"
+              : "1px solid rgba(244, 63, 94, 0.2)"
           }}
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400 mb-1">净收入</p>
+              <p className="text-xs text-slate-400 mb-2 font-medium">净收入</p>
               <p 
                 className={`text-2xl font-bold ${filteredStats.netIncome >= 0 ? "text-primary-300" : "text-rose-300"}`}
                 style={{ fontFamily: "'JetBrains Mono', monospace" }}
@@ -707,61 +758,151 @@ export default function CashFlowPage() {
                 {currency(filteredStats.netIncome, "CNY")}
               </p>
             </div>
-            <DollarSign className={`h-8 w-8 ${filteredStats.netIncome >= 0 ? "text-primary-300" : "text-rose-300"} opacity-50`} />
+            <DollarSign className={`h-8 w-8 ${filteredStats.netIncome >= 0 ? "text-primary-300" : "text-rose-300"} opacity-60`} />
           </div>
         </div>
         <div
-          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-purple-500/20"
           style={{
             background: "linear-gradient(135deg, #581c87 0%, #0f172a 100%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)"
+            border: "1px solid rgba(168, 85, 247, 0.2)"
           }}
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400 mb-1">交易笔数</p>
+              <p className="text-xs text-slate-400 mb-2 font-medium">交易笔数</p>
               <p className="text-2xl font-bold text-purple-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {filteredStats.transactionCount}
               </p>
             </div>
-            <FileText className="h-8 w-8 text-purple-300 opacity-50" />
+            <FileText className="h-8 w-8 text-purple-300/60" />
           </div>
         </div>
         <div
-          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-orange-500/20"
           style={{
             background: "linear-gradient(135deg, #7c2d12 0%, #0f172a 100%)",
-            border: "1px solid rgba(255, 255, 255, 0.1)"
+            border: "1px solid rgba(251, 146, 60, 0.2)"
           }}
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400 mb-1">本月总收入</p>
+              <p className="text-xs text-slate-400 mb-2 font-medium">本月总收入</p>
               <p className="text-2xl font-bold text-orange-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {currency(thisMonthIncomeRMB, "CNY")}
               </p>
             </div>
-            <TrendingUp className="h-8 w-8 text-orange-300 opacity-50" />
+            <TrendingUp className="h-8 w-8 text-orange-300/60" />
           </div>
         </div>
       </div>
 
       {/* 本月统计详情 */}
       {thisMonthIncomeByCurrency.length > 0 && (
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-sm font-medium text-slate-200 mb-3">本月收入按货币明细</div>
+        <section className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-900/40 p-5 backdrop-blur-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="h-1 w-1 rounded-full bg-emerald-400"></div>
+            <h3 className="text-sm font-semibold text-slate-200">本月收入按货币明细</h3>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {thisMonthIncomeByCurrency.map((stat) => (
-              <div key={stat.currency} className="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-800/40 hover:bg-slate-800/60 transition-colors">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-slate-200 w-12">{stat.currency}</span>
-                  <span className="text-xs text-slate-400">{currency(stat.original, stat.currency)}</span>
+            {thisMonthIncomeByCurrency.map((stat, index) => {
+              // 为不同货币分配不同的颜色主题
+              const colorThemes = [
+                { 
+                  name: "emerald", 
+                  bg: "from-emerald-500/10 to-emerald-600/5", 
+                  border: "border-emerald-500/30", 
+                  hoverBorder: "hover:border-emerald-400/50",
+                  hoverShadow: "hover:shadow-emerald-500/20",
+                  badge: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
+                  amount: "text-emerald-300",
+                  gradient: "from-emerald-500/8"
+                },
+                { 
+                  name: "blue", 
+                  bg: "from-blue-500/10 to-blue-600/5", 
+                  border: "border-blue-500/30", 
+                  hoverBorder: "hover:border-blue-400/50",
+                  hoverShadow: "hover:shadow-blue-500/20",
+                  badge: "bg-blue-500/15 border-blue-500/30 text-blue-300",
+                  amount: "text-blue-300",
+                  gradient: "from-blue-500/8"
+                },
+                { 
+                  name: "purple", 
+                  bg: "from-purple-500/10 to-purple-600/5", 
+                  border: "border-purple-500/30", 
+                  hoverBorder: "hover:border-purple-400/50",
+                  hoverShadow: "hover:shadow-purple-500/20",
+                  badge: "bg-purple-500/15 border-purple-500/30 text-purple-300",
+                  amount: "text-purple-300",
+                  gradient: "from-purple-500/8"
+                },
+                { 
+                  name: "orange", 
+                  bg: "from-orange-500/10 to-orange-600/5", 
+                  border: "border-orange-500/30", 
+                  hoverBorder: "hover:border-orange-400/50",
+                  hoverShadow: "hover:shadow-orange-500/20",
+                  badge: "bg-orange-500/15 border-orange-500/30 text-orange-300",
+                  amount: "text-orange-300",
+                  gradient: "from-orange-500/8"
+                },
+                { 
+                  name: "cyan", 
+                  bg: "from-cyan-500/10 to-cyan-600/5", 
+                  border: "border-cyan-500/30", 
+                  hoverBorder: "hover:border-cyan-400/50",
+                  hoverShadow: "hover:shadow-cyan-500/20",
+                  badge: "bg-cyan-500/15 border-cyan-500/30 text-cyan-300",
+                  amount: "text-cyan-300",
+                  gradient: "from-cyan-500/8"
+                },
+                { 
+                  name: "pink", 
+                  bg: "from-pink-500/10 to-pink-600/5", 
+                  border: "border-pink-500/30", 
+                  hoverBorder: "hover:border-pink-400/50",
+                  hoverShadow: "hover:shadow-pink-500/20",
+                  badge: "bg-pink-500/15 border-pink-500/30 text-pink-300",
+                  amount: "text-pink-300",
+                  gradient: "from-pink-500/8"
+                }
+              ];
+              
+              const theme = colorThemes[index % colorThemes.length];
+              
+              return (
+                <div 
+                  key={stat.currency} 
+                  className={`group relative overflow-hidden rounded-xl border ${theme.border} bg-gradient-to-br ${theme.bg} p-4 ${theme.hoverBorder} hover:bg-slate-800/70 transition-all duration-200 hover:shadow-lg ${theme.hoverShadow}`}
+                >
+                  {/* 背景装饰 */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${theme.gradient} to-transparent opacity-0 group-hover:opacity-100 transition-opacity`}></div>
+                  
+                  <div className="relative flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {/* 货币标签 */}
+                      <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${theme.badge} border`}>
+                        <span className="text-xs font-bold">{stat.currency}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs text-slate-400 mb-0.5">原币金额</span>
+                        <span className="text-sm font-semibold text-slate-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                          {currency(stat.original, stat.currency)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs text-slate-400 mb-0.5">折合人民币</span>
+                      <span className={`text-base font-bold ${theme.amount}`} style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                        {currency(stat.rmb, "CNY")}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-emerald-300">
-                  {currency(stat.rmb, "CNY")}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -1060,7 +1201,7 @@ export default function CashFlowPage() {
                       {flow.type === "income" ? "收款" : "付款"}
                     </span>
                   </td>
-                  <td className="px-2 py-1.5 text-slate-300">{formatDate(flow.date)}</td>
+                  <td className="px-2 py-1.5 text-slate-300">{formatDate(flow.createdAt || flow.date)}</td>
                   <td className="px-2 py-2">
                     <div className="space-y-1.5">
                       {/* 分类标签 */}
