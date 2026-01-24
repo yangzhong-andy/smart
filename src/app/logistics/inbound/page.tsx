@@ -143,6 +143,15 @@ export default function InboundPage() {
     };
   }, [pendingInboundData]);
 
+  // 获取所有仓库名称列表（用于筛选）
+  const warehouseNames = useMemo(() => {
+    const warehouseSet = new Set<string>();
+    batches.forEach((b) => {
+      if (b.warehouse) warehouseSet.add(b.warehouse);
+    });
+    return Array.from(warehouseSet).sort();
+  }, [batches]);
+
   // 筛选待入库单
   const filteredInbound = useMemo(() => {
     let result = [...pendingInboundData];
