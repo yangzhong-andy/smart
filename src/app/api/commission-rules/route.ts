@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Department, CommissionRuleType, CommissionPeriod } from '@prisma/client'
+import { DepartmentEnum, CommissionRuleType, CommissionPeriod } from '@prisma/client'
 
 // GET - 获取所有佣金规则
 export async function GET(request: NextRequest) {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const enabled = searchParams.get('enabled')
 
     const where: any = {}
-    if (department) where.department = department as Department
+    if (department) where.department = department as DepartmentEnum
     if (enabled !== null) where.enabled = enabled === 'true'
 
     const rules = await prisma.commissionRule.findMany({
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const rule = await prisma.commissionRule.create({
       data: {
         name: body.name,
-        department: body.department as Department,
+        department: body.department as DepartmentEnum,
         position: body.position || null,
         type: body.type as CommissionRuleType,
         config: body.config ? JSON.parse(JSON.stringify(body.config)) : {},

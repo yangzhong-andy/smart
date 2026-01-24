@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Department, EmploymentStatus } from '@prisma/client'
+import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
 
 // GET - 获取所有员工
 export async function GET() {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       data: {
         name: body.name,
         employeeNumber: body.employeeNumber || null,
-        department: body.department as Department,
+        department: body.department as DepartmentEnum,
         position: body.position,
         joinDate: new Date(body.joinDate),
         phone: body.phone || null,

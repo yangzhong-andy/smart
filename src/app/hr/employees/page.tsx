@@ -68,24 +68,29 @@ export default function EmployeesPage() {
     saveEmployees(employees);
   }, [employees, initialized]);
 
+  // 从 API 获取部门列表
+  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher);
+  
+  // 将 API 返回的部门数据转换为页面需要的格式
+  const departments = useMemo(() => {
+    return departmentsData.map(dept => dept.name);
+  }, [departmentsData]);
+
   // 统计摘要
   const stats = useMemo(() => {
     const total = employees.length;
-    const byDepartment = {
-      财务: employees.filter((e) => e.department === "财务").length,
-      采购: employees.filter((e) => e.department === "采购").length,
-      物流: employees.filter((e) => e.department === "物流").length,
-      BD: employees.filter((e) => e.department === "BD").length,
-      运营: employees.filter((e) => e.department === "运营").length,
-      剪辑: employees.filter((e) => e.department === "剪辑").length
-    };
+    // 动态计算各部门的员工数量
+    const byDepartment: Record<string, number> = {};
+    departments.forEach((dept) => {
+      byDepartment[dept] = employees.filter((e) => e.department === dept).length;
+    });
     const byStatus = {
       在职: employees.filter((e) => e.status === "在职").length,
       离职: employees.filter((e) => e.status === "离职").length,
       试用期: employees.filter((e) => e.status === "试用期").length
     };
     return { total, byDepartment, byStatus };
-  }, [employees]);
+  }, [employees, departments]);
 
   // 筛选和排序
   const filteredEmployees = useMemo(() => {
@@ -242,14 +247,6 @@ export default function EmployeesPage() {
       toast.error("删除失败");
     }
   };
-
-  // 从 API 获取部门列表
-  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher);
-  
-  // 将 API 返回的部门数据转换为页面需要的格式
-  const departments = useMemo(() => {
-    return departmentsData.map(dept => dept.name);
-  }, [departmentsData]);
 
   return (
     <div className="space-y-6 p-6">

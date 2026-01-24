@@ -80,21 +80,26 @@ export default function CommissionRulesPage() {
     saveCommissionRules(rules);
   }, [rules, initialized]);
 
+  // 从 API 获取部门列表
+  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher);
+  
+  // 将 API 返回的部门数据转换为页面需要的格式
+  const departments = useMemo(() => {
+    return departmentsData.map(dept => dept.name);
+  }, [departmentsData]);
+
   // 统计摘要
   const stats = useMemo(() => {
     const total = rules.length;
     const enabled = rules.filter((r) => r.enabled).length;
     const disabled = rules.filter((r) => !r.enabled).length;
-    const byDepartment = {
-      财务: rules.filter((r) => r.department === "财务").length,
-      采购: rules.filter((r) => r.department === "采购").length,
-      物流: rules.filter((r) => r.department === "物流").length,
-      BD: rules.filter((r) => r.department === "BD").length,
-      运营: rules.filter((r) => r.department === "运营").length,
-      剪辑: rules.filter((r) => r.department === "剪辑").length
-    };
+    // 动态计算各部门的规则数量
+    const byDepartment: Record<string, number> = {};
+    departments.forEach((dept) => {
+      byDepartment[dept] = rules.filter((r) => r.department === dept).length;
+    });
     return { total, enabled, disabled, byDepartment };
-  }, [rules]);
+  }, [rules, departments]);
 
   // 筛选
   const filteredRules = useMemo(() => {
@@ -230,14 +235,6 @@ export default function CommissionRulesPage() {
       setRules(getCommissionRules());
     }
   };
-
-  // 从 API 获取部门列表
-  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher);
-  
-  // 将 API 返回的部门数据转换为页面需要的格式
-  const departments = useMemo(() => {
-    return departmentsData.map(dept => dept.name);
-  }, [departmentsData]);
 
   return (
     <div className="space-y-6 p-6">

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Department, EmploymentStatus } from '@prisma/client'
+import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
 
 // GET - 获取单个员工
 export async function GET(
@@ -56,7 +56,7 @@ export async function PUT(
     const updateData: any = {}
     if (body.name !== undefined) updateData.name = body.name
     if (body.employeeNumber !== undefined) updateData.employeeNumber = body.employeeNumber || null
-    if (body.department !== undefined) updateData.department = body.department as Department
+    if (body.department !== undefined) updateData.department = body.department as DepartmentEnum
     if (body.position !== undefined) updateData.position = body.position
     if (body.joinDate !== undefined) updateData.joinDate = new Date(body.joinDate)
     if (body.phone !== undefined) updateData.phone = body.phone || null
