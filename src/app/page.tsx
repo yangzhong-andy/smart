@@ -117,11 +117,33 @@ export default function HomePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            欢迎使用 <span className="text-primary-300">TK Smart ERP</span> 国内端管理
+        <div className="relative">
+          {/* 微弱的 backdrop-blur 容器底色 */}
+          <div className="absolute -inset-4 rounded-xl bg-gradient-to-br from-cyan-400/6 via-transparent to-blue-500/6 backdrop-blur-xl -z-10"></div>
+          <div className="absolute -inset-4 rounded-xl border border-cyan-500/10 -z-10"></div>
+          
+          {/* SMART ERP - 极细体 */}
+          <div className="text-xs uppercase tracking-[0.25em] text-slate-500/80 mb-2.5 font-extralight relative">
+            <span className="relative z-10">SMART ERP</span>
+            <div className="absolute -bottom-1 left-0 w-10 h-px bg-gradient-to-r from-cyan-400/30 to-transparent"></div>
+          </div>
+          
+          {/* 主标题 */}
+          <h1 className="text-3xl font-bold tracking-tight mb-2.5">
+            <span className="text-slate-100">欢迎使用 </span>
+            <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
+              TK Smart ERP
+            </span>
+            <span className="text-slate-100"> 国内端管理</span>
           </h1>
-          <p className="mt-2 text-sm text-slate-400">
+          
+          {/* 渐变装饰线 */}
+          <div className="relative h-[2px] w-24 overflow-hidden rounded-full mb-3">
+            <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 opacity-70"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-pulse"></div>
+          </div>
+          
+          <p className="text-sm text-slate-400 relative z-10">
             左侧导航已为你准备好国内端的核心模块，点击任意菜单进入对应的业务子模块。
           </p>
         </div>
