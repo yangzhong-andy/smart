@@ -271,6 +271,13 @@ export default function BankAccountsPage() {
       });
     } else if (financeRatesData && !financeRatesData.success) {
       console.warn('⚠️ 汇率加载失败:', financeRatesData.error);
+      // 如果是环境变量未配置的错误，显示提示
+      if (financeRatesData.error?.includes('EXCHANGERATE_API_KEY') || 
+          financeRatesData.error?.includes('MISSING_API_KEY')) {
+        console.error('❌ 请在生产环境配置 EXCHANGERATE_API_KEY 环境变量');
+        console.error('   如果使用 Vercel: 在项目设置 -> Environment Variables 中添加');
+        console.error('   如果使用其他平台: 请在对应平台的环境变量配置中添加 EXCHANGERATE_API_KEY=942adb4f011e406f282a658f');
+      }
     }
   }, [exchangeRates, financeRatesData]);
 

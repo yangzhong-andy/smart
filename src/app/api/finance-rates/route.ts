@@ -8,13 +8,30 @@ import { getFinanceRates } from '@/lib/exchange';
  */
 export async function GET(request: NextRequest) {
   try {
-    const rates = await getFinanceRates();
+    // 检查环境变量
+    const apiKey = process.env.EXCHANGERATE_API_KEY;
     
-    if (!rates) {
+    if (!apiKey) {
+      console.error('❌ EXCHANGERATE_API_KEY 环境变量未配置');
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Failed to fetch finance rates. Please check EXCHANGERATE_API_KEY in environment variables.' 
+          error: 'EXCHANGERATE_API_KEY environment variable is not set. Please configure it in your deployment platform (Vercel/Netlify/etc).',
+          errorCode: 'MISSING_API_KEY'
+        },
+        { status: 500 }
+      );
+    }
+    
+    const rates = await getFinanceRates();
+    
+    if (!rates) {
+      console.error('❌ 获取汇率数据失败');
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to fetch finance rates. Please check EXCHANGERATE_API_KEY in environment variables.',
+          errorCode: 'FETCH_FAILED'
         },
         { status: 500 }
       );
@@ -26,11 +43,12 @@ export async function GET(request: NextRequest) {
       lastUpdated: rates.lastUpdated
     });
   } catch (error: any) {
-    console.error('Error in finance rates API:', error);
+    console.error('❌ Error in finance rates API:', error);
     return NextResponse.json(
       { 
         success: false, 
-        error: error.message || 'Internal server error' 
+        error: error.message || 'Internal server error',
+        errorCode: 'INTERNAL_ERROR'
       },
       { status: 500 }
     );
