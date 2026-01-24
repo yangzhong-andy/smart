@@ -13,6 +13,7 @@ import {
 } from "@/lib/finance-store";
 import { type Store, getStores, saveStores } from "@/lib/store-store";
 import { COUNTRIES, getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
+import { type FinanceRates } from "@/lib/exchange";
 import { Wallet, CreditCard, Building2, Pencil, Trash2, List, TrendingUp, DollarSign, Coins, Search, X, SortAsc, SortDesc, Info, Download, Globe, Calculator } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -246,8 +247,35 @@ export default function BankAccountsPage() {
     setStores(loadedStores);
   }, []);
 
-  // 使用 finance-store 的统计函数
-  const { totalAssetsRMB, totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
+  // 使用 SWR 获取实时汇率
+  const { data: financeRatesData, isLoading: ratesLoading } = useSWR<{ success: boolean; data?: FinanceRates; error?: string }>(
+    '/api/finance-rates',
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshInterval: 3600000, // 每小时刷新一次
+      keepPreviousData: true
+    }
+  );
+  
+  const exchangeRates = financeRatesData?.success ? financeRatesData.data || null : null;
+  
+  // 调试：打印汇率数据
+  useEffect(() => {
+    if (exchangeRates) {
+      console.log('💱 实时汇率已加载:', {
+        USD: exchangeRates.USD,
+        JPY: exchangeRates.JPY,
+        lastUpdated: exchangeRates.lastUpdated
+      });
+    } else if (financeRatesData && !financeRatesData.success) {
+      console.warn('⚠️ 汇率加载失败:', financeRatesData.error);
+    }
+  }, [exchangeRates, financeRatesData]);
+
+  // 使用 finance-store 的统计函数（基础数据）
+  const { totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
 
   // 计算人民币账户总金额（只统计币种为RMB的账户）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
@@ -261,33 +289,61 @@ export default function BankAccountsPage() {
     }, 0);
   }, [accounts]);
 
-  // 计算USD账户的预估RMB金额（按汇率折算）
+  // 计算USD账户的预估RMB金额（使用实时汇率）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalUSDRMB = useMemo(() => {
+    // 优先使用实时汇率，如果没有则使用账户中存储的汇率
+    const usdRate = exchangeRates?.USD || 1;
+    
     return accounts.reduce((sum, acc) => {
       // 只统计USD账户
       if (acc.currency === "USD") {
         // originalBalance 已经包含了 initialCapital + 所有流水
-        const rmbValue = (acc.originalBalance || 0) * (acc.exchangeRate || 1);
+        // 使用实时汇率计算，如果没有实时汇率则回退到账户汇率
+        const rate = exchangeRates?.USD || acc.exchangeRate || 1;
+        const rmbValue = (acc.originalBalance || 0) * rate;
         return sum + rmbValue;
       }
       return sum;
     }, 0);
-  }, [accounts]);
+  }, [accounts, exchangeRates]);
 
-  // 计算JPY账户的预估RMB金额（按汇率折算）
+  // 计算JPY账户的预估RMB金额（使用实时汇率）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalJPYRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
       // 只统计JPY账户
       if (acc.currency === "JPY") {
         // originalBalance 已经包含了 initialCapital + 所有流水
-        const rmbValue = (acc.originalBalance || 0) * (acc.exchangeRate || 1);
+        // 使用实时汇率计算，如果没有实时汇率则回退到账户汇率
+        const rate = exchangeRates?.JPY || acc.exchangeRate || 1;
+        const rmbValue = (acc.originalBalance || 0) * rate;
         return sum + rmbValue;
       }
       return sum;
     }, 0);
-  }, [accounts]);
+  }, [accounts, exchangeRates]);
+
+  // 计算总资产（使用实时汇率）
+  const totalAssetsRMB = useMemo(() => {
+    return accounts.reduce((sum, acc) => {
+      if (acc.currency === "RMB") {
+        // RMB 账户直接使用原币余额
+        return sum + (acc.originalBalance || 0);
+      } else if (acc.currency === "USD") {
+        // USD 账户使用实时汇率
+        const rate = exchangeRates?.USD || acc.exchangeRate || 1;
+        return sum + (acc.originalBalance || 0) * rate;
+      } else if (acc.currency === "JPY") {
+        // JPY 账户使用实时汇率
+        const rate = exchangeRates?.JPY || acc.exchangeRate || 1;
+        return sum + (acc.originalBalance || 0) * rate;
+      } else {
+        // 其他币种使用账户中存储的汇率
+        return sum + (acc.originalBalance || 0) * (acc.exchangeRate || 1);
+      }
+    }, 0);
+  }, [accounts, exchangeRates]);
 
   // 筛选后的账户树（只显示主账户和独立账户，子账号通过树形结构显示）
   const filteredAccountTree = useMemo(() => {
@@ -854,7 +910,9 @@ export default function BankAccountsPage() {
             >
               {currency(totalAssetsRMB, "CNY")}
             </div>
-            <div className="text-xs text-white/60">所有账户按汇率折算</div>
+            <div className="text-xs text-white/60">
+              {exchangeRates ? "使用实时汇率折算" : "所有账户按汇率折算"}
+            </div>
           </div>
         </div>
 
@@ -888,7 +946,11 @@ export default function BankAccountsPage() {
             >
               {currency(totalUSDRMB, "CNY")}
             </div>
-            <div className="text-xs text-white/60">USD 账户原币余额</div>
+            <div className="text-xs text-white/60">
+              {exchangeRates 
+                ? `实时汇率: 1 USD = ${exchangeRates.USD.toFixed(4)} CNY`
+                : "USD 账户原币余额"}
+            </div>
           </div>
         </div>
 
@@ -922,7 +984,11 @@ export default function BankAccountsPage() {
             >
               {currency(totalJPYRMB, "CNY")}
             </div>
-            <div className="text-xs text-white/60">JPY 账户原币余额</div>
+            <div className="text-xs text-white/60">
+              {exchangeRates 
+                ? `实时汇率: 1 JPY = ${exchangeRates.JPY.toFixed(6)} CNY`
+                : "JPY 账户原币余额"}
+            </div>
           </div>
         </div>
 

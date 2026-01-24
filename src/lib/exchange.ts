@@ -12,8 +12,17 @@ export interface ExchangeRates {
     GBP?: number; // 英镑
     THB?: number; // 泰铢
     MYR?: number; // 马来西亚林吉特
+    JPY?: number; // 日元
   };
   timestamp: number; // 时间戳
+}
+
+export interface FinanceRates {
+  USD: number; // 美元对人民币汇率（1 USD = X CNY）
+  JPY: number; // 日元对人民币汇率（1 JPY = X CNY）
+  THB: number; // 泰铢对人民币汇率（1 THB = X CNY）
+  lastUpdated: string; // 最后更新时间（ISO 字符串）
+  [key: string]: number | string; // 支持其他币种和元数据
 }
 
 export interface ExchangeRateResponse {
@@ -53,7 +62,7 @@ export async function fetchExchangeRates(): Promise<ExchangeRates | null> {
       throw new Error(`API returned error: ${data['error-type'] || 'Unknown error'}`);
     }
 
-    // 只提取需要的币种：USD、GBP、THB、MYR
+    // 只提取需要的币种：USD、GBP、THB、MYR、JPY
     const rates: ExchangeRates['rates'] = {};
     
     if (data.conversion_rates) {
@@ -61,6 +70,7 @@ export async function fetchExchangeRates(): Promise<ExchangeRates | null> {
       if (data.conversion_rates.GBP) rates.GBP = data.conversion_rates.GBP;
       if (data.conversion_rates.THB) rates.THB = data.conversion_rates.THB;
       if (data.conversion_rates.MYR) rates.MYR = data.conversion_rates.MYR;
+      if (data.conversion_rates.JPY) rates.JPY = data.conversion_rates.JPY;
     }
     
     return {
@@ -71,6 +81,75 @@ export async function fetchExchangeRates(): Promise<ExchangeRates | null> {
     };
   } catch (error) {
     console.error('Error fetching exchange rates:', error);
+    return null;
+  }
+}
+
+/**
+ * 财务中心专用汇率获取函数
+ * 返回 USD, JPY, THB 等币种对 CNY 的汇率
+ * @returns 汇率对象，键为货币代码，值为 1 单位该货币 = X CNY
+ */
+export async function getFinanceRates(): Promise<FinanceRates | null> {
+  try {
+    const apiKey = process.env.EXCHANGERATE_API_KEY;
+    
+    if (!apiKey) {
+      console.error('❌ EXCHANGERATE_API_KEY 未设置');
+      return null;
+    }
+
+    const apiUrl = `https://v6.exchangerate-api.com/v6/${apiKey}/latest/CNY`;
+    
+    console.log('🔄 正在获取汇率数据...');
+    
+    const response = await fetch(apiUrl, {
+      next: { revalidate: 3600 } // 1小时缓存，自动更新
+    });
+
+    if (!response.ok) {
+      throw new Error(`API 请求失败: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    // 检查 API 返回状态
+    if (data.result !== 'success') {
+      throw new Error(`API 返回错误: ${data['error-type'] || '未知错误'}`);
+    }
+
+    // 提取财务中心需要的币种：USD, JPY, THB 等
+    const financeRates: FinanceRates = {
+      USD: 0,
+      JPY: 0,
+      THB: 0,
+      lastUpdated: data.time_last_update_utc || new Date().toISOString()
+    };
+
+    if (data.conversion_rates) {
+      // API 返回的是 1 CNY = X 目标货币
+      // 我们需要的是 1 目标货币 = X CNY，所以需要取倒数
+      if (data.conversion_rates.USD) {
+        financeRates.USD = 1 / data.conversion_rates.USD;
+      }
+      if (data.conversion_rates.JPY) {
+        financeRates.JPY = 1 / data.conversion_rates.JPY;
+      }
+      if (data.conversion_rates.THB) {
+        financeRates.THB = 1 / data.conversion_rates.THB;
+      }
+    }
+
+    // 控制台测试输出
+    console.log('✅ 汇率数据获取成功:');
+    console.log(`   USD/CNY: ${financeRates.USD > 0 ? financeRates.USD.toFixed(4) : 'N/A'}`);
+    console.log(`   JPY/CNY: ${financeRates.JPY > 0 ? financeRates.JPY.toFixed(6) : 'N/A'}`);
+    console.log(`   THB/CNY: ${financeRates.THB > 0 ? financeRates.THB.toFixed(4) : 'N/A'}`);
+    console.log(`   更新时间: ${financeRates.lastUpdated}`);
+
+    return financeRates;
+  } catch (error) {
+    console.error('❌ 获取汇率数据失败:', error);
     return null;
   }
 }

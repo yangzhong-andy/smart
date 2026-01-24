@@ -10,6 +10,7 @@ import { getStores, type Store } from "@/lib/store-store";
 import { getPaymentRequests } from "@/lib/payment-request-store";
 import { getPendingEntryCount } from "@/lib/pending-entry-store";
 import { getProducts } from "@/lib/products-store";
+import { getFinanceRates, type FinanceRates } from "@/lib/exchange";
 
 type CashFlow = {
   id: string;
@@ -78,6 +79,7 @@ export default function FinanceDashboardPage() {
     poNumber: ""
   });
   const [pendingEntryCount, setPendingEntryCount] = useState(0);
+  const [exchangeRates, setExchangeRates] = useState<FinanceRates | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -105,6 +107,27 @@ export default function FinanceDashboardPage() {
     // 加载待入账任务数量
     const count = getPendingEntryCount();
     setPendingEntryCount(count);
+  }, []);
+
+  // 获取汇率数据
+  useEffect(() => {
+    const fetchRates = async () => {
+      try {
+        const rates = await getFinanceRates();
+        if (rates) {
+          setExchangeRates(rates);
+          // 汇率数据已通过 console.log 在 getFinanceRates 中打印
+        }
+      } catch (error) {
+        console.error('获取汇率失败:', error);
+      }
+    };
+    
+    fetchRates();
+    // 每小时刷新一次（与 API 缓存时间一致）
+    const interval = setInterval(fetchRates, 3600000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const totalAssets = useMemo(() => {
