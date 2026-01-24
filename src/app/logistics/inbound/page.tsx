@@ -619,7 +619,7 @@ export default function InboundPage() {
               <div className="pt-4 border-t border-slate-800">
                 <h3 className="text-sm font-semibold text-slate-200 mb-3">入库批次记录</h3>
                 {(() => {
-                  const inboundBatches = getBatchesByInboundId(detailInbound.id);
+                  const inboundBatches = detailInbound.batches || [];
                   if (inboundBatches.length === 0) {
                     return <p className="text-sm text-slate-500">暂无入库批次</p>;
                   }
