@@ -1,95 +1,59 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Package, Plus, Search, X, Download, Eye, CheckCircle2, Clock, AlertCircle, Warehouse, Truck, ArrowRight } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
-import { getProducts, upsertProduct, type Product } from "@/lib/products-store";
-import { addInventoryMovement } from "@/lib/inventory-movements-store";
+import useSWR from "swr";
 
 // 出库批次类型
 type OutboundBatch = {
   id: string;
-  outboundId: string; // 关联的出库单ID
-  batchNumber: string; // 批次号
-  warehouse: string; // 出库仓库
-  qty: number; // 本次出库数量
-  shippedDate: string; // 出库日期
-  destination?: string; // 目的地
-  trackingNumber?: string; // 物流单号
-  notes?: string; // 备注
+  outboundId: string;
+  batchNumber: string;
+  warehouse: string;
+  warehouseId: string;
+  qty: number;
+  shippedDate: string;
+  destination?: string;
+  trackingNumber?: string;
+  notes?: string;
   createdAt: string;
 };
 
 // 出库单类型
 type OutboundOrder = {
   id: string;
-  outboundNumber: string; // 出库单号
-  skuId: string; // SKU ID
-  sku: string; // SKU名称
-  qty: number; // 出库数量
-  shippedQty: number; // 已出库数量
-  warehouse: string; // 出库仓库
-  destination?: string; // 目的地
+  outboundNumber: string;
+  skuId: string;
+  sku: string;
+  qty: number;
+  shippedQty: number;
+  warehouse: string;
+  warehouseId: string;
+  destination?: string;
   status: "待出库" | "部分出库" | "已出库" | "已取消";
-  reason?: string; // 出库原因
+  reason?: string;
   createdAt: string;
   updatedAt: string;
+  batches?: OutboundBatch[];
 };
 
-const OUTBOUND_ORDERS_KEY = "outboundOrders";
-const OUTBOUND_BATCHES_KEY = "outboundBatches";
+type Product = {
+  id: string;
+  skuId: string;
+  name: string;
+  [key: string]: any;
+};
 
-// 获取所有出库单
-function getOutboundOrders(): OutboundOrder[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(OUTBOUND_ORDERS_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
-  } catch (e) {
-    console.error("Failed to parse outbound orders", e);
-    return [];
+// SWR fetcher
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
-}
-
-// 保存出库单
-function saveOutboundOrders(orders: OutboundOrder[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(OUTBOUND_ORDERS_KEY, JSON.stringify(orders));
-  } catch (e) {
-    console.error("Failed to save outbound orders", e);
-  }
-}
-
-// 获取所有出库批次
-function getOutboundBatches(): OutboundBatch[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(OUTBOUND_BATCHES_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
-  } catch (e) {
-    console.error("Failed to parse outbound batches", e);
-    return [];
-  }
-}
-
-// 保存出库批次
-function saveOutboundBatches(batches: OutboundBatch[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(OUTBOUND_BATCHES_KEY, JSON.stringify(batches));
-  } catch (e) {
-    console.error("Failed to save outbound batches", e);
-  }
-}
-
-// 获取指定出库单的所有批次
-function getBatchesByOutboundId(outboundId: string): OutboundBatch[] {
-  return getOutboundBatches().filter((b) => b.outboundId === outboundId);
-}
+  return res.json();
+};
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -109,10 +73,21 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 export default function OutboundPage() {
-  const [outboundOrders, setOutboundOrders] = useState<OutboundOrder[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [batches, setBatches] = useState<OutboundBatch[]>([]);
-  const [initialized, setInitialized] = useState(false);
+  // 使用 SWR 获取数据
+  const { data: outboundOrdersData = [], mutate: mutateOutboundOrders } = useSWR<OutboundOrder[]>('/api/outbound-orders', fetcher);
+  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher);
+  const { data: productsData = [] } = useSWR<any[]>('/api/products', fetcher);
+  
+  // 从出库单数据中提取批次
+  const batches = useMemo(() => {
+    const allBatches: OutboundBatch[] = [];
+    outboundOrdersData.forEach((order) => {
+      if (order.batches) {
+        allBatches.push(...order.batches);
+      }
+    });
+    return allBatches;
+  }, [outboundOrdersData]);
   
   // 搜索和筛选
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -123,9 +98,11 @@ export default function OutboundPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [selectedOutbound, setSelectedOutbound] = useState<OutboundOrder | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     skuId: "",
     qty: "",
+    warehouseId: "",
     warehouse: "",
     destination: "",
     reason: ""
@@ -133,6 +110,7 @@ export default function OutboundPage() {
   const [batchForm, setBatchForm] = useState({
     qty: "",
     shippedDate: new Date().toISOString().slice(0, 10),
+    destination: "",
     trackingNumber: "",
     notes: ""
   });
@@ -141,22 +119,14 @@ export default function OutboundPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [detailOutbound, setDetailOutbound] = useState<OutboundOrder | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setOutboundOrders(getOutboundOrders());
-    setProducts(getProducts());
-    setBatches(getOutboundBatches());
-    setInitialized(true);
-  }, []);
-
   // 统计信息
   const stats = useMemo(() => {
-    const total = outboundOrders.length;
-    const pending = outboundOrders.filter((o) => o.status === "待出库").length;
-    const partial = outboundOrders.filter((o) => o.status === "部分出库").length;
-    const completed = outboundOrders.filter((o) => o.status === "已出库").length;
-    const totalQty = outboundOrders.reduce((sum, o) => sum + o.qty, 0);
-    const shippedQty = outboundOrders.reduce((sum, o) => sum + o.shippedQty, 0);
+    const total = outboundOrdersData.length;
+    const pending = outboundOrdersData.filter((o) => o.status === "待出库").length;
+    const partial = outboundOrdersData.filter((o) => o.status === "部分出库").length;
+    const completed = outboundOrdersData.filter((o) => o.status === "已出库").length;
+    const totalQty = outboundOrdersData.reduce((sum, o) => sum + o.qty, 0);
+    const shippedQty = outboundOrdersData.reduce((sum, o) => sum + o.shippedQty, 0);
     const pendingQty = totalQty - shippedQty;
 
     return {
@@ -168,23 +138,23 @@ export default function OutboundPage() {
       shippedQty,
       pendingQty
     };
-  }, [outboundOrders]);
+  }, [outboundOrdersData]);
 
-  // 获取所有仓库列表
-  const warehouses = useMemo(() => {
+  // 获取所有仓库名称列表（用于筛选）
+  const warehouseNames = useMemo(() => {
     const warehouseSet = new Set<string>();
-    outboundOrders.forEach((o) => {
+    outboundOrdersData.forEach((o) => {
       if (o.warehouse) warehouseSet.add(o.warehouse);
     });
     batches.forEach((b) => {
       if (b.warehouse) warehouseSet.add(b.warehouse);
     });
     return Array.from(warehouseSet).sort();
-  }, [outboundOrders, batches]);
+  }, [outboundOrdersData, batches]);
 
   // 筛选出库单
   const filteredOutbound = useMemo(() => {
-    let result = [...outboundOrders];
+    let result = [...outboundOrdersData];
 
     // 状态筛选
     if (filterStatus !== "all") {
@@ -215,15 +185,14 @@ export default function OutboundPage() {
     result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return result;
-  }, [outboundOrders, products, filterStatus, filterWarehouse, searchKeyword]);
+  }, [outboundOrdersData, filterStatus, filterWarehouse, searchKeyword]);
 
   // 创建出库单
-  const handleCreateOutbound = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateOutbound = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    const product = products.find((p) => p.sku_id === createForm.skuId);
-    if (!product) {
-      toast.error("请选择产品");
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
       return;
     }
 
@@ -233,45 +202,57 @@ export default function OutboundPage() {
       return;
     }
 
-    // 检查库存
-    const availableQty = product.at_domestic || 0;
-    if (qty > availableQty) {
-      toast.error(`出库数量不能超过可用库存（${availableQty}）`);
-      return;
-    }
-
-    if (!createForm.warehouse.trim()) {
+    if (!createForm.warehouseId) {
       toast.error("请选择出库仓库");
       return;
     }
 
-    const newOutbound: OutboundOrder = {
-      id: crypto.randomUUID(),
-      outboundNumber: `OUT-${Date.now()}`,
-      skuId: createForm.skuId,
-      sku: product.sku_id || product.name || "",
-      qty,
-      shippedQty: 0,
-      warehouse: createForm.warehouse.trim(),
-      destination: createForm.destination.trim() || undefined,
-      status: "待出库",
-      reason: createForm.reason.trim() || undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    if (!createForm.skuId) {
+      toast.error("请选择产品SKU");
+      return;
+    }
 
-    const updatedOrders = [...outboundOrders, newOutbound];
-    saveOutboundOrders(updatedOrders);
-    setOutboundOrders(updatedOrders);
-    toast.success("出库单创建成功");
-    setIsCreateModalOpen(false);
-    setCreateForm({
-      skuId: "",
-      qty: "",
-      warehouse: "",
-      destination: "",
-      reason: ""
-    });
+    setIsSubmitting(true);
+
+    try {
+      const body = {
+        outboundNumber: `OUT-${Date.now()}`,
+        skuId: createForm.skuId,
+        qty,
+        warehouseId: createForm.warehouseId,
+        destination: createForm.destination.trim() || undefined,
+        reason: createForm.reason.trim() || undefined,
+        status: "待出库"
+      };
+
+      const response = await fetch('/api/outbound-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建失败');
+      }
+
+      toast.success("出库单创建成功");
+      mutateOutboundOrders(); // 刷新数据
+      setIsCreateModalOpen(false);
+      setCreateForm({
+        skuId: "",
+        qty: "",
+        warehouseId: "",
+        warehouse: "",
+        destination: "",
+        reason: ""
+      });
+    } catch (error: any) {
+      console.error("创建出库单失败:", error);
+      toast.error(error.message || "创建失败，请重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 打开出库批次模态框
@@ -281,6 +262,7 @@ export default function OutboundPage() {
     setBatchForm({
       qty: remainingQty > 0 ? remainingQty.toString() : "",
       shippedDate: new Date().toISOString().slice(0, 10),
+      destination: outbound.destination || "",
       trackingNumber: "",
       notes: ""
     });
@@ -288,8 +270,13 @@ export default function OutboundPage() {
   };
 
   // 提交出库批次
-  const handleSubmitBatch = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitBatch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
     
     if (!selectedOutbound) return;
 
@@ -305,82 +292,47 @@ export default function OutboundPage() {
       return;
     }
 
-    // 创建出库批次
-    const newBatch: OutboundBatch = {
-      id: crypto.randomUUID(),
-      outboundId: selectedOutbound.id,
-      batchNumber: `BATCH-${Date.now()}`,
-      warehouse: selectedOutbound.warehouse,
-      qty,
-      shippedDate: batchForm.shippedDate,
-      destination: selectedOutbound.destination,
-      trackingNumber: batchForm.trackingNumber.trim() || undefined,
-      notes: batchForm.notes.trim() || undefined,
-      createdAt: new Date().toISOString()
-    };
+    setIsSubmitting(true);
 
-    const updatedBatches = [...batches, newBatch];
-    saveOutboundBatches(updatedBatches);
-    setBatches(updatedBatches);
-
-    // 更新出库单
-    const newShippedQty = selectedOutbound.shippedQty + qty;
-    let newStatus: OutboundOrder["status"] = "部分出库";
-    if (newShippedQty >= selectedOutbound.qty) {
-      newStatus = "已出库";
-    }
-
-    const updatedOutbound: OutboundOrder = {
-      ...selectedOutbound,
-      shippedQty: newShippedQty,
-      status: newStatus,
-      updatedAt: new Date().toISOString()
-    };
-    const updatedOrders = outboundOrders.map((o) => (o.id === updatedOutbound.id ? updatedOutbound : o));
-    saveOutboundOrders(updatedOrders);
-    setOutboundOrders(updatedOrders);
-
-    // 更新产品库存（从国内仓扣减）
-    const product = products.find((p) => p.sku_id === selectedOutbound.skuId);
-    if (product) {
-      const currentAtDomestic = product.at_domestic || 0;
-      const newAtDomestic = Math.max(0, currentAtDomestic - qty);
-      const updatedProduct: Product = {
-        ...product,
-        at_domestic: newAtDomestic
+    try {
+      const body = {
+        outboundId: selectedOutbound.id,
+        batchNumber: `BATCH-${Date.now()}`,
+        warehouseId: selectedOutbound.warehouseId,
+        qty,
+        shippedDate: batchForm.shippedDate,
+        destination: batchForm.destination.trim() || undefined,
+        trackingNumber: batchForm.trackingNumber.trim() || undefined,
+        notes: batchForm.notes.trim() || undefined
       };
-      upsertProduct(updatedProduct);
-      setProducts(getProducts());
 
-      // 记录库存变动
-      addInventoryMovement({
-        skuId: selectedOutbound.skuId,
-        skuName: product.name,
-        movementType: selectedOutbound.reason === "寄样" ? "寄样出库" : "国内出库",
-        location: "domestic",
-        qty: -qty, // 负数表示减少
-        qtyBefore: currentAtDomestic,
-        qtyAfter: newAtDomestic,
-        unitCost: product.cost_price,
-        totalCost: qty * (product.cost_price || 0),
-        currency: product.currency || "CNY",
-        relatedOrderId: selectedOutbound.id,
-        relatedOrderNumber: selectedOutbound.outboundNumber,
-        relatedOrderType: "出库单",
-        operationDate: batchForm.shippedDate || new Date().toISOString(),
-        notes: `出库批次：${batchForm.trackingNumber || "无"}，仓库：${selectedOutbound.warehouse}，目的地：${selectedOutbound.destination || "未指定"}`,
+      const response = await fetch('/api/outbound-batches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
-    }
 
-    toast.success(`成功出库 ${qty} 件`);
-    setIsBatchModalOpen(false);
-    setSelectedOutbound(null);
-    setBatchForm({
-      qty: "",
-      shippedDate: new Date().toISOString().slice(0, 10),
-      trackingNumber: "",
-      notes: ""
-    });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建失败');
+      }
+
+      toast.success("出库批次已创建");
+      mutateOutboundOrders(); // 刷新数据
+      setIsBatchModalOpen(false);
+      setBatchForm({
+        qty: "",
+        shippedDate: new Date().toISOString().slice(0, 10),
+        destination: "",
+        trackingNumber: "",
+        notes: ""
+      });
+    } catch (error: any) {
+      console.error("创建出库批次失败:", error);
+      toast.error(error.message || "创建失败，请重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 查看详情
@@ -470,7 +422,7 @@ export default function OutboundPage() {
           </select>
         </div>
 
-        {warehouses.length > 0 && (
+        {warehouseNames.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-400">仓库：</span>
             <select
@@ -479,7 +431,7 @@ export default function OutboundPage() {
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
             >
               <option value="all">全部</option>
-              {warehouses.map((w) => (
+              {warehouseNames.map((w) => (
                 <option key={w} value={w}>
                   {w}
                 </option>
@@ -513,7 +465,6 @@ export default function OutboundPage() {
             </thead>
             <tbody className="divide-y divide-slate-800">
               {filteredOutbound.map((outbound) => {
-                const product = products.find((p) => p.sku_id === outbound.skuId);
                 const remainingQty = outbound.qty - outbound.shippedQty;
                 const statusColors = STATUS_COLORS[outbound.status] || STATUS_COLORS["待出库"];
 
@@ -589,7 +540,7 @@ export default function OutboundPage() {
                   required
                 >
                   <option value="">请选择产品</option>
-                  {products.filter((p) => (p.at_domestic || 0) > 0).map((p) => (
+                  {productsData.filter((p: any) => (p.at_domestic || 0) > 0).map((p: any) => (
                     <option key={p.sku_id} value={p.sku_id}>
                       {p.sku_id} / {p.name} (可用库存: {p.at_domestic || 0})
                     </option>
@@ -611,14 +562,26 @@ export default function OutboundPage() {
 
               <label className="block space-y-1">
                 <span className="text-sm text-slate-300">出库仓库 *</span>
-                <input
-                  type="text"
-                  value={createForm.warehouse}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, warehouse: e.target.value }))}
+                <select
+                  value={createForm.warehouseId}
+                  onChange={(e) => {
+                    const selectedWarehouse = warehouses.find((w: any) => w.id === e.target.value);
+                    setCreateForm((f) => ({ 
+                      ...f, 
+                      warehouseId: e.target.value,
+                      warehouse: selectedWarehouse?.name || ""
+                    }));
+                  }}
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
-                  placeholder="如：深圳国内仓、海外仓等"
                   required
-                />
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouses.filter((w: any) => w.isActive).map((w: any) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} {w.code ? `(${w.code})` : ""}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="block space-y-1">
@@ -817,7 +780,7 @@ export default function OutboundPage() {
               <div className="pt-4 border-t border-slate-800">
                 <h3 className="text-sm font-semibold text-slate-200 mb-3">出库批次记录</h3>
                 {(() => {
-                  const outboundBatches = getBatchesByOutboundId(detailOutbound.id);
+                  const outboundBatches = detailOutbound.batches || [];
                   if (outboundBatches.length === 0) {
                     return <p className="text-sm text-slate-500">暂无出库批次</p>;
                   }

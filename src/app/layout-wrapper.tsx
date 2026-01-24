@@ -31,6 +31,16 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const [isChecking, setIsChecking] = useState(true);
   const isLoginPage = pathname === "/login";
 
+  // 为登录页面添加特殊标识的 useEffect（必须在顶层）
+  useEffect(() => {
+    if (isLoginPage) {
+      document.body.setAttribute('data-login-page', 'true');
+      return () => {
+        document.body.removeAttribute('data-login-page');
+      };
+    }
+  }, [isLoginPage]);
+
   useEffect(() => {
     // 如果是登录页面，不需要检查认证
     if (isLoginPage) {

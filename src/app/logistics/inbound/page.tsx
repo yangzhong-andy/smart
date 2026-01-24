@@ -1,56 +1,70 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Package, Plus, Search, X, Download, Eye, CheckCircle2, Clock, AlertCircle, Warehouse, Truck } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
-import { getPendingInbound, upsertPendingInbound, type PendingInbound } from "@/lib/pending-inbound-store";
-import { getDeliveryOrders, upsertDeliveryOrder, type DeliveryOrder } from "@/lib/delivery-orders-store";
-import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
-import { getProductBySkuId, upsertProduct, getProducts, type Product } from "@/lib/products-store";
-import { addInventoryMovement } from "@/lib/inventory-movements-store";
+import useSWR from "swr";
+
+// 待入库单类型
+type PendingInbound = {
+  id: string;
+  inboundNumber: string;
+  deliveryOrderId: string;
+  deliveryNumber: string;
+  contractId: string;
+  contractNumber: string;
+  sku: string;
+  skuId?: string;
+  qty: number;
+  receivedQty: number;
+  domesticTrackingNumber?: string;
+  shippedDate?: string;
+  status: "待入库" | "部分入库" | "已入库" | "已取消";
+  createdAt: string;
+  updatedAt: string;
+  batches?: InboundBatch[];
+};
 
 // 入库批次类型
 type InboundBatch = {
   id: string;
-  inboundId: string; // 关联的待入库单ID
-  batchNumber: string; // 批次号
-  warehouse: string; // 入库仓库
-  qty: number; // 本次入库数量
-  receivedDate: string; // 入库日期
-  notes?: string; // 备注
+  inboundId: string;
+  batchNumber: string;
+  warehouse: string;
+  warehouseId: string;
+  qty: number;
+  receivedDate: string;
+  notes?: string;
   createdAt: string;
 };
 
-const INBOUND_BATCHES_KEY = "inboundBatches";
+type DeliveryOrder = {
+  id: string;
+  deliveryNumber: string;
+  [key: string]: any;
+};
 
-// 获取所有入库批次
-function getInboundBatches(): InboundBatch[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(INBOUND_BATCHES_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
-  } catch (e) {
-    console.error("Failed to parse inbound batches", e);
-    return [];
+type PurchaseContract = {
+  id: string;
+  contractNumber: string;
+  [key: string]: any;
+};
+
+type Product = {
+  id: string;
+  skuId: string;
+  [key: string]: any;
+};
+
+// SWR fetcher
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
-}
-
-// 保存入库批次
-function saveInboundBatches(batches: InboundBatch[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(INBOUND_BATCHES_KEY, JSON.stringify(batches));
-  } catch (e) {
-    console.error("Failed to save inbound batches", e);
-  }
-}
-
-// 获取指定待入库单的所有批次
-function getBatchesByInboundId(inboundId: string): InboundBatch[] {
-  return getInboundBatches().filter((b) => b.inboundId === inboundId);
-}
+  return res.json();
+};
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -70,12 +84,22 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 export default function InboundPage() {
-  const [pendingInbound, setPendingInbound] = useState<PendingInbound[]>([]);
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [batches, setBatches] = useState<InboundBatch[]>([]);
-  const [initialized, setInitialized] = useState(false);
+  // 使用 SWR 获取数据
+  const { data: pendingInboundData = [], mutate: mutatePendingInbound } = useSWR<PendingInbound[]>('/api/pending-inbound', fetcher);
+  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>('/api/delivery-orders', fetcher);
+  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher);
+  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher);
+  
+  // 从待入库单数据中提取批次
+  const batches = useMemo(() => {
+    const allBatches: InboundBatch[] = [];
+    pendingInboundData.forEach((inbound) => {
+      if (inbound.batches) {
+        allBatches.push(...inbound.batches);
+      }
+    });
+    return allBatches;
+  }, [pendingInboundData]);
   
   // 搜索和筛选
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -86,34 +110,26 @@ export default function InboundPage() {
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [selectedInbound, setSelectedInbound] = useState<PendingInbound | null>(null);
   const [batchForm, setBatchForm] = useState({
+    warehouseId: "",
     warehouse: "",
     qty: "",
     receivedDate: new Date().toISOString().slice(0, 10),
     notes: ""
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // 详情模态框
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [detailInbound, setDetailInbound] = useState<PendingInbound | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setPendingInbound(getPendingInbound());
-    setDeliveryOrders(getDeliveryOrders());
-    setContracts(getPurchaseContracts());
-    setProducts(getProducts());
-    setBatches(getInboundBatches());
-    setInitialized(true);
-  }, []);
-
   // 统计信息
   const stats = useMemo(() => {
-    const total = pendingInbound.length;
-    const pending = pendingInbound.filter((i) => i.status === "待入库").length;
-    const partial = pendingInbound.filter((i) => i.status === "部分入库").length;
-    const completed = pendingInbound.filter((i) => i.status === "已入库").length;
-    const totalQty = pendingInbound.reduce((sum, i) => sum + i.qty, 0);
-    const receivedQty = pendingInbound.reduce((sum, i) => sum + i.receivedQty, 0);
+    const total = pendingInboundData.length;
+    const pending = pendingInboundData.filter((i) => i.status === "待入库").length;
+    const partial = pendingInboundData.filter((i) => i.status === "部分入库").length;
+    const completed = pendingInboundData.filter((i) => i.status === "已入库").length;
+    const totalQty = pendingInboundData.reduce((sum, i) => sum + i.qty, 0);
+    const receivedQty = pendingInboundData.reduce((sum, i) => sum + i.receivedQty, 0);
     const pendingQty = totalQty - receivedQty;
 
     return {
@@ -125,20 +141,11 @@ export default function InboundPage() {
       receivedQty,
       pendingQty
     };
-  }, [pendingInbound]);
-
-  // 获取所有仓库列表
-  const warehouses = useMemo(() => {
-    const warehouseSet = new Set<string>();
-    batches.forEach((b) => {
-      if (b.warehouse) warehouseSet.add(b.warehouse);
-    });
-    return Array.from(warehouseSet).sort();
-  }, [batches]);
+  }, [pendingInboundData]);
 
   // 筛选待入库单
   const filteredInbound = useMemo(() => {
-    let result = [...pendingInbound];
+    let result = [...pendingInboundData];
 
     // 状态筛选
     if (filterStatus !== "all") {
@@ -173,13 +180,14 @@ export default function InboundPage() {
     result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return result;
-  }, [pendingInbound, contracts, batches, filterStatus, filterWarehouse, searchKeyword]);
+  }, [pendingInboundData, contracts, batches, filterStatus, filterWarehouse, searchKeyword]);
 
   // 打开入库批次模态框
   const handleOpenBatchModal = (inbound: PendingInbound) => {
     setSelectedInbound(inbound);
     const remainingQty = inbound.qty - inbound.receivedQty;
     setBatchForm({
+      warehouseId: "",
       warehouse: "",
       qty: remainingQty > 0 ? remainingQty.toString() : "",
       receivedDate: new Date().toISOString().slice(0, 10),
@@ -189,8 +197,13 @@ export default function InboundPage() {
   };
 
   // 提交入库批次
-  const handleSubmitBatch = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitBatch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
     
     if (!selectedInbound) return;
 
@@ -206,102 +219,50 @@ export default function InboundPage() {
       return;
     }
 
-    if (!batchForm.warehouse.trim()) {
+    if (!batchForm.warehouseId) {
       toast.error("请选择入库仓库");
       return;
     }
 
-    // 创建入库批次
-    const newBatch: InboundBatch = {
-      id: crypto.randomUUID(),
-      inboundId: selectedInbound.id,
-      batchNumber: `BATCH-${Date.now()}`,
-      warehouse: batchForm.warehouse.trim(),
-      qty,
-      receivedDate: batchForm.receivedDate,
-      notes: batchForm.notes.trim() || undefined,
-      createdAt: new Date().toISOString()
-    };
+    setIsSubmitting(true);
 
-    const updatedBatches = [...batches, newBatch];
-    saveInboundBatches(updatedBatches);
-    setBatches(updatedBatches);
-
-    // 更新待入库单
-    const newReceivedQty = selectedInbound.receivedQty + qty;
-    let newStatus: PendingInbound["status"] = "部分入库";
-    if (newReceivedQty >= selectedInbound.qty) {
-      newStatus = "已入库";
-    }
-
-    const updatedInbound: PendingInbound = {
-      ...selectedInbound,
-      receivedQty: newReceivedQty,
-      status: newStatus,
-      updatedAt: new Date().toISOString()
-    };
-    upsertPendingInbound(updatedInbound);
-    setPendingInbound(getPendingInbound());
-
-    // 更新拿货单状态
-    const deliveryOrder = deliveryOrders.find((o) => o.id === selectedInbound.deliveryOrderId);
-    if (deliveryOrder && newStatus === "已入库") {
-      const updatedOrder: DeliveryOrder = {
-        ...deliveryOrder,
-        status: "已入库",
-        updatedAt: new Date().toISOString()
+    try {
+      const body = {
+        inboundId: selectedInbound.id,
+        batchNumber: `BATCH-${Date.now()}`,
+        warehouseId: batchForm.warehouseId,
+        qty,
+        receivedDate: batchForm.receivedDate,
+        notes: batchForm.notes.trim() || undefined
       };
-      upsertDeliveryOrder(updatedOrder);
-      setDeliveryOrders(getDeliveryOrders());
-    }
 
-    // 更新产品库存（国内虚拟仓）
-    // 入库时：从待入库转为国内仓库存
-    // 注意：这里假设待入库数量已经在创建拿货单时从工厂现货扣减了
-    // 入库操作是将"待入库"转为"国内仓库存"
-    if (selectedInbound.skuId) {
-      const product = products.find((p) => p.sku_id === selectedInbound.skuId);
-      if (product) {
-        const currentAtDomestic = product.at_domestic || 0;
-        const newAtDomestic = currentAtDomestic + qty;
-        const updatedProduct: Product = {
-          ...product,
-          at_domestic: newAtDomestic
-        };
-        upsertProduct(updatedProduct);
-        setProducts(getProducts());
+      const response = await fetch('/api/inbound-batches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
 
-        // 记录库存变动
-        const deliveryOrder = deliveryOrders.find((o) => o.id === selectedInbound.deliveryOrderId);
-        addInventoryMovement({
-          skuId: selectedInbound.skuId,
-          skuName: product.name,
-          movementType: "国内入库",
-          location: "domestic",
-          qty: qty,
-          qtyBefore: currentAtDomestic,
-          qtyAfter: newAtDomestic,
-          unitCost: product.cost_price,
-          totalCost: qty * (product.cost_price || 0),
-          currency: product.currency || "CNY",
-          relatedOrderId: deliveryOrder?.id,
-          relatedOrderNumber: deliveryOrder?.id,
-          relatedOrderType: "拿货单",
-          operationDate: batchForm.receivedDate || new Date().toISOString(),
-          notes: `入库批次：${newBatch.batchNumber}，仓库：${batchForm.warehouse}`,
-        });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建失败');
       }
-    }
 
-    toast.success(`成功入库 ${qty} 件`);
-    setIsBatchModalOpen(false);
-    setSelectedInbound(null);
-    setBatchForm({
-      warehouse: "",
-      qty: "",
-      receivedDate: new Date().toISOString().slice(0, 10),
-      notes: ""
-    });
+      toast.success("入库批次已创建");
+      mutatePendingInbound(); // 刷新数据
+      setIsBatchModalOpen(false);
+      setBatchForm({
+        warehouseId: "",
+        warehouse: "",
+        qty: "",
+        receivedDate: new Date().toISOString().slice(0, 10),
+        notes: ""
+      });
+    } catch (error: any) {
+      console.error("创建入库批次失败:", error);
+      toast.error(error.message || "创建失败，请重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 查看详情
@@ -386,7 +347,7 @@ export default function InboundPage() {
           </select>
         </div>
 
-        {warehouses.length > 0 && (
+        {warehouseNames.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-400">仓库：</span>
             <select
@@ -395,7 +356,7 @@ export default function InboundPage() {
               className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
             >
               <option value="all">全部</option>
-              {warehouses.map((w) => (
+              {warehouseNames.map((w) => (
                 <option key={w} value={w}>
                   {w}
                 </option>
@@ -430,7 +391,7 @@ export default function InboundPage() {
             <tbody className="divide-y divide-slate-800">
               {filteredInbound.map((inbound) => {
                 const contract = contracts.find((c) => c.id === inbound.contractId);
-                const inboundBatches = getBatchesByInboundId(inbound.id);
+                const inboundBatches = inbound.batches || [];
                 const remainingQty = inbound.qty - inbound.receivedQty;
                 const statusColors = STATUS_COLORS[inbound.status] || STATUS_COLORS["待入库"];
 
@@ -504,14 +465,26 @@ export default function InboundPage() {
             <form onSubmit={handleSubmitBatch} className="space-y-4">
               <label className="block space-y-1">
                 <span className="text-sm text-slate-300">入库仓库 *</span>
-                <input
-                  type="text"
-                  value={batchForm.warehouse}
-                  onChange={(e) => setBatchForm((f) => ({ ...f, warehouse: e.target.value }))}
+                <select
+                  value={batchForm.warehouseId}
+                  onChange={(e) => {
+                    const selectedWarehouse = warehouses.find((w: any) => w.id === e.target.value);
+                    setBatchForm((f) => ({ 
+                      ...f, 
+                      warehouseId: e.target.value,
+                      warehouse: selectedWarehouse?.name || ""
+                    }));
+                  }}
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
-                  placeholder="如：深圳国内仓、海外仓等"
                   required
-                />
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouses.filter((w: any) => w.isActive).map((w: any) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} {w.code ? `(${w.code})` : ""}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="block space-y-1">

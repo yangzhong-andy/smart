@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { signOut, useSession } from "next-auth/react";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
-import { logout, getCurrentUser } from "@/lib/auth";
 
 // 版本号（从 package.json 读取，构建时注入）
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.1.0";
@@ -135,6 +135,7 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -237,21 +238,43 @@ export default function Sidebar() {
       {/* 头部 */}
       <div className={`px-6 py-6 border-b border-white/10 transition-all duration-300 relative z-10 ${isCollapsed ? "px-4" : ""}`}>
         {!isCollapsed && (
-          <>
-            <div className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-3 font-semibold letter-spacing-wide">
-              TK Smart ERP
+          <div className="relative">
+            {/* 微弱的 backdrop-blur 容器底色 - 更精致的渐变 */}
+            <div className="absolute -inset-3 rounded-lg bg-gradient-to-br from-cyan-400/6 via-transparent to-blue-500/6 backdrop-blur-xl -z-10"></div>
+            <div className="absolute -inset-3 rounded-lg border border-cyan-500/10 -z-10"></div>
+            
+            {/* SMART ERP - 极细体，更大 */}
+            <div className="text-xs uppercase tracking-[0.25em] text-slate-500/80 mb-3.5 font-extralight relative">
+              <span className="relative z-10">SMART ERP</span>
+              <div className="absolute -bottom-1 left-0 w-10 h-px bg-gradient-to-r from-cyan-400/30 to-transparent"></div>
             </div>
-            <div className="text-2xl font-bold text-white leading-tight">
-              <span className="bg-gradient-to-r from-white via-primary-100 to-primary-200 bg-clip-text text-transparent">
-                国内端管理
-              </span>
-              <div className="mt-1.5 h-0.5 w-12 bg-gradient-to-r from-primary-500 to-primary-300 rounded-full"></div>
+            
+            {/* AI 智能调度中枢 - 冷色渐变，更大更醒目 */}
+            <div className="relative">
+              <h2 className="text-2xl font-bold leading-tight mb-3">
+                <span className="relative inline-block">
+                  <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
+                    AI 智能调度中枢
+                  </span>
+                  {/* 微弱的文字发光效果 */}
+                  <span className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent blur-sm opacity-30 -z-10">
+                    AI 智能调度中枢
+                  </span>
+                </span>
+              </h2>
+              {/* 渐变装饰线 - 更精致，更长 */}
+              <div className="relative h-[2px] w-20 overflow-hidden rounded-full">
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 opacity-70"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-pulse"></div>
+              </div>
             </div>
-          </>
+          </div>
         )}
         {isCollapsed && (
-          <div className="text-2xl font-bold text-white text-center">
-            <span className="bg-gradient-to-r from-white via-primary-100 to-primary-200 bg-clip-text text-transparent">TK</span>
+          <div className="text-center">
+            <div className="text-xl font-bold">
+              <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">TK</span>
+            </div>
           </div>
         )}
       </div>
@@ -547,22 +570,22 @@ export default function Sidebar() {
         )}
         
         {/* 用户信息 */}
-        {!isCollapsed && (() => {
-          const user = getCurrentUser();
-          return user ? (
-            <div className="mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-              <div className="text-xs text-slate-400 mb-1">当前用户</div>
-              <div className="text-sm font-medium text-white">{user.name}</div>
-              <div className="text-xs text-slate-500 truncate">{user.email}</div>
-            </div>
-          ) : null;
-        })()}
+        {!isCollapsed && session?.user && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+            <div className="text-xs text-slate-400 mb-1">当前用户</div>
+            <div className="text-sm font-medium text-white">{session.user.name || "用户"}</div>
+            <div className="text-xs text-slate-500 truncate">{session.user.email || ""}</div>
+          </div>
+        )}
         
         {/* 登出按钮 */}
         <button
-          onClick={() => {
-            logout();
-            window.location.href = "/login";
+          onClick={async () => {
+            // 使用 NextAuth 的 signOut 清除 session
+            await signOut({ 
+              redirect: true, 
+              callbackUrl: "/login" 
+            });
           }}
           className={`w-full flex items-center justify-center gap-3 rounded-xl px-4 py-3 text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all duration-300 relative overflow-hidden group ${
             isCollapsed ? "justify-center px-3" : ""

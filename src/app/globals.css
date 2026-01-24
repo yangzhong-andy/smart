@@ -17,6 +17,16 @@ body {
   position: relative;
 }
 
+/* 登录页面特殊样式 - 覆盖全局背景 */
+body[data-login-page="true"] {
+  background: #020617 !important;
+  background-attachment: fixed;
+}
+
+body[data-login-page="true"]::before {
+  display: none !important;
+}
+
 /* 添加动态背景粒子效果（可选） */
 body::before {
   content: '';

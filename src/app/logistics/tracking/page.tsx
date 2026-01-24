@@ -1,20 +1,60 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { X, ExternalLink, Package, ArrowRight } from "lucide-react";
-import {
-  getLogisticsTracking,
-  saveLogisticsTracking,
-  getLogisticsChannels,
-  type LogisticsTracking,
-  type TrackingStatus,
-  upsertLogisticsTracking,
-  deleteLogisticsTracking
-} from "@/lib/logistics-store";
-import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
-import { getProductBySkuId, upsertProduct, getProducts } from "@/lib/products-store";
+import useSWR from "swr";
 import InventoryDistribution from "@/components/InventoryDistribution";
+
+// 物流跟踪类型
+type TrackingStatus = "Pending" | "In Transit" | "Delivered" | "Exception";
+
+type TrackingEvent = {
+  id: string;
+  timestamp: string;
+  location?: string;
+  description: string;
+  status: TrackingStatus;
+};
+
+type LogisticsTracking = {
+  id: string;
+  internalOrderNumber: string;
+  trackingNumber: string;
+  channelId: string;
+  channelName: string;
+  channelCode?: string;
+  currentStatus: TrackingStatus;
+  shippedDate: string;
+  lastUpdatedAt: string;
+  transportDays?: number;
+  orderId?: string;
+  events: TrackingEvent[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+type LogisticsChannel = {
+  id: string;
+  name: string;
+  channelCode: string;
+  queryUrl: string;
+};
+
+type PurchaseContract = {
+  id: string;
+  contractNumber: string;
+  [key: string]: any;
+};
+
+// SWR fetcher
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.json();
+};
 
 const STATUS_COLORS: Record<TrackingStatus, { dot: string; text: string; bg: string }> = {
   Pending: {
@@ -47,14 +87,16 @@ const STATUS_LABELS: Record<TrackingStatus, string> = {
 };
 
 export default function LogisticsTrackingPage() {
-  const [tracking, setTracking] = useState<LogisticsTracking[]>([]);
-  const [channels, setChannels] = useState<any[]>([]);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
-  const [trackingReady, setTrackingReady] = useState(false);
+  // 使用 SWR 获取数据
+  const { data: tracking = [], mutate: mutateTracking } = useSWR<LogisticsTracking[]>('/api/logistics-tracking', fetcher);
+  const { data: channels = [] } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher);
+  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher);
+  
   const [filterStatus, setFilterStatus] = useState<TrackingStatus | "all">("all");
   const [selectedTracking, setSelectedTracking] = useState<LogisticsTracking | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [createForm, setCreateForm] = useState({
     internalOrderNumber: "",
@@ -62,23 +104,6 @@ export default function LogisticsTrackingPage() {
     channelId: "",
     shippedDate: new Date().toISOString().slice(0, 10)
   });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const loadedTracking = getLogisticsTracking();
-    setTracking(loadedTracking);
-    const loadedChannels = getLogisticsChannels();
-    setChannels(loadedChannels);
-    const loadedContracts = getPurchaseContracts();
-    setContracts(loadedContracts);
-    setTrackingReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!trackingReady) return;
-    saveLogisticsTracking(tracking);
-  }, [tracking, trackingReady]);
 
   const filteredTracking = useMemo(() => {
     let result = tracking;
@@ -106,8 +131,13 @@ export default function LogisticsTrackingPage() {
     setIsDrawerOpen(true);
   };
 
-  const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
     
     if (!createForm.internalOrderNumber.trim() || !createForm.trackingNumber.trim() || !createForm.channelId) {
       toast.error("请填写内部订单号、物流单号和选择物流商");
@@ -120,52 +150,75 @@ export default function LogisticsTrackingPage() {
       return;
     }
     
-    const newTracking: LogisticsTracking = {
-      id: crypto.randomUUID(),
-      internalOrderNumber: createForm.internalOrderNumber.trim(),
-      trackingNumber: createForm.trackingNumber.trim(),
-      channelId: createForm.channelId,
-      channelName: channel.name,
-      channelCode: channel.channelCode,
-      currentStatus: "Pending",
-      shippedDate: createForm.shippedDate,
-      lastUpdatedAt: new Date().toISOString(),
-      events: [
-        {
-          id: crypto.randomUUID(),
-          timestamp: new Date().toISOString(),
-          description: "物流单已创建",
-          status: "Pending"
-        }
-      ],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    setIsSubmitting(true);
     
-    upsertLogisticsTracking(newTracking);
-    setTracking((prev) => [...prev, newTracking]);
-    setCreateForm({
-      internalOrderNumber: "",
-      trackingNumber: "",
-      channelId: "",
-      shippedDate: new Date().toISOString().slice(0, 10)
-    });
-    setIsCreateModalOpen(false);
-    toast.success("物流跟踪记录已创建");
+    try {
+      const body = {
+        internalOrderNumber: createForm.internalOrderNumber.trim(),
+        trackingNumber: createForm.trackingNumber.trim(),
+        channelId: createForm.channelId,
+        currentStatus: "Pending",
+        shippedDate: createForm.shippedDate,
+        lastUpdatedAt: new Date().toISOString(),
+        events: [
+          {
+            timestamp: new Date().toISOString(),
+            description: "物流单已创建",
+            status: "Pending"
+          }
+        ]
+      };
+
+      const response = await fetch('/api/logistics-tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建失败');
+      }
+
+      toast.success("物流跟踪记录已创建");
+      mutateTracking(); // 刷新数据
+      setCreateForm({
+        internalOrderNumber: "",
+        trackingNumber: "",
+        channelId: "",
+        shippedDate: new Date().toISOString().slice(0, 10)
+      });
+      setIsCreateModalOpen(false);
+    } catch (error: any) {
+      console.error("创建物流跟踪失败:", error);
+      toast.error(error.message || "创建失败，请重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm("⚠️ 确定要删除这条物流跟踪记录吗？\n此操作不可恢复！")) return;
     
-    if (deleteLogisticsTracking(id)) {
-      setTracking((prev) => prev.filter((t) => t.id !== id));
+    try {
+      const response = await fetch(`/api/logistics-tracking/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '删除失败');
+      }
+
       toast.success("物流跟踪记录已删除");
+      mutateTracking(); // 刷新数据
       if (selectedTracking?.id === id) {
         setIsDrawerOpen(false);
         setSelectedTracking(null);
       }
-    } else {
-      toast.error("删除失败");
+    } catch (error: any) {
+      console.error("删除物流跟踪失败:", error);
+      toast.error(error.message || "删除失败，请重试");
     }
   };
 
