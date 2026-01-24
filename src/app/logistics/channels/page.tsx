@@ -40,20 +40,6 @@ const formatDate = (dateString: string): string => {
   }
 };
 
-const formatDate = (dateString: string): string => {
-  try {
-    return new Date(dateString).toLocaleString("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-  } catch {
-    return dateString;
-  }
-};
-
 export default function LogisticsChannelsPage() {
   // 使用 SWR 获取渠道数据
   const { data: channels = [], mutate: mutateChannels } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher);
