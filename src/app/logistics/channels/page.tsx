@@ -1,15 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Truck, Pencil, Trash2, Search, X, Download, ExternalLink, Phone, Globe } from "lucide-react";
-import {
-  getLogisticsChannels,
-  saveLogisticsChannels,
-  type LogisticsChannel,
-  upsertLogisticsChannel,
-  deleteLogisticsChannel
-} from "@/lib/logistics-store";
+import useSWR from "swr";
+
+// 物流渠道类型
+type LogisticsChannel = {
+  id: string;
+  name: string; // 物流商名称
+  channelCode: string; // 渠道代码
+  contact: string; // 联系人
+  phone: string; // 联系电话
+  queryUrl: string; // 官方查询网址
+  createdAt: string;
+  updatedAt: string;
+};
+
+// SWR fetcher
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.json();
+};
+
+const formatDate = (dateString: string): string => {
+  try {
+    return new Date(dateString).toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return dateString;
+  }
+};
 
 const formatDate = (dateString: string): string => {
   try {
@@ -26,14 +55,16 @@ const formatDate = (dateString: string): string => {
 };
 
 export default function LogisticsChannelsPage() {
-  const [channels, setChannels] = useState<LogisticsChannel[]>([]);
-  const [channelsReady, setChannelsReady] = useState(false);
+  // 使用 SWR 获取渠道数据
+  const { data: channels = [], mutate: mutateChannels } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<LogisticsChannel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "code" | "created">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [form, setForm] = useState({
     name: "",
@@ -42,19 +73,6 @@ export default function LogisticsChannelsPage() {
     phone: "",
     queryUrl: ""
   });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const loadedChannels = getLogisticsChannels();
-    setChannels(loadedChannels);
-    setChannelsReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!channelsReady) return;
-    saveLogisticsChannels(channels);
-  }, [channels, channelsReady]);
 
   // 统计数据
   const channelStats = useMemo(() => {
@@ -124,56 +142,89 @@ export default function LogisticsChannelsPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
     
     if (!form.name.trim() || !form.channelCode.trim()) {
       toast.error("请填写物流商名称和渠道代码");
       return;
     }
     
-    // 检查渠道代码是否重复
-    const duplicate = channels.find(
-      (c) => c.channelCode === form.channelCode.trim() && (!editingChannel || c.id !== editingChannel.id)
-    );
-    if (duplicate) {
-      toast.error("渠道代码已存在");
-      return;
+    setIsSubmitting(true);
+    
+    try {
+      const body = {
+        name: form.name.trim(),
+        channelCode: form.channelCode.trim(),
+        contact: form.contact.trim(),
+        phone: form.phone.trim(),
+        queryUrl: form.queryUrl.trim()
+      };
+
+      if (editingChannel) {
+        // 更新
+        const response = await fetch(`/api/logistics-channels/${editingChannel.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || '更新失败');
+        }
+
+        toast.success("物流渠道已更新");
+      } else {
+        // 创建
+        const response = await fetch('/api/logistics-channels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || '创建失败');
+        }
+
+        toast.success("物流渠道已创建");
+      }
+
+      mutateChannels(); // 刷新数据
+      resetForm();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      console.error("保存物流渠道失败:", error);
+      toast.error(error.message || "操作失败，请重试");
+    } finally {
+      setIsSubmitting(false);
     }
-    
-    const channelData: LogisticsChannel = {
-      id: editingChannel?.id || crypto.randomUUID(),
-      name: form.name.trim(),
-      channelCode: form.channelCode.trim(),
-      contact: form.contact.trim(),
-      phone: form.phone.trim(),
-      queryUrl: form.queryUrl.trim(),
-      createdAt: editingChannel?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    if (editingChannel) {
-      setChannels((prev) =>
-        prev.map((c) => (c.id === editingChannel.id ? channelData : c))
-      );
-      toast.success("物流渠道已更新");
-    } else {
-      setChannels((prev) => [...prev, channelData]);
-      toast.success("物流渠道已创建");
-    }
-    
-    resetForm();
-    setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("确定要删除这个物流渠道吗？\n此操作不可恢复！")) return;
     
-    if (deleteLogisticsChannel(id)) {
-      setChannels((prev) => prev.filter((c) => c.id !== id));
+    try {
+      const response = await fetch(`/api/logistics-channels/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '删除失败');
+      }
+
       toast.success("物流渠道已删除");
-    } else {
-      toast.error("删除失败");
+      mutateChannels(); // 刷新数据
+    } catch (error: any) {
+      console.error("删除物流渠道失败:", error);
+      toast.error(error.message || "删除失败，请重试");
     }
   };
 

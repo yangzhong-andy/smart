@@ -22,7 +22,7 @@ export async function PUT(
 
     const { id } = params
     const body = await request.json()
-    const { email, password, name, role, departmentId } = body
+    const { email, password, name, role, departmentId, isActive } = body
 
     // 验证必填字段
     if (!name) {
@@ -55,6 +55,11 @@ export async function PUT(
     // 如果提供了新密码，则更新密码
     if (password && password.trim()) {
       updateData.password = await bcrypt.hash(password, 10)
+    }
+
+    // 如果提供了 isActive，则更新状态
+    if (typeof isActive === 'boolean') {
+      updateData.isActive = isActive
     }
 
     // 更新用户

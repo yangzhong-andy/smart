@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Users, Plus, Pencil, Trash2, Search, X, Shield, Building2 } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Search, X, Shield, Building2, Power, Ban } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 
@@ -49,12 +49,16 @@ export default function UsersManagementPage() {
   // 获取部门列表
   const { data: departments = [] } = useSWR<Department[]>('/api/departments', fetcher);
   
+  // 获取员工列表（用于关联员工档案）
+  const { data: employees = [] } = useSWR<any[]>('/api/employees', fetcher);
+  
   const [form, setForm] = useState({
     email: "",
     password: "",
     name: "",
     role: "",
-    departmentId: ""
+    departmentId: "",
+    employeeId: "" // 关联的员工档案ID
   });
 
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -93,9 +97,26 @@ export default function UsersManagementPage() {
       password: "",
       name: "",
       role: "",
-      departmentId: ""
+      departmentId: "",
+      employeeId: ""
     });
     setEditingUser(null);
+  };
+  
+  // 当选择员工档案时，自动填充信息
+  const handleEmployeeSelect = (employeeId: string) => {
+    const employee = employees.find((e: any) => e.id === employeeId);
+    if (employee) {
+      setForm((prev) => ({
+        ...prev,
+        employeeId: employeeId,
+        email: employee.email || prev.email,
+        name: employee.name || prev.name,
+        // 根据员工的部门名称找到对应的部门ID
+        departmentId: employee.departmentId || prev.departmentId || 
+          (departments.find((d) => d.name === employee.department)?.id || "")
+      }));
+    }
   };
 
   const handleOpenModal = (user?: User) => {
@@ -106,12 +127,48 @@ export default function UsersManagementPage() {
         password: "", // 编辑时不显示密码
         name: user.name,
         role: user.role || "",
-        departmentId: user.departmentId || ""
+        departmentId: user.departmentId || "",
+        employeeId: ""
       });
     } else {
       resetForm();
     }
     setIsModalOpen(true);
+  };
+
+  // 切换用户启用/禁用状态
+  const handleToggleActive = async (user: User) => {
+    const action = user.isActive ? "禁用" : "启用";
+    if (!confirm(`确定要${action}用户 "${user.name}" 吗？${user.isActive ? "\n禁用后该用户将无法登录系统。" : ""}`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: user.name,
+          role: user.role,
+          departmentId: user.departmentId,
+          isActive: !user.isActive
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || '操作失败');
+      }
+
+      toast.success(`用户已${action}`);
+      mutateUsers();
+    } catch (error: any) {
+      console.error("切换用户状态失败:", error);
+      toast.error(error.message || "操作失败，请重试");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -282,12 +339,29 @@ export default function UsersManagementPage() {
                         }
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => handleOpenModal(user)}
-                          className="text-blue-400 hover:text-blue-300 mr-4"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleOpenModal(user)}
+                            className="text-blue-400 hover:text-blue-300"
+                            title="编辑"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleToggleActive(user)}
+                            className={user.isActive 
+                              ? "text-red-400 hover:text-red-300" 
+                              : "text-green-400 hover:text-green-300"
+                            }
+                            title={user.isActive ? "禁用账号" : "启用账号"}
+                          >
+                            {user.isActive ? (
+                              <Ban className="h-4 w-4" />
+                            ) : (
+                              <Power className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -317,6 +391,38 @@ export default function UsersManagementPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* 关联员工档案（仅创建时显示） */}
+                {!editingUser && (
+                  <div>
+                    <label className="block text-sm text-slate-300 mb-1">
+                      关联员工档案（可选）
+                    </label>
+                    <select
+                      value={form.employeeId}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleEmployeeSelect(e.target.value);
+                        } else {
+                          setForm((f) => ({ ...f, employeeId: "" }));
+                        }
+                      }}
+                      className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-blue-500"
+                    >
+                      <option value="">不关联（手动填写）</option>
+                      {employees
+                        .filter((emp: any) => emp.email && !users.find((u) => u.email === emp.email))
+                        .map((emp: any) => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name} ({emp.email}) - {emp.department || emp.position})
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      选择已存在的员工档案，将自动填充邮箱、姓名和部门
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm text-slate-300 mb-1">邮箱 *</label>
                   <input

@@ -126,6 +126,7 @@ const navItems: NavItem[] = [
     labelEn: "Settings",
     icon: Settings,
     children: [
+      { label: "员工档案管理", labelEn: "User Management", icon: Users, href: "/settings/users" },
       { label: "生成测试数据", labelEn: "", icon: Database, href: "/settings/generate-test-data" },
       { label: "清空系统数据", labelEn: "", icon: Trash2, href: "/settings/clear-data" }
     ]

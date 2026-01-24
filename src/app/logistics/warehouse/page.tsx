@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Warehouse, Plus, Search, X, Download, Eye, Pencil, Trash2, Package, MapPin, Phone, Mail } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
-import { getProducts, type Product } from "@/lib/products-store";
+import useSWR from "swr";
 
 // 仓库类型
 type WarehouseInfo = {
@@ -14,39 +14,34 @@ type WarehouseInfo = {
   address?: string; // 仓库地址
   contact?: string; // 联系人
   phone?: string; // 联系电话
-  email?: string; // 邮箱
+  manager?: string; // 仓库管理员
+  email?: string; // 邮箱（前端显示用，数据库中没有）
   capacity?: number; // 容量（平方米或立方米）
-  type: "国内仓" | "海外仓" | "工厂仓" | "其他"; // 仓库类型
-  status: "启用" | "停用"; // 状态
+  location: "FACTORY" | "DOMESTIC" | "TRANSIT" | "OVERSEAS"; // 仓库位置类型
+  type: "国内仓" | "海外仓" | "工厂仓" | "其他"; // 仓库类型（显示用）
+  isActive: boolean; // 是否启用
+  status: "启用" | "停用"; // 状态（显示用）
   notes?: string; // 备注
   createdAt: string;
   updatedAt: string;
 };
 
-const WAREHOUSES_KEY = "warehouses";
-
-// 获取所有仓库
-function getWarehouses(): WarehouseInfo[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(WAREHOUSES_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
-  } catch (e) {
-    console.error("Failed to parse warehouses", e);
-    return [];
+// SWR fetcher
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
-}
+  return res.json();
+};
 
-// 保存仓库
-function saveWarehouses(warehouses: WarehouseInfo[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(WAREHOUSES_KEY, JSON.stringify(warehouses));
-  } catch (e) {
-    console.error("Failed to save warehouses", e);
-  }
-}
+// 位置映射
+const locationMap: Record<string, "国内仓" | "海外仓" | "工厂仓" | "其他"> = {
+  FACTORY: "工厂仓",
+  DOMESTIC: "国内仓",
+  OVERSEAS: "海外仓",
+  TRANSIT: "其他"
+};
 
 // 获取仓库库存（从产品数据中统计）
 function getWarehouseInventory(warehouseName: string, products: Product[]): { sku: string; qty: number }[] {
@@ -65,9 +60,28 @@ const formatDate = (dateString?: string) => {
   }
 };
 
+// 位置反向映射
+const locationReverseMap: Record<"国内仓" | "海外仓" | "工厂仓" | "其他", "FACTORY" | "DOMESTIC" | "TRANSIT" | "OVERSEAS"> = {
+  "工厂仓": "FACTORY",
+  "国内仓": "DOMESTIC",
+  "海外仓": "OVERSEAS",
+  "其他": "TRANSIT"
+};
+
 export default function WarehousePage() {
-  const [warehouses, setWarehouses] = useState<WarehouseInfo[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  // 使用 SWR 获取仓库数据
+  const { data: warehousesData = [], mutate: mutateWarehouses } = useSWR<WarehouseInfo[]>('/api/warehouses', fetcher);
+  
+  // 转换数据格式（添加 type 和 status 显示字段）
+  const warehouses = useMemo(() => {
+    return warehousesData.map((w: any) => ({
+      ...w,
+      type: locationMap[w.location] || "其他",
+      status: w.isActive ? "启用" : "停用",
+      email: w.email || "" // 数据库中没有 email 字段
+    }));
+  }, [warehousesData]);
+
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -79,25 +93,20 @@ export default function WarehousePage() {
     address: "",
     contact: "",
     phone: "",
+    manager: "",
     email: "",
     capacity: "",
-    type: "国内仓" as WarehouseInfo["type"],
-    status: "启用" as WarehouseInfo["status"],
+    type: "国内仓" as "国内仓" | "海外仓" | "工厂仓" | "其他",
+    status: "启用" as "启用" | "停用",
     notes: ""
   });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setWarehouses(getWarehouses());
-    setProducts(getProducts());
-  }, []);
 
   // 统计信息
   const stats = useMemo(() => {
     const total = warehouses.length;
-    const active = warehouses.filter((w) => w.status === "启用").length;
-    const domestic = warehouses.filter((w) => w.type === "国内仓").length;
-    const overseas = warehouses.filter((w) => w.type === "海外仓").length;
+    const active = warehouses.filter((w) => w.isActive).length;
+    const domestic = warehouses.filter((w) => w.location === "DOMESTIC").length;
+    const overseas = warehouses.filter((w) => w.location === "OVERSEAS").length;
     return { total, active, domestic, overseas };
   }, [warehouses]);
 
@@ -139,6 +148,7 @@ export default function WarehousePage() {
       address: "",
       contact: "",
       phone: "",
+      manager: "",
       email: "",
       capacity: "",
       type: "国内仓",
@@ -158,6 +168,7 @@ export default function WarehousePage() {
         address: warehouse.address || "",
         contact: warehouse.contact || "",
         phone: warehouse.phone || "",
+        manager: warehouse.manager || "",
         email: warehouse.email || "",
         capacity: warehouse.capacity?.toString() || "",
         type: warehouse.type,
@@ -173,7 +184,7 @@ export default function WarehousePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 保存仓库
-  const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     // 防止重复提交
@@ -189,48 +200,81 @@ export default function WarehousePage() {
     
     setIsSubmitting(true);
 
-    if (editingWarehouse) {
-      // 更新
-      const updated = warehouses.map((w) =>
-        w.id === editingWarehouse.id
-          ? {
-              ...w,
-              ...form,
-              capacity: form.capacity ? Number(form.capacity) : undefined,
-              updatedAt: new Date().toISOString()
-            }
-          : w
-      );
-      setWarehouses(updated);
-      saveWarehouses(updated);
-      toast.success("仓库信息已更新");
-    } else {
-      // 创建
-      const newWarehouse: WarehouseInfo = {
-        id: crypto.randomUUID(),
-        ...form,
+    try {
+      const body = {
+        name: form.name.trim(),
+        code: form.code.trim() || undefined,
+        address: form.address.trim() || undefined,
+        contact: form.contact.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        manager: form.manager.trim() || undefined,
+        location: locationReverseMap[form.type],
+        isActive: form.status === "启用",
         capacity: form.capacity ? Number(form.capacity) : undefined,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        notes: form.notes.trim() || undefined
       };
-      const updated = [...warehouses, newWarehouse];
-      setWarehouses(updated);
-      saveWarehouses(updated);
-      toast.success("仓库创建成功");
-    }
 
-    setIsModalOpen(false);
-    resetForm();
-    setIsSubmitting(false);
+      if (editingWarehouse) {
+        // 更新
+        const response = await fetch(`/api/warehouses/${editingWarehouse.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || '更新失败');
+        }
+
+        toast.success("仓库信息已更新");
+      } else {
+        // 创建
+        const response = await fetch('/api/warehouses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || '创建失败');
+        }
+
+        toast.success("仓库创建成功");
+      }
+
+      mutateWarehouses(); // 刷新数据
+      setIsModalOpen(false);
+      resetForm();
+    } catch (error: any) {
+      console.error("保存仓库失败:", error);
+      toast.error(error.message || "操作失败，请重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 删除仓库
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("确定要删除这个仓库吗？")) return;
-    const updated = warehouses.filter((w) => w.id !== id);
-    setWarehouses(updated);
-    saveWarehouses(updated);
-    toast.success("仓库已删除");
+    
+    try {
+      const response = await fetch(`/api/warehouses/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '删除失败');
+      }
+
+      toast.success("仓库已删除");
+      mutateWarehouses(); // 刷新数据
+    } catch (error: any) {
+      console.error("删除仓库失败:", error);
+      toast.error(error.message || "删除失败，请重试");
+    }
   };
 
   // 导出数据
