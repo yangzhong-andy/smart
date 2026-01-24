@@ -185,7 +185,7 @@ export default function OutboundPage() {
     result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return result;
-  }, [outboundOrdersData, filterStatus, filterWarehouse, searchKeyword]);
+  }, [outboundOrdersData, productsData, filterStatus, filterWarehouse, searchKeyword]);
 
   // 创建出库单
   const handleCreateOutbound = async (e: React.FormEvent<HTMLFormElement>) => {
