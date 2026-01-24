@@ -2,23 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
 import { Mail, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { isAuthenticated } from "@/lib/auth";
-
-// 模拟登录账号（用于开发测试）
-const MOCK_USERS = [
-  { email: "admin@example.com", password: "admin123", name: "管理员" },
-  { email: "test@example.com", password: "test123", name: "测试账号" },
-  { email: "demo@example.com", password: "demo123", name: "演示账号" }
-];
-
-// 登录状态存储键
-const AUTH_TOKEN_KEY = "auth_token";
-const USER_INFO_KEY = "user_info";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     email: "",
@@ -27,10 +17,10 @@ export default function LoginPage() {
 
   // 如果已经登录，重定向到首页
   useEffect(() => {
-    if (isAuthenticated()) {
+    if (status === "authenticated" && session) {
       router.push("/");
     }
-  }, [router]);
+  }, [session, status, router]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -42,42 +32,27 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    // 模拟网络延迟
-    await new Promise(resolve => setTimeout(resolve, 800));
-
     try {
-      // 模拟登录验证
-      const user = MOCK_USERS.find(
-        (u) => u.email.toLowerCase() === form.email.trim().toLowerCase() && u.password === form.password
-      );
+      const result = await signIn("credentials", {
+        email: form.email.trim(),
+        password: form.password,
+        redirect: false
+      });
 
-      if (!user) {
-        toast.error("登录失败：邮箱或密码错误");
+      if (result?.error) {
+        toast.error(result.error);
         setLoading(false);
         return;
       }
 
-      // 模拟登录成功
-      // 保存登录状态到 localStorage
-      const authToken = `mock_token_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const userInfo = {
-        email: user.email,
-        name: user.name,
-        loginTime: new Date().toISOString()
-      };
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(AUTH_TOKEN_KEY, authToken);
-        window.localStorage.setItem(USER_INFO_KEY, JSON.stringify(userInfo));
+      if (result?.ok) {
+        toast.success("登录成功！");
+        // 延迟跳转，让用户看到成功提示
+        setTimeout(() => {
+          router.push("/");
+          router.refresh();
+        }, 500);
       }
-
-      toast.success("欢迎回来，老板！");
-      
-      // 延迟跳转，让用户看到成功提示
-      setTimeout(() => {
-        router.push("/");
-        router.refresh();
-      }, 500);
     } catch (err: any) {
       toast.error(`登录失败：${err.message || "未知错误"}`);
       setLoading(false);
@@ -158,11 +133,10 @@ export default function LoginPage() {
             {/* 底部提示 */}
             <div className="mt-6 space-y-2">
               <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
-                <p className="text-xs font-medium text-blue-300 mb-2">测试账号（开发模式）：</p>
+                <p className="text-xs font-medium text-blue-300 mb-2">默认管理员账号：</p>
                 <div className="space-y-1 text-xs text-blue-200/80">
-                  <div>管理员：admin@example.com / admin123</div>
-                  <div>测试账号：test@example.com / test123</div>
-                  <div>演示账号：demo@example.com / demo123</div>
+                  <div>邮箱：admin@yourcompany.com</div>
+                  <div>密码：admin123456</div>
                 </div>
               </div>
               <p className="text-xs text-slate-500 text-center">

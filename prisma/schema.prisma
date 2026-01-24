@@ -16,7 +16,8 @@ enum Platform {
   OTHER
 }
 
-enum Department {
+// 旧的部门枚举（保留用于向后兼容，Employee 和 CommissionRule 仍使用）
+enum DepartmentEnum {
   FINANCE
   PROCUREMENT
   LOGISTICS
@@ -342,11 +343,52 @@ model Influencer {
   videoTasks VideoTask[]
 }
 
+// 部门模型
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique // 部门名称（唯一）
+  code        String?  @unique // 部门编码（唯一，可选）
+  description String? // 部门描述
+  isActive    Boolean  @default(true) // 是否启用
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 关联关系
+  users           User[] // 该部门的用户
+  employees       Employee[] // 该部门的员工
+  commissionRules CommissionRule[] // 该部门的提成规则
+  purchaseOrders  PurchaseOrder[] // 流转到该部门的订单
+
+  @@index([code])
+  @@index([name])
+}
+
+// 用户模型
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique // 邮箱（唯一）
+  password     String // 密码（已哈希）
+  name         String // 姓名
+  role         String    @default("USER") // 角色：USER, ADMIN, SUPER_ADMIN
+  departmentId String? // 关联的部门ID
+  isActive     Boolean   @default(true) // 是否启用
+  lastLoginAt  DateTime? // 最后登录时间
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // 关联关系
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([departmentId])
+}
+
 model Employee {
   id                     String           @id @default(uuid())
   name                   String
   employeeNumber         String?
-  department             Department
+  department             DepartmentEnum // 保留旧枚举（向后兼容）
+  departmentId           String? // 关联到新的 Department 模型
   position               String
   joinDate               DateTime
   phone                  String?
@@ -359,27 +401,36 @@ model Employee {
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
 
-  commissionRecords CommissionRecord[]
-  videoTasks        VideoTask[]        @relation("Assignee")
+  // 关联关系
+  departmentRelation Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  commissionRecords  CommissionRecord[]
+  videoTasks         VideoTask[]        @relation("Assignee")
+
+  @@index([departmentId])
 }
 
 model CommissionRule {
-  id          String             @id @default(uuid())
-  name        String
-  department  Department
-  position    String?
-  type        CommissionRuleType
-  config      Json
-  dataSource  Json
-  period      CommissionPeriod
-  startDate   DateTime?
-  endDate     DateTime?
-  enabled     Boolean            @default(true)
-  description String?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id           String             @id @default(uuid())
+  name         String
+  department   DepartmentEnum // 保留旧枚举（向后兼容）
+  departmentId String? // 关联到新的 Department 模型
+  position     String?
+  type         CommissionRuleType
+  config       Json
+  dataSource   Json
+  period       CommissionPeriod
+  startDate    DateTime?
+  endDate      DateTime?
+  enabled      Boolean            @default(true)
+  description  String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
-  records CommissionRecord[]
+  // 关联关系
+  departmentRelation Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  records            CommissionRecord[]
+
+  @@index([departmentId])
 }
 
 model CommissionRecord {
@@ -730,13 +781,19 @@ model PurchaseOrder {
   contractId String?           @unique
   contract   PurchaseContract? @relation(fields: [contractId], references: [id])
 
+  // 订单流转（标记现在流转到了哪个部门）
+  currentStep String? // 当前流转到的部门ID（关联到 Department）
+
   // 状态
   status    PurchaseOrderStatus @default(PENDING_RISK)
   createdAt DateTime            @default(now())
   updatedAt DateTime            @updatedAt
 
-  // 关联店铺
-  store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  // 关联关系
+  store           Store?      @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  currentStepDept Department? @relation(fields: [currentStep], references: [id], onDelete: SetNull)
+
+  @@index([currentStep])
 }
 
 // 产品-供应商关联表（多对多关系）

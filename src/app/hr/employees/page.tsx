@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Users, Plus, Pencil, Trash2, Search, X, SortAsc, SortDesc, Download } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
+import useSWR from "swr";
 import {
   getEmployees,
   saveEmployees,
@@ -12,6 +13,22 @@ import {
   type Employee,
   type Department
 } from "@/lib/hr-store";
+
+// SWR fetcher
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.json();
+};
+
+interface DepartmentFromAPI {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+}
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -226,7 +243,13 @@ export default function EmployeesPage() {
     }
   };
 
-  const departments: Department[] = ["财务", "采购", "物流", "BD", "运营", "剪辑"];
+  // 从 API 获取部门列表
+  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher);
+  
+  // 将 API 返回的部门数据转换为页面需要的格式
+  const departments = useMemo(() => {
+    return departmentsData.map(dept => dept.name);
+  }, [departmentsData]);
 
   return (
     <div className="space-y-6 p-6">

@@ -3,6 +3,7 @@ import "./globals.css";
 import { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { Toaster } from "sonner";
+import { Providers } from "./providers";
 import LayoutWrapper from "./layout-wrapper";
 
 export const metadata: Metadata = {
@@ -14,7 +15,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="zh-CN">
       <body className="h-screen overflow-hidden antialiased">
-        <LayoutWrapper>{children}</LayoutWrapper>
+        <Providers>
+          <LayoutWrapper>{children}</LayoutWrapper>
+        </Providers>
         <Toaster richColors position="top-center" />
       </body>
     </html>

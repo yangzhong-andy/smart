@@ -2,9 +2,9 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
-import { isAuthenticated } from "@/lib/auth";
 import GlobalRefresher from "@/components/GlobalRefresher";
 
 // 动态导入 Sidebar，禁用 SSR，避免初始化错误
@@ -27,6 +27,7 @@ const Sidebar = dynamic(() => import("@/components/Sidebar"), {
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
   const isLoginPage = pathname === "/login";
 
@@ -37,8 +38,13 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       return;
     }
 
+    // 等待 session 加载完成
+    if (status === "loading") {
+      return;
+    }
+
     // 检查用户是否已登录
-    if (!isAuthenticated()) {
+    if (status === "unauthenticated" || !session) {
       // 未登录，重定向到登录页
       router.push("/login");
       return;
@@ -46,7 +52,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
 
     // 已登录，允许访问
     setIsChecking(false);
-  }, [pathname, router, isLoginPage]);
+  }, [pathname, router, isLoginPage, session, status]);
 
   // 正在检查认证状态时显示加载中
   if (isChecking && !isLoginPage) {
