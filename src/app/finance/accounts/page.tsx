@@ -1437,8 +1437,24 @@ export default function BankAccountsPage() {
                     {acc.currency !== "RMB" && (
                       <div className="mt-1 text-xs text-white/60">
                         约 {currency(
-                          (displayBalance * (acc.exchangeRate || 1)),
+                          (() => {
+                            // 优先使用实时汇率，如果没有则使用账户存储的汇率
+                            let rate = acc.exchangeRate || 1;
+                            if (exchangeRates) {
+                              if (acc.currency === "USD") {
+                                rate = exchangeRates.USD;
+                              } else if (acc.currency === "JPY") {
+                                rate = exchangeRates.JPY;
+                              }
+                            }
+                            return displayBalance * rate;
+                          })(),
                           "CNY"
+                        )}
+                        {exchangeRates && (
+                          <span className="ml-1 text-cyan-400/70 text-[10px]">
+                            (实时)
+                          </span>
                         )}
                       </div>
                     )}
@@ -1592,17 +1608,38 @@ export default function BankAccountsPage() {
                               {(() => {
                                 // 计算 RMB 余额（originalBalance 已经包含了 initialCapital）
                                 const totalOriginalBalance = acc.originalBalance || 0;
-                                const totalRmbBalance = acc.currency === "RMB"
-                                  ? totalOriginalBalance
-                                  : totalOriginalBalance * (acc.exchangeRate || 1);
-                                return currency(totalRmbBalance, "CNY");
+                                if (acc.currency === "RMB") {
+                                  return currency(totalOriginalBalance, "CNY");
+                                }
+                                // 优先使用实时汇率
+                                let rate = acc.exchangeRate || 1;
+                                if (exchangeRates) {
+                                  if (acc.currency === "USD") {
+                                    rate = exchangeRates.USD;
+                                  } else if (acc.currency === "JPY") {
+                                    rate = exchangeRates.JPY;
+                                  }
+                                }
+                                return currency(totalOriginalBalance * rate, "CNY");
                               })()}
                             </span>
                           </div>
                           {acc.currency !== "RMB" && (
                             <div className="flex items-center justify-between">
                               <span className="text-slate-400">汇率：</span>
-                              <span className="text-white">{formatNumber(acc.exchangeRate || 1)}</span>
+                              <span className="text-white">
+                                {(() => {
+                                  // 显示实时汇率或账户汇率
+                                  if (exchangeRates) {
+                                    if (acc.currency === "USD") {
+                                      return `${formatNumber(exchangeRates.USD)} (实时)`;
+                                    } else if (acc.currency === "JPY") {
+                                      return `${formatNumber(exchangeRates.JPY)} (实时)`;
+                                    }
+                                  }
+                                  return formatNumber(acc.exchangeRate || 1);
+                                })()}
+                              </span>
                             </div>
                           )}
                         </div>
