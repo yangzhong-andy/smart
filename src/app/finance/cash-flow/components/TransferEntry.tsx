@@ -109,8 +109,8 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       toast.error("账户不存在");
       return;
     }
-    // 计算转出账户总余额 = originalBalance（已经包含了 initialCapital + 所有流水）
-    const fromAccountTotalBalance = fromAccount.originalBalance || 0;
+    // 计算转出账户总余额 = initialCapital + originalBalance（与显示逻辑保持一致）
+    const fromAccountTotalBalance = (fromAccount.initialCapital || 0) + (fromAccount.originalBalance || 0);
     if (fromAccountTotalBalance < amount) {
       toast.error("转出账户余额不足");
       return;
