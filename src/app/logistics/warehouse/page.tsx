@@ -44,7 +44,7 @@ const locationMap: Record<string, "国内仓" | "海外仓" | "工厂仓" | "其
 };
 
 // 获取仓库库存（从产品数据中统计）
-function getWarehouseInventory(warehouseName: string, products: Product[]): { sku: string; qty: number }[] {
+function getWarehouseInventory(warehouseName: string, products: any[]): { sku: string; qty: number }[] {
   // 这里简化处理，实际应该根据入库批次记录来统计
   // 暂时返回空数组，后续可以根据入库批次数据来统计
   return [];
