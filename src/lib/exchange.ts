@@ -104,7 +104,7 @@ export async function getFinanceRates(): Promise<FinanceRates | null> {
     console.log('🔄 正在获取汇率数据...');
     
     const response = await fetch(apiUrl, {
-      next: { revalidate: 300 } // 5分钟缓存，自动更新（汇率变化较快）
+      next: { revalidate: 3600 } // 1小时缓存，自动更新
     });
 
     if (!response.ok) {

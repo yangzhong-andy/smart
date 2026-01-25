@@ -254,33 +254,60 @@ export default function BankAccountsPage() {
     {
       revalidateOnFocus: true, // 窗口获得焦点时刷新
       revalidateOnReconnect: true,
-      refreshInterval: 300000, // 每 5 分钟刷新一次（缩短刷新间隔）
+      refreshInterval: 3600000, // 每 1 小时刷新一次
       keepPreviousData: true,
       dedupingInterval: 60000, // 1 分钟内去重，避免重复请求
     }
   );
   
-  const exchangeRates = financeRatesData?.success ? financeRatesData.data || null : null;
+  // 提取汇率数据
+  const exchangeRates = useMemo(() => {
+    if (!financeRatesData) return null;
+    if (financeRatesData.success && financeRatesData.data) {
+      return financeRatesData.data;
+    }
+    return null;
+  }, [financeRatesData]);
   
   // 调试：打印汇率数据
   useEffect(() => {
+    console.log('🔍 [汇率调试] SWR 状态:', {
+      isLoading: ratesLoading,
+      hasData: !!financeRatesData,
+      success: financeRatesData?.success,
+      error: financeRatesData?.error,
+      errorCode: financeRatesData?.errorCode
+    });
+    
     if (exchangeRates) {
-      console.log('💱 实时汇率已加载:', {
+      console.log('💱 [汇率调试] 实时汇率已加载:', {
         USD: exchangeRates.USD,
         JPY: exchangeRates.JPY,
+        THB: exchangeRates.THB,
         lastUpdated: exchangeRates.lastUpdated
       });
-    } else if (financeRatesData && !financeRatesData.success) {
-      console.warn('⚠️ 汇率加载失败:', financeRatesData.error);
-      // 如果是环境变量未配置的错误，显示提示
-      if (financeRatesData.error?.includes('EXCHANGERATE_API_KEY') || 
-          financeRatesData.error?.includes('MISSING_API_KEY')) {
-        console.error('❌ 请在生产环境配置 EXCHANGERATE_API_KEY 环境变量');
-        console.error('   如果使用 Vercel: 在项目设置 -> Environment Variables 中添加');
-        console.error('   如果使用其他平台: 请在对应平台的环境变量配置中添加 EXCHANGERATE_API_KEY=942adb4f011e406f282a658f');
+    } else if (financeRatesData) {
+      if (!financeRatesData.success) {
+        console.error('❌ [汇率调试] 汇率加载失败:', {
+          error: financeRatesData.error,
+          errorCode: financeRatesData.errorCode
+        });
+        // 如果是环境变量未配置的错误，显示提示
+        if (financeRatesData.error?.includes('EXCHANGERATE_API_KEY') || 
+            financeRatesData.errorCode === 'MISSING_API_KEY') {
+          console.error('❌ 请在生产环境配置 EXCHANGERATE_API_KEY 环境变量');
+          console.error('   如果使用 Vercel: 在项目设置 -> Environment Variables 中添加');
+          console.error('   如果使用其他平台: 请在对应平台的环境变量配置中添加 EXCHANGERATE_API_KEY=942adb4f011e406f282a658f');
+        }
+      } else {
+        console.warn('⚠️ [汇率调试] financeRatesData.success 为 true，但 exchangeRates 为 null');
       }
+    } else if (ratesLoading) {
+      console.log('⏳ [汇率调试] 正在加载汇率数据...');
+    } else {
+      console.warn('⚠️ [汇率调试] 没有汇率数据，也没有加载状态');
     }
-  }, [exchangeRates, financeRatesData]);
+  }, [exchangeRates, financeRatesData, ratesLoading]);
 
   // 使用 finance-store 的统计函数（基础数据）
   const { totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
