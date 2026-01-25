@@ -248,7 +248,14 @@ export default function BankAccountsPage() {
   }, []);
 
   // 使用 SWR 获取实时汇率
-  const { data: financeRatesData, isLoading: ratesLoading, mutate: mutateRates } = useSWR<{ success: boolean; data?: FinanceRates; error?: string }>(
+  const { data: financeRatesData, isLoading: ratesLoading, mutate: mutateRates } = useSWR<{ 
+    success: boolean; 
+    data?: FinanceRates; 
+    error?: string;
+    errorCode?: string;
+    lastUpdated?: string;
+    timestamp?: string;
+  }>(
     '/api/finance-rates',
     fetcher,
     {
