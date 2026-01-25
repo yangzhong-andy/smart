@@ -55,5 +55,5 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// 设置重新验证时间为 1 小时（3600 秒）
-export const revalidate = 3600;
+// 设置重新验证时间为 5 分钟（300 秒），更频繁地更新汇率
+export const revalidate = 300;

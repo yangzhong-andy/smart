@@ -248,14 +248,15 @@ export default function BankAccountsPage() {
   }, []);
 
   // 使用 SWR 获取实时汇率
-  const { data: financeRatesData, isLoading: ratesLoading } = useSWR<{ success: boolean; data?: FinanceRates; error?: string }>(
+  const { data: financeRatesData, isLoading: ratesLoading, mutate: mutateRates } = useSWR<{ success: boolean; data?: FinanceRates; error?: string }>(
     '/api/finance-rates',
     fetcher,
     {
-      revalidateOnFocus: false,
+      revalidateOnFocus: true, // 窗口获得焦点时刷新
       revalidateOnReconnect: true,
-      refreshInterval: 3600000, // 每小时刷新一次
-      keepPreviousData: true
+      refreshInterval: 300000, // 每 5 分钟刷新一次（缩短刷新间隔）
+      keepPreviousData: true,
+      dedupingInterval: 60000, // 1 分钟内去重，避免重复请求
     }
   );
   
@@ -955,7 +956,23 @@ export default function BankAccountsPage() {
             </div>
             <div className="text-xs text-white/60">
               {exchangeRates 
-                ? `实时汇率: 1 USD = ${exchangeRates.USD.toFixed(4)} CNY`
+                ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span>实时汇率: 1 USD = {exchangeRates.USD.toFixed(4)} CNY</span>
+                    {exchangeRates.lastUpdated && (
+                      <span className="text-white/40 text-[10px]">
+                        ({new Date(exchangeRates.lastUpdated).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })})
+                      </span>
+                    )}
+                    <button
+                      onClick={() => mutateRates()}
+                      className="text-cyan-400 hover:text-cyan-300 text-[10px] underline"
+                      title="手动刷新汇率"
+                    >
+                      刷新
+                    </button>
+                  </div>
+                )
                 : "USD 账户原币余额"}
             </div>
           </div>
@@ -993,7 +1010,23 @@ export default function BankAccountsPage() {
             </div>
             <div className="text-xs text-white/60">
               {exchangeRates 
-                ? `实时汇率: 1 JPY = ${exchangeRates.JPY.toFixed(6)} CNY`
+                ? (
+                  <div className="flex items-center gap-2">
+                    <span>实时汇率: 1 JPY = {exchangeRates.JPY.toFixed(6)} CNY</span>
+                    {exchangeRates.lastUpdated && (
+                      <span className="text-white/40 text-[10px]">
+                        ({new Date(exchangeRates.lastUpdated).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })})
+                      </span>
+                    )}
+                    <button
+                      onClick={() => mutateRates()}
+                      className="text-cyan-400 hover:text-cyan-300 text-[10px] underline"
+                      title="手动刷新汇率"
+                    >
+                      刷新
+                    </button>
+                  </div>
+                )
                 : "JPY 账户原币余额"}
             </div>
           </div>
