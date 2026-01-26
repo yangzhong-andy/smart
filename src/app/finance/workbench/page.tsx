@@ -184,7 +184,7 @@ export default function FinanceWorkbenchPage() {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("approval-updated", handleApprovalUpdate);
     };
-  }, [loadData, refreshApprovalData]);
+  }, [refreshApprovalData]);
 
   // 统计信息
   const stats = useMemo(() => {
@@ -334,8 +334,8 @@ export default function FinanceWorkbenchPage() {
       // 刷新数据
       const updated = await getExpenseRequestsByStatus("Approved");
         mutate("approved-expense-requests");
-      swrMutate('/api/cash-flow');
-      swrMutate('/api/accounts');
+      mutate('/api/cash-flow');
+      mutate('/api/accounts');
       
       toast.success("支出已成功出账", { icon: "✅", duration: 3000 });
       setExpenseAccountModal({ open: false, requestId: null });
@@ -405,9 +405,9 @@ export default function FinanceWorkbenchPage() {
       
       // 刷新数据
       const updated = await getIncomeRequestsByStatus("Approved");
-      setApprovedIncomeRequests(updated);
-      swrMutate('/api/cash-flow');
-      swrMutate('/api/accounts');
+      mutate("approved-income-requests");
+      mutate('/api/cash-flow');
+      mutate('/api/accounts');
       
       toast.success("收入已成功入账", { icon: "✅", duration: 3000 });
       setIncomeAccountModal({ open: false, requestId: null });
