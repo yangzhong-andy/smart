@@ -1314,12 +1314,12 @@ export default function ApprovalCenterPage() {
                         const isIncome = !isExpense;
                         
                         return (
-                        <div
-                          key={request.id}
-                          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
+                          <div
+                            key={request.id}
+                            className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
                               <div className="flex items-center gap-4 mb-4">
                                 <div>
                                   <div className="text-xs text-slate-400 mb-1">摘要</div>
