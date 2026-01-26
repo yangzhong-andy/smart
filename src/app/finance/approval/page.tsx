@@ -3,7 +3,8 @@
 import toast from "react-hot-toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import useSWR, { mutate } from "swr";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
 import { getAdConsumptions, getAdRecharges, getAgencies, type Agency } from "@/lib/ad-agency-store";
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
@@ -56,21 +57,11 @@ export default function ApprovalCenterPage() {
   const [historyFilter, setHistoryFilter] = useState<BillStatus | "all">("all"); // 历史记录状态筛选
   const [billTypeFilter, setBillTypeFilter] = useState<BillType | "all">("all"); // 账单类型筛选（待审批和历史记录共用）
   
-  const [pendingBills, setPendingBills] = useState<MonthlyBill[]>([]);
-  const [pendingExpenseRequests, setPendingExpenseRequests] = useState<ExpenseRequest[]>([]);
-  const [pendingIncomeRequests, setPendingIncomeRequests] = useState<IncomeRequest[]>([]);
-  const [historyBills, setHistoryBills] = useState<MonthlyBill[]>([]);
-  const [historyExpenseRequests, setHistoryExpenseRequests] = useState<ExpenseRequest[]>([]);
-  const [historyIncomeRequests, setHistoryIncomeRequests] = useState<IncomeRequest[]>([]);
-  
   const [selectedBill, setSelectedBill] = useState<MonthlyBill | null>(null);
   const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
   const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isRequestDetailOpen, setIsRequestDetailOpen] = useState(false);
-  const [recharges, setRecharges] = useState<any[]>([]);
-  const [consumptions, setConsumptions] = useState<any[]>([]);
-  const [rebateReceivables, setRebateReceivables] = useState<RebateReceivable[]>([]);
   const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
   const [rejectModal, setRejectModal] = useState<{ open: boolean; type: "bill" | "expense" | "income" | null; id: string | null }>({
     open: false,
@@ -89,72 +80,83 @@ export default function ApprovalCenterPage() {
   // 模拟用户角色（实际应该从用户系统获取）
   const [userRole] = useState<"finance" | "boss" | "cashier">("boss");
 
-  // 加载历史审批记录
-  const loadHistoryRecords = useCallback(async () => {
-    const allBills = await getMonthlyBills();
-    if (!Array.isArray(allBills)) {
-      setHistoryBills([]);
-      return;
+  // SWR fetcher 函数
+  const fetcher = useCallback(async (key: string) => {
+    if (typeof window === "undefined") return null;
+    switch (key) {
+      case "monthly-bills":
+        return await getMonthlyBills();
+      case "pending-bills":
+        return await getBillsByStatus("Pending_Approval");
+      case "expense-requests":
+        return await getExpenseRequests();
+      case "pending-expense-requests":
+        return await getExpenseRequestsByStatus("Pending_Approval");
+      case "income-requests":
+        return await getIncomeRequests();
+      case "pending-income-requests":
+        return await getIncomeRequestsByStatus("Pending_Approval");
+      case "recharges":
+        return getAdRecharges();
+      case "consumptions":
+        return getAdConsumptions();
+      case "rebate-receivables":
+        return getRebateReceivables();
+      default:
+        return null;
     }
-    // 历史记录：所有非草稿且非待审批状态的记录，或者有退回原因的记录
-    const history = allBills.filter((b) => {
-      // 排除草稿和待审批状态
+  }, []);
+
+  // 使用 SWR 获取数据
+  const { data: allBillsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+  const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { revalidateOnFocus: true });
+  const { data: expenseRequestsData } = useSWR("expense-requests", fetcher, { revalidateOnFocus: true });
+  const { data: pendingExpenseRequestsData } = useSWR("pending-expense-requests", fetcher, { revalidateOnFocus: true });
+  const { data: incomeRequestsData } = useSWR("income-requests", fetcher, { revalidateOnFocus: true });
+  const { data: pendingIncomeRequestsData } = useSWR("pending-income-requests", fetcher, { revalidateOnFocus: true });
+  const { data: rechargesData } = useSWR("recharges", fetcher);
+  const { data: consumptionsData } = useSWR("consumptions", fetcher);
+  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher);
+
+  // 确保数据是数组并指定类型
+  const allBills: MonthlyBill[] = Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [];
+  const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
+  const allExpenseRequests: ExpenseRequest[] = Array.isArray(expenseRequestsData) ? (expenseRequestsData as ExpenseRequest[]) : [];
+  const pendingExpenseRequests: ExpenseRequest[] = Array.isArray(pendingExpenseRequestsData) ? (pendingExpenseRequestsData as ExpenseRequest[]) : [];
+  const allIncomeRequests: IncomeRequest[] = Array.isArray(incomeRequestsData) ? (incomeRequestsData as IncomeRequest[]) : [];
+  const pendingIncomeRequests: IncomeRequest[] = Array.isArray(pendingIncomeRequestsData) ? (pendingIncomeRequestsData as IncomeRequest[]) : [];
+  const recharges: any[] = Array.isArray(rechargesData) ? rechargesData : [];
+  const consumptions: any[] = Array.isArray(consumptionsData) ? consumptionsData : [];
+  const rebateReceivables: RebateReceivable[] = Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [];
+
+  // 计算历史记录（使用 useMemo 优化）
+  const historyBills = useMemo(() => {
+    return allBills.filter((b) => {
       if (b.status === "Draft" || b.status === "Pending_Approval") {
         return false;
       }
-      // 包含已批准、已支付，或者有退回原因的（即使状态是草稿，但有退回原因说明曾经被退回）
       return b.status === "Approved" || b.status === "Paid" || !!b.rejectionReason;
     });
-    setHistoryBills(history);
-    
-    
-    // 加载支出和收入申请历史记录
-    getExpenseRequests().then((allExpenseRequests) => {
-      if (!Array.isArray(allExpenseRequests)) {
-        setHistoryExpenseRequests([]);
-        return;
-      }
-      const historyExpenseReqs = allExpenseRequests.filter((r) => {
-        if (r.status === "Draft" || r.status === "Pending_Approval") {
-          return false;
-        }
-        return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
-      });
-      setHistoryExpenseRequests(historyExpenseReqs);
-    });
-    
-    getIncomeRequests().then((allIncomeRequests) => {
-      if (!Array.isArray(allIncomeRequests)) {
-        setHistoryIncomeRequests([]);
-        return;
-      }
-      const historyIncomeReqs = allIncomeRequests.filter((r) => {
-        if (r.status === "Draft" || r.status === "Pending_Approval") {
-          return false;
-        }
-        return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
-      });
-      setHistoryIncomeRequests(historyIncomeReqs);
-    });
-  }, []);
+  }, [allBills]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getBillsByStatus("Pending_Approval").then(setPendingBills);
-    // 加载支出和收入申请
-    getExpenseRequestsByStatus("Pending_Approval").then(setPendingExpenseRequests);
-    getIncomeRequestsByStatus("Pending_Approval").then(setPendingIncomeRequests);
-    // 加载历史记录
-    loadHistoryRecords();
-    // 加载充值记录和消耗记录，用于详情显示
-    const loadedRecharges = getAdRecharges();
-    setRecharges(loadedRecharges);
-    const loadedConsumptions = getAdConsumptions();
-    setConsumptions(loadedConsumptions);
-    // 加载返点应收款记录
-    const loadedRebateReceivables = getRebateReceivables();
-    setRebateReceivables(loadedRebateReceivables);
-  }, [loadHistoryRecords]);
+  const historyExpenseRequests = useMemo(() => {
+    return allExpenseRequests.filter((r) => {
+      if (r.status === "Draft" || r.status === "Pending_Approval") {
+        return false;
+      }
+      return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
+    });
+  }, [allExpenseRequests]);
+
+  const historyIncomeRequests = useMemo(() => {
+    return allIncomeRequests.filter((r) => {
+      if (r.status === "Draft" || r.status === "Pending_Approval") {
+        return false;
+      }
+      return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
+    });
+  }, [allIncomeRequests]);
+
 
   const handleViewDetail = (bill: MonthlyBill) => {
     setSelectedBill(bill);
@@ -182,7 +184,7 @@ export default function ApprovalCenterPage() {
       title: "批准账单",
       message: `确定要批准这笔账单吗？批准后系统将自动推送给财务人员处理入账。\n\n账单信息：\n- 类型：${billType}\n- 金额：${billAmount}\n- 服务方：${serviceProvider}`,
       type: "info",
-      onConfirm: () => {
+      onConfirm: async () => {
         const updatedBills = allBills.map((b) =>
           b.id === billId
             ? {
@@ -193,11 +195,10 @@ export default function ApprovalCenterPage() {
               }
             : b
         );
-        saveMonthlyBills(updatedBills).then(() => {
-          setPendingBills(updatedBills.filter((b) => b.status === "Pending_Approval"));
-          // 刷新历史记录
-          loadHistoryRecords();
-        });
+        await saveMonthlyBills(updatedBills);
+        // 刷新 SWR 缓存
+        mutate("monthly-bills");
+        mutate("pending-bills");
         
         // 如果是广告账单，且未生成返点应收款，则自动生成
         if (bill.billType === "广告" && bill.agencyId && bill.adAccountId) {
@@ -399,18 +400,18 @@ export default function ApprovalCenterPage() {
             : b
         );
         await saveMonthlyBills(updatedBills);
-        setPendingBills(updatedBills.filter((b) => b.status === "Pending_Approval"));
-        // 刷新历史记录
-        loadHistoryRecords();
+        // 刷新 SWR 缓存
+        mutate("monthly-bills");
+        mutate("pending-bills");
       });
     } else if (rejectModal.type === "expense") {
       updateExpenseRequest(rejectModal.id, {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
       }).then(async () => {
-        const updated = await getExpenseRequestsByStatus("Pending_Approval");
-        setPendingExpenseRequests(updated);
-        loadHistoryRecords();
+        // 刷新 SWR 缓存
+        mutate("expense-requests");
+        mutate("pending-expense-requests");
         toast.success("已退回修改", { icon: "✅", duration: 3000 });
         setRejectModal({ open: false, type: null, id: null });
         setRejectReason("");
@@ -423,9 +424,9 @@ export default function ApprovalCenterPage() {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
       }).then(async () => {
-        const updated = await getIncomeRequestsByStatus("Pending_Approval");
-        setPendingIncomeRequests(updated);
-        loadHistoryRecords();
+        // 刷新 SWR 缓存
+        mutate("income-requests");
+        mutate("pending-income-requests");
         toast.success("已退回修改", { icon: "✅", duration: 3000 });
         setRejectModal({ open: false, type: null, id: null });
         setRejectReason("");
@@ -460,9 +461,9 @@ export default function ApprovalCenterPage() {
             approvedBy: "老板",
             approvedAt: new Date().toISOString()
           });
-          const updated = await getExpenseRequestsByStatus("Pending_Approval");
-          setPendingExpenseRequests(updated);
-          loadHistoryRecords();
+          // 刷新 SWR 缓存
+          mutate("expense-requests");
+          mutate("pending-expense-requests");
           // 触发自定义事件，通知财务工作台刷新
           window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已批准，已推送给财务人员处理出账", { icon: "✅", duration: 4000 });
@@ -491,9 +492,9 @@ export default function ApprovalCenterPage() {
             approvedBy: "老板",
             approvedAt: new Date().toISOString()
           });
-          const updated = await getIncomeRequestsByStatus("Pending_Approval");
-          setPendingIncomeRequests(updated);
-          loadHistoryRecords();
+          // 刷新 SWR 缓存
+          mutate("income-requests");
+          mutate("pending-income-requests");
           // 触发自定义事件，通知财务工作台刷新
           window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已批准，已推送给财务人员处理入账", { icon: "✅", duration: 4000 });
@@ -618,7 +619,10 @@ export default function ApprovalCenterPage() {
         <button
           onClick={() => {
             setActiveTab("history");
-            loadHistoryRecords(); // 切换时刷新历史记录
+            // 切换时刷新数据（SWR 会自动处理）
+            mutate("monthly-bills");
+            mutate("expense-requests");
+            mutate("income-requests");
           }}
           className={`px-6 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
             activeTab === "history"

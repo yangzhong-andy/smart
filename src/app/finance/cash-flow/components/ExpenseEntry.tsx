@@ -55,10 +55,12 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
 
   // 使用 SWR 获取采购单列表（仅当分类为采购时）
   const fetcher = (url: string) => fetch(url).then(res => res.json());
-  const { data: purchaseOrders = [] } = useSWR(
+  const { data: purchaseOrdersData } = useSWR(
     isPurchaseCategory ? '/api/purchase-orders' : null,
     fetcher
   );
+  // 确保 purchaseOrders 始终是数组
+  const purchaseOrders = Array.isArray(purchaseOrdersData) ? purchaseOrdersData : [];
 
   // 获取当前一级分类下的二级分类选项
   const availableSubCategories = useMemo(() => {
