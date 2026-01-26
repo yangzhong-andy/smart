@@ -1414,10 +1414,11 @@ export default function ApprovalCenterPage() {
                                   查看详情
                                 </button>
                               </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 </div>
               )}
