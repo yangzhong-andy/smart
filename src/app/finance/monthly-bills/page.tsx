@@ -31,15 +31,27 @@ export default function MonthlyBillsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedBills = getMonthlyBills();
-    // 显示所有月账单（供应商和广告）
-    setBills(loadedBills);
+    (async () => {
+      const loadedBills = await getMonthlyBills();
+      // 显示所有月账单（供应商和广告）
+      setBills(loadedBills);
+    })();
   }, []);
 
   // 统计信息
   const stats = useMemo(() => {
+    if (!Array.isArray(bills)) {
+      return {
+        totalBills: 0,
+        totalAmount: 0,
+        pendingBills: 0,
+        approvedBills: 0,
+        paidBills: 0,
+        monthlyStats: new Map<string, { count: number; amount: number }>()
+      };
+    }
     const totalBills = bills.length;
-    const totalAmount = bills.reduce((sum, b) => sum + b.totalAmount, 0);
+    const totalAmount = bills.reduce((sum, b) => sum + Number(b.totalAmount || 0), 0);
     const pendingBills = bills.filter((b) => b.status === "Pending_Approval" || b.status === "Draft").length;
     const approvedBills = bills.filter((b) => b.status === "Approved").length;
     const paidBills = bills.filter((b) => b.status === "Paid").length;
@@ -53,7 +65,7 @@ export default function MonthlyBillsPage() {
       }
       const stat = monthlyStats.get(month)!;
       stat.count++;
-      stat.amount += bill.totalAmount;
+      stat.amount += Number(bill.totalAmount || 0);
     });
 
     return {
@@ -125,7 +137,7 @@ export default function MonthlyBillsPage() {
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const targetMonth = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`;
 
-      const existingBills = getMonthlyBills();
+      const existingBills = await getMonthlyBills();
       const newBills: MonthlyBill[] = [];
       let supplierCount = 0;
       let adCount = 0;
@@ -280,7 +292,7 @@ export default function MonthlyBillsPage() {
       // 保存所有新生成的账单
       if (newBills.length > 0) {
         const allBills = [...existingBills, ...newBills];
-        saveMonthlyBills(allBills);
+        await saveMonthlyBills(allBills);
         setBills(allBills);
         
         toast.success(
