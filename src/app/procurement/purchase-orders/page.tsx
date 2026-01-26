@@ -421,7 +421,7 @@ export default function PurchaseOrdersPage() {
   };
 
   // 处理支付
-  const handlePayment = (contractId: string, type: "deposit" | "tail", deliveryOrderId?: string) => {
+  const handlePayment = async (contractId: string, type: "deposit" | "tail", deliveryOrderId?: string) => {
     const contract = contracts.find((c) => c.id === contractId);
     if (!contract) return;
 
