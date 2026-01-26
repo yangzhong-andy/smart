@@ -171,9 +171,9 @@ export default function ApprovalCenterPage() {
             try {
               // 获取代理商信息，用于获取返点比例
               const agencies = getAgencies();
-              const agency = agencies.find((a: Agency) => a.id === bill.agencyId);
+              const agency = bill.agencyId ? agencies.find((a: Agency) => a.id === bill.agencyId) : null;
               
-              if (agency) {
+              if (agency && bill.agencyId) {
                 // 获取返点比例
                 const rebateRate = agency?.rebateConfig?.rate || agency?.rebateRate || 0;
                 
@@ -211,9 +211,9 @@ export default function ApprovalCenterPage() {
                       id: `rebate-receivable-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
                       rechargeId: rechargeId,
                       rechargeDate: rechargeDate,
-                      agencyId: bill.agencyId,
+                      agencyId: bill.agencyId, // 此时 bill.agencyId 已确保存在
                       agencyName: bill.agencyName || agency.name,
-                      adAccountId: bill.adAccountId,
+                      adAccountId: bill.adAccountId || "",
                       accountName: bill.accountName || "-",
                       platform: agency.platform || "其他",
                       rebateAmount: rebateAmount,
@@ -267,9 +267,9 @@ export default function ApprovalCenterPage() {
                         month: bill.month,
                         billCategory: "Receivable" as const,
                         billType: "广告返点" as const,
-                        agencyId: bill.agencyId,
+                        agencyId: bill.agencyId || undefined,
                         agencyName: bill.agencyName || agency.name,
-                        adAccountId: bill.adAccountId,
+                        adAccountId: bill.adAccountId || undefined,
                         accountName: bill.accountName || "-",
                         totalAmount: rebateAmount,
                         currency: bill.currency,
