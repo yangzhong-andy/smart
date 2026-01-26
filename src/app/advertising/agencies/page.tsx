@@ -1101,7 +1101,7 @@ export default function AdAgenciesPage() {
   };
 
   // 处理确认创建充值记录
-  const handleConfirmCreateRecharge = () => {
+  const handleConfirmCreateRecharge = async () => {
     if (!confirmRechargeModal || !rechargeAccount) return;
 
     const { amount, rebateAmount, rebateRate, currency, date, voucher, notes } = confirmRechargeModal;
@@ -1149,7 +1149,7 @@ export default function AdAgenciesPage() {
 
     // 自动生成月账单并推送到对账中心
     try {
-      const existingBills = getMonthlyBills();
+      const existingBills = await getMonthlyBills();
       // 查找同一关联方（代理商+账户）、同一月份、同一类型、同一币种的草稿账单
       // 确保同一个关联方的月账单合并到一个账单上
       const existingBill = existingBills.find(
@@ -1184,7 +1184,7 @@ export default function AdAgenciesPage() {
         const updatedBills = existingBills.map((b) => 
           b.id === existingBill.id ? updatedBill : b
         );
-        saveMonthlyBills(updatedBills);
+        await saveMonthlyBills(updatedBills);
         console.log(`✅ 已更新月账单：${updatedBill.id}，添加充值记录 ${newRecharge.id}`);
       } else {
         // 创建新账单：基于充值记录生成月账单
@@ -1210,7 +1210,7 @@ export default function AdAgenciesPage() {
         };
         
         const updatedBills = [...existingBills, newBill];
-        saveMonthlyBills(updatedBills);
+        await saveMonthlyBills(updatedBills);
         console.log(`✅ 已生成月账单并推送到对账中心：${newBill.id}`);
       }
     } catch (e) {
@@ -1253,7 +1253,7 @@ export default function AdAgenciesPage() {
 
           // 在对账中心生成"广告返点"类型的应收款账单
           try {
-            const existingBills = getMonthlyBills();
+            const existingBills = await getMonthlyBills();
             // 查找同一关联方（代理商+账户）、同一月份、同一类型、同一币种的草稿账单
             const existingRebateBill = existingBills.find(
               (b) =>
@@ -1278,7 +1278,7 @@ export default function AdAgenciesPage() {
               const updatedBills = existingBills.map((b) =>
                 b.id === existingRebateBill.id ? updatedRebateBill : b
               );
-              saveMonthlyBills(updatedBills);
+              await saveMonthlyBills(updatedBills);
               console.log(`✅ 已更新对账中心广告返点账单：${updatedRebateBill.id}`);
             } else {
               // 创建新的应收款账单（广告返点）
@@ -1303,7 +1303,7 @@ export default function AdAgenciesPage() {
                 notes: `自动生成：广告账户 ${rechargeAccount.accountName} ${month} 充值返点应收款`
               };
               const updatedBills = [...existingBills, newRebateBill];
-              saveMonthlyBills(updatedBills);
+              await saveMonthlyBills(updatedBills);
               console.log(`✅ 已生成对账中心广告返点账单：${newRebateBill.id}`);
             }
           } catch (e) {
@@ -1698,7 +1698,7 @@ export default function AdAgenciesPage() {
       title: "结算返点",
       message: `确定要结算 ${month} 的返点吗？\n结算金额：${currency(totalRebate, account.currency)}\n涉及 ${toSettle.length} 条消耗记录`,
       type: "info",
-      onConfirm: () => {
+      onConfirm: async () => {
         // 更新消耗记录状态为已结算
         const updatedConsumptions = consumptions.map((c) => {
           if (toSettle.some((sc) => sc.id === c.id)) {
@@ -1808,7 +1808,7 @@ export default function AdAgenciesPage() {
           if (!agency) {
             console.warn("代理商不存在，无法创建应收款账单");
           } else {
-            const existingBills = getMonthlyBills();
+            const existingBills = await getMonthlyBills();
             // 查找同一代理商、同一账户、同一月份、类型为"广告返点"的草稿账单
             const existingBill = existingBills.find(
               (b) => 
@@ -1846,7 +1846,7 @@ export default function AdAgenciesPage() {
               const updatedBills = existingBills.map((b) => 
                 b.id === existingBill.id ? updatedBill : b
               );
-              saveMonthlyBills(updatedBills);
+              await saveMonthlyBills(updatedBills);
               console.log(`✅ 已更新应收款账单：${updatedBill.id}，添加返点记录`);
             } else {
               // 创建新应收款账单：基于返点结算生成
@@ -1871,7 +1871,7 @@ export default function AdAgenciesPage() {
               };
               
               const updatedBills = [...existingBills, newBill];
-              saveMonthlyBills(updatedBills);
+              await saveMonthlyBills(updatedBills);
               console.log(`✅ 已生成应收款账单并推送到对账中心：${newBill.id}`);
             }
           }
