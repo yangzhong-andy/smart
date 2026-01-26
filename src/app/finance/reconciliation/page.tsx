@@ -101,28 +101,30 @@ export default function ReconciliationPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedBills = getMonthlyBills();
-    setBills(loadedBills);
-    const loadedAgencies = getAgencies();
-    setAgencies(loadedAgencies);
-    // 加载充值记录和消耗记录，用于详情显示
-    const loadedRecharges = getAdRecharges();
-    setRecharges(loadedRecharges);
-    const loadedConsumptions = getAdConsumptions();
-    setConsumptions(loadedConsumptions);
-    const loadedDeliveryOrders = getDeliveryOrders();
-    setDeliveryOrders(loadedDeliveryOrders);
-    const loadedContracts = getPurchaseContracts();
-    setContracts(loadedContracts);
-    // 加载返点应收款记录
-    const loadedRebateReceivables = getRebateReceivables();
-    setRebateReceivables(loadedRebateReceivables);
-    // 加载待入账任务
-    const loadedPendingEntries = getPendingEntriesByStatus("Pending");
-    setPendingEntries(loadedPendingEntries);
-    // 加载银行账户
-    const loadedBankAccounts = getAccounts();
-    setBankAccounts(loadedBankAccounts);
+    (async () => {
+      const loadedBills = await getMonthlyBills();
+      setBills(loadedBills);
+      const loadedAgencies = getAgencies();
+      setAgencies(loadedAgencies);
+      // 加载充值记录和消耗记录，用于详情显示
+      const loadedRecharges = getAdRecharges();
+      setRecharges(loadedRecharges);
+      const loadedConsumptions = getAdConsumptions();
+      setConsumptions(loadedConsumptions);
+      const loadedDeliveryOrders = getDeliveryOrders();
+      setDeliveryOrders(loadedDeliveryOrders);
+      const loadedContracts = getPurchaseContracts();
+      setContracts(loadedContracts);
+      // 加载返点应收款记录
+      const loadedRebateReceivables = getRebateReceivables();
+      setRebateReceivables(loadedRebateReceivables);
+      // 加载待入账任务
+      const loadedPendingEntries = getPendingEntriesByStatus("Pending");
+      setPendingEntries(loadedPendingEntries);
+      // 加载银行账户
+      const loadedBankAccounts = getAccounts();
+      setBankAccounts(loadedBankAccounts);
+    })();
   }, []);
 
   const filteredBills = useMemo(() => {
@@ -194,18 +196,21 @@ export default function ReconciliationPage() {
       return;
     }
 
-    const updatedBills = bills.map((b) =>
-      b.id === submitApprovalModal.billId
-        ? {
-            ...b,
-            status: "Pending_Finance_Review" as BillStatus,
-            submittedToFinanceAt: new Date().toISOString(),
-            paymentApplicationVoucher: paymentApplicationVoucher
-          }
-        : b
-    );
-    setBills(updatedBills);
-    saveMonthlyBills(updatedBills);
+    (async () => {
+      const allBills = await getMonthlyBills();
+      const updatedBills = allBills.map((b) =>
+        b.id === submitApprovalModal.billId
+          ? {
+              ...b,
+              status: "Pending_Finance_Review" as BillStatus,
+              submittedToFinanceAt: new Date().toISOString(),
+              paymentApplicationVoucher: paymentApplicationVoucher
+            }
+          : b
+      );
+      setBills(updatedBills);
+      await saveMonthlyBills(updatedBills);
+    })();
     setSubmitApprovalModal({ open: false, billId: null });
     setPaymentApplicationVoucher("");
     toast.success("已提交给财务审批（已上传付款申请书凭证）", {
@@ -221,8 +226,9 @@ export default function ReconciliationPage() {
       title: "财务审批通过",
       message: "确定要通过财务审批吗？审批通过后将自动提交给公司主管审批。",
       type: "info",
-      onConfirm: () => {
-        const updatedBills = bills.map((b) =>
+      onConfirm: async () => {
+        const allBills = await getMonthlyBills();
+        const updatedBills = allBills.map((b) =>
           b.id === billId
             ? {
                 ...b,
@@ -234,7 +240,7 @@ export default function ReconciliationPage() {
             : b
         );
         setBills(updatedBills);
-        saveMonthlyBills(updatedBills);
+        await saveMonthlyBills(updatedBills);
         setConfirmDialog(null);
         toast.success("财务审批通过，已提交给公司主管审批", {
           icon: "✅",
@@ -250,14 +256,15 @@ export default function ReconciliationPage() {
       title: "批准账单",
       message: "确定要批准这笔账单吗？审批通过后将自动通知出纳进行付款。",
       type: "info",
-      onConfirm: () => {
-        const bill = bills.find((b) => b.id === billId);
+      onConfirm: async () => {
+        const allBills = await getMonthlyBills();
+        const bill = allBills.find((b) => b.id === billId);
         if (!bill) {
           toast.error("账单不存在", { icon: "❌", duration: 3000 });
           return;
         }
 
-        const updatedBills = bills.map((b) =>
+        const updatedBills = allBills.map((b) =>
           b.id === billId
             ? {
                 ...b,
@@ -268,7 +275,7 @@ export default function ReconciliationPage() {
             : b
         );
         setBills(updatedBills);
-        saveMonthlyBills(updatedBills);
+        await saveMonthlyBills(updatedBills);
         
         // 创建出纳打款通知（仅对应付款账单）
         if (bill.billCategory === "Payable" || (!bill.billCategory && ["广告", "物流", "工厂订单"].includes(bill.billType))) {
@@ -306,17 +313,20 @@ export default function ReconciliationPage() {
       return;
     }
     
-    const updatedBills = bills.map((b) =>
-      b.id === rejectModal.id
-        ? {
-            ...b,
-            status: "Draft" as BillStatus,
-            rejectionReason: rejectReason.trim()
-          }
-        : b
-    );
-    setBills(updatedBills);
-    saveMonthlyBills(updatedBills);
+    (async () => {
+      const allBills = await getMonthlyBills();
+      const updatedBills = allBills.map((b) =>
+        b.id === rejectModal.id
+          ? {
+              ...b,
+              status: "Draft" as BillStatus,
+              rejectionReason: rejectReason.trim()
+            }
+          : b
+      );
+      setBills(updatedBills);
+      await saveMonthlyBills(updatedBills);
+    })();
     toast.success("已退回修改", {
       icon: "✅",
       duration: 3000,
@@ -2097,7 +2107,7 @@ export default function ReconciliationPage() {
                 取消
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!entryForm.accountId) {
                     toast.error("请选择入账账户", { icon: "⚠️", duration: 3000 });
                     return;
@@ -2228,7 +2238,7 @@ export default function ReconciliationPage() {
 
                     // 更新账单或付款申请状态为"已支付"
                     if (selectedPendingEntry.type === "Bill") {
-                      const allBills = getMonthlyBills();
+                      const allBills = await getMonthlyBills();
                       const updatedBills = allBills.map((b) =>
                         b.id === selectedPendingEntry.relatedId
                           ? {
@@ -2240,8 +2250,9 @@ export default function ReconciliationPage() {
                             }
                           : b
                       );
-                      saveMonthlyBills(updatedBills);
-                      setBills(updatedBills);
+                      await saveMonthlyBills(updatedBills);
+                      const refreshedBills = await getMonthlyBills();
+                      setBills(refreshedBills);
                     } else {
                       const { getPaymentRequests, savePaymentRequests } = require("@/lib/payment-request-store");
                       const allRequests = getPaymentRequests();
@@ -2430,7 +2441,7 @@ export default function ReconciliationPage() {
                 取消
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!paymentForm.accountId) {
                     toast.error("请选择付款账户", { icon: "⚠️", duration: 3000 });
                     return;
@@ -2539,7 +2550,7 @@ export default function ReconciliationPage() {
                     saveAccounts(updatedAccounts);
 
                     // 更新账单状态为已支付，保存付款明细
-                    const allBills = getMonthlyBills();
+                    const allBills = await getMonthlyBills();
                     const updatedBills = allBills.map((b) =>
                       b.id === selectedPendingPaymentBill.id
                         ? {
@@ -2557,8 +2568,9 @@ export default function ReconciliationPage() {
                           }
                         : b
                     );
-                    saveMonthlyBills(updatedBills);
-                    setBills(updatedBills);
+                    await saveMonthlyBills(updatedBills);
+                    const refreshedBills = await getMonthlyBills();
+                    setBills(refreshedBills);
 
                     // 标记相关通知为已读
                     const relatedNotifications = findNotificationsByRelated(selectedPendingPaymentBill.id, "monthly_bill");
