@@ -18,7 +18,27 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <Providers>
           <LayoutWrapper>{children}</LayoutWrapper>
         </Providers>
-        <Toaster richColors position="top-center" />
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            className: "backdrop-blur-md bg-slate-900/80 border border-cyan-500/20",
+            style: {
+              background: "rgba(15, 23, 42, 0.8)",
+              backdropFilter: "blur(12px)",
+              border: "1px solid rgba(103, 232, 249, 0.2)",
+              color: "#67e8f9",
+            },
+            classNames: {
+              toast: "backdrop-blur-md bg-slate-900/80 border border-cyan-500/20 text-cyan-300",
+              title: "text-cyan-300 font-medium",
+              description: "text-cyan-200/80",
+              success: "bg-emerald-900/20 border-emerald-500/30 text-emerald-300",
+              error: "bg-rose-900/20 border-rose-500/30 text-rose-300",
+              warning: "bg-amber-900/20 border-amber-500/30 text-amber-300",
+              info: "bg-cyan-900/20 border-cyan-500/30 text-cyan-300",
+            },
+          }}
+        />
       </body>
     </html>
   );

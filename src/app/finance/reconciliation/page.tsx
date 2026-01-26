@@ -10,7 +10,8 @@ import { getAdConsumptions, getAdRecharges } from "@/lib/ad-agency-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ImageUploader from "@/components/ImageUploader";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import { 
   getRebateReceivables, 
   saveRebateReceivables, 
@@ -285,7 +286,7 @@ export default function ReconciliationPage() {
         const allBills = await getMonthlyBills();
         const bill = allBills.find((b) => b.id === billId);
         if (!bill) {
-          toast.error("账单不存在", { icon: "❌", duration: 3000 });
+          toast.error("账单不存在");
           return;
         }
 
@@ -2134,17 +2135,17 @@ export default function ReconciliationPage() {
               <button
                 onClick={async () => {
                   if (!entryForm.accountId) {
-                    toast.error("请选择入账账户", { icon: "⚠️", duration: 3000 });
+                    toast.error("请选择入账账户");
                     return;
                   }
                   if (!entryForm.entryDate) {
-                    toast.error("请选择入账日期", { icon: "⚠️", duration: 3000 });
+                    toast.error("请选择入账日期");
                     return;
                   }
 
                   const account = bankAccounts.find((a) => a.id === entryForm.accountId);
                   if (!account) {
-                    toast.error("账户不存在", { icon: "⚠️", duration: 3000 });
+                    toast.error("账户不存在");
                     return;
                   }
 
@@ -2304,10 +2305,10 @@ export default function ReconciliationPage() {
                     setSelectedPendingEntry(null);
                     setEntryForm({ accountId: "", entryDate: new Date().toISOString().slice(0, 10), voucher: "" });
                     
-                    toast.success("入账成功！", { icon: "✅", duration: 3000 });
+                    toast.success("入账成功！");
                   } catch (e) {
                     console.error("Failed to complete entry", e);
-                    toast.error("入账失败，请重试", { icon: "⚠️", duration: 3000 });
+                    toast.error("入账失败，请重试");
                   }
                 }}
                 className="px-4 py-2 rounded-md bg-amber-500 text-white hover:bg-amber-600"
@@ -2468,23 +2469,23 @@ export default function ReconciliationPage() {
               <button
                 onClick={async () => {
                   if (!paymentForm.accountId) {
-                    toast.error("请选择付款账户", { icon: "⚠️", duration: 3000 });
+                    toast.error("请选择付款账户");
                     return;
                   }
                   if (!paymentForm.paymentDate) {
-                    toast.error("请选择付款日期", { icon: "⚠️", duration: 3000 });
+                    toast.error("请选择付款日期");
                     return;
                   }
 
                   const account = bankAccounts.find((a) => a.id === paymentForm.accountId);
                   if (!account) {
-                    toast.error("账户不存在", { icon: "⚠️", duration: 3000 });
+                    toast.error("账户不存在");
                     return;
                   }
 
                   // 检查账户余额
                   if ((account.originalBalance || 0) < selectedPendingPaymentBill.netAmount) {
-                    toast.error("账户余额不足", { icon: "⚠️", duration: 3000 });
+                    toast.error("账户余额不足");
                     return;
                   }
 
@@ -2607,10 +2608,10 @@ export default function ReconciliationPage() {
                     setSelectedPendingPaymentBill(null);
                     setPaymentForm({ accountId: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "转账", voucher: "" });
                     
-                    toast.success(`付款成功！付款单号：${paymentVoucherNumber}`, { icon: "✅", duration: 4000 });
+                    toast.success(`付款成功！付款单号：${paymentVoucherNumber}`);
                   } catch (e) {
                     console.error("Failed to process payment", e);
-                    toast.error("付款失败，请重试", { icon: "⚠️", duration: 3000 });
+                    toast.error("付款失败，请重试");
                   }
                 }}
                 className="px-4 py-2 rounded-md bg-rose-500 text-white hover:bg-rose-600"
@@ -2815,11 +2816,11 @@ export default function ReconciliationPage() {
                 e.preventDefault();
                 const amount = Number(adjustmentForm.amount);
                 if (Number.isNaN(amount) || amount === 0) {
-                  toast.error("修正金额不能为零", { icon: "⚠️", duration: 3000 });
+                  toast.error("修正金额不能为零");
                   return;
                 }
                 if (!adjustmentForm.reason.trim()) {
-                  toast.error("请输入修正原因", { icon: "⚠️", duration: 3000 });
+                  toast.error("请输入修正原因");
                   return;
                 }
 
@@ -2859,7 +2860,7 @@ export default function ReconciliationPage() {
                 setSelectedRebateReceivable(updatedReceivables.find((r) => r.id === selectedRebateReceivable.id) || null);
                 setIsAdjustmentModalOpen(false);
                 setAdjustmentForm({ amount: "", reason: "" });
-                toast.success("已手动平账", { icon: "✅", duration: 3000 });
+                toast.success("已手动平账");
               }}
               className="space-y-4"
             >

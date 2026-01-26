@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import {
   getProducts,
   type Product,
@@ -144,7 +145,7 @@ export default function SKUMappingPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success(`已导出 ${rows.length} 条映射数据`, { icon: "✅", duration: 2000 });
+    toast.success(`已导出 ${rows.length} 条映射数据`);
   };
 
   const handleOpenMappingModal = (product: Product) => {

@@ -7,7 +7,8 @@ import { type BankAccount } from "@/lib/finance-store";
 import { COUNTRIES, getCurrencyByCountry, getCountriesByRegion, getCountryByCode, type Country } from "@/lib/country-config";
 import { getInfluencerStats } from "@/lib/influencer-bd-store";
 import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import useSWR from "swr";
 
 const formatDate = (dateString: string): string => {
@@ -109,14 +110,14 @@ export default function StoresPage() {
     }
     
     if (!form.name.trim()) {
-      toast.error("店铺名称是必填项", { icon: "⚠️", duration: 3000 });
+      toast.error("店铺名称是必填项");
       return;
     }
     // 关联收款账户改为可选
     const account = form.accountId ? accounts.find((a) => a.id === form.accountId) : null;
 
     if (!form.country) {
-      toast.error("请选择国家", { icon: "⚠️", duration: 3000 });
+      toast.error("请选择国家");
       return;
     }
 
@@ -179,14 +180,14 @@ export default function StoresPage() {
     
     if (!editStore) return;
     if (!form.name.trim()) {
-      toast.error("店铺名称是必填项", { icon: "⚠️", duration: 3000 });
+      toast.error("店铺名称是必填项");
       return;
     }
     // 关联收款账户改为可选
     const account = form.accountId ? accounts.find((a) => a.id === form.accountId) : null;
 
     if (!form.country) {
-      toast.error("请选择国家", { icon: "⚠️", duration: 3000 });
+      toast.error("请选择国家");
       return;
     }
 

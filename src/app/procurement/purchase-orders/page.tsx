@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
 import {
   getPurchaseContracts,
@@ -378,7 +379,7 @@ export default function PurchaseOrdersPage() {
     // 检查剩余数量
     const remainingQty = contract.totalQty - contract.pickedQty;
     if (qty > remainingQty) {
-      toast.error(`本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}，无法提交！`, { icon: "⚠️", duration: 4000 });
+      toast.error(`本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}，无法提交！`);
       return;
     }
 
@@ -766,7 +767,7 @@ export default function PurchaseOrdersPage() {
           notes: `工厂完工：全部完工（${contract.totalQty} 件）`,
         });
 
-        toast.success(`工厂完工成功！已更新 ${availableQty} 件到工厂现货库存`, { icon: "✅", duration: 3000 });
+        toast.success(`工厂完工成功！已更新 ${availableQty} 件到工厂现货库存`);
       } else {
         toast.success(`工厂完工成功！合同已更新`, { icon: "✅" });
       }
@@ -783,7 +784,7 @@ export default function PurchaseOrdersPage() {
   // 导出合同数据
   const handleExportData = () => {
     if (filteredContracts.length === 0) {
-      toast.error("没有可导出的数据", { icon: "⚠️", duration: 2000 });
+      toast.error("没有可导出的数据");
       return;
     }
 
@@ -847,7 +848,7 @@ export default function PurchaseOrdersPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success(`已导出 ${filteredContracts.length} 条合同数据`, { icon: "✅", duration: 2000 });
+    toast.success(`已导出 ${filteredContracts.length} 条合同数据`);
   };
 
   return (

@@ -7,7 +7,8 @@ import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui"
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import Link from "next/link";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import { getDeliveryOrders } from "@/lib/delivery-orders-store";
 import { getPurchaseContracts } from "@/lib/purchase-contracts-store";
 import { getAgencies, getAdConsumptions } from "@/lib/ad-agency-store";
@@ -299,11 +300,11 @@ export default function MonthlyBillsPage() {
           { id: "auto-generate", duration: 4000 }
         );
       } else {
-        toast.success("没有需要生成的账单（可能都已存在）", { id: "auto-generate", duration: 3000 });
+        toast.success("没有需要生成的账单（可能都已存在）");
       }
     } catch (error) {
       console.error("自动生成失败", error);
-      toast.error("自动生成失败，请稍后重试", { id: "auto-generate", duration: 3000 });
+      toast.error("自动生成失败，请稍后重试");
     } finally {
       setIsAutoGenerating(false);
     }
@@ -335,23 +336,24 @@ export default function MonthlyBillsPage() {
         actions={
           <>
             <Link href="/finance/monthly-bills/supplier-bills">
-              <ActionButton icon={Plus} variant="primary">
+              <InteractiveButton icon={<Plus className="h-4 w-4" />} variant="primary" size="md">
                 生成供应商月账单
-              </ActionButton>
+              </InteractiveButton>
             </Link>
             <Link href="/finance/monthly-bills/ad-bills">
-              <ActionButton icon={Plus} variant="primary">
+              <InteractiveButton icon={<Plus className="h-4 w-4" />} variant="primary" size="md">
                 生成广告月账单
-              </ActionButton>
+              </InteractiveButton>
             </Link>
-            <ActionButton 
-              icon={Zap} 
+            <InteractiveButton 
+              icon={<Zap className="h-4 w-4" />} 
               variant="primary"
+              size="md"
               onClick={handleAutoGenerate}
               disabled={isAutoGenerating}
             >
-              {isAutoGenerating ? "生成中..." : "自动生成月账单"}
-            </ActionButton>
+              自动生成月账单
+            </InteractiveButton>
           </>
         }
       />
@@ -628,7 +630,7 @@ export default function MonthlyBillsPage() {
 
               <div className="pt-4 border-t border-slate-800">
                 <Link href="/finance/reconciliation">
-                  <ActionButton variant="primary">前往对账中心审批</ActionButton>
+                  <InteractiveButton variant="primary" size="md">前往对账中心审批</InteractiveButton>
                 </Link>
               </div>
             </div>

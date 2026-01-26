@@ -168,6 +168,7 @@ export default function CashFlowPage() {
   const [filterMonth, setFilterMonth] = useState<string>("");
   const [quickFilter, setQuickFilter] = useState<string>("");
   const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
+  const [currentVoucherIndex, setCurrentVoucherIndex] = useState(0);
 
   // 数据已通过 SWR 加载，余额计算在账户页面处理
 
@@ -1280,16 +1281,48 @@ export default function CashFlowPage() {
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-center">
-                    {flow.voucher && flow.voucher.length > 10 ? (
-                      <button
-                        onClick={() => setVoucherViewModal(flow.voucher || null)}
-                        className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
-                      >
-                        查看
-                      </button>
-                    ) : (
-                      <span className="text-slate-500 text-xs">-</span>
-                    )}
+                    {(() => {
+                      // 解析凭证数据：可能是字符串、JSON字符串（数组）或数组
+                      let voucherData: string | string[] | null = null;
+                      if (flow.voucher) {
+                        try {
+                          // 尝试解析 JSON 字符串
+                          const parsed = JSON.parse(flow.voucher);
+                          if (Array.isArray(parsed)) {
+                            voucherData = parsed;
+                          } else if (typeof parsed === 'string') {
+                            voucherData = parsed;
+                          } else {
+                            voucherData = flow.voucher;
+                          }
+                        } catch {
+                          // 不是 JSON，直接使用字符串
+                          voucherData = flow.voucher;
+                        }
+                      }
+                      
+                      const hasVoucher = voucherData && (
+                        (typeof voucherData === 'string' && voucherData.length > 10) ||
+                        (Array.isArray(voucherData) && voucherData.length > 0)
+                      );
+                      
+                      if (hasVoucher) {
+                        const voucherCount = Array.isArray(voucherData) ? voucherData.length : 1;
+                        return (
+                          <button
+                            onClick={() => {
+                              setVoucherViewModal(JSON.stringify(voucherData));
+                              setCurrentVoucherIndex(0); // 重置索引
+                            }}
+                            className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
+                            title={voucherCount > 1 ? `查看凭证 (${voucherCount}张)` : "查看凭证"}
+                          >
+                            {voucherCount > 1 ? `${voucherCount}张` : "查看"}
+                          </button>
+                        );
+                      }
+                      return <span className="text-slate-500 text-xs">-</span>;
+                    })()}
                   </td>
                   <td className="px-2 py-1.5">
                     {!flow.isReversal && flow.status === "confirmed" && (
@@ -1311,59 +1344,140 @@ export default function CashFlowPage() {
       </section>
 
       {/* 凭证查看弹窗 */}
-      {voucherViewModal && (
-        <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
-          style={{ zIndex: 9999 }}
-          onClick={() => setVoucherViewModal(null)}
-        >
+      {voucherViewModal && (() => {
+        // 解析凭证数据
+        let voucherImages: string[] = [];
+        try {
+          const parsed = JSON.parse(voucherViewModal);
+          if (Array.isArray(parsed)) {
+            voucherImages = parsed;
+          } else if (typeof parsed === 'string') {
+            voucherImages = [parsed];
+          } else {
+            voucherImages = [voucherViewModal];
+          }
+        } catch {
+          // 不是 JSON，直接使用字符串
+          voucherImages = [voucherViewModal];
+        }
+        
+        const currentImage = voucherImages[currentVoucherIndex] || voucherImages[0];
+        
+        // 处理图片源
+        const getImageSrc = (img: string): string => {
+          if (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://') || img.startsWith('/')) {
+            return img;
+          }
+          // 如果是纯 base64 字符串，添加 data URI 前缀
+          if (/^[A-Za-z0-9+/=]+$/.test(img) && img.length > 100) {
+            return `data:image/jpeg;base64,${img}`;
+          }
+          return img;
+        };
+        
+        return (
           <div 
-            className="relative max-w-5xl max-h-[95vh] p-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+            style={{ zIndex: 9999 }}
+            onClick={() => {
+              setVoucherViewModal(null);
+              setCurrentVoucherIndex(0);
+            }}
           >
-            <button
-              onClick={() => setVoucherViewModal(null)}
-              className="absolute top-4 right-4 text-white text-2xl hover:text-slate-300 z-10 bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
+            <div 
+              className="relative max-w-5xl max-h-[95vh] p-4"
+              onClick={(e) => e.stopPropagation()}
             >
-              ✕
-            </button>
-            {(() => {
-              const isBase64 = voucherViewModal && (
-                voucherViewModal.startsWith('data:image/') ||
-                /^data:[^;]*;base64,/.test(voucherViewModal) ||
-                /^[A-Za-z0-9+/=]+$/.test(voucherViewModal) && voucherViewModal.length > 100
-              );
-              const isUrl = voucherViewModal && (
-                voucherViewModal.startsWith('http://') ||
-                voucherViewModal.startsWith('https://') ||
-                voucherViewModal.startsWith('/')
-              );
-              let imageSrc = voucherViewModal;
-              if (voucherViewModal && /^[A-Za-z0-9+/=]+$/.test(voucherViewModal) && voucherViewModal.length > 100 && !voucherViewModal.startsWith('data:')) {
-                imageSrc = `data:image/jpeg;base64,${voucherViewModal}`;
-              }
-              return (
-                <img 
-                  src={imageSrc || voucherViewModal} 
-                  alt="凭证" 
-                  className="max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = "none";
-                    const parent = target.parentElement;
-                    if (parent && !parent.querySelector('.error-message')) {
-                      const errorDiv = document.createElement("div");
-                      errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
-                      errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;
-                      parent.appendChild(errorDiv);
-                    }
-                  }}
-                />
-              );
-            })()}
+              <button
+                onClick={() => {
+              setVoucherViewModal(null);
+              setCurrentVoucherIndex(0);
+            }}
+                className="absolute top-4 right-4 text-white text-2xl hover:text-slate-300 z-10 bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
+              >
+                ✕
+              </button>
+              
+              {/* 多图导航 */}
+              {voucherImages.length > 1 && (
+                <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-black/70 rounded-lg px-3 py-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentVoucherIndex((prev) => (prev > 0 ? prev - 1 : voucherImages.length - 1));
+                    }}
+                    className="text-white hover:text-slate-300 transition"
+                    disabled={voucherImages.length <= 1}
+                  >
+                    ←
+                  </button>
+                  <span className="text-white text-sm">
+                    {currentVoucherIndex + 1} / {voucherImages.length}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentVoucherIndex((prev) => (prev < voucherImages.length - 1 ? prev + 1 : 0));
+                    }}
+                    className="text-white hover:text-slate-300 transition"
+                    disabled={voucherImages.length <= 1}
+                  >
+                    →
+                  </button>
+                </div>
+              )}
+              
+              {/* 图片显示 */}
+              <img 
+                key={currentVoucherIndex}
+                src={getImageSrc(currentImage)} 
+                alt={`凭证 ${currentVoucherIndex + 1}`} 
+                className="max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = "none";
+                  const parent = target.parentElement;
+                  if (parent && !parent.querySelector('.error-message')) {
+                    const errorDiv = document.createElement("div");
+                    errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
+                    errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;
+                    parent.appendChild(errorDiv);
+                  }
+                }}
+              />
+              
+              {/* 缩略图导航（多图时显示） */}
+              {voucherImages.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2 bg-black/70 rounded-lg p-2 max-w-[90%] overflow-x-auto">
+                  {voucherImages.map((img, idx) => (
+                    <button
+                      key={idx}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentVoucherIndex(idx);
+                      }}
+                      className={`flex-shrink-0 w-16 h-16 rounded border-2 overflow-hidden transition ${
+                        idx === currentVoucherIndex 
+                          ? 'border-primary-400 ring-2 ring-primary-400/50' 
+                          : 'border-slate-600 hover:border-slate-400'
+                      }`}
+                    >
+                      <img 
+                        src={getImageSrc(img)} 
+                        alt={`缩略图 ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 录入组件 */}
       {activeModal === "expense" && (

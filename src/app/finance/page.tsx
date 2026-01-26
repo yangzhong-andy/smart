@@ -1,6 +1,7 @@
 "use client";
 
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Wallet, TrendingUp, TrendingDown, Package, DollarSign, AlertCircle } from "lucide-react";
 
 import { useEffect, useMemo, useState } from "react";
@@ -423,7 +424,7 @@ export default function FinanceDashboardPage() {
     }
 
     if (amount <= 0) {
-      toast.error("该款项已付清", { icon: "⚠️", duration: 3000 });
+      toast.error("该款项已付清");
       return;
     }
 
@@ -446,7 +447,7 @@ export default function FinanceDashboardPage() {
 
     const account = accounts.find((a) => a.id === accountId);
     if (!account) {
-      toast.error("请选择账户", { icon: "⚠️", duration: 3000 });
+      toast.error("请选择账户");
       return;
     }
 
@@ -517,7 +518,7 @@ export default function FinanceDashboardPage() {
     }
 
     setPaymentModal({ poId: null, type: null, amount: 0, supplierName: "", poNumber: "" });
-    toast.success("付款成功！", { icon: "✅", duration: 3000 });
+    toast.success("付款成功！");
   };
 
   return (

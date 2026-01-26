@@ -1,6 +1,7 @@
 "use client";
 
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -358,7 +359,7 @@ export default function ApprovalCenterPage() {
               console.log(`✅ 应收款账单 ${billId} 审批通过，已创建待入账任务（推送到待入账列表）`);
             } catch (e) {
               console.error(`❌ 创建待入账任务失败：${billId}`, e);
-              toast.error("创建待入账任务失败，请手动处理", { icon: "⚠️", duration: 4000 });
+              toast.error("创建待入账任务失败，请手动处理");
             }
           } else {
             console.log(`⚠️ 应收款账单 ${billId} 的待入账任务已存在，跳过创建`);
@@ -372,7 +373,7 @@ export default function ApprovalCenterPage() {
         }
         
         setConfirmDialog(null);
-        toast.success("已批准，已推送给财务人员处理入账", { icon: "✅", duration: 4000 });
+        toast.success("已批准，已推送给财务人员处理入账");
       }
     });
   };
@@ -384,7 +385,7 @@ export default function ApprovalCenterPage() {
   const handleConfirmReject = () => {
     if (!rejectModal.id || !rejectModal.type) return;
     if (!rejectReason.trim()) {
-      toast.error("请输入退回原因", { icon: "⚠️", duration: 3000 });
+      toast.error("请输入退回原因");
       return;
     }
     
@@ -412,11 +413,11 @@ export default function ApprovalCenterPage() {
         // 刷新 SWR 缓存
         mutate("expense-requests");
         mutate("pending-expense-requests");
-        toast.success("已退回修改", { icon: "✅", duration: 3000 });
+        toast.success("已退回修改");
         setRejectModal({ open: false, type: null, id: null });
         setRejectReason("");
       }).catch((error: any) => {
-        toast.error(error.message || "退回失败", { icon: "❌", duration: 3000 });
+        toast.error(error.message || "退回失败");
       });
       return;
     } else if (rejectModal.type === "income") {
@@ -427,16 +428,16 @@ export default function ApprovalCenterPage() {
         // 刷新 SWR 缓存
         mutate("income-requests");
         mutate("pending-income-requests");
-        toast.success("已退回修改", { icon: "✅", duration: 3000 });
+        toast.success("已退回修改");
         setRejectModal({ open: false, type: null, id: null });
         setRejectReason("");
       }).catch((error: any) => {
-        toast.error(error.message || "退回失败", { icon: "❌", duration: 3000 });
+        toast.error(error.message || "退回失败");
       });
       return;
     }
     
-    toast.success("已退回修改", { icon: "✅", duration: 3000 });
+    toast.success("已退回修改");
     setRejectModal({ open: false, type: null, id: null });
     setRejectReason("");
   };
@@ -466,9 +467,9 @@ export default function ApprovalCenterPage() {
           mutate("pending-expense-requests");
           // 触发自定义事件，通知财务工作台刷新
           window.dispatchEvent(new CustomEvent("approval-updated"));
-          toast.success("已批准，已推送给财务人员处理出账", { icon: "✅", duration: 4000 });
+          toast.success("已批准，已推送给财务人员处理出账");
         } catch (error: any) {
-          toast.error(error.message || "审批失败", { icon: "❌", duration: 3000 });
+          toast.error(error.message || "审批失败");
         }
       }
     });
@@ -497,9 +498,9 @@ export default function ApprovalCenterPage() {
           mutate("pending-income-requests");
           // 触发自定义事件，通知财务工作台刷新
           window.dispatchEvent(new CustomEvent("approval-updated"));
-          toast.success("已批准，已推送给财务人员处理入账", { icon: "✅", duration: 4000 });
+          toast.success("已批准，已推送给财务人员处理入账");
         } catch (error: any) {
-          toast.error(error.message || "审批失败", { icon: "❌", duration: 3000 });
+          toast.error(error.message || "审批失败");
         }
       }
     });
@@ -773,18 +774,22 @@ export default function ApprovalCenterPage() {
                 </div>
 
                 <div className="flex flex-col gap-2 ml-6">
-                  <button
+                  <InteractiveButton
                     onClick={() => handleApprove(bill.id)}
-                    className="px-6 py-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 font-medium transition"
+                    variant="success"
+                    size="md"
+                    className="px-6 py-3 border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
                   >
                     ✓ 批准
-                  </button>
-                  <button
+                  </InteractiveButton>
+                  <InteractiveButton
                     onClick={() => handleReject(bill.id)}
-                    className="px-6 py-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 font-medium transition"
+                    variant="danger"
+                    size="md"
+                    className="px-6 py-3 border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
                   >
                     ✗ 退回修改
-                  </button>
+                  </InteractiveButton>
                 </div>
               </div>
             </div>
@@ -884,18 +889,22 @@ export default function ApprovalCenterPage() {
                       </div>
 
                       <div className="flex flex-col gap-2 ml-6">
-                        <button
+                        <InteractiveButton
                           onClick={() => handleApproveExpenseRequest(request.id)}
-                          className="px-6 py-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 font-medium transition"
+                          variant="success"
+                          size="md"
+                          className="px-6 py-3 border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
                         >
                           ✓ 批准
-                        </button>
-                        <button
+                        </InteractiveButton>
+                        <InteractiveButton
                           onClick={() => handleRejectExpenseRequest(request.id)}
-                          className="px-6 py-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 font-medium transition"
+                          variant="danger"
+                          size="md"
+                          className="px-6 py-3 border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
                         >
                           ✗ 退回修改
-                        </button>
+                        </InteractiveButton>
                       </div>
                     </div>
                   </div>
@@ -995,18 +1004,22 @@ export default function ApprovalCenterPage() {
                       </div>
 
                       <div className="flex flex-col gap-2 ml-6">
-                        <button
+                        <InteractiveButton
                           onClick={() => handleApproveIncomeRequest(request.id)}
-                          className="px-6 py-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 font-medium transition"
+                          variant="success"
+                          size="md"
+                          className="px-6 py-3 border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
                         >
                           ✓ 批准
-                        </button>
-                        <button
+                        </InteractiveButton>
+                        <InteractiveButton
                           onClick={() => handleRejectIncomeRequest(request.id)}
-                          className="px-6 py-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 font-medium transition"
+                          variant="danger"
+                          size="md"
+                          className="px-6 py-3 border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
                         >
                           ✗ 退回修改
-                        </button>
+                        </InteractiveButton>
                       </div>
                     </div>
                   </div>

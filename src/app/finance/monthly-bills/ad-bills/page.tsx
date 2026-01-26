@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Megaphone, Plus, X, Save, ArrowLeft, FileText, Zap, CheckCircle } from "lucide-react";
 import { PageHeader, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
@@ -303,6 +304,7 @@ export default function AdBillsPage() {
     } catch (error) {
       console.error("Failed to create bill", error);
       toast.error("创建失败，请重试");
+      throw error; // 重新抛出错误，让 InteractiveButton 也能捕获
     } finally {
       setIsGenerating(false);
       setConfirmDialog(null);
@@ -523,22 +525,24 @@ export default function AdBillsPage() {
         </div>
 
         <div className="mt-4 flex gap-2">
-          <ActionButton
-            icon={Zap}
+          <InteractiveButton
+            icon={<Zap className="h-4 w-4" />}
             variant="primary"
+            size="md"
             onClick={handleAutoCalculate}
             disabled={!selectedAgencyId || !selectedMonth}
           >
             自动汇总
-          </ActionButton>
-          <ActionButton
-            icon={Zap}
+          </InteractiveButton>
+          <InteractiveButton
+            icon={<Zap className="h-4 w-4" />}
             variant="secondary"
+            size="md"
             onClick={handleBatchGenerate}
             disabled={!selectedMonth || isBatchGenerating}
           >
             批量生成所有代理商
-          </ActionButton>
+          </InteractiveButton>
         </div>
       </div>
 
@@ -741,14 +745,15 @@ export default function AdBillsPage() {
           )}
 
           <div className="mt-6">
-            <ActionButton
-              icon={Save}
+            <InteractiveButton
+              icon={<Save className="h-4 w-4" />}
               variant="primary"
+              size="md"
               onClick={createNewBill}
               disabled={isGenerating}
             >
-              {isGenerating ? "生成中..." : "生成月账单"}
-            </ActionButton>
+              生成月账单
+            </InteractiveButton>
           </div>
         </div>
       )}

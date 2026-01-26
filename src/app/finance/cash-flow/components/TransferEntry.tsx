@@ -6,6 +6,7 @@ import type { CashFlow } from "../page";
 import { toast } from "sonner";
 import { enrichWithUID } from "@/lib/business-utils";
 import ImageUploader from "@/components/ImageUploader";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 
 type TransferEntryProps = {
   accounts: BankAccount[];
@@ -88,7 +89,6 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     
     // 防止重复提交
     if (isSubmitting) {
-      toast.loading("正在提交，请勿重复点击");
       return;
     }
 
@@ -185,10 +185,12 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       await new Promise(resolve => setTimeout(resolve, 100));
       await onSave(inFlowWithUID);
       setIsSubmitting(false);
+      toast.success("划拨成功");
       onClose();
     } catch (error: any) {
       setIsSubmitting(false);
       toast.error(error.message || '创建划拨记录失败');
+      throw error; // 重新抛出错误，让 InteractiveButton 也能捕获
     }
   };
 
@@ -533,13 +535,15 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
             >
               取消
             </button>
-            <button
+            <InteractiveButton
               type="submit"
-              className="rounded-md bg-blue-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-blue-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+              variant="primary"
+              size="md"
+              className="rounded-md bg-blue-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-blue-600"
               disabled={!form.fromAccountId || !form.toAccountId || !form.amount || isSubmitting}
             >
-              {isSubmitting ? "提交中..." : "确认划拨"}
-            </button>
+              确认划拨
+            </InteractiveButton>
           </div>
         </form>
       </div>

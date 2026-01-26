@@ -5,7 +5,8 @@ import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-sto
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import { Truck, Search, X, Download, Eye, Package } from "lucide-react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
 
 const formatDate = (dateString?: string) => {
@@ -100,7 +101,7 @@ export default function DeliveryOrdersPage() {
   // 导出数据
   const handleExportData = () => {
     if (filteredOrders.length === 0) {
-      toast.error("没有可导出的数据", { icon: "⚠️", duration: 2000 });
+      toast.error("没有可导出的数据");
       return;
     }
 

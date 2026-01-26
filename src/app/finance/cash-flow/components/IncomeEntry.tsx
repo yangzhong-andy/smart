@@ -10,6 +10,7 @@ import { INCOME_CATEGORIES, getIncomeSubCategories, type IncomeSubCategory } fro
 import useSWR from "swr";
 import ImageUploader from "@/components/ImageUploader";
 import { createIncomeRequest, type IncomeRequest } from "@/lib/expense-income-request-store";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 
 type IncomeEntryProps = {
   accounts: BankAccount[];
@@ -100,7 +101,6 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
     
     // 防止重复提交
     if (isSubmitting) {
-      toast.loading("正在提交，请勿重复点击");
       return;
     }
 
@@ -164,7 +164,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
     try {
       // 创建收入申请
       await createIncomeRequest(requestWithUID);
-      toast.success("收入申请已提交，等待审批", { duration: 3000 });
+      toast.success("收入申请已提交，等待审批");
       // 关闭弹窗
       setTimeout(() => {
         setIsSubmitting(false);
@@ -173,6 +173,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
     } catch (error: any) {
       setIsSubmitting(false);
       toast.error(error.message || "提交失败，请重试");
+      throw error; // 重新抛出错误，让 InteractiveButton 也能捕获
     }
   };
 
@@ -448,13 +449,15 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
             >
               取消
             </button>
-            <button
+            <InteractiveButton
               type="submit"
-              className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-emerald-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+              variant="success"
+              size="md"
+              className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-emerald-600"
               disabled={!accounts.length || isSubmitting}
             >
-              {isSubmitting ? "提交中..." : "提交申请"}
-            </button>
+              提交申请
+            </InteractiveButton>
           </div>
         </form>
       </div>

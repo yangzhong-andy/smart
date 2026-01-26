@@ -40,7 +40,8 @@ const currency = (n: number, curr: string = "CNY") =>
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import ImageUploader from "@/components/ImageUploader";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 
 const formatNumber = (n: number) => {
   if (!Number.isFinite(n)) return "0.00";
@@ -741,12 +742,12 @@ export default function AdAgenciesPage() {
     }
     
     if (!agencyForm.name.trim()) {
-      toast.error("代理商名称是必填项", { icon: "⚠️", duration: 3000 });
+      toast.error("代理商名称是必填项");
       return;
     }
     const rebateRate = Number(agencyForm.rebateRate);
     if (Number.isNaN(rebateRate) || rebateRate < 0 || rebateRate > 100) {
-      toast.error("返点比例需为0-100之间的数字", { icon: "⚠️", duration: 3000 });
+      toast.error("返点比例需为0-100之间的数字");
       return;
     }
 
@@ -815,12 +816,12 @@ export default function AdAgenciesPage() {
     
     if (!editAgency) return;
     if (!agencyForm.name.trim()) {
-      toast.error("代理商名称是必填项", { icon: "⚠️", duration: 3000 });
+      toast.error("代理商名称是必填项");
       return;
     }
     const rebateRate = Number(agencyForm.rebateRate);
     if (Number.isNaN(rebateRate) || rebateRate < 0 || rebateRate > 100) {
-      toast.error("返点比例需为0-100之间的数字", { icon: "⚠️", duration: 3000 });
+      toast.error("返点比例需为0-100之间的数字");
       return;
     }
 
@@ -904,27 +905,27 @@ export default function AdAgenciesPage() {
   const handleCreateAccount = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!accountForm.agencyId) {
-      toast.error("请选择代理商", { icon: "⚠️", duration: 3000 });
+      toast.error("请选择代理商");
       return;
     }
     if (!accountForm.accountName.trim()) {
-      toast.error("账户名称是必填项", { icon: "⚠️", duration: 3000 });
+      toast.error("账户名称是必填项");
       return;
     }
     const currentBalance = Number(accountForm.currentBalance) || 0;
     const creditLimit = Number(accountForm.creditLimit) || 0;
     if (Number.isNaN(currentBalance) || currentBalance < 0) {
-      toast.error("当前余额需为非负数", { icon: "⚠️", duration: 3000 });
+      toast.error("当前余额需为非负数");
       return;
     }
     if (Number.isNaN(creditLimit) || creditLimit < 0) {
-      toast.error("账期授信额度需为非负数", { icon: "⚠️", duration: 3000 });
+      toast.error("账期授信额度需为非负数");
       return;
     }
 
     const agency = agencies.find((a) => a.id === accountForm.agencyId);
     if (!agency) {
-      toast.error("代理商不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("代理商不存在");
       return;
     }
 
@@ -974,23 +975,23 @@ export default function AdAgenciesPage() {
     e.preventDefault();
     if (!editAccount) return;
     if (!accountForm.accountName.trim()) {
-      toast.error("账户名称是必填项", { icon: "⚠️", duration: 3000 });
+      toast.error("账户名称是必填项");
       return;
     }
     const currentBalance = Number(accountForm.currentBalance) || 0;
     const creditLimit = Number(accountForm.creditLimit) || 0;
     if (Number.isNaN(currentBalance) || currentBalance < 0) {
-      toast.error("当前余额需为非负数", { icon: "⚠️", duration: 3000 });
+      toast.error("当前余额需为非负数");
       return;
     }
     if (Number.isNaN(creditLimit) || creditLimit < 0) {
-      toast.error("账期授信额度需为非负数", { icon: "⚠️", duration: 3000 });
+      toast.error("账期授信额度需为非负数");
       return;
     }
 
     const agency = agencies.find((a) => a.id === accountForm.agencyId);
     if (!agency) {
-      toast.error("代理商不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("代理商不存在");
       return;
     }
 
@@ -1058,19 +1059,19 @@ export default function AdAgenciesPage() {
   const handleCreateRecharge = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!rechargeAccount) {
-      toast.error("广告账户不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("广告账户不存在");
       return;
     }
     const amount = Number(rechargeForm.amount);
     if (Number.isNaN(amount) || amount <= 0) {
-      toast.error("充值金额需为正数", { icon: "⚠️", duration: 3000 });
+      toast.error("充值金额需为正数");
       return;
     }
 
     // 获取代理商，计算返点
     const agency = agencies.find((a) => a.id === rechargeAccount.agencyId);
     if (!agency) {
-      toast.error("代理商不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("代理商不存在");
       return;
     }
     const rebateRate = agency?.rebateConfig?.rate || agency?.rebateRate || 0;
@@ -1078,7 +1079,7 @@ export default function AdAgenciesPage() {
 
     // 验证凭证数据
     if (!rechargeForm.voucher || rechargeForm.voucher.trim().length < 10) {
-      toast.error("请上传充值凭证", { icon: "⚠️", duration: 3000 });
+      toast.error("请上传充值凭证");
       return;
     }
 
@@ -1107,7 +1108,7 @@ export default function AdAgenciesPage() {
     const { amount, rebateAmount, rebateRate, currency, date, voucher, notes } = confirmRechargeModal;
     const agency = agencies.find((a) => a.id === rechargeAccount.agencyId);
     if (!agency) {
-      toast.error("代理商不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("代理商不存在");
       setConfirmRechargeModal(null);
       return;
     }
@@ -1410,7 +1411,7 @@ export default function AdAgenciesPage() {
 
     const account = adAccounts.find((a) => a.id === consumptionForm.adAccountId);
     if (!account) {
-      toast.error("广告账户不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("广告账户不存在");
       return;
     }
     
@@ -1450,7 +1451,7 @@ export default function AdAgenciesPage() {
     const { accountName, month, date, amount, estimatedRebate, currency, campaignName, voucher, notes, storeName } = confirmConsumptionModal;
     const account = adAccounts.find((a) => a.accountName === accountName);
     if (!account) {
-      toast.error("广告账户不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("广告账户不存在");
       setConfirmConsumptionModal(null);
       return;
     }
@@ -1686,7 +1687,7 @@ export default function AdAgenciesPage() {
     const { month, accountId, consumptions: toSettle } = settlementData;
     const account = adAccounts.find((a) => a.id === accountId);
     if (!account) {
-      toast.error("账户不存在", { icon: "⚠️", duration: 3000 });
+      toast.error("账户不存在");
       return;
     }
     

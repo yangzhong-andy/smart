@@ -24,6 +24,7 @@ import { EXPENSE_CATEGORIES, getSubCategories, type ExpenseSubCategory } from "@
 import useSWR from "swr";
 import ImageUploader from "@/components/ImageUploader";
 import { createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 
 type ExpenseEntryProps = {
   accounts: BankAccount[];
@@ -203,7 +204,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
     try {
       // 创建支出申请
       await createExpenseRequest(requestWithUID);
-      toast.success("支出申请已提交，等待审批", { duration: 3000 });
+      toast.success("支出申请已提交，等待审批");
       // 关闭弹窗
       setTimeout(() => {
         setIsSubmitting(false);
@@ -212,6 +213,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
     } catch (error: any) {
       setIsSubmitting(false);
       toast.error(error.message || "提交失败，请重试");
+      throw error; // 重新抛出错误，让 InteractiveButton 也能捕获
     }
   };
 
@@ -549,13 +551,15 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
             >
               取消
             </button>
-            <button
+            <InteractiveButton
               type="submit"
-              className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+              variant="danger"
+              size="md"
+              className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600"
               disabled={!accounts.length || isSubmitting}
             >
-              {isSubmitting ? "提交中..." : "提交申请"}
-            </button>
+              提交申请
+            </InteractiveButton>
           </div>
         </form>
       </div>

@@ -90,6 +90,27 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
+    // 处理 voucher 字段：如果是数组，转换为 JSON 字符串；如果是字符串，直接使用；否则为 null
+    let voucherValue: string | null = null;
+    if (body.voucher) {
+      if (Array.isArray(body.voucher)) {
+        voucherValue = JSON.stringify(body.voucher);
+      } else if (typeof body.voucher === 'string') {
+        voucherValue = body.voucher;
+      }
+    }
+    
+    // 验证必填字段
+    if (!body.date || !body.summary || !body.category || !body.type || body.amount === undefined || !body.accountId || !body.accountName) {
+      return NextResponse.json(
+        { 
+          error: '创建失败：缺少必填字段',
+          details: '请确保 date, summary, category, type, amount, accountId, accountName 都已提供'
+        },
+        { status: 400 }
+      )
+    }
+    
     // 创建流水记录
     const cashFlow = await prisma.cashFlow.create({
       data: {
@@ -108,7 +129,8 @@ export async function POST(request: NextRequest) {
         status: body.status === 'confirmed' ? CashFlowStatus.CONFIRMED : CashFlowStatus.PENDING,
         isReversal: body.isReversal || false,
         reversedById: body.reversedById || null,
-        voucher: body.voucher || null,
+        voucher: voucherValue,
+        // createdAt 和 updatedAt 由 Prisma 自动处理，不需要手动传入
       },
       include: {
         account: true
@@ -163,6 +185,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(transformed, { status: 201 })
   } catch (error: any) {
     console.error('Error creating cash flow:', error)
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack
+    })
     
     // 检查是否是数据库连接错误
     if (error.message?.includes('TLS connection') || 
@@ -202,11 +230,23 @@ export async function POST(request: NextRequest) {
       )
     }
     
+    // 检查是否是必填字段缺失
+    if (error.code === 'P2011' || error.message?.includes('required') || error.message?.includes('Missing')) {
+      return NextResponse.json(
+        { 
+          error: '创建失败：必填字段缺失',
+          details: error.message || '请检查所有必填字段是否已提供'
+        },
+        { status: 400 }
+      )
+    }
+    
     return NextResponse.json(
       { 
         error: 'Failed to create cash flow',
         details: error.message || '未知错误',
-        code: error.code || 'UNKNOWN'
+        code: error.code || 'UNKNOWN',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     )

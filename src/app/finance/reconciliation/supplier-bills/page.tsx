@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Factory, Plus, X, Save, ArrowLeft, FileText, Zap, CheckCircle } from "lucide-react";
 import { PageHeader, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
@@ -563,6 +564,7 @@ export default function SupplierBillsPage() {
     } catch (e) {
       console.error("Failed to generate bill", e);
       toast.error("生成账单失败");
+      throw e; // 重新抛出错误，让 InteractiveButton 也能捕获
     } finally {
       setIsGenerating(false);
     }
@@ -626,22 +628,24 @@ export default function SupplierBillsPage() {
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <ActionButton
+          <InteractiveButton
             onClick={handleAutoCalculate}
             disabled={!selectedSupplierId || !selectedMonth}
-            icon={FileText}
+            icon={<FileText className="h-4 w-4" />}
+            variant="primary"
+            size="md"
           >
             自动汇总账单
-          </ActionButton>
-          <ActionButton
+          </InteractiveButton>
+          <InteractiveButton
             onClick={handleBatchGenerate}
             disabled={!selectedMonth || isBatchGenerating}
-            icon={Zap}
+            icon={<Zap className="h-4 w-4" />}
             variant="primary"
-            isLoading={isBatchGenerating}
+            size="md"
           >
-            {isBatchGenerating ? "批量生成中..." : "批量生成所有供应商账单"}
-          </ActionButton>
+            批量生成所有供应商账单
+          </InteractiveButton>
         </div>
       </div>
 
@@ -879,14 +883,15 @@ export default function SupplierBillsPage() {
           </div>
 
           <div className="mt-6">
-            <ActionButton
+            <InteractiveButton
               onClick={handleGenerateBill}
               disabled={isGenerating || totalAmount <= 0}
-              icon={Save}
-              isLoading={isGenerating}
+              icon={<Save className="h-4 w-4" />}
+              variant="primary"
+              size="md"
             >
-              {isGenerating ? "生成中..." : "生成账单"}
-            </ActionButton>
+              生成账单
+            </InteractiveButton>
           </div>
         </div>
       )}

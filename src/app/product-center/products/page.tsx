@@ -261,7 +261,7 @@ export default function ProductsPage() {
   // 导出产品数据
   const handleExportData = () => {
     if (filteredProducts.length === 0) {
-      toast.error("没有可导出的数据", { icon: "⚠️", duration: 2000 });
+      toast.error("没有可导出的数据");
       return;
     }
 
@@ -322,7 +322,7 @@ export default function ProductsPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success(`已导出 ${filteredProducts.length} 条产品数据`, { icon: "✅", duration: 2000 });
+    toast.success(`已导出 ${filteredProducts.length} 条产品数据`);
   };
 
   const resetForm = () => {
