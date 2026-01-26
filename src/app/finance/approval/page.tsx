@@ -5,7 +5,6 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 
 import { useState, useEffect, useCallback } from "react";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
-import { getPaymentRequests, savePaymentRequests, getPaymentRequestsByStatus, type PaymentRequest } from "@/lib/payment-request-store";
 import { getAdConsumptions, getAdRecharges, getAgencies, type Agency } from "@/lib/ad-agency-store";
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import { createPendingEntry, getPendingEntryByRelatedId } from "@/lib/pending-entry-store";
@@ -17,6 +16,18 @@ import {
 } from "@/lib/rebate-receivable-store";
 import { getPurchaseContracts, getPurchaseContractById } from "@/lib/purchase-contracts-store";
 import { FileImage } from "lucide-react";
+import { 
+  getExpenseRequests, 
+  getExpenseRequestsByStatus, 
+  updateExpenseRequest,
+  type ExpenseRequest 
+} from "@/lib/expense-income-request-store";
+import { 
+  getIncomeRequests, 
+  getIncomeRequestsByStatus, 
+  updateIncomeRequest,
+  type IncomeRequest 
+} from "@/lib/expense-income-request-store";
 
 export default function ApprovalCenterPage() {
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending"); // 当前标签：待审批/历史记录
@@ -24,19 +35,22 @@ export default function ApprovalCenterPage() {
   const [billTypeFilter, setBillTypeFilter] = useState<BillType | "all">("all"); // 账单类型筛选（待审批和历史记录共用）
   
   const [pendingBills, setPendingBills] = useState<MonthlyBill[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<PaymentRequest[]>([]);
+  const [pendingExpenseRequests, setPendingExpenseRequests] = useState<ExpenseRequest[]>([]);
+  const [pendingIncomeRequests, setPendingIncomeRequests] = useState<IncomeRequest[]>([]);
   const [historyBills, setHistoryBills] = useState<MonthlyBill[]>([]);
-  const [historyRequests, setHistoryRequests] = useState<PaymentRequest[]>([]);
+  const [historyExpenseRequests, setHistoryExpenseRequests] = useState<ExpenseRequest[]>([]);
+  const [historyIncomeRequests, setHistoryIncomeRequests] = useState<IncomeRequest[]>([]);
   
   const [selectedBill, setSelectedBill] = useState<MonthlyBill | null>(null);
-  const [selectedRequest, setSelectedRequest] = useState<PaymentRequest | null>(null);
+  const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
+  const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isRequestDetailOpen, setIsRequestDetailOpen] = useState(false);
   const [recharges, setRecharges] = useState<any[]>([]);
   const [consumptions, setConsumptions] = useState<any[]>([]);
   const [rebateReceivables, setRebateReceivables] = useState<RebateReceivable[]>([]);
   const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
-  const [rejectModal, setRejectModal] = useState<{ open: boolean; type: "bill" | "request" | null; id: string | null }>({
+  const [rejectModal, setRejectModal] = useState<{ open: boolean; type: "bill" | "expense" | "income" | null; id: string | null }>({
     open: false,
     type: null,
     id: null
@@ -54,8 +68,8 @@ export default function ApprovalCenterPage() {
   const [userRole] = useState<"finance" | "boss" | "cashier">("boss");
 
   // 加载历史审批记录
-  const loadHistoryRecords = useCallback(() => {
-    const allBills = getMonthlyBills();
+  const loadHistoryRecords = useCallback(async () => {
+    const allBills = await getMonthlyBills();
     // 历史记录：所有非草稿且非待审批状态的记录，或者有退回原因的记录
     const history = allBills.filter((b) => {
       // 排除草稿和待审批状态
@@ -67,24 +81,35 @@ export default function ApprovalCenterPage() {
     });
     setHistoryBills(history);
     
-    const allRequests = getPaymentRequests();
-    const historyReqs = allRequests.filter((r) => {
-      // 排除草稿和待审批状态
-      if (r.status === "Draft" || r.status === "Pending_Approval") {
-        return false;
-      }
-      // 包含已批准、已支付，或者有退回原因的
-      return r.status === "Approved" || r.status === "Paid" || !!r.rejectionReason;
+    
+    // 加载支出和收入申请历史记录
+    getExpenseRequests().then((allExpenseRequests) => {
+      const historyExpenseReqs = allExpenseRequests.filter((r) => {
+        if (r.status === "Draft" || r.status === "Pending_Approval") {
+          return false;
+        }
+        return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
+      });
+      setHistoryExpenseRequests(historyExpenseReqs);
     });
-    setHistoryRequests(historyReqs);
+    
+    getIncomeRequests().then((allIncomeRequests) => {
+      const historyIncomeReqs = allIncomeRequests.filter((r) => {
+        if (r.status === "Draft" || r.status === "Pending_Approval") {
+          return false;
+        }
+        return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
+      });
+      setHistoryIncomeRequests(historyIncomeReqs);
+    });
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedBills = getBillsByStatus("Pending_Approval");
-    setPendingBills(loadedBills);
-    const loadedRequests = getPaymentRequestsByStatus("Pending_Approval");
-    setPendingRequests(loadedRequests);
+    getBillsByStatus("Pending_Approval").then(setPendingBills);
+    // 加载支出和收入申请
+    getExpenseRequestsByStatus("Pending_Approval").then(setPendingExpenseRequests);
+    getIncomeRequestsByStatus("Pending_Approval").then(setPendingIncomeRequests);
     // 加载历史记录
     loadHistoryRecords();
     // 加载充值记录和消耗记录，用于详情显示
@@ -102,9 +127,9 @@ export default function ApprovalCenterPage() {
     setIsDetailModalOpen(true);
   };
 
-  const handleApprove = (billId: string) => {
+  const handleApprove = async (billId: string) => {
     // 从最新的数据源获取账单信息，确保数据同步
-    const allBills = getMonthlyBills();
+    const allBills = await getMonthlyBills();
     const bill = allBills.find((b) => b.id === billId);
     if (!bill) return;
     
@@ -134,78 +159,80 @@ export default function ApprovalCenterPage() {
               }
             : b
         );
-        saveMonthlyBills(updatedBills);
-        setPendingBills(updatedBills.filter((b) => b.status === "Pending_Approval"));
-        // 刷新历史记录
-        loadHistoryRecords();
+        saveMonthlyBills(updatedBills).then(() => {
+          setPendingBills(updatedBills.filter((b) => b.status === "Pending_Approval"));
+          // 刷新历史记录
+          loadHistoryRecords();
+        });
         
         // 如果是广告账单，且未生成返点应收款，则自动生成
         if (bill.billType === "广告" && bill.agencyId && bill.adAccountId) {
-          try {
-            // 获取代理商信息，用于获取返点比例
-            const agencies = getAgencies();
-            const agency = agencies.find((a: Agency) => a.id === bill.agencyId);
-            
-            if (agency) {
-              // 获取返点比例
-              const rebateRate = agency?.rebateConfig?.rate || agency?.rebateRate || 0;
+          (async () => {
+            try {
+              // 获取代理商信息，用于获取返点比例
+              const agencies = getAgencies();
+              const agency = agencies.find((a: Agency) => a.id === bill.agencyId);
               
-              // 计算返点金额：基于实付金额（netAmount）
-              // 实付金额 = 充值金额，返点金额 = 实付金额 * 返点比例 / 100
-              const rebateAmount = (bill.netAmount * rebateRate) / 100;
-              
-              // 如果有返点金额且大于0，生成返点应收款记录
-              if (rebateAmount > 0) {
-                // 获取关联的充值记录（账单应该至少关联一个充值记录）
-                const recharges = getAdRecharges();
-                const relatedRecharges = bill.rechargeIds 
-                  ? recharges.filter((r) => bill.rechargeIds?.includes(r.id))
-                  : [];
+              if (agency) {
+                // 获取返点比例
+                const rebateRate = agency?.rebateConfig?.rate || agency?.rebateRate || 0;
                 
-                // 如果没有关联充值记录，使用账单的月份作为充值日期
-                const rechargeDate = relatedRecharges.length > 0 
-                  ? relatedRecharges[0].date 
-                  : `${bill.month}-01`;
+                // 计算返点金额：基于实付金额（netAmount）
+                // 实付金额 = 充值金额，返点金额 = 实付金额 * 返点比例 / 100
+                const rebateAmount = (bill.netAmount * rebateRate) / 100;
                 
-                // 获取第一个充值记录ID，如果没有则使用账单ID作为关联ID
-                const rechargeId = relatedRecharges.length > 0 
-                  ? relatedRecharges[0].id 
-                  : billId;
-                
-                // 检查是否已存在该账单的返点应收款（防止重复创建）
-                const existingReceivables = getRebateReceivables();
-                const existingReceivable = existingReceivables.find(
-                  (r) => r.rechargeId === rechargeId || r.rechargeId === billId
-                );
-                
-                if (!existingReceivable) {
-                  // 创建新的返点应收款记录
-                  const newReceivable: RebateReceivable = {
-                    id: `rebate-receivable-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                    rechargeId: rechargeId,
-                    rechargeDate: rechargeDate,
-                    agencyId: bill.agencyId,
-                    agencyName: bill.agencyName || agency.name,
-                    adAccountId: bill.adAccountId,
-                    accountName: bill.accountName || "-",
-                    platform: agency.platform || "其他",
-                    rebateAmount: rebateAmount,
-                    currency: bill.currency,
-                    currentBalance: rebateAmount, // 初始余额等于返点金额
-                    status: "待核销" as const,
-                    writeoffRecords: [],
-                    adjustments: [],
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    notes: `审批通过后自动生成：广告账单 ${billId} 的返点应收款（实付金额：${formatCurrency(bill.netAmount, bill.currency, "expense")}，返点比例：${rebateRate}%）`
-                  };
+                // 如果有返点金额且大于0，生成返点应收款记录
+                if (rebateAmount > 0) {
+                  // 获取关联的充值记录（账单应该至少关联一个充值记录）
+                  const recharges = getAdRecharges();
+                  const relatedRecharges = bill.rechargeIds 
+                    ? recharges.filter((r) => bill.rechargeIds?.includes(r.id))
+                    : [];
                   
-                  const updatedReceivables = [...existingReceivables, newReceivable];
-                  saveRebateReceivables(updatedReceivables);
-                  console.log(`✅ 已生成返点应收款记录：${newReceivable.id}，金额：${formatCurrency(rebateAmount, bill.currency, "income")}`);
+                  // 如果没有关联充值记录，使用账单的月份作为充值日期
+                  const rechargeDate = relatedRecharges.length > 0 
+                    ? relatedRecharges[0].date 
+                    : `${bill.month}-01`;
                   
-                  // 在对账中心生成"广告返点"类型的应收款账单
-                  const existingBills = getMonthlyBills();
+                  // 获取第一个充值记录ID，如果没有则使用账单ID作为关联ID
+                  const rechargeId = relatedRecharges.length > 0 
+                    ? relatedRecharges[0].id 
+                    : billId;
+                  
+                  // 检查是否已存在该账单的返点应收款（防止重复创建）
+                  const existingReceivables = getRebateReceivables();
+                  const existingReceivable = existingReceivables.find(
+                    (r) => r.rechargeId === rechargeId || r.rechargeId === billId
+                  );
+                  
+                  if (!existingReceivable) {
+                    // 创建新的返点应收款记录
+                    const newReceivable: RebateReceivable = {
+                      id: `rebate-receivable-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                      rechargeId: rechargeId,
+                      rechargeDate: rechargeDate,
+                      agencyId: bill.agencyId,
+                      agencyName: bill.agencyName || agency.name,
+                      adAccountId: bill.adAccountId,
+                      accountName: bill.accountName || "-",
+                      platform: agency.platform || "其他",
+                      rebateAmount: rebateAmount,
+                      currency: bill.currency,
+                      currentBalance: rebateAmount, // 初始余额等于返点金额
+                      status: "待核销" as const,
+                      writeoffRecords: [],
+                      adjustments: [],
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                      notes: `审批通过后自动生成：广告账单 ${billId} 的返点应收款（实付金额：${formatCurrency(bill.netAmount, bill.currency, "expense")}，返点比例：${rebateRate}%）`
+                    };
+                    
+                    const updatedReceivables = [...existingReceivables, newReceivable];
+                    saveRebateReceivables(updatedReceivables);
+                    console.log(`✅ 已生成返点应收款记录：${newReceivable.id}，金额：${formatCurrency(rebateAmount, bill.currency, "income")}`);
+                    
+                    // 在对账中心生成"广告返点"类型的应收款账单
+                    const existingBills = await getMonthlyBills();
                   // 查找同一关联方（代理商+账户）、同一月份、同一类型、同一币种的草稿账单
                   const existingRebateBill = existingBills.find(
                     (b) =>
@@ -231,7 +258,7 @@ export default function ApprovalCenterPage() {
                     const updatedBills = existingBills.map((b) =>
                       b.id === existingRebateBill.id ? updatedRebateBill : b
                     );
-                    saveMonthlyBills(updatedBills);
+                    await saveMonthlyBills(updatedBills);
                     console.log(`✅ 已更新对账中心应收款账单：${updatedRebateBill.id}`);
                   } else {
                     // 创建新的返点应收款账单
@@ -256,9 +283,16 @@ export default function ApprovalCenterPage() {
                       notes: `自动生成：审批通过广告账单 ${billId} 后生成的返点应收款（关联单据号：${billId}）`
                     };
                     const updatedBills = [...existingBills, newRebateBill];
-                    saveMonthlyBills(updatedBills);
+                    await saveMonthlyBills(updatedBills);
                     console.log(`✅ 已生成对账中心应收款账单并推送到对账中心：${newRebateBill.id}（关联单据号：${billId}）`);
                   }
+                }
+              }
+            } catch (e) {
+              console.error("Failed to generate rebate receivable", e);
+            }
+          })();
+        }
                 }
               }
             }
@@ -327,35 +361,51 @@ export default function ApprovalCenterPage() {
     }
     
     if (rejectModal.type === "bill") {
-      const allBills = getMonthlyBills();
-      const updatedBills = allBills.map((b) =>
-        b.id === rejectModal.id
-          ? {
-              ...b,
-              status: "Draft" as BillStatus,
-              rejectionReason: rejectReason.trim()
-            }
-          : b
-      );
-      saveMonthlyBills(updatedBills);
-      setPendingBills(updatedBills.filter((b) => b.status === "Pending_Approval"));
-      // 刷新历史记录
-      loadHistoryRecords();
-    } else if (rejectModal.type === "request") {
-      const allRequests = getPaymentRequests();
-      const updatedRequests = allRequests.map((r) =>
-        r.id === rejectModal.id
-          ? {
-              ...r,
-              status: "Draft" as BillStatus,
-              rejectionReason: rejectReason.trim()
-            }
-          : r
-      );
-      savePaymentRequests(updatedRequests);
-      setPendingRequests(updatedRequests.filter((r) => r.status === "Pending_Approval"));
-      // 刷新历史记录
-      loadHistoryRecords();
+      getMonthlyBills().then(async (allBills) => {
+        const updatedBills = allBills.map((b) =>
+          b.id === rejectModal.id
+            ? {
+                ...b,
+                status: "Draft" as BillStatus,
+                rejectionReason: rejectReason.trim()
+              }
+            : b
+        );
+        await saveMonthlyBills(updatedBills);
+        setPendingBills(updatedBills.filter((b) => b.status === "Pending_Approval"));
+        // 刷新历史记录
+        loadHistoryRecords();
+      });
+    } else if (rejectModal.type === "expense") {
+      updateExpenseRequest(rejectModal.id, {
+        status: "Rejected",
+        rejectionReason: rejectReason.trim()
+      }).then(async () => {
+        const updated = await getExpenseRequestsByStatus("Pending_Approval");
+        setPendingExpenseRequests(updated);
+        loadHistoryRecords();
+        toast.success("已退回修改", { icon: "✅", duration: 3000 });
+        setRejectModal({ open: false, type: null, id: null });
+        setRejectReason("");
+      }).catch((error: any) => {
+        toast.error(error.message || "退回失败", { icon: "❌", duration: 3000 });
+      });
+      return;
+    } else if (rejectModal.type === "income") {
+      updateIncomeRequest(rejectModal.id, {
+        status: "Rejected",
+        rejectionReason: rejectReason.trim()
+      }).then(async () => {
+        const updated = await getIncomeRequestsByStatus("Pending_Approval");
+        setPendingIncomeRequests(updated);
+        loadHistoryRecords();
+        toast.success("已退回修改", { icon: "✅", duration: 3000 });
+        setRejectModal({ open: false, type: null, id: null });
+        setRejectReason("");
+      }).catch((error: any) => {
+        toast.error(error.message || "退回失败", { icon: "❌", duration: 3000 });
+      });
+      return;
     }
     
     toast.success("已退回修改", { icon: "✅", duration: 3000 });
@@ -363,105 +413,78 @@ export default function ApprovalCenterPage() {
     setRejectReason("");
   };
 
-  const handleApproveRequest = (requestId: string) => {
-    // 从最新的数据源获取付款申请信息，确保数据同步
-    const allRequests = getPaymentRequests();
-    const request = allRequests.find((r) => r.id === requestId);
+  // PaymentRequest 已合并到 ExpenseRequest，相关函数已删除
+
+  // 审批支出申请
+  const handleApproveExpenseRequest = async (requestId: string) => {
+    const allExpenseRequests = await getExpenseRequests();
+    const request = allExpenseRequests.find((r) => r.id === requestId);
     if (!request) return;
     
     setConfirmDialog({
       open: true,
-      title: "批准付款申请",
-      message: `确定要批准这笔付款申请吗？批准后系统将自动推送给财务人员处理。\n\n申请信息：\n- 项目：${request.expenseItem}\n- 金额：${formatCurrencyString(request.amount, request.currency)}\n- 店铺：${request.storeName || "-"}`,
+      title: "批准支出申请",
+      message: `确定要批准这笔支出申请吗？批准后财务将选择账户并完成出账。\n\n申请信息：\n- 摘要：${request.summary}\n- 分类：${request.category}\n- 金额：${formatCurrencyString(request.amount, request.currency)}`,
       type: "info",
-      onConfirm: () => {
-        const updatedRequests = allRequests.map((r) =>
-          r.id === requestId
-            ? {
-                ...r,
-                status: "Approved" as BillStatus,
-                approvedBy: "老板",
-                approvedAt: new Date().toISOString()
-              }
-            : r
-        );
-        savePaymentRequests(updatedRequests);
-        setPendingRequests(updatedRequests.filter((r) => r.status === "Pending_Approval"));
-        // 刷新历史记录
-        loadHistoryRecords();
-        
-        // 判断是否为采购定金付款申请
-        const isPurchaseDeposit = request.expenseItem.includes("采购合同定金");
-        
-        if (isPurchaseDeposit) {
-          // 采购定金：创建应付款账单并推送到待付款
-          try {
-            const { getMonthlyBills, saveMonthlyBills } = require("@/lib/reconciliation-store");
-            const allBills = getMonthlyBills();
-            
-            // 从备注中提取合同信息
-            const contractNumberMatch = request.notes?.match(/采购合同：([^\n]+)/);
-            const supplierMatch = request.notes?.match(/供应商：([^\n]+)/);
-            const contractNumber = contractNumberMatch ? contractNumberMatch[1] : "-";
-            const supplierName = supplierMatch ? supplierMatch[1] : "-";
-            
-            // 创建应付款账单
-            const newBill: MonthlyBill = {
-              id: `bill-purchase-deposit-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-              month: new Date().toISOString().slice(0, 7), // 当前月份
-              billCategory: "Payable" as const,
-              billType: "工厂订单" as const,
-              supplierName: supplierName,
-              totalAmount: request.amount,
-              currency: request.currency,
-              rebateAmount: 0,
-              netAmount: request.amount,
-              consumptionIds: [],
-              rechargeIds: [],
-              status: "Approved" as BillStatus, // 已批准，直接推送到待付款
-              createdBy: "系统",
-              createdAt: new Date().toISOString(),
-              approvedBy: "老板",
-              approvedAt: new Date().toISOString(),
-              notes: `采购合同定金付款申请审批通过后自动生成\n付款申请ID：${requestId}\n合同编号：${contractNumber}\n${request.notes || ""}`
-            };
-            
-            const updatedBills = [...allBills, newBill];
-            saveMonthlyBills(updatedBills);
-            console.log(`✅ 采购定金付款申请 ${requestId} 审批通过，已创建应付款账单并推送到待付款：${newBill.id}`);
-            toast.success("已批准，已推送到财务应付款（待付款）", { icon: "✅", duration: 4000 });
-          } catch (e) {
-            console.error("Failed to create payable bill for purchase deposit", e);
-            toast.error("创建应付款账单失败，请手动处理", { icon: "⚠️", duration: 4000 });
-          }
-        } else {
-          // 其他付款申请：创建待入账任务
-          const existingEntry = getPendingEntryByRelatedId("PaymentRequest", requestId);
-          if (!existingEntry) {
-            createPendingEntry({
-              type: "PaymentRequest",
-              relatedId: requestId,
-              expenseItem: request.expenseItem,
-              storeName: request.storeName,
-              amount: request.amount,
-              currency: request.currency,
-              netAmount: request.amount,
-              approvedBy: "老板",
-              approvedAt: new Date().toISOString(),
-              notes: request.notes
-            });
-            console.log(`✅ 已创建待入账任务：付款申请 ${requestId}`);
-          }
-          toast.success("已批准，已推送给财务人员处理入账", { icon: "✅", duration: 4000 });
+      onConfirm: async () => {
+        try {
+          await updateExpenseRequest(requestId, {
+            status: "Approved",
+            approvedBy: "老板",
+            approvedAt: new Date().toISOString()
+          });
+          const updated = await getExpenseRequestsByStatus("Pending_Approval");
+          setPendingExpenseRequests(updated);
+          loadHistoryRecords();
+          // 触发自定义事件，通知财务工作台刷新
+          window.dispatchEvent(new CustomEvent("approval-updated"));
+          toast.success("已批准，已推送给财务人员处理出账", { icon: "✅", duration: 4000 });
+        } catch (error: any) {
+          toast.error(error.message || "审批失败", { icon: "❌", duration: 3000 });
         }
-        
-        setConfirmDialog(null);
       }
     });
   };
 
-  const handleRejectRequest = (requestId: string) => {
-    setRejectModal({ open: true, type: "request", id: requestId });
+  // 审批收入申请
+  const handleApproveIncomeRequest = async (requestId: string) => {
+    const allIncomeRequests = await getIncomeRequests();
+    const request = allIncomeRequests.find((r) => r.id === requestId);
+    if (!request) return;
+    
+    setConfirmDialog({
+      open: true,
+      title: "批准收入申请",
+      message: `确定要批准这笔收入申请吗？批准后财务将选择账户并完成入账。\n\n申请信息：\n- 摘要：${request.summary}\n- 分类：${request.category}\n- 金额：${formatCurrencyString(request.amount, request.currency)}`,
+      type: "info",
+      onConfirm: async () => {
+        try {
+          await updateIncomeRequest(requestId, {
+            status: "Approved",
+            approvedBy: "老板",
+            approvedAt: new Date().toISOString()
+          });
+          const updated = await getIncomeRequestsByStatus("Pending_Approval");
+          setPendingIncomeRequests(updated);
+          loadHistoryRecords();
+          // 触发自定义事件，通知财务工作台刷新
+          window.dispatchEvent(new CustomEvent("approval-updated"));
+          toast.success("已批准，已推送给财务人员处理入账", { icon: "✅", duration: 4000 });
+        } catch (error: any) {
+          toast.error(error.message || "审批失败", { icon: "❌", duration: 3000 });
+        }
+      }
+    });
+  };
+
+  // 退回支出申请
+  const handleRejectExpenseRequest = (requestId: string) => {
+    setRejectModal({ open: true, type: "expense", id: requestId });
+  };
+
+  // 退回收入申请
+  const handleRejectIncomeRequest = (requestId: string) => {
+    setRejectModal({ open: true, type: "income", id: requestId });
   };
 
   const statusColors: Record<BillStatus, string> = {
@@ -522,8 +545,8 @@ export default function ApprovalCenterPage() {
           <h1 className="text-2xl font-bold text-slate-100">审批中心</h1>
           <p className="text-sm text-slate-400 mt-1">
             {activeTab === "pending" 
-              ? `待审批：月账单 ${pendingBills.length} 笔，付款申请 ${pendingRequests.length} 笔`
-              : `历史记录：月账单 ${historyBills.length} 笔，付款申请 ${historyRequests.length} 笔`
+              ? `待审批：月账单 ${pendingBills.length} 笔，付款申请 ${pendingRequests.length} 笔，支出申请 ${pendingExpenseRequests.length} 笔，收入申请 ${pendingIncomeRequests.length} 笔`
+              : `历史记录：月账单 ${historyBills.length} 笔，付款申请 ${historyRequests.length} 笔，支出申请 ${historyExpenseRequests.length} 笔，收入申请 ${historyIncomeRequests.length} 笔`
             }
           </p>
         </div>
@@ -540,11 +563,11 @@ export default function ApprovalCenterPage() {
           }`}
         >
           待审批
-          {(pendingBills.length > 0 || pendingRequests.length > 0) && (
+          {(pendingBills.length > 0 || pendingRequests.length > 0 || pendingExpenseRequests.length > 0 || pendingIncomeRequests.length > 0) && (
             <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
               activeTab === "pending" ? "bg-primary-500/20 text-primary-300" : "bg-slate-700 text-slate-300"
             }`}>
-              {pendingBills.length + pendingRequests.length}
+              {pendingBills.length + pendingRequests.length + pendingExpenseRequests.length + pendingIncomeRequests.length}
             </span>
           )}
         </button>
@@ -611,7 +634,7 @@ export default function ApprovalCenterPage() {
       {/* 待审批内容 */}
       {activeTab === "pending" && (
         <>
-          {filteredPendingBills.length === 0 && pendingRequests.length === 0 ? (
+          {filteredPendingBills.length === 0 && pendingRequests.length === 0 && pendingExpenseRequests.length === 0 && pendingIncomeRequests.length === 0 ? (
             <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-12 text-center">
               <div className="text-slate-400 text-4xl mb-4">✓</div>
               <p className="text-slate-300 font-medium mb-1">暂无待审批项目</p>
@@ -950,6 +973,416 @@ export default function ApprovalCenterPage() {
               </div>
             </div>
           )}
+
+          {/* 支出申请 */}
+          {pendingExpenseRequests.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-slate-200 mb-4">支出申请 ({pendingExpenseRequests.length})</h2>
+              <div className="space-y-4">
+                {pendingExpenseRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-4">
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">摘要</div>
+                            <div className="text-lg font-semibold text-slate-100">{request.summary}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">分类</div>
+                            <div className="text-slate-200 font-medium">{request.category}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">发起人</div>
+                            <div className="text-slate-300 text-sm">{request.createdBy}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">日期</div>
+                            <div className="text-slate-300 text-sm">{request.date}</div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4 mb-4">
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">金额</div>
+                            <div className="text-lg font-semibold text-rose-300">
+                              {formatCurrency(request.amount, request.currency, "expense")}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">币种</div>
+                            <div className="text-slate-300">{request.currency}</div>
+                          </div>
+                          {request.businessNumber && (
+                            <div>
+                              <div className="text-xs text-slate-400 mb-1">关联单号</div>
+                              <div className="text-slate-300">{request.businessNumber}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {request.remark && (
+                          <div className="mb-4">
+                            <div className="text-xs text-slate-400 mb-1">备注</div>
+                            <div className="text-slate-300 text-sm">{request.remark}</div>
+                          </div>
+                        )}
+
+                        {request.voucher && (
+                          <div className="mb-4">
+                            <div className="text-xs text-slate-400 mb-2">凭证</div>
+                            <div className="flex gap-2 flex-wrap">
+                              {(Array.isArray(request.voucher) ? request.voucher : [request.voucher]).map((v, idx) => (
+                                <div key={idx} className="relative">
+                                  <img
+                                    src={v}
+                                    alt={`凭证 ${idx + 1}`}
+                                    className="w-20 h-20 object-cover rounded border border-slate-700 cursor-pointer hover:opacity-80"
+                                    onClick={() => {
+                                      const modal = document.createElement("div");
+                                      modal.className = "fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur";
+                                      modal.onclick = () => document.body.removeChild(modal);
+                                      const img = document.createElement("img");
+                                      img.src = v;
+                                      img.className = "max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl";
+                                      img.onclick = (e) => e.stopPropagation();
+                                      modal.appendChild(img);
+                                      document.body.appendChild(modal);
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 ml-6">
+                        <button
+                          onClick={() => handleApproveExpenseRequest(request.id)}
+                          className="px-6 py-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 font-medium transition"
+                        >
+                          ✓ 批准
+                        </button>
+                        <button
+                          onClick={() => handleRejectExpenseRequest(request.id)}
+                          className="px-6 py-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 font-medium transition"
+                        >
+                          ✗ 退回修改
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 收入申请 */}
+          {pendingIncomeRequests.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-slate-200 mb-4">收入申请 ({pendingIncomeRequests.length})</h2>
+              <div className="space-y-4">
+                {pendingIncomeRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-4 mb-4">
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">摘要</div>
+                            <div className="text-lg font-semibold text-slate-100">{request.summary}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">分类</div>
+                            <div className="text-slate-200 font-medium">{request.category}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">发起人</div>
+                            <div className="text-slate-300 text-sm">{request.createdBy}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">日期</div>
+                            <div className="text-slate-300 text-sm">{request.date}</div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4 mb-4">
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">金额</div>
+                            <div className="text-lg font-semibold text-emerald-300">
+                              {formatCurrency(request.amount, request.currency, "income")}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 mb-1">币种</div>
+                            <div className="text-slate-300">{request.currency}</div>
+                          </div>
+                          {request.storeName && (
+                            <div>
+                              <div className="text-xs text-slate-400 mb-1">所属店铺</div>
+                              <div className="text-slate-300">{request.storeName}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {request.remark && (
+                          <div className="mb-4">
+                            <div className="text-xs text-slate-400 mb-1">备注</div>
+                            <div className="text-slate-300 text-sm">{request.remark}</div>
+                          </div>
+                        )}
+
+                        {request.voucher && (
+                          <div className="mb-4">
+                            <div className="text-xs text-slate-400 mb-2">凭证</div>
+                            <div className="flex gap-2 flex-wrap">
+                              {(Array.isArray(request.voucher) ? request.voucher : [request.voucher]).map((v, idx) => (
+                                <div key={idx} className="relative">
+                                  <img
+                                    src={v}
+                                    alt={`凭证 ${idx + 1}`}
+                                    className="w-20 h-20 object-cover rounded border border-slate-700 cursor-pointer hover:opacity-80"
+                                    onClick={() => {
+                                      const modal = document.createElement("div");
+                                      modal.className = "fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur";
+                                      modal.onclick = () => document.body.removeChild(modal);
+                                      const img = document.createElement("img");
+                                      img.src = v;
+                                      img.className = "max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl";
+                                      img.onclick = (e) => e.stopPropagation();
+                                      modal.appendChild(img);
+                                      document.body.appendChild(modal);
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 ml-6">
+                        <button
+                          onClick={() => handleApproveIncomeRequest(request.id)}
+                          className="px-6 py-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 font-medium transition"
+                        >
+                          ✓ 批准
+                        </button>
+                        <button
+                          onClick={() => handleRejectIncomeRequest(request.id)}
+                          className="px-6 py-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 font-medium transition"
+                        >
+                          ✗ 退回修改
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+              {/* 历史支出申请记录 */}
+              {historyExpenseRequests.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-200 mb-4">
+                    支出申请历史 ({historyExpenseRequests.length})
+                  </h2>
+                  <div className="space-y-4">
+                    {historyExpenseRequests
+                      .sort((a, b) => {
+                        const timeA = a.approvedAt || a.submittedAt || a.createdAt || "";
+                        const timeB = b.approvedAt || b.submittedAt || b.createdAt || "";
+                        return new Date(timeB).getTime() - new Date(timeA).getTime();
+                      })
+                      .map((request) => (
+                        <div
+                          key={request.id}
+                          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-4 mb-4">
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">摘要</div>
+                                  <div className="text-lg font-semibold text-slate-100">{request.summary}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">分类</div>
+                                  <div className="text-slate-200 font-medium">{request.category}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">状态</div>
+                                  <span className={`px-2 py-1 rounded text-xs border ${
+                                    request.status === "Approved" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" :
+                                    request.status === "Paid" ? "bg-purple-500/20 text-purple-300 border-purple-500/40" :
+                                    request.status === "Rejected" ? "bg-rose-500/20 text-rose-300 border-rose-500/40" :
+                                    "bg-slate-500/20 text-slate-300 border-slate-500/40"
+                                  }`}>
+                                    {request.status === "Approved" ? "已批准" :
+                                     request.status === "Paid" ? "已支付" :
+                                     request.status === "Rejected" ? "已拒绝" :
+                                     request.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-4 mb-4">
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">申请金额</div>
+                                  <div className="text-rose-300 font-medium text-lg">
+                                    {formatCurrency(request.amount, request.currency, "expense")}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">币种</div>
+                                  <div className="text-slate-300">{request.currency}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">申请日期</div>
+                                  <div className="text-slate-300">{request.date}</div>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-4 text-xs text-slate-400">
+                                {request.createdBy && (
+                                  <div>发起人：<span className="text-slate-300">{request.createdBy}</span></div>
+                                )}
+                                {request.approvedBy && (
+                                  <div>审批人：<span className="text-slate-300">{request.approvedBy}</span></div>
+                                )}
+                                {request.approvedAt && (
+                                  <div>审批时间：<span className="text-slate-300">
+                                    {new Date(request.approvedAt).toLocaleString("zh-CN")}
+                                  </span></div>
+                                )}
+                                {request.paidBy && (
+                                  <div>付款人：<span className="text-slate-300">{request.paidBy}</span></div>
+                                )}
+                                {request.paidAt && (
+                                  <div>付款时间：<span className="text-slate-300">
+                                    {new Date(request.paidAt).toLocaleString("zh-CN")}
+                                  </span></div>
+                                )}
+                              </div>
+
+                              {request.rejectionReason && (
+                                <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/40 p-2">
+                                  <div className="text-xs text-rose-300 mb-1">退回原因</div>
+                                  <div className="text-rose-200 text-xs">{request.rejectionReason}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 历史收入申请记录 */}
+              {historyIncomeRequests.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-200 mb-4">
+                    收入申请历史 ({historyIncomeRequests.length})
+                  </h2>
+                  <div className="space-y-4">
+                    {historyIncomeRequests
+                      .sort((a, b) => {
+                        const timeA = a.approvedAt || a.submittedAt || a.createdAt || "";
+                        const timeB = b.approvedAt || b.submittedAt || b.createdAt || "";
+                        return new Date(timeB).getTime() - new Date(timeA).getTime();
+                      })
+                      .map((request) => (
+                        <div
+                          key={request.id}
+                          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-4 mb-4">
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">摘要</div>
+                                  <div className="text-lg font-semibold text-slate-100">{request.summary}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">分类</div>
+                                  <div className="text-slate-200 font-medium">{request.category}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">状态</div>
+                                  <span className={`px-2 py-1 rounded text-xs border ${
+                                    request.status === "Approved" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" :
+                                    request.status === "Received" ? "bg-purple-500/20 text-purple-300 border-purple-500/40" :
+                                    request.status === "Rejected" ? "bg-rose-500/20 text-rose-300 border-rose-500/40" :
+                                    "bg-slate-500/20 text-slate-300 border-slate-500/40"
+                                  }`}>
+                                    {request.status === "Approved" ? "已批准" :
+                                     request.status === "Received" ? "已收款" :
+                                     request.status === "Rejected" ? "已拒绝" :
+                                     request.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-4 mb-4">
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">申请金额</div>
+                                  <div className="text-emerald-300 font-medium text-lg">
+                                    {formatCurrency(request.amount, request.currency, "income")}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">币种</div>
+                                  <div className="text-slate-300">{request.currency}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-400 mb-1">申请日期</div>
+                                  <div className="text-slate-300">{request.date}</div>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-4 text-xs text-slate-400">
+                                {request.createdBy && (
+                                  <div>发起人：<span className="text-slate-300">{request.createdBy}</span></div>
+                                )}
+                                {request.approvedBy && (
+                                  <div>审批人：<span className="text-slate-300">{request.approvedBy}</span></div>
+                                )}
+                                {request.approvedAt && (
+                                  <div>审批时间：<span className="text-slate-300">
+                                    {new Date(request.approvedAt).toLocaleString("zh-CN")}
+                                  </span></div>
+                                )}
+                                {request.receivedBy && (
+                                  <div>收款人：<span className="text-slate-300">{request.receivedBy}</span></div>
+                                )}
+                                {request.receivedAt && (
+                                  <div>收款时间：<span className="text-slate-300">
+                                    {new Date(request.receivedAt).toLocaleString("zh-CN")}
+                                  </span></div>
+                                )}
+                              </div>
+
+                              {request.rejectionReason && (
+                                <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/40 p-2">
+                                  <div className="text-xs text-rose-300 mb-1">退回原因</div>
+                                  <div className="text-rose-200 text-xs">{request.rejectionReason}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
         </div>
           )}
         </>
@@ -958,7 +1391,7 @@ export default function ApprovalCenterPage() {
       {/* 历史记录内容 */}
       {activeTab === "history" && (
         <>
-          {filteredHistoryBills.length === 0 && filteredHistoryRequests.length === 0 ? (
+          {filteredHistoryBills.length === 0 && filteredHistoryRequests.length === 0 && historyExpenseRequests.length === 0 && historyIncomeRequests.length === 0 ? (
             <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-12 text-center">
               <div className="text-slate-400 text-4xl mb-4">📋</div>
               <p className="text-slate-300 font-medium mb-1">暂无历史审批记录</p>

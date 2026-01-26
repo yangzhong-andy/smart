@@ -66,59 +66,178 @@ export type MonthlyBill = {
   notes?: string; // 备注信息
 };
 
-const BILLS_KEY = "monthlyBills";
-
 /**
  * 获取所有月账单
  */
-export function getMonthlyBills(): MonthlyBill[] {
-  if (typeof window === "undefined") return [];
-  const stored = window.localStorage.getItem(BILLS_KEY);
-  if (!stored) return [];
+export async function getMonthlyBills(): Promise<MonthlyBill[]> {
   try {
-    return JSON.parse(stored);
-  } catch {
+    const response = await fetch("/api/monthly-bills");
+    if (!response.ok) {
+      throw new Error("Failed to fetch monthly bills");
+    }
+    const bills = await response.json();
+    // 转换日期字段为字符串
+    return bills.map((bill: any) => ({
+      ...bill,
+      createdAt: bill.createdAt ? new Date(bill.createdAt).toISOString() : bill.createdAt,
+      submittedToFinanceAt: bill.submittedToFinanceAt ? new Date(bill.submittedToFinanceAt).toISOString() : bill.submittedToFinanceAt,
+      financeReviewedAt: bill.financeReviewedAt ? new Date(bill.financeReviewedAt).toISOString() : bill.financeReviewedAt,
+      submittedAt: bill.submittedAt ? new Date(bill.submittedAt).toISOString() : bill.submittedAt,
+      approvedAt: bill.approvedAt ? new Date(bill.approvedAt).toISOString() : bill.approvedAt,
+      cashierApprovedAt: bill.cashierApprovedAt ? new Date(bill.cashierApprovedAt).toISOString() : bill.cashierApprovedAt,
+      paidAt: bill.paidAt ? new Date(bill.paidAt).toISOString() : bill.paidAt,
+    }));
+  } catch (error) {
+    console.error("Error fetching monthly bills:", error);
     return [];
   }
 }
 
 /**
- * 保存月账单列表
- */
-export function saveMonthlyBills(bills: MonthlyBill[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(BILLS_KEY, JSON.stringify(bills));
-}
-
-/**
  * 根据ID获取账单
  */
-export function getBillById(id: string): MonthlyBill | undefined {
-  const bills = getMonthlyBills();
-  return bills.find((b) => b.id === id);
+export async function getBillById(id: string): Promise<MonthlyBill | undefined> {
+  try {
+    const response = await fetch(`/api/monthly-bills/${id}`);
+    if (!response.ok) {
+      if (response.status === 404) return undefined;
+      throw new Error("Failed to fetch monthly bill");
+    }
+    const bill = await response.json();
+    // 转换日期字段为字符串
+    return {
+      ...bill,
+      createdAt: bill.createdAt ? new Date(bill.createdAt).toISOString() : bill.createdAt,
+      submittedToFinanceAt: bill.submittedToFinanceAt ? new Date(bill.submittedToFinanceAt).toISOString() : bill.submittedToFinanceAt,
+      financeReviewedAt: bill.financeReviewedAt ? new Date(bill.financeReviewedAt).toISOString() : bill.financeReviewedAt,
+      submittedAt: bill.submittedAt ? new Date(bill.submittedAt).toISOString() : bill.submittedAt,
+      approvedAt: bill.approvedAt ? new Date(bill.approvedAt).toISOString() : bill.approvedAt,
+      cashierApprovedAt: bill.cashierApprovedAt ? new Date(bill.cashierApprovedAt).toISOString() : bill.cashierApprovedAt,
+      paidAt: bill.paidAt ? new Date(bill.paidAt).toISOString() : bill.paidAt,
+    };
+  } catch (error) {
+    console.error("Error fetching monthly bill:", error);
+    return undefined;
+  }
 }
 
 /**
  * 根据状态获取账单列表
  */
-export function getBillsByStatus(status: BillStatus): MonthlyBill[] {
-  const bills = getMonthlyBills();
-  return bills.filter((b) => b.status === status);
+export async function getBillsByStatus(status: BillStatus): Promise<MonthlyBill[]> {
+  try {
+    const response = await fetch(`/api/monthly-bills?status=${status}`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch monthly bills");
+    }
+    const bills = await response.json();
+    // 转换日期字段为字符串
+    return bills.map((bill: any) => ({
+      ...bill,
+      createdAt: bill.createdAt ? new Date(bill.createdAt).toISOString() : bill.createdAt,
+      submittedToFinanceAt: bill.submittedToFinanceAt ? new Date(bill.submittedToFinanceAt).toISOString() : bill.submittedToFinanceAt,
+      financeReviewedAt: bill.financeReviewedAt ? new Date(bill.financeReviewedAt).toISOString() : bill.financeReviewedAt,
+      submittedAt: bill.submittedAt ? new Date(bill.submittedAt).toISOString() : bill.submittedAt,
+      approvedAt: bill.approvedAt ? new Date(bill.approvedAt).toISOString() : bill.approvedAt,
+      cashierApprovedAt: bill.cashierApprovedAt ? new Date(bill.cashierApprovedAt).toISOString() : bill.cashierApprovedAt,
+      paidAt: bill.paidAt ? new Date(bill.paidAt).toISOString() : bill.paidAt,
+    }));
+  } catch (error) {
+    console.error("Error fetching monthly bills by status:", error);
+    return [];
+  }
+}
+
+/**
+ * 创建月账单
+ */
+export async function createMonthlyBill(bill: Omit<MonthlyBill, "id">): Promise<MonthlyBill> {
+  try {
+    const response = await fetch("/api/monthly-bills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bill),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to create monthly bill");
+    }
+    const created = await response.json();
+    // 转换日期字段为字符串
+    return {
+      ...created,
+      createdAt: created.createdAt ? new Date(created.createdAt).toISOString() : created.createdAt,
+      submittedToFinanceAt: created.submittedToFinanceAt ? new Date(created.submittedToFinanceAt).toISOString() : created.submittedToFinanceAt,
+      financeReviewedAt: created.financeReviewedAt ? new Date(created.financeReviewedAt).toISOString() : created.financeReviewedAt,
+      submittedAt: created.submittedAt ? new Date(created.submittedAt).toISOString() : created.submittedAt,
+      approvedAt: created.approvedAt ? new Date(created.approvedAt).toISOString() : created.approvedAt,
+      cashierApprovedAt: created.cashierApprovedAt ? new Date(created.cashierApprovedAt).toISOString() : created.cashierApprovedAt,
+      paidAt: created.paidAt ? new Date(created.paidAt).toISOString() : created.paidAt,
+    };
+  } catch (error) {
+    console.error("Error creating monthly bill:", error);
+    throw error;
+  }
+}
+
+/**
+ * 更新月账单
+ */
+export async function updateMonthlyBill(id: string, bill: Partial<MonthlyBill>): Promise<MonthlyBill> {
+  try {
+    const response = await fetch(`/api/monthly-bills/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bill),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update monthly bill");
+    }
+    const updated = await response.json();
+    // 转换日期字段为字符串
+    return {
+      ...updated,
+      createdAt: updated.createdAt ? new Date(updated.createdAt).toISOString() : updated.createdAt,
+      submittedToFinanceAt: updated.submittedToFinanceAt ? new Date(updated.submittedToFinanceAt).toISOString() : updated.submittedToFinanceAt,
+      financeReviewedAt: updated.financeReviewedAt ? new Date(updated.financeReviewedAt).toISOString() : updated.financeReviewedAt,
+      submittedAt: updated.submittedAt ? new Date(updated.submittedAt).toISOString() : updated.submittedAt,
+      approvedAt: updated.approvedAt ? new Date(updated.approvedAt).toISOString() : updated.approvedAt,
+      cashierApprovedAt: updated.cashierApprovedAt ? new Date(updated.cashierApprovedAt).toISOString() : updated.cashierApprovedAt,
+      paidAt: updated.paidAt ? new Date(updated.paidAt).toISOString() : updated.paidAt,
+    };
+  } catch (error) {
+    console.error("Error updating monthly bill:", error);
+    throw error;
+  }
+}
+
+/**
+ * 保存月账单列表（批量更新，用于兼容旧代码）
+ * 注意：此函数会逐个更新每个账单，建议直接使用 updateMonthlyBill
+ */
+export async function saveMonthlyBills(bills: MonthlyBill[]): Promise<void> {
+  try {
+    // 批量更新所有账单
+    await Promise.all(
+      bills.map((bill) => updateMonthlyBill(bill.id, bill))
+    );
+  } catch (error) {
+    console.error("Error saving monthly bills:", error);
+    throw error;
+  }
 }
 
 /**
  * 获取待审批账单数量（包括月账单和付款申请）
  */
-export function getPendingApprovalCount(): number {
+export async function getPendingApprovalCount(): Promise<number> {
   try {
-    const bills = getBillsByStatus("Pending_Approval");
+    const bills = await getBillsByStatus("Pending_Approval");
     // 动态导入付款申请模块，避免循环依赖
     if (typeof window !== "undefined") {
       try {
-        // 使用动态 import 而不是 require，避免 SSR 问题
-        const paymentRequestStore = require("./payment-request-store");
+        const paymentRequestStore = await import("./payment-request-store");
         if (paymentRequestStore?.getPaymentRequestsByStatus) {
-          const requests = paymentRequestStore.getPaymentRequestsByStatus("Pending_Approval");
+          const requests = await paymentRequestStore.getPaymentRequestsByStatus("Pending_Approval");
           return bills.length + (requests?.length || 0);
         }
       } catch (e) {

@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
-import { getPaymentRequests, savePaymentRequests, getPaymentRequestsByStatus, type PaymentRequest } from "@/lib/payment-request-store";
 import { getPendingEntries, type PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { getAccounts, type BankAccount } from "@/lib/finance-store";
@@ -14,6 +13,19 @@ import { formatCurrency as formatCurrencyUtil, formatCurrencyString } from "@/li
 import { getAdConsumptions, getAdRecharges, getAgencies, type Agency } from "@/lib/ad-agency-store";
 import { getRebateReceivables, type RebateReceivable } from "@/lib/rebate-receivable-store";
 import { FileImage } from "lucide-react";
+import { 
+  getExpenseRequests, 
+  getExpenseRequestsByStatus, 
+  updateExpenseRequest,
+  type ExpenseRequest 
+} from "@/lib/expense-income-request-store";
+import { 
+  getIncomeRequests, 
+  getIncomeRequestsByStatus, 
+  updateIncomeRequest,
+  type IncomeRequest 
+} from "@/lib/expense-income-request-store";
+import useSWR, { mutate as swrMutate } from "swr";
 
 type CashFlow = {
   id: string;
@@ -61,27 +73,33 @@ const getStatusColor = (status: BillStatus | string) => {
 };
 
 export default function FinanceWorkbenchPage() {
-  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [pendingEntries, setPendingEntries] = useState<PendingEntry[]>([]);
   const [monthlyBills, setMonthlyBills] = useState<MonthlyBill[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [pendingBills, setPendingBills] = useState<MonthlyBill[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<PaymentRequest[]>([]);
+  const [approvedExpenseRequests, setApprovedExpenseRequests] = useState<ExpenseRequest[]>([]);
+  const [approvedIncomeRequests, setApprovedIncomeRequests] = useState<IncomeRequest[]>([]);
+  const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
+  const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
+  const [expenseAccountModal, setExpenseAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  const [incomeAccountModal, setIncomeAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 
-  useEffect(() => {
+  // 加载数据的函数
+  const loadData = useCallback(async () => {
     if (typeof window === "undefined") return;
-    const loadedPaymentRequests = getPaymentRequests();
-    setPaymentRequests(loadedPaymentRequests);
     setPendingEntries(getPendingEntries());
-    const loadedBills = getMonthlyBills();
+    const loadedBills = await getMonthlyBills();
     setMonthlyBills(loadedBills);
     setAccounts(getAccounts());
     
     // 加载审批相关数据
-    setPendingBills(getBillsByStatus("Pending_Approval"));
-    setPendingRequests(getPaymentRequestsByStatus("Pending_Approval"));
+    getBillsByStatus("Pending_Approval").then(setPendingBills);
+    // 加载已审批的支出和收入申请
+    getExpenseRequestsByStatus("Approved").then(setApprovedExpenseRequests);
+    getIncomeRequestsByStatus("Approved").then(setApprovedIncomeRequests);
     
     // 加载现金流数据
     const stored = window.localStorage.getItem("cashFlow");
@@ -100,12 +118,61 @@ export default function FinanceWorkbenchPage() {
     setInitialized(true);
   }, []);
 
+  // 刷新审批数据
+  const refreshApprovalData = useCallback(() => {
+    if (typeof window === "undefined") return;
+    getExpenseRequestsByStatus("Approved").then(setApprovedExpenseRequests);
+    getIncomeRequestsByStatus("Approved").then(setApprovedIncomeRequests);
+    getBillsByStatus("Pending_Approval").then(setPendingBills);
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    
+    // 设置定时刷新，每3秒刷新一次审批数据
+    const interval = setInterval(() => {
+      refreshApprovalData();
+    }, 3000);
+    
+    // 监听页面可见性变化（当用户切换回页面时刷新）
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        refreshApprovalData();
+        loadData();
+      }
+    };
+    
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    // 监听 localStorage 变化（当审批状态更新时）
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "expenseRequests" || e.key === "incomeRequests") {
+        refreshApprovalData();
+      }
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    
+    // 监听自定义事件（当审批通过时触发）
+    const handleApprovalUpdate = () => {
+      refreshApprovalData();
+    };
+    
+    window.addEventListener("approval-updated", handleApprovalUpdate);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("approval-updated", handleApprovalUpdate);
+    };
+  }, [loadData, refreshApprovalData]);
+
   // 统计信息
   const stats = useMemo(() => {
-    // 支付申请统计
-    const paymentPending = paymentRequests.filter((p) => p.status === "Pending_Approval").length;
-    const paymentApproved = paymentRequests.filter((p) => p.status === "Approved").length;
-    const paymentTotal = paymentRequests.length;
+    // 支出申请统计（统一使用 ExpenseRequest）
+    const expensePending = approvedExpenseRequests.filter((p) => p.status === "Approved").length;
+    const expenseTotal = approvedExpenseRequests.length;
 
     // 待入账任务统计
     const entryPending = pendingEntries.filter((e) => e.status === "Pending").length;
@@ -141,10 +208,9 @@ export default function FinanceWorkbenchPage() {
     }, 0);
 
     return {
-      payment: {
-        pending: paymentPending,
-        approved: paymentApproved,
-        total: paymentTotal
+      expense: {
+        pending: expensePending,
+        total: expenseTotal
       },
       entry: {
         pending: entryPending,
@@ -162,15 +228,7 @@ export default function FinanceWorkbenchPage() {
         netIncome: thisMonthIncome - thisMonthExpense
       }
     };
-  }, [paymentRequests, pendingEntries, monthlyBills, accounts, cashFlow]);
-
-  // 待审批的支付申请
-  const urgentPaymentRequests = useMemo(() => {
-    return paymentRequests
-      .filter((p) => p.status === "Pending_Approval")
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 5);
-  }, [paymentRequests]);
+  }, [approvedExpenseRequests, pendingEntries, monthlyBills, accounts, cashFlow]);
 
   // 待入账任务
   const urgentPendingEntries = useMemo(() => {
@@ -188,6 +246,159 @@ export default function FinanceWorkbenchPage() {
       .slice(0, 5);
   }, [monthlyBills]);
 
+  // 处理支出申请（选择账户并创建现金流）
+  const handleProcessExpenseRequest = async (requestId: string) => {
+    if (!selectedAccountId) {
+      toast.error("请选择出款账户");
+      return;
+    }
+    
+    const request = approvedExpenseRequests.find((r) => r.id === requestId);
+    if (!request) {
+      toast.error("申请不存在");
+      return;
+    }
+    
+    const account = accounts.find((a) => a.id === selectedAccountId);
+    if (!account) {
+      toast.error("账户不存在");
+      return;
+    }
+    
+    // 检查账户余额
+    const totalBalance = account.originalBalance || 0;
+    if (totalBalance < request.amount) {
+      toast.error("账户余额不足");
+      return;
+    }
+    
+    try {
+      // 创建现金流记录
+      const cashFlowData = {
+        date: request.date,
+        summary: request.summary,
+        category: request.category,
+        type: "expense" as const,
+        amount: -request.amount, // 支出为负数
+        accountId: selectedAccountId,
+        accountName: account.name,
+        currency: request.currency,
+        remark: request.remark || "",
+        businessNumber: request.businessNumber,
+        relatedId: request.relatedId,
+        status: "confirmed" as const,
+        voucher: request.voucher,
+        createdAt: new Date().toISOString()
+      };
+      
+      // 调用 API 创建现金流
+      const response = await fetch('/api/cash-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cashFlowData)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建现金流失败');
+      }
+      
+      // 更新申请状态为已支付
+      await updateExpenseRequest(requestId, {
+        status: "Paid",
+        financeAccountId: selectedAccountId,
+        financeAccountName: account.name,
+        paidBy: "财务人员", // TODO: 从用户系统获取
+        paidAt: new Date().toISOString(),
+        paymentFlowId: (await response.json()).id
+      });
+      
+      // 刷新数据
+      const updated = await getExpenseRequestsByStatus("Approved");
+      setApprovedExpenseRequests(updated);
+      swrMutate('/api/cash-flow');
+      swrMutate('/api/accounts');
+      
+      toast.success("支出已成功出账", { icon: "✅", duration: 3000 });
+      setExpenseAccountModal({ open: false, requestId: null });
+      setSelectedAccountId("");
+    } catch (error: any) {
+      toast.error(error.message || "处理失败，请重试");
+    }
+  };
+
+  // 处理收入申请（选择账户并创建现金流）
+  const handleProcessIncomeRequest = async (requestId: string) => {
+    if (!selectedAccountId) {
+      toast.error("请选择收款账户");
+      return;
+    }
+    
+    const request = approvedIncomeRequests.find((r) => r.id === requestId);
+    if (!request) {
+      toast.error("申请不存在");
+      return;
+    }
+    
+    const account = accounts.find((a) => a.id === selectedAccountId);
+    if (!account) {
+      toast.error("账户不存在");
+      return;
+    }
+    
+    try {
+      // 创建现金流记录
+      const cashFlowData = {
+        date: request.date,
+        summary: request.summary,
+        category: request.category,
+        type: "income" as const,
+        amount: request.amount, // 收入为正数
+        accountId: selectedAccountId,
+        accountName: account.name,
+        currency: request.currency,
+        remark: request.remark || "",
+        status: "confirmed" as const,
+        voucher: request.voucher,
+        createdAt: new Date().toISOString()
+      };
+      
+      // 调用 API 创建现金流
+      const response = await fetch('/api/cash-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cashFlowData)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '创建现金流失败');
+      }
+      
+      // 更新申请状态为已收款
+      await updateIncomeRequest(requestId, {
+        status: "Received",
+        financeAccountId: selectedAccountId,
+        financeAccountName: account.name,
+        receivedBy: "财务人员", // TODO: 从用户系统获取
+        receivedAt: new Date().toISOString(),
+        paymentFlowId: (await response.json()).id
+      });
+      
+      // 刷新数据
+      const updated = await getIncomeRequestsByStatus("Approved");
+      setApprovedIncomeRequests(updated);
+      swrMutate('/api/cash-flow');
+      swrMutate('/api/accounts');
+      
+      toast.success("收入已成功入账", { icon: "✅", duration: 3000 });
+      setIncomeAccountModal({ open: false, requestId: null });
+      setSelectedAccountId("");
+    } catch (error: any) {
+      toast.error(error.message || "处理失败，请重试");
+    }
+  };
+
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
       <PageHeader
@@ -195,6 +406,18 @@ export default function FinanceWorkbenchPage() {
         description="待审批事项、待入账任务、财务指标"
         actions={
           <>
+            <button
+              onClick={() => {
+                refreshApprovalData();
+                loadData();
+                toast.success("数据已刷新", { icon: "🔄", duration: 2000 });
+              }}
+              className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-slate-100 text-sm transition flex items-center gap-2"
+              title="刷新审批数据"
+            >
+              <span>🔄</span>
+              <span>刷新</span>
+            </button>
             <Link href="/finance/reconciliation">
               <ActionButton variant="secondary" icon={FileText}>
                 对账中心
@@ -238,9 +461,9 @@ export default function FinanceWorkbenchPage() {
         <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-5 backdrop-blur-sm hover:border-amber-500/50 transition-all duration-300 shadow-lg shadow-amber-500/5">
           <div className="flex items-center justify-between mb-3">
             <Clock className="h-5 w-5 text-amber-400" />
-            <div className="text-xs text-slate-400">待审批支付申请</div>
+            <div className="text-xs text-slate-400">待处理支出申请</div>
           </div>
-          <div className="text-2xl font-bold text-slate-100">{stats.payment.pending}</div>
+          <div className="text-2xl font-bold text-slate-100">{stats.expense.pending}</div>
         </div>
         
         <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-purple-500/10 to-purple-600/5 p-5 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 shadow-lg shadow-purple-500/5">
@@ -268,10 +491,10 @@ export default function FinanceWorkbenchPage() {
               <div className="rounded-lg bg-amber-500/20 p-2">
                 <DollarSign className="h-5 w-5 text-amber-400" />
               </div>
-              <h2 className="text-lg font-semibold text-slate-100">待审批支付申请</h2>
-              {urgentPaymentRequests.length > 0 && (
+              <h2 className="text-lg font-semibold text-slate-100">待处理支出申请</h2>
+              {approvedExpenseRequests.length > 0 && (
                 <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-300 font-medium">
-                  {urgentPaymentRequests.length}
+                  {approvedExpenseRequests.length}
                 </span>
               )}
             </div>
@@ -282,16 +505,16 @@ export default function FinanceWorkbenchPage() {
             </Link>
           </div>
 
-          {urgentPaymentRequests.length === 0 ? (
+          {approvedExpenseRequests.length === 0 ? (
             <div className="text-center py-12 text-slate-500">
               <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
                 <DollarSign className="h-8 w-8 opacity-30" />
               </div>
-              <p className="text-sm">暂无待审批申请</p>
+              <p className="text-sm">暂无待处理申请</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {urgentPaymentRequests.map((request) => {
+              {approvedExpenseRequests.slice(0, 5).map((request) => {
                 const colors = getStatusColor(request.status);
                 return (
                   <Link key={request.id} href="/finance/approval">
@@ -304,7 +527,7 @@ export default function FinanceWorkbenchPage() {
                             </span>
                           </div>
                           <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-amber-300 transition-colors">
-                            {request.expenseItem}
+                            {request.summary}
                           </div>
                           <div className="text-xs text-slate-400 mb-1">
                             <span className="font-medium text-slate-300">{formatCurrency(request.amount, request.currency)}</span>
@@ -393,6 +616,105 @@ export default function FinanceWorkbenchPage() {
             </div>
           )}
         </div>
+
+        {/* 已审批的支出申请 */}
+        {approvedExpenseRequests.length > 0 && (
+          <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-rose-500/20 p-2">
+                  <TrendingDown className="h-5 w-5 text-rose-400" />
+                </div>
+                <h2 className="text-lg font-semibold text-slate-100">已审批支出申请</h2>
+                <span className="px-2 py-0.5 rounded-full text-xs bg-rose-500/20 text-rose-300 font-medium">
+                  {approvedExpenseRequests.length}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {approvedExpenseRequests.slice(0, 5).map((request) => (
+                <div
+                  key={request.id}
+                  className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-rose-500/50 hover:bg-slate-900/60 transition-all duration-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-200 mb-2">
+                        {request.summary}
+                      </div>
+                      <div className="text-xs text-slate-400 mb-1">
+                        <span className="font-medium text-rose-300">{formatCurrency(request.amount, request.currency)}</span>
+                        <span className="ml-2">· {request.category}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-2">
+                        审批：{formatDate(request.approvedAt)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedExpenseRequest(request);
+                        setExpenseAccountModal({ open: true, requestId: request.id });
+                      }}
+                      className="ml-3 px-4 py-2 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 font-medium text-sm transition"
+                    >
+                      选择账户出账
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 已审批的收入申请 */}
+        {approvedIncomeRequests.length > 0 && (
+          <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-emerald-500/20 p-2">
+                  <TrendingUp className="h-5 w-5 text-emerald-400" />
+                </div>
+                <h2 className="text-lg font-semibold text-slate-100">已审批收入申请</h2>
+                <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-300 font-medium">
+                  {approvedIncomeRequests.length}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {approvedIncomeRequests.slice(0, 5).map((request) => (
+                <div
+                  key={request.id}
+                  className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-emerald-500/50 hover:bg-slate-900/60 transition-all duration-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-200 mb-2">
+                        {request.summary}
+                      </div>
+                      <div className="text-xs text-slate-400 mb-1">
+                        <span className="font-medium text-emerald-300">{formatCurrency(request.amount, request.currency)}</span>
+                        <span className="ml-2">· {request.category}</span>
+                        {request.storeName && <span className="ml-2">· {request.storeName}</span>}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-2">
+                        审批：{formatDate(request.approvedAt)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedIncomeRequest(request);
+                        setIncomeAccountModal({ open: true, requestId: request.id });
+                      }}
+                      className="ml-3 px-4 py-2 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-medium text-sm transition"
+                    >
+                      选择账户入账
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 待审批账单 */}
         <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
@@ -533,9 +855,9 @@ export default function FinanceWorkbenchPage() {
               <div className="flex flex-col items-center text-center gap-3">
                 <div className="rounded-xl bg-amber-500/20 p-3 group-hover:bg-amber-500/30 group-hover:scale-110 transition-all duration-300 relative">
                   <CheckCircle2 className="h-6 w-6 text-amber-400" />
-                  {(pendingBills.length > 0 || pendingRequests.length > 0) && (
+                  {pendingBills.length > 0 && (
                     <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-xs bg-rose-500 text-white font-bold animate-pulse shadow-lg">
-                      {pendingBills.length + pendingRequests.length}
+                      {pendingBills.length}
                     </span>
                   )}
                 </div>
@@ -548,6 +870,138 @@ export default function FinanceWorkbenchPage() {
           </Link>
         </div>
       </div>
+
+      {/* 选择账户出账弹窗（支出申请） */}
+      {expenseAccountModal.open && selectedExpenseRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-100">选择出款账户</h2>
+              <button
+                onClick={() => {
+                  setExpenseAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                }}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mb-4 p-4 rounded-lg bg-slate-800/50">
+              <div className="text-sm text-slate-300 mb-2">申请信息</div>
+              <div className="text-xs text-slate-400 space-y-1">
+                <div>摘要：{selectedExpenseRequest.summary}</div>
+                <div>金额：{formatCurrency(selectedExpenseRequest.amount, selectedExpenseRequest.currency)}</div>
+                <div>分类：{selectedExpenseRequest.category}</div>
+              </div>
+            </div>
+            <label className="block mb-4">
+              <span className="text-sm text-slate-300 mb-2 block">选择账户</span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+              >
+                <option value="">请选择账户</option>
+                {accounts
+                  .filter((acc) => acc.currency === selectedExpenseRequest.currency)
+                  .map((acc) => {
+                    const displayBalance = acc.originalBalance || 0;
+                    return (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name} - 余额: {formatCurrency(displayBalance, acc.currency)}
+                      </option>
+                    );
+                  })}
+              </select>
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setExpenseAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleProcessExpenseRequest(selectedExpenseRequest.id)}
+                className="px-4 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600"
+                disabled={!selectedAccountId}
+              >
+                确认出账
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 选择账户入账弹窗（收入申请） */}
+      {incomeAccountModal.open && selectedIncomeRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-100">选择收款账户</h2>
+              <button
+                onClick={() => {
+                  setIncomeAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                }}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mb-4 p-4 rounded-lg bg-slate-800/50">
+              <div className="text-sm text-slate-300 mb-2">申请信息</div>
+              <div className="text-xs text-slate-400 space-y-1">
+                <div>摘要：{selectedIncomeRequest.summary}</div>
+                <div>金额：{formatCurrency(selectedIncomeRequest.amount, selectedIncomeRequest.currency)}</div>
+                <div>分类：{selectedIncomeRequest.category}</div>
+              </div>
+            </div>
+            <label className="block mb-4">
+              <span className="text-sm text-slate-300 mb-2 block">选择账户</span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+              >
+                <option value="">请选择账户</option>
+                {accounts
+                  .filter((acc) => acc.currency === selectedIncomeRequest.currency)
+                  .map((acc) => {
+                    const displayBalance = acc.originalBalance || 0;
+                    return (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name} - 余额: {formatCurrency(displayBalance, acc.currency)}
+                      </option>
+                    );
+                  })}
+              </select>
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setIncomeAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleProcessIncomeRequest(selectedIncomeRequest.id)}
+                className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"
+                disabled={!selectedAccountId}
+              >
+                确认入账
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

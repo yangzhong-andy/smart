@@ -939,3 +939,166 @@ model PurchaseContractItem {
   @@index([contractId])
   @@index([variantId])
 }
+
+// 支出申请模型
+model ExpenseRequest {
+  id             String   @id @default(uuid())
+  uid            String?  @unique // 全局唯一业务ID
+  date           DateTime // 日期
+  summary        String // 摘要
+  category       String // 支出分类
+  amount         Decimal  @db.Decimal(18, 2) // 金额
+  currency       String   @default("CNY") // 币种
+  businessNumber String? // 关联单号
+  relatedId      String? // 关联的业务ID
+  remark         String? // 备注
+  voucher        String? // 凭证（JSON 字符串，支持多图）
+
+  // 店铺相关字段（从 PaymentRequest 合并）
+  storeId   String? // 所属店铺ID
+  storeName String? // 所属店铺名称（冗余）
+  country   String? // 所属国家
+
+  // 部门权限控制
+  departmentId   String? // 发起部门ID（用于权限控制）
+  departmentName String? // 发起部门名称（冗余）
+
+  // 状态机
+  status String @default("Draft") // Draft, Pending_Approval, Approved, Rejected, Paid
+
+  // 审批信息
+  createdBy       String // 发起人
+  createdAt       DateTime  @default(now())
+  submittedAt     DateTime? // 提交审批时间
+  approvedBy      String? // 主管审批人
+  approvedAt      DateTime? // 主管审批时间
+  rejectionReason String? // 退回原因
+
+  // 财务处理信息
+  financeAccountId   String? // 财务选择的账户ID
+  financeAccountName String? // 财务选择的账户名称（冗余）
+  paidBy             String? // 付款人（财务）
+  paidAt             DateTime? // 付款时间
+  paymentFlowId      String? // 关联的财务流水ID
+  paymentVoucher     String? // 付款凭证（JSON 字符串，支持多图）
+
+  // 特殊字段（广告充值等）
+  adAccountId  String? // 广告账户ID
+  rebateAmount Decimal? @db.Decimal(18, 2) // 返点金额
+
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([approvedAt])
+  @@index([departmentId])
+}
+
+// 收入申请模型
+model IncomeRequest {
+  id        String   @id @default(uuid())
+  uid       String?  @unique // 全局唯一业务ID
+  date      DateTime // 日期
+  summary   String // 摘要
+  category  String // 收入分类
+  amount    Decimal  @db.Decimal(18, 2) // 金额
+  currency  String   @default("CNY") // 币种
+  storeId   String? // 所属店铺ID
+  storeName String? // 所属店铺名称（冗余）
+  remark    String? // 备注
+  voucher   String? // 凭证（JSON 字符串，支持多图）
+
+  // 状态机
+  status String @default("Draft") // Draft, Pending_Approval, Approved, Rejected, Received
+
+  // 审批信息
+  createdBy       String // 发起人
+  createdAt       DateTime  @default(now())
+  submittedAt     DateTime? // 提交审批时间
+  approvedBy      String? // 主管审批人
+  approvedAt      DateTime? // 主管审批时间
+  rejectionReason String? // 退回原因
+
+  // 财务处理信息
+  financeAccountId   String? // 财务选择的账户ID
+  financeAccountName String? // 财务选择的账户名称（冗余）
+  receivedBy         String? // 收款人（财务）
+  receivedAt         DateTime? // 收款时间
+  paymentFlowId      String? // 关联的财务流水ID
+  paymentVoucher     String? // 收款凭证（JSON 字符串，支持多图）
+
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([approvedAt])
+}
+
+// 月账单模型
+model MonthlyBill {
+  id           String  @id @default(uuid())
+  uid          String? @unique // 全局唯一业务ID
+  month        String // 账单月份，格式：YYYY-MM
+  billCategory String // 账单分类：Payable（应付款）/Receivable（应收款）
+  billType     String // 账单类型：广告、物流、工厂订单、店铺回款、广告返点等
+  agencyId     String? // 关联代理商ID（可选，广告账单使用）
+  agencyName   String? // 代理商名称（冗余字段）
+  adAccountId  String? // 关联广告账户ID（可选）
+  accountName  String? // 广告账户名称（冗余字段）
+  supplierId   String? // 关联供应商ID（可选）
+  supplierName String? // 供应商名称（冗余字段）
+  factoryId    String? // 关联工厂ID（可选）
+  factoryName  String? // 工厂名称（冗余字段）
+
+  // 账单明细
+  totalAmount  Decimal @db.Decimal(18, 2) // 账单总金额
+  currency     String  @default("CNY") // 币种
+  rebateAmount Decimal @default(0) @db.Decimal(18, 2) // 返点金额
+  netAmount    Decimal @db.Decimal(18, 2) // 净金额
+
+  // 关联数据（JSON 数组）
+  consumptionIds String? // JSON 字符串，关联的消耗记录ID列表
+  rechargeIds    String? // JSON 字符串，关联的充值记录ID列表
+
+  // 状态机
+  status String @default("Draft") // 账单状态
+
+  // 审批信息
+  createdBy                 String // 创建人
+  createdAt                 DateTime  @default(now())
+  submittedToFinanceAt      DateTime? // 提交给财务审批时间
+  paymentApplicationVoucher String? // 付款申请书凭证（JSON 字符串，支持多图）
+  financeReviewedBy         String? // 财务审批人
+  financeReviewedAt         DateTime? // 财务审批时间
+  submittedAt               DateTime? // 提交给主管审批时间
+  approvedBy                String? // 审批人
+  approvedAt                DateTime? // 审批时间
+  cashierApprovedBy         String? // 出纳审核人
+  cashierApprovedAt         DateTime? // 出纳审核时间
+  rejectionReason           String? // 退回原因
+
+  // 付款信息
+  paidBy               String? // 付款人
+  paidAt               DateTime? // 付款时间
+  paymentMethod        String? // 付款方式
+  paymentAccountId     String? // 付款账户ID
+  paymentAccountName   String? // 付款账户名称
+  paymentVoucher       String? // 付款凭证（JSON 字符串，支持多图）
+  paymentFlowId        String? // 关联的财务流水ID
+  paymentVoucherNumber String? // 付款单号
+  paymentRemarks       String? // 付款备注
+
+  // 备注
+  notes String? // 备注信息
+
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([month])
+  @@index([billCategory])
+  @@index([createdAt])
+  @@index([approvedAt])
+}
+

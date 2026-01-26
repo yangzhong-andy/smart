@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * 支出申请录入组件
+ * 
+ * 使用场景：
+ * - 广告同事：发起广告费、广告充值等支出申请
+ * - 物流同事：发起物流费、运费等支出申请
+ * - 采购同事：发起采购费、供应商付款等支出申请
+ * 
+ * 审批流程：
+ * 1. 发起人填写申请 → 提交审批
+ * 2. 主管审批（通过/退回）
+ * 3. 财务选择账户 → 出账 → 生成财务流水
+ */
+
 import { useState, useEffect, useMemo } from "react";
 import { type BankAccount } from "@/lib/finance-store";
 import { getAdAccounts, type AdAccount } from "@/lib/ad-agency-store";
@@ -9,6 +23,7 @@ import { enrichWithUID } from "@/lib/business-utils";
 import { EXPENSE_CATEGORIES, getSubCategories, type ExpenseSubCategory } from "@/lib/expense-categories";
 import useSWR from "swr";
 import ImageUploader from "@/components/ImageUploader";
+import { createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
 
 type ExpenseEntryProps = {
   accounts: BankAccount[];
@@ -155,35 +170,46 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       finalBusinessNumber = finalBusinessNumber;
     }
 
-    const newFlow: CashFlow = {
+    // 创建支出申请（需要审批）
+    const expenseRequest: ExpenseRequest = {
       id: crypto.randomUUID(),
       date: form.date,
       summary: form.summary.trim(),
-      type: "expense",
       category: finalCategory,
-      amount: -amount,
-      accountId: form.accountId,
-      accountName: account.name,
+      amount: amount,
       currency: account.currency,
-      remark: form.remark.trim() + (rebateAmount ? ` 广告充值返点：${rebateAmount.toFixed(2)}` : ""),
       businessNumber: finalBusinessNumber,
       relatedId: relatedId,
-      status: "confirmed",
-      voucher: form.voucher || undefined,
-      createdAt: new Date().toISOString()
+      remark: form.remark.trim() + (rebateAmount ? ` 广告充值返点：${rebateAmount.toFixed(2)}` : ""),
+      voucher: form.voucher ? (Array.isArray(form.voucher) ? form.voucher : [form.voucher]) : undefined,
+      status: "Pending_Approval", // 待审批
+      createdBy: "当前用户", // TODO: 从用户系统获取
+      createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      adAccountId: adAccountId,
+      rebateAmount: rebateAmount
     };
 
-    // 自动生成唯一业务ID
-    const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
+    // 自动生成唯一业务ID（如果还没有）
+    if (!expenseRequest.uid) {
+      expenseRequest.uid = `EXP-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+    const requestWithUID = expenseRequest;
     
     // 防止重复提交
     setIsSubmitting(true);
     try {
-      onSave(flowWithUID, adAccountId, rebateAmount);
-      // 延迟重置状态，给父组件时间处理
-      setTimeout(() => setIsSubmitting(false), 1000);
-    } catch (error) {
+      // 创建支出申请
+      await createExpenseRequest(requestWithUID);
+      toast.success("支出申请已提交，等待审批", { duration: 3000 });
+      // 关闭弹窗
+      setTimeout(() => {
+        setIsSubmitting(false);
+        onClose();
+      }, 1000);
+    } catch (error: any) {
       setIsSubmitting(false);
+      toast.error(error.message || "提交失败，请重试");
     }
   };
 
@@ -192,8 +218,8 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">登记支出</h2>
-            <p className="text-xs text-slate-400 mt-1">必须选择费用分类</p>
+            <h2 className="text-lg font-semibold text-slate-100">提交支出申请</h2>
+            <p className="text-xs text-slate-400 mt-1">提交后需等待审批，审批通过后才能出账</p>
           </div>
           <button 
             onClick={() => {
@@ -526,7 +552,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
               className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!accounts.length || isSubmitting}
             >
-              {isSubmitting ? "提交中..." : "确认登记"}
+              {isSubmitting ? "提交中..." : "提交申请"}
             </button>
           </div>
         </form>

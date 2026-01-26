@@ -9,6 +9,7 @@ import { enrichWithUID } from "@/lib/business-utils";
 import { INCOME_CATEGORIES, getIncomeSubCategories, type IncomeSubCategory } from "@/lib/income-categories";
 import useSWR from "swr";
 import ImageUploader from "@/components/ImageUploader";
+import { createIncomeRequest, type IncomeRequest } from "@/lib/expense-income-request-store";
 
 type IncomeEntryProps = {
   accounts: BankAccount[];
@@ -134,33 +135,44 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
       remarkText = form.remark.trim();
     }
 
-    const newFlow: CashFlow = {
+    // 创建收入申请（需要审批）
+    const incomeRequest: IncomeRequest = {
       id: crypto.randomUUID(),
       date: form.date,
       summary: form.summary.trim(),
-      type: "income",
       category: finalCategory,
       amount: amount,
-      accountId: form.accountId,
-      accountName: account.name,
       currency: account.currency,
+      storeId: form.storeId || undefined,
+      storeName: selectedStore?.name || undefined,
       remark: remarkText,
-      status: "confirmed",
-      voucher: form.voucher || undefined,
-      createdAt: new Date().toISOString()
+      voucher: form.voucher ? (Array.isArray(form.voucher) ? form.voucher : [form.voucher]) : undefined,
+      status: "Pending_Approval", // 待审批
+      createdBy: "当前用户", // TODO: 从用户系统获取
+      createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString()
     };
 
-    // 自动生成唯一业务ID
-    const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
+    // 自动生成唯一业务ID（如果还没有）
+    if (!incomeRequest.uid) {
+      incomeRequest.uid = `INC-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+    const requestWithUID = incomeRequest;
     
     // 防止重复提交
     setIsSubmitting(true);
     try {
-      onSave(flowWithUID);
-      // 延迟重置状态，给父组件时间处理
-      setTimeout(() => setIsSubmitting(false), 1000);
-    } catch (error) {
+      // 创建收入申请
+      await createIncomeRequest(requestWithUID);
+      toast.success("收入申请已提交，等待审批", { duration: 3000 });
+      // 关闭弹窗
+      setTimeout(() => {
+        setIsSubmitting(false);
+        onClose();
+      }, 1000);
+    } catch (error: any) {
       setIsSubmitting(false);
+      toast.error(error.message || "提交失败，请重试");
     }
   };
 
@@ -169,8 +181,8 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
       <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">登记收入</h2>
-            <p className="text-xs text-slate-400 mt-1">选择店铺后可自动带出币种和关联账户，自动折算RMB（店铺为可选项）</p>
+            <h2 className="text-lg font-semibold text-slate-100">提交收入申请</h2>
+            <p className="text-xs text-slate-400 mt-1">提交后需等待审批，审批通过后才能入账</p>
           </div>
           <button 
             onClick={() => {
@@ -441,7 +453,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
               className="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-emerald-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!accounts.length || isSubmitting}
             >
-              {isSubmitting ? "提交中..." : "确认登记"}
+              {isSubmitting ? "提交中..." : "提交申请"}
             </button>
           </div>
         </form>

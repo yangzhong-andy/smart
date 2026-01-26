@@ -50,11 +50,15 @@ export default function AdAgencyWorkbenchPage() {
     setConsumptions(getAdConsumptions());
     setRecharges(getAdRecharges());
     
-    // 加载月账单数据
-    const bills = getMonthlyBills();
-    setMonthlyBills(bills);
-    
-    setInitialized(true);
+    // 加载月账单数据（异步）
+    getMonthlyBills().then((bills) => {
+      setMonthlyBills(bills);
+      setInitialized(true);
+    }).catch((error) => {
+      console.error("Failed to load monthly bills:", error);
+      setMonthlyBills([]);
+      setInitialized(true);
+    });
   }, []);
 
   // 统计信息
@@ -91,7 +95,7 @@ export default function AdAgencyWorkbenchPage() {
     
     // 待生成账单的消耗（有消耗但未生成账单的月份）
     const monthsWithConsumption = new Set(consumptions.map((c) => c.month));
-    const monthsWithBills = new Set(monthlyBills.map((b) => b.month));
+    const monthsWithBills = new Set(Array.isArray(monthlyBills) ? monthlyBills.map((b) => b.month) : []);
     const monthsNeedingBills = Array.from(monthsWithConsumption).filter((m) => !monthsWithBills.has(m));
     
     return {

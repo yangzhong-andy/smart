@@ -19,7 +19,7 @@ import {
   type DeliveryOrder
 } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
-import { getPaymentRequests, savePaymentRequests, type PaymentRequest } from "@/lib/payment-request-store";
+import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
 import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory } from "lucide-react";
 import ImageUploader from "@/components/ImageUploader";
 import InventoryDistribution from "@/components/InventoryDistribution";
@@ -70,6 +70,7 @@ export default function PurchaseOrdersPage() {
   const [contracts, setContracts] = useState<PurchaseContract[]>([]);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
   const [suppliersReady, setSuppliersReady] = useState(false);
+  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sourceOrder, setSourceOrder] = useState<PurchaseOrder | null>(null);
   const [detailModal, setDetailModal] = useState<{ contractId: string | null }>({ contractId: null });
@@ -102,6 +103,12 @@ export default function PurchaseOrdersPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [detailRefreshKey, setDetailRefreshKey] = useState(0);
+
+  // 加载支出申请数据
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    getExpenseRequests().then(setExpenseRequests);
+  }, []);
 
   // 检查是否有来自采购订单的参数
   useEffect(() => {
@@ -426,10 +433,9 @@ export default function PurchaseOrdersPage() {
       }
 
       // 检查是否已经存在该合同的付款申请（待审批或已审批状态）
-      const allRequests = getPaymentRequests();
-      const existingRequest = allRequests.find((r) => {
-        // 通过 expenseItem 匹配合同编号
-        const isContractDeposit = r.expenseItem.includes(`采购合同定金 - ${contract.contractNumber}`);
+      const existingRequest = expenseRequests.find((r) => {
+        // 通过 summary 匹配合同编号
+        const isContractDeposit = r.summary.includes(`采购合同定金 - ${contract.contractNumber}`);
         if (!isContractDeposit) return false;
         
         // 如果状态是待审批或已审批，说明已经推送过
@@ -456,23 +462,27 @@ export default function PurchaseOrdersPage() {
 
       const depositAmount = contract.depositAmount - (contract.depositPaid || 0);
       
-      // 创建付款申请
-      const newPaymentRequest: PaymentRequest = {
-        id: `payment-request-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        expenseItem: `采购合同定金 - ${contract.contractNumber}`,
+      // 创建支出申请（原付款申请）
+      const newExpenseRequest: Omit<ExpenseRequest, "id"> = {
+        summary: `采购合同定金 - ${contract.contractNumber}`,
+        date: new Date().toISOString().slice(0, 10),
+        category: "采购",
         amount: depositAmount,
         currency: "CNY", // 默认CNY，可以根据合同调整
-        category: "采购",
         status: "Pending_Approval", // 待审批状态
         createdBy: "系统", // 实际应该从用户系统获取
         createdAt: new Date().toISOString(),
         submittedAt: new Date().toISOString(),
-        notes: `采购合同：${contract.contractNumber}\n供应商：${contract.supplierName}\nSKU：${contract.sku}\n采购数量：${contract.totalQty}\n单价：${currency(contract.unitPrice)}\n合同总额：${currency(contract.totalAmount)}\n已取货数：${contract.pickedQty} / ${contract.totalQty}`
+        remark: `采购合同：${contract.contractNumber}\n供应商：${contract.supplierName}\nSKU：${contract.sku}\n采购数量：${contract.totalQty}\n单价：${currency(contract.unitPrice)}\n合同总额：${currency(contract.totalAmount)}\n已取货数：${contract.pickedQty} / ${contract.totalQty}`,
+        departmentId: undefined, // 可以从用户系统获取
+        departmentName: "全球供应链部" // 可以从用户系统获取
       };
 
-      // 保存付款申请
-      allRequests.push(newPaymentRequest);
-      savePaymentRequests(allRequests);
+      // 创建支出申请
+      const created = await createExpenseRequest(newExpenseRequest);
+      // 刷新支出申请列表
+      const updatedRequests = await getExpenseRequests();
+      setExpenseRequests(updatedRequests);
 
       // 更新合同的关联信息（可以存储付款申请ID）
       contract.updatedAt = new Date().toISOString();
@@ -488,7 +498,7 @@ export default function PurchaseOrdersPage() {
           contractNumber: contract.contractNumber,
           supplierName: contract.supplierName,
           amount: depositAmount,
-          requestId: newPaymentRequest.id
+          requestId: created.id
         }
       });
       return;
@@ -1088,9 +1098,8 @@ export default function PurchaseOrdersPage() {
                 const remainingQty = contract.totalQty - contract.pickedQty;
                 
                 // 检查是否已创建定金付款申请
-                const allRequests = getPaymentRequests();
-                const depositRequest = allRequests.find((r) => {
-                  const isContractDeposit = r.expenseItem.includes(`采购合同定金 - ${contract.contractNumber}`);
+                const depositRequest = expenseRequests.find((r) => {
+                  const isContractDeposit = r.summary.includes(`采购合同定金 - ${contract.contractNumber}`);
                   return isContractDeposit && (r.status === "Pending_Approval" || r.status === "Approved" || r.status === "Paid");
                 });
                 const hasDepositRequest = !!depositRequest;
@@ -1829,17 +1838,14 @@ export default function PurchaseOrdersPage() {
                 const account = accounts.find((a) => a.id === paymentModal.accountId);
                 
                 // 检查是否已创建定金付款申请
-                let hasExistingDepositRequest = false;
-                let existingDepositRequestStatus: string | null = null;
-                if (paymentModal.type === "deposit") {
-                  const allRequests = getPaymentRequests();
-                  const existingRequest = allRequests.find((r) => {
-                    const isContractDeposit = r.expenseItem.includes(`采购合同定金 - ${contract.contractNumber}`);
-                    return isContractDeposit && (r.status === "Pending_Approval" || r.status === "Approved" || r.status === "Paid");
-                  });
-                  hasExistingDepositRequest = !!existingRequest;
-                  existingDepositRequestStatus = existingRequest?.status || null;
-                }
+                const existingRequest = paymentModal.type === "deposit" && contract
+                  ? expenseRequests.find((r) => {
+                      const isContractDeposit = r.summary.includes(`采购合同定金 - ${contract.contractNumber}`);
+                      return isContractDeposit && (r.status === "Pending_Approval" || r.status === "Approved" || r.status === "Paid");
+                    })
+                  : null;
+                const hasExistingDepositRequest = !!existingRequest;
+                const existingDepositRequestStatus = existingRequest?.status || null;
                 
                 return (
                   <>

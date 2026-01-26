@@ -1,6 +1,13 @@
 /**
  * 支出和收入申请数据存储
  * 管理支出和收入的审批流程
+ * 已迁移到数据库，使用 API 调用
+ * 
+ * ExpenseRequest（支出申请）使用场景：
+ * - 统一用于所有部门的支出申请（广告、物流、采购、财务等）
+ * - 通过 departmentId 字段控制各部门的付款权限
+ * - 常见类型：广告费、物流费、采购费、运营费用、采购合同定金、店铺相关支出等
+ * - 审批流程：发起人（各部门同事） → 主管审批 → 财务处理
  */
 
 export type RequestStatus = "Draft" | "Pending_Approval" | "Approved" | "Rejected" | "Paid" | "Received";
@@ -19,6 +26,15 @@ export type ExpenseRequest = {
   relatedId?: string; // 关联的业务ID
   remark?: string; // 备注
   voucher?: string | string[]; // 凭证
+  
+  // 店铺相关字段（从 PaymentRequest 合并）
+  storeId?: string; // 所属店铺ID
+  storeName?: string; // 所属店铺名称（冗余）
+  country?: string; // 所属国家
+  
+  // 部门权限控制
+  departmentId?: string; // 发起部门ID（用于权限控制）
+  departmentName?: string; // 发起部门名称（冗余）
   
   // 状态机
   status: RequestStatus;
@@ -79,105 +95,178 @@ export type IncomeRequest = {
   paymentVoucher?: string | string[]; // 收款凭证
 };
 
-const EXPENSE_REQUESTS_KEY = "expenseRequests";
-const INCOME_REQUESTS_KEY = "incomeRequests";
-
 // ========== 支出申请 ==========
 
-export function getExpenseRequests(): ExpenseRequest[] {
-  if (typeof window === "undefined") return [];
-  const stored = window.localStorage.getItem(EXPENSE_REQUESTS_KEY);
-  if (!stored) return [];
+export async function getExpenseRequests(): Promise<ExpenseRequest[]> {
   try {
-    return JSON.parse(stored);
-  } catch {
+    const response = await fetch('/api/expense-requests');
+    if (!response.ok) {
+      throw new Error('Failed to fetch expense requests');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching expense requests:', error);
     return [];
   }
 }
 
-export function saveExpenseRequests(requests: ExpenseRequest[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(EXPENSE_REQUESTS_KEY, JSON.stringify(requests));
+export async function getExpenseRequestById(id: string): Promise<ExpenseRequest | undefined> {
+  try {
+    const response = await fetch(`/api/expense-requests/${id}`);
+    if (!response.ok) {
+      return undefined;
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching expense request:', error);
+    return undefined;
+  }
 }
 
-export function getExpenseRequestById(id: string): ExpenseRequest | undefined {
-  const requests = getExpenseRequests();
-  return requests.find((r) => r.id === id);
+export async function getExpenseRequestsByStatus(status: RequestStatus): Promise<ExpenseRequest[]> {
+  try {
+    const response = await fetch(`/api/expense-requests?status=${status}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch expense requests by status');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching expense requests by status:', error);
+    return [];
+  }
 }
 
-export function getExpenseRequestsByStatus(status: RequestStatus): ExpenseRequest[] {
-  const requests = getExpenseRequests();
-  return requests.filter((r) => r.status === status);
+export async function createExpenseRequest(request: ExpenseRequest): Promise<ExpenseRequest> {
+  try {
+    const response = await fetch('/api/expense-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create expense request');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error creating expense request:', error);
+    throw error;
+  }
 }
 
-export function createExpenseRequest(request: ExpenseRequest): void {
-  const requests = getExpenseRequests();
-  requests.push(request);
-  saveExpenseRequests(requests);
-}
-
-export function updateExpenseRequest(id: string, updates: Partial<ExpenseRequest>): void {
-  const requests = getExpenseRequests();
-  const index = requests.findIndex((r) => r.id === id);
-  if (index !== -1) {
-    requests[index] = { ...requests[index], ...updates };
-    saveExpenseRequests(requests);
+export async function updateExpenseRequest(id: string, updates: Partial<ExpenseRequest>): Promise<void> {
+  try {
+    const response = await fetch(`/api/expense-requests/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update expense request');
+    }
+  } catch (error) {
+    console.error('Error updating expense request:', error);
+    throw error;
   }
 }
 
 // ========== 收入申请 ==========
 
-export function getIncomeRequests(): IncomeRequest[] {
-  if (typeof window === "undefined") return [];
-  const stored = window.localStorage.getItem(INCOME_REQUESTS_KEY);
-  if (!stored) return [];
+export async function getIncomeRequests(): Promise<IncomeRequest[]> {
   try {
-    return JSON.parse(stored);
-  } catch {
+    const response = await fetch('/api/income-requests');
+    if (!response.ok) {
+      throw new Error('Failed to fetch income requests');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching income requests:', error);
     return [];
   }
 }
 
-export function saveIncomeRequests(requests: IncomeRequest[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(INCOME_REQUESTS_KEY, JSON.stringify(requests));
+export async function getIncomeRequestById(id: string): Promise<IncomeRequest | undefined> {
+  try {
+    const response = await fetch(`/api/income-requests/${id}`);
+    if (!response.ok) {
+      return undefined;
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching income request:', error);
+    return undefined;
+  }
 }
 
-export function getIncomeRequestById(id: string): IncomeRequest | undefined {
-  const requests = getIncomeRequests();
-  return requests.find((r) => r.id === id);
+export async function getIncomeRequestsByStatus(status: RequestStatus): Promise<IncomeRequest[]> {
+  try {
+    const response = await fetch(`/api/income-requests?status=${status}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch income requests by status');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching income requests by status:', error);
+    return [];
+  }
 }
 
-export function getIncomeRequestsByStatus(status: RequestStatus): IncomeRequest[] {
-  const requests = getIncomeRequests();
-  return requests.filter((r) => r.status === status);
+export async function createIncomeRequest(request: IncomeRequest): Promise<IncomeRequest> {
+  try {
+    const response = await fetch('/api/income-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create income request');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error creating income request:', error);
+    throw error;
+  }
 }
 
-export function createIncomeRequest(request: IncomeRequest): void {
-  const requests = getIncomeRequests();
-  requests.push(request);
-  saveIncomeRequests(requests);
-}
-
-export function updateIncomeRequest(id: string, updates: Partial<IncomeRequest>): void {
-  const requests = getIncomeRequests();
-  const index = requests.findIndex((r) => r.id === id);
-  if (index !== -1) {
-    requests[index] = { ...requests[index], ...updates };
-    saveIncomeRequests(requests);
+export async function updateIncomeRequest(id: string, updates: Partial<IncomeRequest>): Promise<void> {
+  try {
+    const response = await fetch(`/api/income-requests/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update income request');
+    }
+  } catch (error) {
+    console.error('Error updating income request:', error);
+    throw error;
   }
 }
 
 // ========== 通用函数 ==========
 
-export function getPendingApprovalCount(): number {
-  const expenseRequests = getExpenseRequestsByStatus("Pending_Approval");
-  const incomeRequests = getIncomeRequestsByStatus("Pending_Approval");
-  return expenseRequests.length + incomeRequests.length;
+export async function getPendingApprovalCount(): Promise<number> {
+  try {
+    const expenseRequests = await getExpenseRequestsByStatus("Pending_Approval");
+    const incomeRequests = await getIncomeRequestsByStatus("Pending_Approval");
+    return expenseRequests.length + incomeRequests.length;
+  } catch (error) {
+    console.error('Error getting pending approval count:', error);
+    return 0;
+  }
 }
 
-export function getPendingFinanceCount(): number {
-  const expenseRequests = getExpenseRequestsByStatus("Approved");
-  const incomeRequests = getIncomeRequestsByStatus("Approved");
-  return expenseRequests.length + incomeRequests.length;
+export async function getPendingFinanceCount(): Promise<number> {
+  try {
+    const expenseRequests = await getExpenseRequestsByStatus("Approved");
+    const incomeRequests = await getIncomeRequestsByStatus("Approved");
+    return expenseRequests.length + incomeRequests.length;
+  } catch (error) {
+    console.error('Error getting pending finance count:', error);
+    return 0;
+  }
 }

@@ -1,6 +1,13 @@
 /**
  * 通用付款申请数据存储
- * 管理非账单类支出申请
+ * 
+ * 使用场景：
+ * - 用于特殊付款申请，如采购合同定金、店铺相关支出等
+ * - 通常由财务人员或采购人员发起，需要老板审批
+ * 
+ * 与 ExpenseRequest 的区别：
+ * - ExpenseRequest：用于广告、物流、采购同事发起的日常运营支出申请（如广告费、物流费、采购费等）
+ * - PaymentRequest：用于特殊付款申请，通常与采购合同、店铺运营等特定业务场景相关
  */
 
 import { BillStatus } from "./reconciliation-store";
@@ -43,52 +50,162 @@ export type PaymentRequest = {
   notes?: string; // 备注信息
 };
 
-const PAYMENT_REQUESTS_KEY = "paymentRequests";
-
 /**
  * 获取所有付款申请
  */
-export function getPaymentRequests(): PaymentRequest[] {
-  if (typeof window === "undefined") return [];
-  const stored = window.localStorage.getItem(PAYMENT_REQUESTS_KEY);
-  if (!stored) return [];
+export async function getPaymentRequests(): Promise<PaymentRequest[]> {
   try {
-    return JSON.parse(stored);
-  } catch {
+    const response = await fetch("/api/payment-requests");
+    if (!response.ok) {
+      throw new Error("Failed to fetch payment requests");
+    }
+    const requests = await response.json();
+    // 转换日期字段为字符串
+    return requests.map((req: any) => ({
+      ...req,
+      createdAt: req.createdAt ? new Date(req.createdAt).toISOString() : req.createdAt,
+      submittedAt: req.submittedAt ? new Date(req.submittedAt).toISOString() : req.submittedAt,
+      approvedAt: req.approvedAt ? new Date(req.approvedAt).toISOString() : req.approvedAt,
+      paidAt: req.paidAt ? new Date(req.paidAt).toISOString() : req.paidAt,
+    }));
+  } catch (error) {
+    console.error("Error fetching payment requests:", error);
     return [];
   }
 }
 
 /**
- * 保存付款申请列表
- */
-export function savePaymentRequests(requests: PaymentRequest[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(PAYMENT_REQUESTS_KEY, JSON.stringify(requests));
-}
-
-/**
  * 根据ID获取付款申请
  */
-export function getPaymentRequestById(id: string): PaymentRequest | undefined {
-  const requests = getPaymentRequests();
-  return requests.find((r) => r.id === id);
+export async function getPaymentRequestById(id: string): Promise<PaymentRequest | undefined> {
+  try {
+    const response = await fetch(`/api/payment-requests/${id}`);
+    if (!response.ok) {
+      if (response.status === 404) return undefined;
+      throw new Error("Failed to fetch payment request");
+    }
+    const request = await response.json();
+    // 转换日期字段为字符串
+    return {
+      ...request,
+      createdAt: request.createdAt ? new Date(request.createdAt).toISOString() : request.createdAt,
+      submittedAt: request.submittedAt ? new Date(request.submittedAt).toISOString() : request.submittedAt,
+      approvedAt: request.approvedAt ? new Date(request.approvedAt).toISOString() : request.approvedAt,
+      paidAt: request.paidAt ? new Date(request.paidAt).toISOString() : request.paidAt,
+    };
+  } catch (error) {
+    console.error("Error fetching payment request:", error);
+    return undefined;
+  }
 }
 
 /**
  * 根据状态获取付款申请列表
  */
-export function getPaymentRequestsByStatus(status: BillStatus): PaymentRequest[] {
-  const requests = getPaymentRequests();
-  return requests.filter((r) => r.status === status);
+export async function getPaymentRequestsByStatus(status: BillStatus): Promise<PaymentRequest[]> {
+  try {
+    const response = await fetch(`/api/payment-requests?status=${status}`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch payment requests");
+    }
+    const requests = await response.json();
+    // 转换日期字段为字符串
+    return requests.map((req: any) => ({
+      ...req,
+      createdAt: req.createdAt ? new Date(req.createdAt).toISOString() : req.createdAt,
+      submittedAt: req.submittedAt ? new Date(req.submittedAt).toISOString() : req.submittedAt,
+      approvedAt: req.approvedAt ? new Date(req.approvedAt).toISOString() : req.approvedAt,
+      paidAt: req.paidAt ? new Date(req.paidAt).toISOString() : req.paidAt,
+    }));
+  } catch (error) {
+    console.error("Error fetching payment requests by status:", error);
+    return [];
+  }
+}
+
+/**
+ * 创建付款申请
+ */
+export async function createPaymentRequest(request: Omit<PaymentRequest, "id">): Promise<PaymentRequest> {
+  try {
+    const response = await fetch("/api/payment-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to create payment request");
+    }
+    const created = await response.json();
+    // 转换日期字段为字符串
+    return {
+      ...created,
+      createdAt: created.createdAt ? new Date(created.createdAt).toISOString() : created.createdAt,
+      submittedAt: created.submittedAt ? new Date(created.submittedAt).toISOString() : created.submittedAt,
+      approvedAt: created.approvedAt ? new Date(created.approvedAt).toISOString() : created.approvedAt,
+      paidAt: created.paidAt ? new Date(created.paidAt).toISOString() : created.paidAt,
+    };
+  } catch (error) {
+    console.error("Error creating payment request:", error);
+    throw error;
+  }
+}
+
+/**
+ * 更新付款申请
+ */
+export async function updatePaymentRequest(id: string, request: Partial<PaymentRequest>): Promise<PaymentRequest> {
+  try {
+    const response = await fetch(`/api/payment-requests/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to update payment request");
+    }
+    const updated = await response.json();
+    // 转换日期字段为字符串
+    return {
+      ...updated,
+      createdAt: updated.createdAt ? new Date(updated.createdAt).toISOString() : updated.createdAt,
+      submittedAt: updated.submittedAt ? new Date(updated.submittedAt).toISOString() : updated.submittedAt,
+      approvedAt: updated.approvedAt ? new Date(updated.approvedAt).toISOString() : updated.approvedAt,
+      paidAt: updated.paidAt ? new Date(updated.paidAt).toISOString() : updated.paidAt,
+    };
+  } catch (error) {
+    console.error("Error updating payment request:", error);
+    throw error;
+  }
+}
+
+/**
+ * 保存付款申请列表（批量更新，用于兼容旧代码）
+ * 注意：此函数会逐个更新每个申请，建议直接使用 updatePaymentRequest
+ */
+export async function savePaymentRequests(requests: PaymentRequest[]): Promise<void> {
+  try {
+    // 批量更新所有申请
+    await Promise.all(
+      requests.map((request) => updatePaymentRequest(request.id, request))
+    );
+  } catch (error) {
+    console.error("Error saving payment requests:", error);
+    throw error;
+  }
 }
 
 /**
  * 获取待审批付款申请数量（包括月账单和付款申请）
  */
-export function getTotalPendingApprovalCount(): number {
-  const { getBillsByStatus } = require("./reconciliation-store");
-  const bills = getBillsByStatus("Pending_Approval");
-  const requests = getPaymentRequestsByStatus("Pending_Approval");
-  return bills.length + requests.length;
+export async function getTotalPendingApprovalCount(): Promise<number> {
+  try {
+    const reconciliationStore = await import("./reconciliation-store");
+    const bills = await reconciliationStore.getBillsByStatus("Pending_Approval");
+    const requests = await getPaymentRequestsByStatus("Pending_Approval");
+    return bills.length + requests.length;
+  } catch (error) {
+    console.error("Error getting total pending approval count:", error);
+    return 0;
+  }
 }
