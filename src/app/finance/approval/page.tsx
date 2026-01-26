@@ -293,14 +293,6 @@ export default function ApprovalCenterPage() {
             }
           })();
         }
-                }
-              }
-            }
-          } catch (e) {
-            console.error("Failed to create rebate receivable or monthly bill for approval", e);
-            // 不阻止审批流程，只记录错误
-          }
-        }
         
         // 推送逻辑：应收款推送到待入账，应付款推送到待付款
         // 只有应收款（Receivable）才创建待入账任务
