@@ -26,7 +26,8 @@ import {
   getIncomeRequests, 
   getIncomeRequestsByStatus, 
   updateIncomeRequest,
-  type IncomeRequest 
+  type IncomeRequest,
+  type RequestStatus
 } from "@/lib/expense-income-request-store";
 
 export default function ApprovalCenterPage() {
@@ -480,22 +481,33 @@ export default function ApprovalCenterPage() {
     setRejectModal({ open: true, type: "income", id: requestId });
   };
 
-  const statusColors: Record<BillStatus, string> = {
+  // 定义所有可能的状态类型（BillStatus 和 RequestStatus 的联合）
+  type AllStatus = BillStatus | RequestStatus;
+  
+  const statusColors: Record<string, string> = {
+    // BillStatus
     Draft: "bg-slate-500/20 text-slate-300 border-slate-500/40",
     Pending_Finance_Review: "bg-blue-500/20 text-blue-300 border-blue-500/40",
     Pending_Approval: "bg-amber-500/20 text-amber-300 border-amber-500/40",
     Approved: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
     Cashier_Approved: "bg-blue-500/20 text-blue-300 border-blue-500/40",
-    Paid: "bg-purple-500/20 text-purple-300 border-purple-500/40"
+    Paid: "bg-purple-500/20 text-purple-300 border-purple-500/40",
+    // RequestStatus (ExpenseRequest/IncomeRequest)
+    Rejected: "bg-red-500/10 text-red-400 border-red-500/30",
+    Received: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
   };
 
-  const statusLabels: Record<BillStatus, string> = {
+  const statusLabels: Record<string, string> = {
+    // BillStatus
     Draft: "草稿",
     Pending_Finance_Review: "待财务审批",
     Pending_Approval: "待主管审批",
     Approved: "已核准",
     Cashier_Approved: "出纳已审核",
-    Paid: "已支付"
+    Paid: "已支付",
+    // RequestStatus (ExpenseRequest/IncomeRequest)
+    Rejected: "已退回",
+    Received: "已收款"
   };
 
   // 根据筛选条件过滤待审批账单（按类型筛选）
@@ -1204,8 +1216,8 @@ export default function ApprovalCenterPage() {
                                 </div>
                                 <div>
                                   <div className="text-xs text-slate-400 mb-1">状态</div>
-                                  <span className={`px-2 py-1 rounded text-xs border ${statusColors[bill.status]}`}>
-                                    {statusLabels[bill.status]}
+                                  <span className={`px-2 py-1 rounded text-xs border ${statusColors[bill.status] || "bg-slate-500/20 text-slate-300 border-slate-500/40"}`}>
+                                    {statusLabels[bill.status] || bill.status}
                                   </span>
                                 </div>
                               </div>
@@ -1335,8 +1347,8 @@ export default function ApprovalCenterPage() {
                                 </div>
                                 <div>
                                   <div className="text-xs text-slate-400 mb-1">状态</div>
-                                  <span className={`px-2 py-1 rounded text-xs border ${statusColors[request.status]}`}>
-                                    {statusLabels[request.status]}
+                                  <span className={`px-2 py-1 rounded text-xs border ${statusColors[request.status] || "bg-slate-500/20 text-slate-300 border-slate-500/40"}`}>
+                                    {statusLabels[request.status] || request.status}
                                   </span>
                                 </div>
                               </div>
@@ -1473,8 +1485,8 @@ export default function ApprovalCenterPage() {
                   </div>
                   <div>
                     <div className="text-xs text-slate-400 mb-1">状态</div>
-                    <span className={`px-2 py-1 rounded text-xs border ${statusColors[selectedBill.status]}`}>
-                      {statusLabels[selectedBill.status]}
+                    <span className={`px-2 py-1 rounded text-xs border ${statusColors[selectedBill.status] || "bg-slate-500/20 text-slate-300 border-slate-500/40"}`}>
+                      {statusLabels[selectedBill.status] || selectedBill.status}
                     </span>
                   </div>
                 </div>
