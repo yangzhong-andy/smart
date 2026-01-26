@@ -1344,8 +1344,8 @@ export default function ApprovalCenterPage() {
                               <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div>
                                   <div className="text-xs text-slate-400 mb-1">申请金额</div>
-                                  <div className="text-rose-300 font-medium text-lg">
-                                    {formatCurrency(request.amount, request.currency, "expense")}
+                                  <div className={`font-medium text-lg ${isExpense ? 'text-rose-300' : 'text-emerald-300'}`}>
+                                    {formatCurrency(request.amount, request.currency, isExpense ? "expense" : "income")}
                                   </div>
                                 </div>
                                 <div>
