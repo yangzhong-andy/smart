@@ -1309,8 +1309,9 @@ export default function ApprovalCenterPage() {
                       })
                       .map((request) => {
                         // 判断是支出申请还是收入申请
-                        const isExpense = 'summary' in request && !('storeId' in request && !('summary' in request));
-                        const isIncome = 'summary' in request && 'storeId' in request;
+                        // ExpenseRequest 有 approvalDocument 和 paymentReceipt 字段，IncomeRequest 没有
+                        const isExpense = 'approvalDocument' in request || 'paymentReceipt' in request;
+                        const isIncome = !isExpense;
                         
                         return (
                         <div
