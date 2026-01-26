@@ -1031,21 +1031,21 @@ export default function ApprovalCenterPage() {
 
                               <div className="flex gap-4 text-xs text-slate-400">
                                 {request.createdBy && (
-                                  <div>发起人：<span className="text-slate-300">{request.createdBy}</span></div>
+                                  <div>发起人：<span className="text-cyan-300 font-medium">{request.createdBy}</span></div>
                                 )}
                                 {request.approvedBy && (
-                                  <div>审批人：<span className="text-slate-300">{request.approvedBy}</span></div>
+                                  <div>审批人：<span className="text-cyan-300 font-medium">{request.approvedBy}</span></div>
                                 )}
                                 {request.approvedAt && (
-                                  <div>审批时间：<span className="text-slate-300">
+                                  <div>审批时间：<span className="text-slate-100">
                                     {new Date(request.approvedAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
-                                {request.paidBy && (
-                                  <div>付款人：<span className="text-slate-300">{request.paidBy}</span></div>
+                                {('paidBy' in request) && request.paidBy && (
+                                  <div>付款人：<span className="text-cyan-300 font-medium">{request.paidBy}</span></div>
                                 )}
-                                {request.paidAt && (
-                                  <div>付款时间：<span className="text-slate-300">
+                                {('paidAt' in request) && request.paidAt && (
+                                  <div>付款时间：<span className="text-slate-100">
                                     {new Date(request.paidAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
@@ -1129,21 +1129,21 @@ export default function ApprovalCenterPage() {
 
                               <div className="flex gap-4 text-xs text-slate-400">
                                 {request.createdBy && (
-                                  <div>发起人：<span className="text-slate-300">{request.createdBy}</span></div>
+                                  <div>发起人：<span className="text-cyan-300 font-medium">{request.createdBy}</span></div>
                                 )}
                                 {request.approvedBy && (
-                                  <div>审批人：<span className="text-slate-300">{request.approvedBy}</span></div>
+                                  <div>审批人：<span className="text-cyan-300 font-medium">{request.approvedBy}</span></div>
                                 )}
                                 {request.approvedAt && (
-                                  <div>审批时间：<span className="text-slate-300">
+                                  <div>审批时间：<span className="text-slate-100">
                                     {new Date(request.approvedAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
-                                {request.receivedBy && (
-                                  <div>收款人：<span className="text-slate-300">{request.receivedBy}</span></div>
+                                {('receivedBy' in request) && request.receivedBy && (
+                                  <div>收款人：<span className="text-cyan-300 font-medium">{request.receivedBy}</span></div>
                                 )}
-                                {request.receivedAt && (
-                                  <div>收款时间：<span className="text-slate-300">
+                                {('receivedAt' in request) && request.receivedAt && (
+                                  <div>收款时间：<span className="text-slate-100">
                                     {new Date(request.receivedAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
@@ -1372,27 +1372,35 @@ export default function ApprovalCenterPage() {
 
                               <div className="flex gap-4 text-xs text-slate-400">
                                 {request.createdBy && (
-                                  <div>创建人：<span className="text-slate-300">{request.createdBy}</span></div>
+                                  <div>创建人：<span className="text-cyan-300 font-medium">{request.createdBy}</span></div>
                                 )}
                                 {request.submittedAt && (
-                                  <div>提交时间：<span className="text-slate-300">
+                                  <div>提交时间：<span className="text-slate-100">
                                     {new Date(request.submittedAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
                                 {request.approvedBy && (
-                                  <div>审批人：<span className="text-slate-300">{request.approvedBy}</span></div>
+                                  <div>审批人：<span className="text-cyan-300 font-medium">{request.approvedBy}</span></div>
                                 )}
                                 {request.approvedAt && (
-                                  <div>审批时间：<span className="text-slate-300">
+                                  <div>审批时间：<span className="text-slate-100">
                                     {new Date(request.approvedAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
-                                {request.paidBy && (
-                                  <div>付款人：<span className="text-slate-300">{request.paidBy}</span></div>
+                                {('paidBy' in request) && request.paidBy && (
+                                  <div>付款人：<span className="text-cyan-300 font-medium">{request.paidBy}</span></div>
                                 )}
-                                {request.paidAt && (
-                                  <div>付款时间：<span className="text-slate-300">
+                                {('paidAt' in request) && request.paidAt && (
+                                  <div>付款时间：<span className="text-slate-100">
                                     {new Date(request.paidAt).toLocaleString("zh-CN")}
+                                  </span></div>
+                                )}
+                                {('receivedBy' in request) && request.receivedBy && (
+                                  <div>收款人：<span className="text-cyan-300 font-medium">{request.receivedBy}</span></div>
+                                )}
+                                {('receivedAt' in request) && request.receivedAt && (
+                                  <div>收款时间：<span className="text-slate-100">
+                                    {new Date(request.receivedAt).toLocaleString("zh-CN")}
                                   </span></div>
                                 )}
                               </div>
