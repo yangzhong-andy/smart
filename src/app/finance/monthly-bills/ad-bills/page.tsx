@@ -220,35 +220,41 @@ export default function AdBillsPage() {
     }
 
     // 检查是否已存在该代理商该月份的账单
-    const existingBills = getMonthlyBills();
-    const existingBill = existingBills.find(
-      (b) =>
-        b.billType === "广告" &&
-        b.agencyId === selectedAgencyId &&
-        b.month === selectedMonth
-    );
+    (async () => {
+      const existingBills = await getMonthlyBills();
+      if (!Array.isArray(existingBills)) {
+        executeCreateBill(agency);
+        return;
+      }
+      const existingBill = existingBills.find(
+        (b) =>
+          b.billType === "广告" &&
+          b.agencyId === selectedAgencyId &&
+          b.month === selectedMonth
+      );
 
-    if (existingBill) {
-      setConfirmDialog({
-        open: true,
-        title: "确认覆盖",
-        message: `该代理商在 ${selectedMonth} 已存在月账单，是否覆盖？`,
-        type: "warning",
-        onConfirm: () => {
-          // 删除旧账单
-          const updatedBills = existingBills.filter((b) => b.id !== existingBill.id);
-          saveMonthlyBills(updatedBills);
-          // 继续创建新账单
-          executeCreateBill(agency);
-        },
-      });
-      return;
-    }
+      if (existingBill) {
+        setConfirmDialog({
+          open: true,
+          title: "确认覆盖",
+          message: `该代理商在 ${selectedMonth} 已存在月账单，是否覆盖？`,
+          type: "warning",
+          onConfirm: async () => {
+            // 删除旧账单
+            const updatedBills = existingBills.filter((b) => b.id !== existingBill.id);
+            await saveMonthlyBills(updatedBills);
+            // 继续创建新账单
+            executeCreateBill(agency);
+          },
+        });
+        return;
+      }
 
-    executeCreateBill(agency);
+      await executeCreateBill(agency);
+    })();
   };
 
-  const executeCreateBill = (agency: Agency) => {
+  const executeCreateBill = async (agency: Agency) => {
     setIsGenerating(true);
 
     try {
@@ -276,9 +282,12 @@ export default function AdBillsPage() {
           : undefined,
       };
 
-      const bills = getMonthlyBills();
+      const bills = await getMonthlyBills();
+      if (!Array.isArray(bills)) {
+        throw new Error("获取账单列表失败");
+      }
       bills.push(newBill);
-      saveMonthlyBills(bills);
+      await saveMonthlyBills(bills);
 
       toast.success("月账单创建成功");
       
@@ -312,13 +321,13 @@ export default function AdBillsPage() {
       title: "批量生成月账单",
       message: `将为所有代理商生成 ${selectedMonth} 的月账单，是否继续？`,
       type: "info",
-      onConfirm: () => {
-        executeBatchGenerate();
+      onConfirm: async () => {
+        await executeBatchGenerate();
       },
     });
   };
 
-  const executeBatchGenerate = () => {
+  const executeBatchGenerate = async () => {
     setIsBatchGenerating(true);
     setBatchResult({
       total: agencies.length,
@@ -329,9 +338,14 @@ export default function AdBillsPage() {
     });
 
     const results: Array<{ agencyName: string; status: "success" | "skipped" | "failed"; message: string }> = [];
-    const bills = getMonthlyBills();
+    const bills = await getMonthlyBills();
+    if (!Array.isArray(bills)) {
+      toast.error("获取账单列表失败");
+      setIsBatchGenerating(false);
+      return;
+    }
 
-    agencies.forEach((agency) => {
+    for (const agency of agencies) {
       // 检查是否已存在
       const existingBill = bills.find(
         (b) =>
@@ -346,7 +360,7 @@ export default function AdBillsPage() {
           status: "skipped",
           message: "已存在月账单",
         });
-        return;
+        continue;
       }
 
       // 获取该代理商的消耗记录
@@ -360,7 +374,7 @@ export default function AdBillsPage() {
           status: "skipped",
           message: "没有消耗记录",
         });
-        return;
+        continue;
       }
 
       // 按账户分组汇总
@@ -439,9 +453,9 @@ export default function AdBillsPage() {
           message: `生成失败：${error instanceof Error ? error.message : "未知错误"}`,
         });
       }
-    });
+    }
 
-    saveMonthlyBills(bills);
+    await saveMonthlyBills(bills);
 
     setBatchResult({
       total: agencies.length,

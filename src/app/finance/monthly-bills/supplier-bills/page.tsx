@@ -252,32 +252,38 @@ export default function SupplierBillsPage() {
     }
 
     // 检查是否已存在该供应商该月份的账单
-    const existingBills = getMonthlyBills();
-    const existingBill = existingBills.find(
-      (b) =>
-        b.supplierId === selectedSupplierId &&
-        b.month === selectedMonth &&
-        b.billType === "工厂订单"
-    );
+    (async () => {
+      const existingBills = await getMonthlyBills();
+      if (!Array.isArray(existingBills)) {
+        createNewBill(supplier);
+        return;
+      }
+      const existingBill = existingBills.find(
+        (b) =>
+          b.supplierId === selectedSupplierId &&
+          b.month === selectedMonth &&
+          b.billType === "工厂订单"
+      );
 
-    if (existingBill) {
-      setConfirmDialog({
-        open: true,
-        title: "账单已存在",
-        message: `该供应商 ${selectedMonth} 的账单已存在，是否覆盖？`,
-        type: "warning",
-        onConfirm: () => {
-          // 删除旧账单
-          const updatedBills = existingBills.filter((b) => b.id !== existingBill.id);
-          saveMonthlyBills(updatedBills);
-          // 创建新账单
-          createNewBill(supplier);
-          setConfirmDialog(null);
-        }
-      });
-    } else {
-      createNewBill(supplier);
-    }
+      if (existingBill) {
+        setConfirmDialog({
+          open: true,
+          title: "账单已存在",
+          message: `该供应商 ${selectedMonth} 的账单已存在，是否覆盖？`,
+          type: "warning",
+          onConfirm: async () => {
+            // 删除旧账单
+            const updatedBills = existingBills.filter((b) => b.id !== existingBill.id);
+            await saveMonthlyBills(updatedBills);
+            // 创建新账单
+            await createNewBill(supplier);
+            setConfirmDialog(null);
+          }
+        });
+      } else {
+        await createNewBill(supplier);
+      }
+    })();
   };
 
   // 批量自动生成所有供应商的月账单
@@ -292,26 +298,31 @@ export default function SupplierBillsPage() {
       title: "批量生成账单",
       message: `确定要为所有有拿货单的供应商自动生成 ${selectedMonth} 的月账单吗？`,
       type: "info",
-      onConfirm: () => {
+      onConfirm: async () => {
         setConfirmDialog(null);
-        executeBatchGenerate();
+        await executeBatchGenerate();
       }
     });
   };
 
-  const executeBatchGenerate = () => {
+  const executeBatchGenerate = async () => {
     setIsBatchGenerating(true);
     setBatchResult(null);
 
     try {
-      const existingBills = getMonthlyBills();
+      const existingBills = await getMonthlyBills();
+      if (!Array.isArray(existingBills)) {
+        toast.error("获取账单列表失败");
+        setIsBatchGenerating(false);
+        return;
+      }
       const results: Array<{ supplierName: string; status: "success" | "skipped" | "failed"; message: string }> = [];
       let successCount = 0;
       let skippedCount = 0;
       let failedCount = 0;
 
       // 遍历所有供应商
-      suppliers.forEach((supplier) => {
+      for (const supplier of suppliers) {
         try {
           // 检查是否已存在该供应商该月份的账单
           const existingBill = existingBills.find(
@@ -328,7 +339,7 @@ export default function SupplierBillsPage() {
               message: "账单已存在"
             });
             skippedCount++;
-            return;
+            continue;
           }
 
           // 获取该供应商的所有合同
@@ -351,7 +362,7 @@ export default function SupplierBillsPage() {
               message: "该月份无拿货单"
             });
             skippedCount++;
-            return;
+            continue;
           }
 
           // 按合同分组汇总
@@ -401,7 +412,7 @@ export default function SupplierBillsPage() {
               message: "无未付尾款"
             });
             skippedCount++;
-            return;
+            continue;
           }
 
           // 创建账单明细说明
@@ -437,7 +448,7 @@ export default function SupplierBillsPage() {
           };
 
           const updatedBills = [...existingBills, newBill];
-          saveMonthlyBills(updatedBills);
+          await saveMonthlyBills(updatedBills);
           existingBills.push(newBill); // 更新本地引用，避免重复生成
 
           results.push({
@@ -455,7 +466,7 @@ export default function SupplierBillsPage() {
           });
           failedCount++;
         }
-      });
+      }
 
       setBatchResult({
         total: suppliers.length,
@@ -478,7 +489,7 @@ export default function SupplierBillsPage() {
     }
   };
 
-  const createNewBill = (supplier: Supplier) => {
+  const createNewBill = async (supplier: Supplier) => {
     setIsGenerating(true);
 
     try {
@@ -532,9 +543,12 @@ export default function SupplierBillsPage() {
         notes: notes
       };
 
-      const existingBills = getMonthlyBills();
+      const existingBills = await getMonthlyBills();
+      if (!Array.isArray(existingBills)) {
+        throw new Error("获取账单列表失败");
+      }
       const updatedBills = [...existingBills, newBill];
-      saveMonthlyBills(updatedBills);
+      await saveMonthlyBills(updatedBills);
 
       toast.success("账单生成成功");
       

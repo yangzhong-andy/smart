@@ -226,24 +226,27 @@ export default function FinanceDashboardPage() {
     
     // 统计付款申请中的支出分类（已支付的）
     if (typeof window !== "undefined") {
-      try {
-        const paymentRequests = getPaymentRequests();
-        const thisMonth = new Date().getMonth();
-        const thisYear = new Date().getFullYear();
-        
-        paymentRequests
-          .filter((r) => {
-            if (r.status !== "Paid" || !r.paidAt) return false;
-            const d = new Date(r.paidAt);
-            return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-          })
-          .forEach((r) => {
-            const category = r.category || "其他";
-            categoryMap[category] = (categoryMap[category] || 0) + r.amount;
-          });
-      } catch (e) {
-        console.error("Failed to load payment requests", e);
-      }
+      (async () => {
+        try {
+          const paymentRequests = await getPaymentRequests();
+          if (!Array.isArray(paymentRequests)) return;
+          const thisMonth = new Date().getMonth();
+          const thisYear = new Date().getFullYear();
+          
+          paymentRequests
+            .filter((r) => {
+              if (r.status !== "Paid" || !r.paidAt) return false;
+              const d = new Date(r.paidAt);
+              return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+            })
+            .forEach((r) => {
+              const category = r.category || "其他";
+              categoryMap[category] = (categoryMap[category] || 0) + r.amount;
+            });
+        } catch (e) {
+          console.error("Failed to load payment requests", e);
+        }
+      })();
     }
     
     return Object.entries(categoryMap)
