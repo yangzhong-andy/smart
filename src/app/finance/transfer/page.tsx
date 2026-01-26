@@ -215,7 +215,7 @@ export default function TransferPage() {
     }, {} as Record<string, number>);
     
     // 按账户统计划出和划入
-    const accountStats = accounts.map((account) => {
+    const accountStats = Array.isArray(accounts) ? accounts.map((account) => {
       const transfersOut = filteredTransfers.filter((t) => t.fromAccountId === account.id);
       const transfersIn = filteredTransfers.filter((t) => t.toAccountId === account.id);
       
@@ -247,7 +247,7 @@ export default function TransferPage() {
         outByCurrency,
         inByCurrency
       };
-    }).filter((stat) => stat.outCount > 0 || stat.inCount > 0); // 只显示有划拨记录的账户
+    }).filter((stat) => stat.outCount > 0 || stat.inCount > 0) : []; // 只显示有划拨记录的账户
     
     // 按净划入金额排序（从大到小）
     accountStats.sort((a, b) => b.netAmount - a.netAmount);
@@ -431,7 +431,7 @@ export default function TransferPage() {
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             >
               <option value="all">全部账户</option>
-              {accounts.map((acc) => (
+              {Array.isArray(accounts) && accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} ({acc.currency})
                 </option>
@@ -446,7 +446,7 @@ export default function TransferPage() {
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             >
               <option value="all">全部账户</option>
-              {accounts.map((acc) => (
+              {Array.isArray(accounts) && accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} ({acc.currency})
                 </option>
