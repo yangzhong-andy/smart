@@ -803,12 +803,15 @@ export default function ApprovalCenterPage() {
                           )}
                         </div>
 
-                        {request.remark && (
-                          <div className="mb-4">
-                            <div className="text-xs text-slate-400 mb-1">备注</div>
-                            <div className="text-slate-300 text-sm">{request.remark}</div>
-                          </div>
-                        )}
+                        {(() => {
+                          const memoText = ('notes' in request ? request.notes : ('remark' in request ? request.remark : ''));
+                          return memoText ? (
+                            <div className="mb-4 rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
+                              <div className="text-xs text-slate-400 mb-1">备注</div>
+                              <div className="text-slate-300 text-sm">{memoText}</div>
+                            </div>
+                          ) : null;
+                        })()}
 
                         {request.voucher && (
                           <div className="mb-4">
@@ -910,12 +913,15 @@ export default function ApprovalCenterPage() {
                           )}
                         </div>
 
-                        {request.remark && (
-                          <div className="mb-4">
-                            <div className="text-xs text-slate-400 mb-1">备注</div>
-                            <div className="text-slate-300 text-sm">{request.remark}</div>
-                          </div>
-                        )}
+                        {(() => {
+                          const memoText = ('notes' in request ? request.notes : ('remark' in request ? request.remark : ''));
+                          return memoText ? (
+                            <div className="mb-4 rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
+                              <div className="text-xs text-slate-400 mb-1">备注</div>
+                              <div className="text-slate-300 text-sm">{memoText}</div>
+                            </div>
+                          ) : null;
+                        })()}
 
                         {request.voucher && (
                           <div className="mb-4">
@@ -1412,12 +1418,15 @@ export default function ApprovalCenterPage() {
                                 </div>
                               )}
 
-                              {request.notes && (
-                                <div className="mt-3">
-                                  <div className="text-xs text-slate-400 mb-1">备注</div>
-                                  <div className="text-slate-300 text-sm">{request.notes}</div>
-                                </div>
-                              )}
+                              {(() => {
+                                const memoText = ('notes' in request ? request.notes : ('remark' in request ? (request as any).remark : ''));
+                                return memoText ? (
+                                  <div className="mt-3 rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
+                                    <div className="text-xs text-slate-400 mb-1">备注</div>
+                                    <div className="text-slate-300 text-sm">{memoText}</div>
+                                  </div>
+                                ) : null;
+                              })()}
 
                               <div className="flex gap-2 mt-4">
                                 <button
@@ -2002,12 +2011,15 @@ export default function ApprovalCenterPage() {
                     </div>
                   )}
 
-                  {selectedExpenseRequest.remark && (
-                    <div>
-                      <div className="text-xs text-slate-400 mb-1">备注</div>
-                      <div className="text-slate-300">{selectedExpenseRequest.remark}</div>
-                    </div>
-                  )}
+                  {(() => {
+                    const memoText = selectedExpenseRequest.remark || '';
+                    return memoText ? (
+                      <div className="rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
+                        <div className="text-xs text-slate-400 mb-1">备注</div>
+                        <div className="text-slate-300">{memoText}</div>
+                      </div>
+                    ) : null;
+                  })()}
                 </>
               ) : selectedIncomeRequest ? (
                 <>
@@ -2032,12 +2044,15 @@ export default function ApprovalCenterPage() {
                     </div>
                   </div>
 
-                  {selectedIncomeRequest.remark && (
-                    <div>
-                      <div className="text-xs text-slate-400 mb-1">备注</div>
-                      <div className="text-slate-300">{selectedIncomeRequest.remark}</div>
-                    </div>
-                  )}
+                  {(() => {
+                    const memoText = selectedIncomeRequest.remark || '';
+                    return memoText ? (
+                      <div className="rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
+                        <div className="text-xs text-slate-400 mb-1">备注</div>
+                        <div className="text-slate-300">{memoText}</div>
+                      </div>
+                    ) : null;
+                  })()}
                 </>
               ) : null}
             </div>
