@@ -38,7 +38,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
   });
 
   useEffect(() => {
-    if (accounts.length >= 2) {
+    if (Array.isArray(accounts) && accounts.length >= 2) {
       setForm((f) => ({
         ...f,
         fromAccountId: accounts[0].id,
@@ -47,8 +47,8 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     }
   }, [accounts]);
 
-  const fromAccount = accounts.find((a) => a.id === form.fromAccountId);
-  const toAccount = accounts.find((a) => a.id === form.toAccountId);
+  const fromAccount = Array.isArray(accounts) ? accounts.find((a) => a.id === form.fromAccountId) : undefined;
+  const toAccount = Array.isArray(accounts) ? accounts.find((a) => a.id === form.toAccountId) : undefined;
 
   // 自动计算汇率
   const calculatedRate = useMemo(() => {
