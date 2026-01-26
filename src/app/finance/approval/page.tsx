@@ -30,6 +30,27 @@ import {
   type RequestStatus
 } from "@/lib/expense-income-request-store";
 
+// 统一接口定义：包含所有可能出现的字段
+type CombinedRequest = ExpenseRequest | IncomeRequest | MonthlyBill;
+
+// 类型安全辅助函数
+const getRequestField = <T extends keyof CombinedRequest>(
+  request: CombinedRequest,
+  field: T
+): CombinedRequest[T] | undefined => {
+  return field in request ? (request as any)[field] : undefined;
+};
+
+const getRequestStringField = (request: CombinedRequest, ...fields: string[]): string => {
+  for (const field of fields) {
+    const value = getRequestField(request, field as keyof CombinedRequest);
+    if (value && typeof value === 'string') {
+      return value;
+    }
+  }
+  return '';
+};
+
 export default function ApprovalCenterPage() {
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending"); // 当前标签：待审批/历史记录
   const [historyFilter, setHistoryFilter] = useState<BillStatus | "all">("all"); // 历史记录状态筛选
@@ -71,6 +92,10 @@ export default function ApprovalCenterPage() {
   // 加载历史审批记录
   const loadHistoryRecords = useCallback(async () => {
     const allBills = await getMonthlyBills();
+    if (!Array.isArray(allBills)) {
+      setHistoryBills([]);
+      return;
+    }
     // 历史记录：所有非草稿且非待审批状态的记录，或者有退回原因的记录
     const history = allBills.filter((b) => {
       // 排除草稿和待审批状态
@@ -85,6 +110,10 @@ export default function ApprovalCenterPage() {
     
     // 加载支出和收入申请历史记录
     getExpenseRequests().then((allExpenseRequests) => {
+      if (!Array.isArray(allExpenseRequests)) {
+        setHistoryExpenseRequests([]);
+        return;
+      }
       const historyExpenseReqs = allExpenseRequests.filter((r) => {
         if (r.status === "Draft" || r.status === "Pending_Approval") {
           return false;
@@ -95,6 +124,10 @@ export default function ApprovalCenterPage() {
     });
     
     getIncomeRequests().then((allIncomeRequests) => {
+      if (!Array.isArray(allIncomeRequests)) {
+        setHistoryIncomeRequests([]);
+        return;
+      }
       const historyIncomeReqs = allIncomeRequests.filter((r) => {
         if (r.status === "Draft" || r.status === "Pending_Approval") {
           return false;
@@ -512,11 +545,11 @@ export default function ApprovalCenterPage() {
 
   // 根据筛选条件过滤待审批账单（按类型筛选）
   const filteredPendingBills = billTypeFilter === "all"
-    ? pendingBills
-    : pendingBills.filter((b) => b.billType === billTypeFilter);
+    ? (Array.isArray(pendingBills) ? pendingBills : [])
+    : (Array.isArray(pendingBills) ? pendingBills.filter((b) => b.billType === billTypeFilter) : []);
 
   // 根据筛选条件过滤历史记录（按状态和类型筛选）
-  const filteredHistoryBills = historyBills.filter((b) => {
+  const filteredHistoryBills = Array.isArray(historyBills) ? historyBills.filter((b) => {
     // 状态筛选
     if (historyFilter !== "all") {
       if (historyFilter === "Draft" && b.rejectionReason) {
@@ -531,20 +564,23 @@ export default function ApprovalCenterPage() {
       return false;
     }
     return true;
-  });
+  }) : [];
 
   // 合并支出和收入申请历史记录
-  const allHistoryRequests = [...historyExpenseRequests, ...historyIncomeRequests];
+  const allHistoryRequests = [
+    ...(Array.isArray(historyExpenseRequests) ? historyExpenseRequests : []),
+    ...(Array.isArray(historyIncomeRequests) ? historyIncomeRequests : [])
+  ];
   
   const filteredHistoryRequests = historyFilter === "all"
     ? allHistoryRequests
-    : allHistoryRequests.filter((r) => {
+    : (Array.isArray(allHistoryRequests) ? allHistoryRequests.filter((r) => {
         if (historyFilter === "Draft" && r.rejectionReason) {
           // 如果有退回原因，即使状态是草稿，也视为退回记录
           return true;
         }
         return r.status === historyFilter;
-      });
+      }) : []);
 
   return (
     <div className="p-6 space-y-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
@@ -805,10 +841,11 @@ export default function ApprovalCenterPage() {
 
                         {(() => {
                           const memoText = ('notes' in request ? request.notes : ('remark' in request ? request.remark : ''));
-                          return memoText ? (
+                          const memoString = memoText ? String(memoText) : '';
+                          return memoString ? (
                             <div className="mb-4 rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
                               <div className="text-xs text-slate-400 mb-1">备注</div>
-                              <div className="text-slate-300 text-sm">{memoText}</div>
+                              <div className="text-slate-300 text-sm">{memoString}</div>
                             </div>
                           ) : null;
                         })()}
@@ -915,10 +952,11 @@ export default function ApprovalCenterPage() {
 
                         {(() => {
                           const memoText = ('notes' in request ? request.notes : ('remark' in request ? request.remark : ''));
-                          return memoText ? (
+                          const memoString = memoText ? String(memoText) : '';
+                          return memoString ? (
                             <div className="mb-4 rounded-md bg-slate-800/40 border-l-2 border-cyan-400/50 pl-3 pr-3 py-2">
                               <div className="text-xs text-slate-400 mb-1">备注</div>
-                              <div className="text-slate-300 text-sm">{memoText}</div>
+                              <div className="text-slate-300 text-sm">{memoString}</div>
                             </div>
                           ) : null;
                         })()}
@@ -2000,11 +2038,11 @@ export default function ApprovalCenterPage() {
                     </div>
                   </div>
 
-                  {selectedExpenseRequest.approvalDocument && (
+                  {('approvalDocument' in selectedExpenseRequest) && selectedExpenseRequest.approvalDocument && (
                     <div>
                       <div className="text-xs text-slate-400 mb-1">老板签字申请单</div>
                       <img
-                        src={Array.isArray(selectedExpenseRequest.approvalDocument) ? selectedExpenseRequest.approvalDocument[0] : selectedExpenseRequest.approvalDocument}
+                        src={Array.isArray((selectedExpenseRequest as any).approvalDocument) ? (selectedExpenseRequest as any).approvalDocument[0] : (selectedExpenseRequest as any).approvalDocument}
                         alt="申请单"
                         className="max-w-full max-h-96 rounded-md border border-slate-700"
                       />
