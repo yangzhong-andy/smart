@@ -233,58 +233,59 @@ export default function ApprovalCenterPage() {
                     
                     // 在对账中心生成"广告返点"类型的应收款账单
                     const existingBills = await getMonthlyBills();
-                  // 查找同一关联方（代理商+账户）、同一月份、同一类型、同一币种的草稿账单
-                  const existingRebateBill = existingBills.find(
-                    (b) =>
-                      b.month === bill.month &&
-                      b.billType === "广告返点" &&
-                      b.billCategory === "Receivable" &&
-                      b.agencyId === bill.agencyId &&
-                      b.adAccountId === bill.adAccountId &&
-                      b.currency === bill.currency &&
-                      b.status === "Draft"
-                  );
-                  
-                  if (existingRebateBill) {
-                    // 合并到现有账单
-                    const updatedRebateBill: MonthlyBill = {
-                      ...existingRebateBill,
-                      totalAmount: existingRebateBill.totalAmount + rebateAmount,
-                      rebateAmount: existingRebateBill.rebateAmount + rebateAmount,
-                      netAmount: existingRebateBill.netAmount + rebateAmount,
-                      rechargeIds: [...(existingRebateBill.rechargeIds || []), rechargeId],
-                      notes: `更新：审批通过广告账单 ${billId} 后自动生成返点应收款`
-                    };
-                    const updatedBills = existingBills.map((b) =>
-                      b.id === existingRebateBill.id ? updatedRebateBill : b
+                    // 查找同一关联方（代理商+账户）、同一月份、同一类型、同一币种的草稿账单
+                    const existingRebateBill = existingBills.find(
+                      (b) =>
+                        b.month === bill.month &&
+                        b.billType === "广告返点" &&
+                        b.billCategory === "Receivable" &&
+                        b.agencyId === bill.agencyId &&
+                        b.adAccountId === bill.adAccountId &&
+                        b.currency === bill.currency &&
+                        b.status === "Draft"
                     );
-                    await saveMonthlyBills(updatedBills);
-                    console.log(`✅ 已更新对账中心应收款账单：${updatedRebateBill.id}`);
-                  } else {
-                    // 创建新的返点应收款账单
-                    const newRebateBill: MonthlyBill = {
-                      id: `bill-rebate-approval-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                      month: bill.month,
-                      billCategory: "Receivable" as const,
-                      billType: "广告返点" as const,
-                      agencyId: bill.agencyId,
-                      agencyName: bill.agencyName || agency.name,
-                      adAccountId: bill.adAccountId,
-                      accountName: bill.accountName || "-",
-                      totalAmount: rebateAmount,
-                      currency: bill.currency,
-                      rebateAmount: rebateAmount,
-                      netAmount: rebateAmount,
-                      consumptionIds: [],
-                      rechargeIds: [rechargeId],
-                      status: "Draft",
-                      createdBy: "系统",
-                      createdAt: new Date().toISOString(),
-                      notes: `自动生成：审批通过广告账单 ${billId} 后生成的返点应收款（关联单据号：${billId}）`
-                    };
-                    const updatedBills = [...existingBills, newRebateBill];
-                    await saveMonthlyBills(updatedBills);
-                    console.log(`✅ 已生成对账中心应收款账单并推送到对账中心：${newRebateBill.id}（关联单据号：${billId}）`);
+                    
+                    if (existingRebateBill) {
+                      // 合并到现有账单
+                      const updatedRebateBill: MonthlyBill = {
+                        ...existingRebateBill,
+                        totalAmount: existingRebateBill.totalAmount + rebateAmount,
+                        rebateAmount: existingRebateBill.rebateAmount + rebateAmount,
+                        netAmount: existingRebateBill.netAmount + rebateAmount,
+                        rechargeIds: [...(existingRebateBill.rechargeIds || []), rechargeId],
+                        notes: `更新：审批通过广告账单 ${billId} 后自动生成返点应收款`
+                      };
+                      const updatedBills = existingBills.map((b) =>
+                        b.id === existingRebateBill.id ? updatedRebateBill : b
+                      );
+                      await saveMonthlyBills(updatedBills);
+                      console.log(`✅ 已更新对账中心应收款账单：${updatedRebateBill.id}`);
+                    } else {
+                      // 创建新的返点应收款账单
+                      const newRebateBill: MonthlyBill = {
+                        id: `bill-rebate-approval-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                        month: bill.month,
+                        billCategory: "Receivable" as const,
+                        billType: "广告返点" as const,
+                        agencyId: bill.agencyId,
+                        agencyName: bill.agencyName || agency.name,
+                        adAccountId: bill.adAccountId,
+                        accountName: bill.accountName || "-",
+                        totalAmount: rebateAmount,
+                        currency: bill.currency,
+                        rebateAmount: rebateAmount,
+                        netAmount: rebateAmount,
+                        consumptionIds: [],
+                        rechargeIds: [rechargeId],
+                        status: "Draft",
+                        createdBy: "系统",
+                        createdAt: new Date().toISOString(),
+                        notes: `自动生成：审批通过广告账单 ${billId} 后生成的返点应收款（关联单据号：${billId}）`
+                      };
+                      const updatedBills = [...existingBills, newRebateBill];
+                      await saveMonthlyBills(updatedBills);
+                      console.log(`✅ 已生成对账中心应收款账单并推送到对账中心：${newRebateBill.id}（关联单据号：${billId}）`);
+                    }
                   }
                 }
               }
