@@ -40,12 +40,14 @@ export default function HomePage() {
       }
       
       // 获取待审批账单数量
-      try {
-        const count = getPendingApprovalCount();
-        setPendingApprovalCount(count);
-      } catch (e) {
-        console.error("Failed to get pending approval count", e);
-      }
+      (async () => {
+        try {
+          const count = await getPendingApprovalCount();
+          setPendingApprovalCount(count);
+        } catch (e) {
+          console.error("Failed to get pending approval count", e);
+        }
+      })();
     } catch (e) {
       console.error("Failed to initialize page", e);
     }

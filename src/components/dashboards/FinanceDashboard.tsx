@@ -18,14 +18,16 @@ export default function FinanceDashboard() {
   
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const pendingExpenses = getExpenseRequestsByStatus('Pending_Approval');
-      const pendingIncomes = getIncomeRequestsByStatus('Pending_Approval');
-      setExpenseRequests(pendingExpenses);
-      setIncomeRequests(pendingIncomes);
-    } catch (e) {
-      console.error('Failed to load requests', e);
-    }
+    (async () => {
+      try {
+        const pendingExpenses = await getExpenseRequestsByStatus('Pending_Approval');
+        const pendingIncomes = await getIncomeRequestsByStatus('Pending_Approval');
+        if (Array.isArray(pendingExpenses)) setExpenseRequests(pendingExpenses);
+        if (Array.isArray(pendingIncomes)) setIncomeRequests(pendingIncomes);
+      } catch (e) {
+        console.error('Failed to load requests', e);
+      }
+    })();
   }, []);
 
   // 计算总余额

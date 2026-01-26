@@ -172,23 +172,25 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const count = getPendingApprovalCount();
-      setPendingApprovalCount(count);
-      // 定期更新角标（每30秒）
-      const interval = setInterval(() => {
-        try {
-          const newCount = getPendingApprovalCount();
-          setPendingApprovalCount(newCount);
-        } catch (e) {
-          console.error("Failed to get pending approval count", e);
-        }
-      }, 30000);
-      return () => clearInterval(interval);
-    } catch (e) {
-      console.error("Failed to initialize pending approval count", e);
-    }
-  }, []);
+    (async () => {
+      try {
+        const count = await getPendingApprovalCount();
+        setPendingApprovalCount(count);
+        // 定期更新角标（每30秒）
+        const interval = setInterval(async () => {
+          try {
+            const newCount = await getPendingApprovalCount();
+            setPendingApprovalCount(newCount);
+          } catch (e) {
+            console.error("Failed to get pending approval count", e);
+          }
+        }, 30000);
+        return () => clearInterval(interval);
+      } catch (e) {
+        console.error("Failed to initialize pending approval count", e);
+      }
+    })();
+  }, [pathname]);
 
   const toggleExpand = (label: string) => {
     if (isCollapsed) return; // 收起状态下不处理点击展开

@@ -463,7 +463,8 @@ export default function PurchaseOrdersPage() {
       const depositAmount = contract.depositAmount - (contract.depositPaid || 0);
       
       // 创建支出申请（原付款申请）
-      const newExpenseRequest: Omit<ExpenseRequest, "id"> = {
+      const newExpenseRequest: ExpenseRequest = {
+        id: `temp_${Date.now()}`, // 临时ID，后端会生成新的
         summary: `采购合同定金 - ${contract.contractNumber}`,
         date: new Date().toISOString().slice(0, 10),
         category: "采购",
