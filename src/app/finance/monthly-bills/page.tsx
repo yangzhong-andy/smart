@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import useSWR, { mutate } from "swr";
 import { FileText, Plus, Search, Eye, TrendingUp, Zap } from "lucide-react";
 import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
@@ -20,7 +21,6 @@ const formatDate = (dateString: string) => {
 };
 
 export default function MonthlyBillsPage() {
-  const [bills, setBills] = useState<MonthlyBill[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterType, setFilterType] = useState<BillType | "all">("all");
   const [filterStatus, setFilterStatus] = useState<BillStatus | "all">("all");
@@ -29,14 +29,13 @@ export default function MonthlyBillsPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-      const loadedBills = await getMonthlyBills();
-      // 显示所有月账单（供应商和广告）
-      setBills(loadedBills);
-    })();
-  }, []);
+  // 使用 SWR 获取数据
+  const fetcher = async () => {
+    if (typeof window === "undefined") return [];
+    return await getMonthlyBills();
+  };
+  const { data: billsData } = useSWR("monthly-bills-all", fetcher, { revalidateOnFocus: true });
+  const bills: MonthlyBill[] = Array.isArray(billsData) ? billsData : [];
 
   // 统计信息
   const stats = useMemo(() => {
@@ -293,7 +292,7 @@ export default function MonthlyBillsPage() {
       if (newBills.length > 0) {
         const allBills = [...existingBills, ...newBills];
         await saveMonthlyBills(allBills);
-        setBills(allBills);
+        mutate("monthly-bills-all");
         
         toast.success(
           `自动生成完成！供应商账单：${supplierCount} 个，广告账单：${adCount} 个，共 ${newBills.length} 个`,

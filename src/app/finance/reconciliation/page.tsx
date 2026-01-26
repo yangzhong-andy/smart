@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
@@ -30,12 +31,6 @@ import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-cont
 import { createPaymentNotification, markNotificationAsRead, findNotificationsByRelated } from "@/lib/notification-store";
 
 export default function ReconciliationPage() {
-  const [bills, setBills] = useState<MonthlyBill[]>([]);
-  const [agencies, setAgencies] = useState<any[]>([]);
-  const [recharges, setRecharges] = useState<any[]>([]);
-  const [consumptions, setConsumptions] = useState<any[]>([]);
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
   const [filterStatus, setFilterStatus] = useState<BillStatus | "all">("all");
   const [filterType, setFilterType] = useState<BillType | "all">("all");
   const [activeCategory, setActiveCategory] = useState<BillCategory | "PendingEntry" | "PendingFinanceReview" | "PendingPayment">(() => {
@@ -51,7 +46,7 @@ export default function ReconciliationPage() {
   }); // 当前激活的板块：应付款/应收款/待入账/待付款
   const [selectedBill, setSelectedBill] = useState<MonthlyBill | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [pendingEntries, setPendingEntries] = useState<PendingEntry[]>([]);
+  const [pendingEntriesState, setPendingEntries] = useState<PendingEntry[]>([]);
   const [selectedPendingEntry, setSelectedPendingEntry] = useState<PendingEntry | null>(null);
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
   const [entryForm, setEntryForm] = useState({
@@ -59,7 +54,7 @@ export default function ReconciliationPage() {
     entryDate: new Date().toISOString().slice(0, 10),
     voucher: "" as string | string[]
   });
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [bankAccountsState, setBankAccounts] = useState<BankAccount[]>([]);
   const [selectedPendingPaymentBill, setSelectedPendingPaymentBill] = useState<MonthlyBill | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
@@ -86,7 +81,6 @@ export default function ReconciliationPage() {
     type?: "danger" | "warning" | "info";
     onConfirm: () => void;
   } | null>(null);
-  const [rebateReceivables, setRebateReceivables] = useState<RebateReceivable[]>([]);
   const [selectedRebateReceivable, setSelectedRebateReceivable] = useState<RebateReceivable | null>(null);
   const [isRebateDetailModalOpen, setIsRebateDetailModalOpen] = useState(false);
   const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false);
@@ -99,33 +93,64 @@ export default function ReconciliationPage() {
   // "dept" = 部门同事, "finance" = 财务, "boss" = 公司主管, "cashier" = 出纳
   const [userRole] = useState<"dept" | "finance" | "boss" | "cashier">("dept");
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-      const loadedBills = await getMonthlyBills();
-      setBills(loadedBills);
-      const loadedAgencies = getAgencies();
-      setAgencies(loadedAgencies);
-      // 加载充值记录和消耗记录，用于详情显示
-      const loadedRecharges = getAdRecharges();
-      setRecharges(loadedRecharges);
-      const loadedConsumptions = getAdConsumptions();
-      setConsumptions(loadedConsumptions);
-      const loadedDeliveryOrders = getDeliveryOrders();
-      setDeliveryOrders(loadedDeliveryOrders);
-      const loadedContracts = getPurchaseContracts();
-      setContracts(loadedContracts);
-      // 加载返点应收款记录
-      const loadedRebateReceivables = getRebateReceivables();
-      setRebateReceivables(loadedRebateReceivables);
-      // 加载待入账任务
-      const loadedPendingEntries = getPendingEntriesByStatus("Pending");
-      setPendingEntries(loadedPendingEntries);
-      // 加载银行账户
-      const loadedBankAccounts = getAccounts();
-      setBankAccounts(loadedBankAccounts);
-    })();
+  // SWR fetcher 函数
+  const fetcher = useCallback(async (key: string) => {
+    if (typeof window === "undefined") return null;
+    switch (key) {
+      case "monthly-bills":
+        return await getMonthlyBills();
+      case "agencies":
+        return getAgencies();
+      case "recharges":
+        return getAdRecharges();
+      case "consumptions":
+        return getAdConsumptions();
+      case "delivery-orders":
+        return getDeliveryOrders();
+      case "contracts":
+        return getPurchaseContracts();
+      case "rebate-receivables":
+        return getRebateReceivables();
+      case "pending-entries":
+        return getPendingEntriesByStatus("Pending");
+      case "bank-accounts":
+        return getAccounts();
+      default:
+        return null;
+    }
   }, []);
+
+  // 使用 SWR 获取数据
+  const { data: billsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+  const { data: agenciesData } = useSWR("agencies", fetcher);
+  const { data: rechargesData } = useSWR("recharges", fetcher);
+  const { data: consumptionsData } = useSWR("consumptions", fetcher);
+  const { data: deliveryOrdersData } = useSWR("delivery-orders", fetcher);
+  const { data: contractsData } = useSWR("contracts", fetcher);
+  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, { revalidateOnFocus: true });
+  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { revalidateOnFocus: true });
+  const { data: bankAccountsData } = useSWR("bank-accounts", fetcher);
+
+  // 确保数据是数组并指定类型
+  const bills: MonthlyBill[] = Array.isArray(billsData) ? (billsData as MonthlyBill[]) : [];
+  const agencies: any[] = Array.isArray(agenciesData) ? agenciesData : [];
+  const recharges: any[] = Array.isArray(rechargesData) ? rechargesData : [];
+  const consumptions: any[] = Array.isArray(consumptionsData) ? consumptionsData : [];
+  const deliveryOrders: DeliveryOrder[] = Array.isArray(deliveryOrdersData) ? (deliveryOrdersData as DeliveryOrder[]) : [];
+  const contracts: PurchaseContract[] = Array.isArray(contractsData) ? (contractsData as PurchaseContract[]) : [];
+  const rebateReceivables: RebateReceivable[] = Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [];
+  const pendingEntriesFromSWR: PendingEntry[] = Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [];
+  const bankAccountsFromSWR: BankAccount[] = Array.isArray(bankAccountsData) ? (bankAccountsData as BankAccount[]) : [];
+
+  // 更新本地状态（用于兼容现有代码）
+  useEffect(() => {
+    setPendingEntries(pendingEntriesFromSWR);
+    setBankAccounts(bankAccountsFromSWR);
+  }, [pendingEntriesFromSWR, bankAccountsFromSWR]);
+
+  // 使用本地状态变量（从 SWR 数据同步）
+  const pendingEntries = pendingEntriesState;
+  const bankAccounts = bankAccountsState;
 
   const filteredBills = useMemo(() => {
     // 如果是待入账标签，不筛选账单
@@ -208,7 +233,7 @@ export default function ReconciliationPage() {
             }
           : b
       );
-      setBills(updatedBills);
+      mutate("monthly-bills");
       await saveMonthlyBills(updatedBills);
     })();
     setSubmitApprovalModal({ open: false, billId: null });
@@ -239,7 +264,7 @@ export default function ReconciliationPage() {
               }
             : b
         );
-        setBills(updatedBills);
+        mutate("monthly-bills");
         await saveMonthlyBills(updatedBills);
         setConfirmDialog(null);
         toast.success("财务审批通过，已提交给公司主管审批", {
@@ -274,7 +299,7 @@ export default function ReconciliationPage() {
               }
             : b
         );
-        setBills(updatedBills);
+        mutate("monthly-bills");
         await saveMonthlyBills(updatedBills);
         
         // 创建出纳打款通知（仅对应付款账单）
@@ -324,7 +349,7 @@ export default function ReconciliationPage() {
             }
           : b
       );
-      setBills(updatedBills);
+      mutate("monthly-bills");
       await saveMonthlyBills(updatedBills);
     })();
     toast.success("已退回修改", {
@@ -2252,7 +2277,7 @@ export default function ReconciliationPage() {
                       );
                       await saveMonthlyBills(updatedBills);
                       const refreshedBills = await getMonthlyBills();
-                      setBills(refreshedBills);
+                      mutate("monthly-bills");
                     } else {
                       const { getPaymentRequests, savePaymentRequests } = require("@/lib/payment-request-store");
                       const allRequests = getPaymentRequests();
@@ -2570,7 +2595,7 @@ export default function ReconciliationPage() {
                     );
                     await saveMonthlyBills(updatedBills);
                     const refreshedBills = await getMonthlyBills();
-                    setBills(refreshedBills);
+                    mutate("monthly-bills");
 
                     // 标记相关通知为已读
                     const relatedNotifications = findNotificationsByRelated(selectedPendingPaymentBill.id, "monthly_bill");
@@ -2830,7 +2855,7 @@ export default function ReconciliationPage() {
                 });
 
                 saveRebateReceivables(updatedReceivables);
-                setRebateReceivables(updatedReceivables);
+                mutate("rebate-receivables");
                 setSelectedRebateReceivable(updatedReceivables.find((r) => r.id === selectedRebateReceivable.id) || null);
                 setIsAdjustmentModalOpen(false);
                 setAdjustmentForm({ amount: "", reason: "" });

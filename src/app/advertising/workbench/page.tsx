@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import useSWR from "swr";
 import toast from "react-hot-toast";
 import { Megaphone, TrendingUp, DollarSign, Clock, AlertCircle, ArrowRight, Eye, Plus, CreditCard, BarChart3 } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
@@ -36,29 +37,44 @@ const formatCurrency = (amount: number, currency: string = "USD") => {
 };
 
 export default function AdAgencyWorkbenchPage() {
-  const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
-  const [consumptions, setConsumptions] = useState<AdConsumption[]>([]);
-  const [recharges, setRecharges] = useState<AdRecharge[]>([]);
-  const [monthlyBills, setMonthlyBills] = useState<MonthlyBill[]>([]);
   const [initialized, setInitialized] = useState(false);
+
+  // SWR fetcher 函数
+  const fetcher = useCallback(async (key: string) => {
+    if (typeof window === "undefined") return null;
+    switch (key) {
+      case "agencies":
+        return getAgencies();
+      case "ad-accounts":
+        return getAdAccounts();
+      case "consumptions":
+        return getAdConsumptions();
+      case "recharges":
+        return getAdRecharges();
+      case "monthly-bills":
+        return await getMonthlyBills();
+      default:
+        return null;
+    }
+  }, []);
+
+  // 使用 SWR 获取数据
+  const { data: agenciesData } = useSWR("agencies", fetcher);
+  const { data: adAccountsData } = useSWR("ad-accounts", fetcher);
+  const { data: consumptionsData } = useSWR("consumptions", fetcher);
+  const { data: rechargesData } = useSWR("recharges", fetcher);
+  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+
+  // 确保数据是数组并指定类型
+  const agencies: Agency[] = Array.isArray(agenciesData) ? (agenciesData as Agency[]) : [];
+  const adAccounts: AdAccount[] = Array.isArray(adAccountsData) ? (adAccountsData as AdAccount[]) : [];
+  const consumptions: AdConsumption[] = Array.isArray(consumptionsData) ? (consumptionsData as AdConsumption[]) : [];
+  const recharges: AdRecharge[] = Array.isArray(rechargesData) ? (rechargesData as AdRecharge[]) : [];
+  const monthlyBills: MonthlyBill[] = Array.isArray(monthlyBillsData) ? (monthlyBillsData as MonthlyBill[]) : [];
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setAgencies(getAgencies());
-    setAdAccounts(getAdAccounts());
-    setConsumptions(getAdConsumptions());
-    setRecharges(getAdRecharges());
-    
-    // 加载月账单数据（异步）
-    getMonthlyBills().then((bills) => {
-      setMonthlyBills(bills);
-      setInitialized(true);
-    }).catch((error) => {
-      console.error("Failed to load monthly bills:", error);
-      setMonthlyBills([]);
-      setInitialized(true);
-    });
+    setInitialized(true);
   }, []);
 
   // 统计信息

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import useSWR, { mutate } from "swr";
 import toast from "react-hot-toast";
 import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
@@ -25,7 +26,6 @@ import {
   updateIncomeRequest,
   type IncomeRequest 
 } from "@/lib/expense-income-request-store";
-import useSWR, { mutate as swrMutate } from "swr";
 
 type CashFlow = {
   id: string;
@@ -73,35 +73,54 @@ const getStatusColor = (status: BillStatus | string) => {
 };
 
 export default function FinanceWorkbenchPage() {
-  const [pendingEntries, setPendingEntries] = useState<PendingEntry[]>([]);
-  const [monthlyBills, setMonthlyBills] = useState<MonthlyBill[]>([]);
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
   const [initialized, setInitialized] = useState(false);
-  const [pendingBills, setPendingBills] = useState<MonthlyBill[]>([]);
-  const [approvedExpenseRequests, setApprovedExpenseRequests] = useState<ExpenseRequest[]>([]);
-  const [approvedIncomeRequests, setApprovedIncomeRequests] = useState<IncomeRequest[]>([]);
   const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
   const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
   const [expenseAccountModal, setExpenseAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
   const [incomeAccountModal, setIncomeAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 
-  // 加载数据的函数
-  const loadData = useCallback(async () => {
+  // SWR fetcher 函数
+  const fetcher = useCallback(async (key: string) => {
+    if (typeof window === "undefined") return null;
+    switch (key) {
+      case "pending-entries":
+        return getPendingEntries();
+      case "monthly-bills":
+        return await getMonthlyBills();
+      case "bank-accounts":
+        return getAccounts();
+      case "pending-bills":
+        return await getBillsByStatus("Pending_Approval");
+      case "approved-expense-requests":
+        return await getExpenseRequestsByStatus("Approved");
+      case "approved-income-requests":
+        return await getIncomeRequestsByStatus("Approved");
+      default:
+        return null;
+    }
+  }, []);
+
+  // 使用 SWR 获取数据
+  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { revalidateOnFocus: true });
+  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+  const { data: accountsData } = useSWR("bank-accounts", fetcher);
+  const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { revalidateOnFocus: true });
+  const { data: approvedExpenseRequestsData } = useSWR("approved-expense-requests", fetcher, { revalidateOnFocus: true });
+  const { data: approvedIncomeRequestsData } = useSWR("approved-income-requests", fetcher, { revalidateOnFocus: true });
+
+  // 确保数据是数组并指定类型
+  const pendingEntries: PendingEntry[] = Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [];
+  const monthlyBills: MonthlyBill[] = Array.isArray(monthlyBillsData) ? (monthlyBillsData as MonthlyBill[]) : [];
+  const accounts: BankAccount[] = Array.isArray(accountsData) ? (accountsData as BankAccount[]) : [];
+  const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
+  const approvedExpenseRequests: ExpenseRequest[] = Array.isArray(approvedExpenseRequestsData) ? (approvedExpenseRequestsData as ExpenseRequest[]) : [];
+  const approvedIncomeRequests: IncomeRequest[] = Array.isArray(approvedIncomeRequestsData) ? (approvedIncomeRequestsData as IncomeRequest[]) : [];
+
+  // 加载现金流数据
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    setPendingEntries(getPendingEntries());
-    const loadedBills = await getMonthlyBills();
-    setMonthlyBills(loadedBills);
-    setAccounts(getAccounts());
-    
-    // 加载审批相关数据
-    getBillsByStatus("Pending_Approval").then(setPendingBills);
-    // 加载已审批的支出和收入申请
-    getExpenseRequestsByStatus("Approved").then(setApprovedExpenseRequests);
-    getIncomeRequestsByStatus("Approved").then(setApprovedIncomeRequests);
-    
-    // 加载现金流数据
     const stored = window.localStorage.getItem("cashFlow");
     if (stored) {
       try {
@@ -114,20 +133,17 @@ export default function FinanceWorkbenchPage() {
     } else {
       setCashFlow([]);
     }
-    
     setInitialized(true);
   }, []);
 
   // 刷新审批数据
   const refreshApprovalData = useCallback(() => {
-    if (typeof window === "undefined") return;
-    getExpenseRequestsByStatus("Approved").then(setApprovedExpenseRequests);
-    getIncomeRequestsByStatus("Approved").then(setApprovedIncomeRequests);
-    getBillsByStatus("Pending_Approval").then(setPendingBills);
+    mutate("approved-expense-requests");
+    mutate("approved-income-requests");
+    mutate("pending-bills");
   }, []);
 
   useEffect(() => {
-    loadData();
     
     // 设置定时刷新，每3秒刷新一次审批数据
     const interval = setInterval(() => {
@@ -138,7 +154,9 @@ export default function FinanceWorkbenchPage() {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         refreshApprovalData();
-        loadData();
+        mutate("pending-entries");
+        mutate("monthly-bills");
+        mutate("pending-bills");
       }
     };
     
@@ -315,7 +333,7 @@ export default function FinanceWorkbenchPage() {
       
       // 刷新数据
       const updated = await getExpenseRequestsByStatus("Approved");
-      setApprovedExpenseRequests(updated);
+        mutate("approved-expense-requests");
       swrMutate('/api/cash-flow');
       swrMutate('/api/accounts');
       
@@ -409,7 +427,9 @@ export default function FinanceWorkbenchPage() {
             <button
               onClick={() => {
                 refreshApprovalData();
-                loadData();
+                mutate("pending-entries");
+                mutate("monthly-bills");
+                mutate("pending-bills");
                 toast.success("数据已刷新", { icon: "🔄", duration: 2000 });
               }}
               className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-slate-100 text-sm transition flex items-center gap-2"
