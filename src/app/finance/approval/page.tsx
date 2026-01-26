@@ -521,9 +521,12 @@ export default function ApprovalCenterPage() {
     return true;
   });
 
+  // 合并支出和收入申请历史记录
+  const allHistoryRequests = [...historyExpenseRequests, ...historyIncomeRequests];
+  
   const filteredHistoryRequests = historyFilter === "all"
-    ? historyRequests
-    : historyRequests.filter((r) => {
+    ? allHistoryRequests
+    : allHistoryRequests.filter((r) => {
         if (historyFilter === "Draft" && r.rejectionReason) {
           // 如果有退回原因，即使状态是草稿，也视为退回记录
           return true;
@@ -538,8 +541,8 @@ export default function ApprovalCenterPage() {
           <h1 className="text-2xl font-bold text-slate-100">审批中心</h1>
           <p className="text-sm text-slate-400 mt-1">
             {activeTab === "pending" 
-              ? `待审批：月账单 ${pendingBills.length} 笔，付款申请 ${pendingRequests.length} 笔，支出申请 ${pendingExpenseRequests.length} 笔，收入申请 ${pendingIncomeRequests.length} 笔`
-              : `历史记录：月账单 ${historyBills.length} 笔，付款申请 ${historyRequests.length} 笔，支出申请 ${historyExpenseRequests.length} 笔，收入申请 ${historyIncomeRequests.length} 笔`
+              ? `待审批：月账单 ${pendingBills.length} 笔，支出申请 ${pendingExpenseRequests.length} 笔，收入申请 ${pendingIncomeRequests.length} 笔`
+              : `历史记录：月账单 ${historyBills.length} 笔，支出申请 ${historyExpenseRequests.length} 笔，收入申请 ${historyIncomeRequests.length} 笔`
             }
           </p>
         </div>
@@ -556,11 +559,11 @@ export default function ApprovalCenterPage() {
           }`}
         >
           待审批
-          {(pendingBills.length > 0 || pendingRequests.length > 0 || pendingExpenseRequests.length > 0 || pendingIncomeRequests.length > 0) && (
+          {(pendingBills.length > 0 || pendingExpenseRequests.length > 0 || pendingIncomeRequests.length > 0) && (
             <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
               activeTab === "pending" ? "bg-primary-500/20 text-primary-300" : "bg-slate-700 text-slate-300"
             }`}>
-              {pendingBills.length + pendingRequests.length + pendingExpenseRequests.length + pendingIncomeRequests.length}
+              {pendingBills.length + pendingExpenseRequests.length + pendingIncomeRequests.length}
             </span>
           )}
         </button>
@@ -576,11 +579,11 @@ export default function ApprovalCenterPage() {
           }`}
         >
           历史记录
-          {(historyBills.length > 0 || historyRequests.length > 0) && (
+          {(historyBills.length > 0 || historyExpenseRequests.length > 0 || historyIncomeRequests.length > 0) && (
             <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
               activeTab === "history" ? "bg-primary-500/20 text-primary-300" : "bg-slate-700 text-slate-300"
             }`}>
-              {historyBills.length + historyRequests.length}
+              {historyBills.length + historyExpenseRequests.length + historyIncomeRequests.length}
             </span>
           )}
         </button>
@@ -627,7 +630,7 @@ export default function ApprovalCenterPage() {
       {/* 待审批内容 */}
       {activeTab === "pending" && (
         <>
-          {filteredPendingBills.length === 0 && pendingRequests.length === 0 && pendingExpenseRequests.length === 0 && pendingIncomeRequests.length === 0 ? (
+          {filteredPendingBills.length === 0 && pendingExpenseRequests.length === 0 && pendingIncomeRequests.length === 0 ? (
             <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-12 text-center">
               <div className="text-slate-400 text-4xl mb-4">✓</div>
               <p className="text-slate-300 font-medium mb-1">暂无待审批项目</p>
@@ -733,235 +736,6 @@ export default function ApprovalCenterPage() {
                 </div>
               </div>
             </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 付款申请 */}
-          {pendingRequests.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-slate-200 mb-4">付款申请 ({pendingRequests.length})</h2>
-              <div className="space-y-4">
-                {pendingRequests.map((request) => (
-                  <div
-                    key={request.id}
-                    className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">支出项目</div>
-                            <div className="text-lg font-semibold text-slate-100">{request.expenseItem}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">分类</div>
-                            <div className="text-slate-200 font-medium">{request.category}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">创建人</div>
-                            <div className="text-slate-300 text-sm">{request.createdBy}</div>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">金额</div>
-                            <div className="text-lg font-semibold text-rose-300">
-                              {formatCurrency(request.amount, request.currency, "expense")}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">店铺/国家</div>
-                            <div className="text-slate-300">{request.storeName || request.country || "-"}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">币种</div>
-                            <div className="text-slate-300">{request.currency}</div>
-                          </div>
-                        </div>
-
-                        {/* 采购合同详细信息（如果是采购合同定金） */}
-                        {request.expenseItem.includes("采购合同定金") && request.notes && (() => {
-                          // 解析备注信息获取合同编号
-                          const notes = request.notes;
-                          const contractNumberMatch = notes.match(/合同编号：([^\n]+)/) || notes.match(/采购合同：([^\n]+)/);
-                          const contractNumber = contractNumberMatch ? contractNumberMatch[1].trim() : null;
-                          
-                          // 根据合同编号查找合同
-                          let contract = null;
-                          if (contractNumber) {
-                            const allContracts = getPurchaseContracts();
-                            contract = allContracts.find((c) => c.contractNumber === contractNumber);
-                          }
-                          
-                          // 解析备注信息
-                          const supplierMatch = notes.match(/供应商：([^\n]+)/);
-                          const skuMatch = notes.match(/SKU：([^\n]+)/);
-                          const qtyMatch = notes.match(/采购数量：([^\n]+)/);
-                          const unitPriceMatch = notes.match(/单价：([^\n]+)/);
-                          const totalAmountMatch = notes.match(/合同总额：([^\n]+)/);
-                          const pickedQtyMatch = notes.match(/已取货数：([^\n]+)/);
-                          
-                          return (
-                            <>
-                              <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <div className="w-1 h-4 bg-primary-500 rounded"></div>
-                                  <h4 className="text-sm font-medium text-slate-200">合同详细信息</h4>
-                                </div>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                                  {contractNumberMatch && (
-                                    <div>
-                                      <span className="text-slate-400">合同编号：</span>
-                                      <span className="text-slate-100 font-medium ml-1">{contractNumberMatch[1]}</span>
-                                    </div>
-                                  )}
-                                  {supplierMatch && (
-                                    <div>
-                                      <span className="text-slate-400">供应商：</span>
-                                      <span className="text-slate-100 ml-1">{supplierMatch[1]}</span>
-                                    </div>
-                                  )}
-                                  {skuMatch && (
-                                    <div>
-                                      <span className="text-slate-400">SKU：</span>
-                                      <span className="text-slate-100 ml-1">{skuMatch[1]}</span>
-                                    </div>
-                                  )}
-                                  {qtyMatch && (
-                                    <div>
-                                      <span className="text-slate-400">采购数量：</span>
-                                      <span className="text-primary-300 font-semibold ml-1">{qtyMatch[1]}</span>
-                                    </div>
-                                  )}
-                                  {unitPriceMatch && (
-                                    <div>
-                                      <span className="text-slate-400">单价：</span>
-                                      <span className="text-slate-100 ml-1">{unitPriceMatch[1]}</span>
-                                    </div>
-                                  )}
-                                  {totalAmountMatch && (
-                                    <div>
-                                      <span className="text-slate-400">合同总额：</span>
-                                      <span className="text-slate-100 font-medium ml-1">{totalAmountMatch[1]}</span>
-                                    </div>
-                                  )}
-                                  {pickedQtyMatch && (
-                                    <div>
-                                      <span className="text-slate-400">拿货进度：</span>
-                                      <span className="text-slate-100 ml-1">{pickedQtyMatch[1]}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              
-                              {/* 合同凭证 */}
-                              {contract && contract.contractVoucher && (
-                                <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <FileImage className="h-4 w-4 text-slate-400" />
-                                    <h4 className="text-sm font-medium text-slate-200">合同凭证</h4>
-                                  </div>
-                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    {(() => {
-                                      const vouchers = Array.isArray(contract.contractVoucher)
-                                        ? contract.contractVoucher
-                                        : [contract.contractVoucher];
-                                      return vouchers.map((voucher, index) => {
-                                        // 处理图片源：如果是纯 base64 字符串，添加 data URL 前缀
-                                        let imageSrc = voucher;
-                                        if (typeof voucher === "string") {
-                                          if (!voucher.startsWith("data:") && !voucher.startsWith("http") && !voucher.startsWith("/")) {
-                                            // 纯 base64 字符串，添加前缀
-                                            imageSrc = `data:image/jpeg;base64,${voucher}`;
-                                          } else {
-                                            imageSrc = voucher;
-                                          }
-                                        }
-                                        return (
-                                          <div key={index} className="relative group">
-                                            <img
-                                              src={imageSrc}
-                                              alt={`合同凭证 ${index + 1}`}
-                                              className="w-full h-32 object-cover rounded-lg border border-slate-700 cursor-pointer hover:border-primary-400 transition-all"
-                                              onError={(e) => {
-                                                // 如果图片加载失败，尝试其他格式
-                                                const target = e.target as HTMLImageElement;
-                                                if (typeof voucher === "string" && !voucher.startsWith("data:") && !voucher.startsWith("http")) {
-                                                  target.src = `data:image/png;base64,${voucher}`;
-                                                }
-                                              }}
-                                              onClick={() => {
-                                                // 打开大图查看
-                                                const modal = document.createElement("div");
-                                                modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm";
-                                                const closeBtn = document.createElement("button");
-                                                closeBtn.className = "absolute top-4 right-4 text-white text-2xl hover:text-slate-300 z-10 bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90";
-                                                closeBtn.innerHTML = "✕";
-                                                closeBtn.onclick = () => modal.remove();
-                                                modal.onclick = (e) => {
-                                                  if (e.target === modal) modal.remove();
-                                                };
-                                                const img = document.createElement("img");
-                                                img.src = imageSrc;
-                                                img.className = "max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl";
-                                                img.onclick = (e) => e.stopPropagation();
-                                                modal.appendChild(closeBtn);
-                                                modal.appendChild(img);
-                                                document.body.appendChild(modal);
-                                              }}
-                                            />
-                                            <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-                                              {index + 1}
-                                            </div>
-                                          </div>
-                                        );
-                                      });
-                                    })()}
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-
-                        {request.notes && !request.expenseItem.includes("采购合同定金") && (
-                          <div className="mb-4">
-                            <div className="text-xs text-slate-400 mb-1">备注</div>
-                            <div className="text-slate-300 text-sm whitespace-pre-line">{request.notes}</div>
-                          </div>
-                        )}
-
-                        {request.approvalDocument && (
-                          <div className="mb-4">
-                            <div className="text-xs text-slate-400 mb-1">申请单</div>
-                            <img
-                              src={Array.isArray(request.approvalDocument) ? request.approvalDocument[0] : request.approvalDocument}
-                              alt="申请单"
-                              className="max-w-xs max-h-32 rounded-md border border-slate-700"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-col gap-2 ml-6">
-                        <button
-                          onClick={() => handleApproveRequest(request.id)}
-                          className="px-6 py-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20 font-medium transition"
-                        >
-                          ✓ 批准
-                        </button>
-                        <button
-                          onClick={() => handleRejectRequest(request.id)}
-                          className="px-6 py-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 font-medium transition"
-                        >
-                          ✗ 退回修改
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                 ))}
               </div>
             </div>
@@ -1519,11 +1293,11 @@ export default function ApprovalCenterPage() {
                 </div>
               )}
 
-              {/* 历史付款申请记录 */}
+              {/* 历史支出和收入申请记录 */}
               {filteredHistoryRequests.length > 0 && (
                 <div>
                   <h2 className="text-lg font-semibold text-slate-200 mb-4">
-                    付款申请历史 ({filteredHistoryRequests.length})
+                    支出/收入申请历史 ({filteredHistoryRequests.length})
                   </h2>
                   <div className="space-y-4">
                     {filteredHistoryRequests
@@ -1533,7 +1307,12 @@ export default function ApprovalCenterPage() {
                         const timeB = b.approvedAt || b.submittedAt || b.createdAt || "";
                         return new Date(timeB).getTime() - new Date(timeA).getTime();
                       })
-                      .map((request) => (
+                      .map((request) => {
+                        // 判断是支出申请还是收入申请
+                        const isExpense = 'summary' in request && !('storeId' in request && !('summary' in request));
+                        const isIncome = 'summary' in request && 'storeId' in request;
+                        
+                        return (
                         <div
                           key={request.id}
                           className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
@@ -1542,8 +1321,8 @@ export default function ApprovalCenterPage() {
                             <div className="flex-1">
                               <div className="flex items-center gap-4 mb-4">
                                 <div>
-                                  <div className="text-xs text-slate-400 mb-1">支出项目</div>
-                                  <div className="text-lg font-semibold text-slate-100">{request.expenseItem}</div>
+                                  <div className="text-xs text-slate-400 mb-1">摘要</div>
+                                  <div className="text-lg font-semibold text-slate-100">{(request as ExpenseRequest | IncomeRequest).summary}</div>
                                 </div>
                                 <div>
                                   <div className="text-xs text-slate-400 mb-1">分类</div>
