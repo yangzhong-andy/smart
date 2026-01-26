@@ -335,7 +335,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
               >
                 <option value="">请选择账户</option>
                 {(() => {
-                  const availableAccounts = accounts.filter((acc) => acc.id !== form.fromAccountId);
+                  const availableAccounts = Array.isArray(accounts) ? accounts.filter((acc) => acc.id !== form.fromAccountId) : [];
                   // 按币种分组
                   const groupedAccounts = availableAccounts.reduce((acc, account) => {
                     const currency = account.currency || "OTHER";
