@@ -1402,7 +1402,11 @@ export default function ApprovalCenterPage() {
                               <div className="flex gap-2 mt-4">
                                 <button
                                   onClick={() => {
-                                    setSelectedRequest(request);
+                                    if (isExpense) {
+                                      setSelectedExpenseRequest(request as ExpenseRequest);
+                                    } else {
+                                      setSelectedIncomeRequest(request as IncomeRequest);
+                                    }
                                     setIsRequestDetailOpen(true);
                                   }}
                                   className="px-3 py-1.5 rounded border border-primary-500/40 bg-primary-500/10 text-sm text-primary-100 hover:bg-primary-500/20"
@@ -1924,16 +1928,17 @@ export default function ApprovalCenterPage() {
         </div>
       )}
 
-      {/* 付款申请详情弹窗 */}
-      {isRequestDetailOpen && selectedRequest && (
+      {/* 支出/收入申请详情弹窗 */}
+      {isRequestDetailOpen && (selectedExpenseRequest || selectedIncomeRequest) && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">付款申请详情</h2>
+              <h2 className="text-xl font-semibold">{selectedExpenseRequest ? "支出申请详情" : "收入申请详情"}</h2>
               <button
                 onClick={() => {
                   setIsRequestDetailOpen(false);
-                  setSelectedRequest(null);
+                  setSelectedExpenseRequest(null);
+                  setSelectedIncomeRequest(null);
                 }}
                 className="text-slate-400 hover:text-slate-200"
               >
@@ -1942,44 +1947,78 @@ export default function ApprovalCenterPage() {
             </div>
             
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">支出项目</div>
-                  <div className="text-slate-100">{selectedRequest.expenseItem}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">金额</div>
-                  <div className="text-slate-100">
-                    {formatCurrency(selectedRequest.amount, selectedRequest.currency, "expense")}
+              {selectedExpenseRequest ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">摘要</div>
+                      <div className="text-slate-100">{selectedExpenseRequest.summary}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">金额</div>
+                      <div className="text-slate-100">
+                        {formatCurrency(selectedExpenseRequest.amount, selectedExpenseRequest.currency, "expense")}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">分类</div>
+                      <div className="text-slate-100">{selectedExpenseRequest.category}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">店铺/国家</div>
+                      <div className="text-slate-100">{selectedExpenseRequest.storeName || selectedExpenseRequest.country || "-"}</div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">分类</div>
-                  <div className="text-slate-100">{selectedRequest.category}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">店铺/国家</div>
-                  <div className="text-slate-100">{selectedRequest.storeName || selectedRequest.country || "-"}</div>
-                </div>
-              </div>
 
-              {selectedRequest.approvalDocument && (
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">老板签字申请单</div>
-                  <img
-                    src={Array.isArray(selectedRequest.approvalDocument) ? selectedRequest.approvalDocument[0] : selectedRequest.approvalDocument}
-                    alt="申请单"
-                    className="max-w-full max-h-96 rounded-md border border-slate-700"
-                  />
-                </div>
-              )}
+                  {selectedExpenseRequest.approvalDocument && (
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">老板签字申请单</div>
+                      <img
+                        src={Array.isArray(selectedExpenseRequest.approvalDocument) ? selectedExpenseRequest.approvalDocument[0] : selectedExpenseRequest.approvalDocument}
+                        alt="申请单"
+                        className="max-w-full max-h-96 rounded-md border border-slate-700"
+                      />
+                    </div>
+                  )}
 
-              {selectedRequest.notes && (
-                <div>
-                  <div className="text-xs text-slate-400 mb-1">备注</div>
-                  <div className="text-slate-300">{selectedRequest.notes}</div>
-                </div>
-              )}
+                  {selectedExpenseRequest.remark && (
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">备注</div>
+                      <div className="text-slate-300">{selectedExpenseRequest.remark}</div>
+                    </div>
+                  )}
+                </>
+              ) : selectedIncomeRequest ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">摘要</div>
+                      <div className="text-slate-100">{selectedIncomeRequest.summary}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">金额</div>
+                      <div className="text-slate-100">
+                        {formatCurrency(selectedIncomeRequest.amount, selectedIncomeRequest.currency, "income")}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">分类</div>
+                      <div className="text-slate-100">{selectedIncomeRequest.category}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">店铺</div>
+                      <div className="text-slate-100">{selectedIncomeRequest.storeName || "-"}</div>
+                    </div>
+                  </div>
+
+                  {selectedIncomeRequest.remark && (
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">备注</div>
+                      <div className="text-slate-300">{selectedIncomeRequest.remark}</div>
+                    </div>
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
         </div>
