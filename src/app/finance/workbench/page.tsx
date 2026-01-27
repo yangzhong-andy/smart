@@ -1145,7 +1145,24 @@ export default function FinanceWorkbenchPage() {
       </div>
 
       {/* 选择账户出账弹窗（支出申请） */}
-      {expenseAccountModal.open && selectedExpenseRequest && (
+      {expenseAccountModal.open && expenseAccountModal.requestId && (() => {
+        // 如果没有 selectedExpenseRequest，尝试从 approvedExpenseRequests 中查找
+        const request = selectedExpenseRequest || approvedExpenseRequests.find(r => r.id === expenseAccountModal.requestId);
+        if (!request) {
+          console.error("找不到申请信息，requestId:", expenseAccountModal.requestId);
+          return null;
+        }
+        
+        // 计算匹配的账户数量
+        const matchingAccounts = Array.isArray(accounts) ? accounts.filter((acc) => {
+          const requestCurrency = request.currency;
+          const accountCurrency = acc.currency;
+          return accountCurrency === requestCurrency || 
+                 (requestCurrency === "CNY" && accountCurrency === "RMB") ||
+                 (requestCurrency === "RMB" && accountCurrency === "CNY");
+        }) : [];
+        
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
           <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
@@ -1164,19 +1181,20 @@ export default function FinanceWorkbenchPage() {
             <div className="mb-4 p-4 rounded-lg bg-slate-800/50">
               <div className="text-sm text-slate-300 mb-2">申请信息</div>
               <div className="text-xs text-slate-400 space-y-1">
-                <div>摘要：{selectedExpenseRequest.summary}</div>
-                <div>金额：{formatCurrency(selectedExpenseRequest.amount, selectedExpenseRequest.currency)}</div>
-                <div>分类：{selectedExpenseRequest.category}</div>
-                <div>币种：{selectedExpenseRequest.currency}</div>
+                <div>摘要：{request.summary}</div>
+                <div>金额：{formatCurrency(request.amount, request.currency)}</div>
+                <div>分类：{request.category}</div>
+                <div>币种：{request.currency}</div>
               </div>
             </div>
             <label className="block mb-4">
               <span className="text-sm text-slate-300 mb-2 block">
                 选择账户
-                {Array.isArray(accounts) && (
-                  <span className="ml-2 text-xs text-slate-500">
-                    ({accounts.filter((acc) => acc.currency === selectedExpenseRequest.currency).length} 个可用)
-                  </span>
+                <span className="ml-2 text-xs text-slate-500">
+                  ({matchingAccounts.length} 个可用)
+                </span>
+                {!Array.isArray(accounts) || accounts.length === 0 && (
+                  <span className="ml-2 text-xs text-rose-400">(账户数据加载中...)</span>
                 )}
               </span>
               <select
@@ -1186,19 +1204,24 @@ export default function FinanceWorkbenchPage() {
                 disabled={!Array.isArray(accounts) || accounts.length === 0}
               >
                 <option value="">{!Array.isArray(accounts) || accounts.length === 0 ? "暂无可用账户" : "请选择账户"}</option>
-                {Array.isArray(accounts) && accounts
-                  .filter((acc) => acc.currency === selectedExpenseRequest.currency)
-                  .map((acc) => {
-                    const displayBalance = acc.originalBalance || 0;
-                    return (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name} - 余额: {formatCurrency(displayBalance, acc.currency)}
-                      </option>
-                    );
-                  })}
+                {matchingAccounts.map((acc) => {
+                  const displayBalance = acc.originalBalance || 0;
+                  return (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} - 余额: {formatCurrency(displayBalance, acc.currency)}
+                    </option>
+                  );
+                })}
               </select>
-              {Array.isArray(accounts) && accounts.filter((acc) => acc.currency === selectedExpenseRequest.currency).length === 0 && (
-                <p className="mt-2 text-xs text-amber-400">没有匹配币种 {selectedExpenseRequest.currency} 的账户，请先创建账户</p>
+              {matchingAccounts.length === 0 && (
+                <p className="mt-2 text-xs text-amber-400">
+                  没有匹配币种 {request.currency} 的账户，请先创建账户
+                  {Array.isArray(accounts) && accounts.length > 0 && (
+                    <span className="block mt-1 text-slate-500">
+                      当前系统共有 {accounts.length} 个账户，币种包括：{Array.from(new Set(accounts.map(a => a.currency))).join(", ")}
+                    </span>
+                  )}
+                </p>
               )}
             </label>
             
@@ -1242,8 +1265,8 @@ export default function FinanceWorkbenchPage() {
                     return;
                   }
                   try {
-                    console.log("开始执行出账操作");
-                    await handleProcessExpenseRequest(selectedExpenseRequest.id);
+                    console.log("开始执行出账操作，requestId:", request.id);
+                    await handleProcessExpenseRequest(request.id);
                     console.log("出账操作完成");
                   } catch (error: any) {
                     console.error("出账处理失败:", error);
@@ -1253,17 +1276,35 @@ export default function FinanceWorkbenchPage() {
                 variant="danger"
                 size="md"
                 className="px-4 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600"
-                disabled={!selectedAccountId || !selectedExpenseRequest}
+                disabled={!selectedAccountId || !request}
               >
                 确认出账
               </InteractiveButton>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* 选择账户入账弹窗（收入申请） */}
-      {incomeAccountModal.open && selectedIncomeRequest && (
+      {incomeAccountModal.open && incomeAccountModal.requestId && (() => {
+        // 如果没有 selectedIncomeRequest，尝试从 approvedIncomeRequests 中查找
+        const request = selectedIncomeRequest || approvedIncomeRequests.find(r => r.id === incomeAccountModal.requestId);
+        if (!request) {
+          console.error("找不到申请信息，requestId:", incomeAccountModal.requestId);
+          return null;
+        }
+        
+        // 计算匹配的账户数量
+        const matchingAccounts = Array.isArray(accounts) ? accounts.filter((acc) => {
+          const requestCurrency = request.currency;
+          const accountCurrency = acc.currency;
+          return accountCurrency === requestCurrency || 
+                 (requestCurrency === "CNY" && accountCurrency === "RMB") ||
+                 (requestCurrency === "RMB" && accountCurrency === "CNY");
+        }) : [];
+        
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
           <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
@@ -1282,19 +1323,20 @@ export default function FinanceWorkbenchPage() {
             <div className="mb-4 p-4 rounded-lg bg-slate-800/50">
               <div className="text-sm text-slate-300 mb-2">申请信息</div>
               <div className="text-xs text-slate-400 space-y-1">
-                <div>摘要：{selectedIncomeRequest.summary}</div>
-                <div>金额：{formatCurrency(selectedIncomeRequest.amount, selectedIncomeRequest.currency)}</div>
-                <div>分类：{selectedIncomeRequest.category}</div>
-                <div>币种：{selectedIncomeRequest.currency}</div>
+                <div>摘要：{request.summary}</div>
+                <div>金额：{formatCurrency(request.amount, request.currency)}</div>
+                <div>分类：{request.category}</div>
+                <div>币种：{request.currency}</div>
               </div>
             </div>
             <label className="block mb-4">
               <span className="text-sm text-slate-300 mb-2 block">
                 选择账户
-                {Array.isArray(accounts) && (
-                  <span className="ml-2 text-xs text-slate-500">
-                    ({accounts.filter((acc) => acc.currency === selectedIncomeRequest.currency).length} 个可用)
-                  </span>
+                <span className="ml-2 text-xs text-slate-500">
+                  ({matchingAccounts.length} 个可用)
+                </span>
+                {!Array.isArray(accounts) || accounts.length === 0 && (
+                  <span className="ml-2 text-xs text-rose-400">(账户数据加载中...)</span>
                 )}
               </span>
               <select
@@ -1304,19 +1346,24 @@ export default function FinanceWorkbenchPage() {
                 disabled={!Array.isArray(accounts) || accounts.length === 0}
               >
                 <option value="">{!Array.isArray(accounts) || accounts.length === 0 ? "暂无可用账户" : "请选择账户"}</option>
-                {Array.isArray(accounts) && accounts
-                  .filter((acc) => acc.currency === selectedIncomeRequest.currency)
-                  .map((acc) => {
-                    const displayBalance = acc.originalBalance || 0;
-                    return (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.name} - 余额: {formatCurrency(displayBalance, acc.currency)}
-                      </option>
-                    );
-                  })}
+                {matchingAccounts.map((acc) => {
+                  const displayBalance = acc.originalBalance || 0;
+                  return (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} - 余额: {formatCurrency(displayBalance, acc.currency)}
+                    </option>
+                  );
+                })}
               </select>
-              {Array.isArray(accounts) && accounts.filter((acc) => acc.currency === selectedIncomeRequest.currency).length === 0 && (
-                <p className="mt-2 text-xs text-amber-400">没有匹配币种 {selectedIncomeRequest.currency} 的账户，请先创建账户</p>
+              {matchingAccounts.length === 0 && (
+                <p className="mt-2 text-xs text-amber-400">
+                  没有匹配币种 {request.currency} 的账户，请先创建账户
+                  {Array.isArray(accounts) && accounts.length > 0 && (
+                    <span className="block mt-1 text-slate-500">
+                      当前系统共有 {accounts.length} 个账户，币种包括：{Array.from(new Set(accounts.map(a => a.currency))).join(", ")}
+                    </span>
+                  )}
+                </p>
               )}
             </label>
             
@@ -1351,7 +1398,7 @@ export default function FinanceWorkbenchPage() {
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (!selectedIncomeRequest) {
+                  if (!request) {
                     toast.error("申请信息丢失，请重新选择");
                     return;
                   }
@@ -1360,7 +1407,7 @@ export default function FinanceWorkbenchPage() {
                     return;
                   }
                   try {
-                    await handleProcessIncomeRequest(selectedIncomeRequest.id);
+                    await handleProcessIncomeRequest(request.id);
                   } catch (error: any) {
                     console.error("入账处理失败:", error);
                     // 错误已在 handleProcessIncomeRequest 中处理
@@ -1369,14 +1416,15 @@ export default function FinanceWorkbenchPage() {
                 variant="success"
                 size="md"
                 className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"
-                disabled={!selectedAccountId || !selectedIncomeRequest}
+                disabled={!selectedAccountId || !request}
               >
                 确认入账
               </InteractiveButton>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* 支出申请详情弹窗 */}
       {expenseDetailModal.open && expenseDetailModal.request && (
