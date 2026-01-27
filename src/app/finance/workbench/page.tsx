@@ -29,13 +29,30 @@ import {
   updateIncomeRequest,
   type IncomeRequest 
 } from "@/lib/expense-income-request-store";
+import ExpenseEntry from "../cash-flow/components/ExpenseEntry";
+import IncomeEntry from "../cash-flow/components/IncomeEntry";
+import TransferEntry from "../cash-flow/components/TransferEntry";
+import { enrichWithUID } from "@/lib/business-utils";
 
 type CashFlow = {
   id: string;
+  uid?: string;
   date: string;
+  summary: string;
+  category: string;
   type: "income" | "expense";
   amount: number;
-  currency?: string;
+  accountId: string;
+  accountName: string;
+  currency: string;
+  remark?: string;
+  relatedId?: string;
+  businessNumber?: string;
+  status: "confirmed" | "pending";
+  isReversal?: boolean;
+  reversedById?: string;
+  voucher?: string | string[];
+  createdAt?: string;
 };
 
 const formatDate = (dateString?: string) => {
@@ -92,6 +109,8 @@ export default function FinanceWorkbenchPage() {
   const [incomeDetailModal, setIncomeDetailModal] = useState<{ open: boolean; request: IncomeRequest | null }>({ open: false, request: null });
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [paymentVoucher, setPaymentVoucher] = useState<string | string[]>(""); // 转账凭证
+  const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
+  const [isSavingFlow, setIsSavingFlow] = useState(false);
 
   // SWR fetcher 函数
   const fetcher = useCallback(async (key: string) => {
@@ -268,6 +287,70 @@ export default function FinanceWorkbenchPage() {
     mutate("approved-income-requests");
     mutate("pending-bills");
   }, []);
+
+  // 处理流水记录创建
+  const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number) => {
+    if (isSavingFlow) {
+      return;
+    }
+
+    setIsSavingFlow(true);
+    try {
+      // 自动生成唯一业务ID
+      const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
+      
+      const response = await fetch('/api/cash-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(flowWithUID)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        const errorMessage = error.details ? `${error.error}: ${error.details}` : (error.error || '创建失败');
+        throw new Error(errorMessage);
+      }
+      
+      // 刷新相关数据
+      await mutate('/api/cash-flow');
+      await mutate('/api/accounts');
+      await mutate("pending-entries");
+      await mutate("monthly-bills");
+      
+      // 如果是广告充值，更新广告账户余额（包括返点）
+      if (newFlow.category === "广告费" && adAccountId && typeof window !== "undefined") {
+        try {
+          const { getAdAccounts, saveAdAccounts } = require("@/lib/ad-agency-store");
+          const adAccounts = getAdAccounts();
+          
+          const adAccount = adAccounts.find((a: any) => a.id === adAccountId);
+          if (adAccount) {
+            const rechargeAmount = Math.abs(newFlow.amount) + (rebateAmount || 0);
+            const updatedAdAccounts = adAccounts.map((acc: any) => {
+              if (acc.id === adAccountId) {
+                return {
+                  ...acc,
+                  currentBalance: acc.currentBalance + rechargeAmount
+                };
+              }
+              return acc;
+            });
+            saveAdAccounts(updatedAdAccounts);
+          }
+        } catch (e) {
+          console.error("Failed to update ad account balance", e);
+        }
+      }
+      
+      toast.success("流水记录创建成功");
+      setActiveModal(null);
+    } catch (error: any) {
+      console.error('Failed to create cash flow:', error);
+      toast.error(error.message || '创建流水记录失败');
+    } finally {
+      setIsSavingFlow(false);
+    }
+  };
 
   useEffect(() => {
     
@@ -572,6 +655,32 @@ export default function FinanceWorkbenchPage() {
         description="待审批事项、待入账任务、财务指标"
         actions={
           <>
+            <div className="flex items-center gap-2">
+              <InteractiveButton
+                onClick={() => setActiveModal("expense")}
+                variant="danger"
+                size="md"
+                className="rounded-lg bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-rose-500/20 hover:from-rose-600 hover:to-rose-700"
+              >
+                登记支出
+              </InteractiveButton>
+              <InteractiveButton
+                onClick={() => setActiveModal("income")}
+                variant="success"
+                size="md"
+                className="rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 hover:from-emerald-600 hover:to-emerald-700"
+              >
+                登记收入
+              </InteractiveButton>
+              <InteractiveButton
+                onClick={() => setActiveModal("transfer")}
+                variant="primary"
+                size="md"
+                className="rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-blue-700"
+              >
+                内部划拨
+              </InteractiveButton>
+            </div>
             <button
               onClick={() => {
                 refreshApprovalData();
@@ -1597,6 +1706,29 @@ export default function FinanceWorkbenchPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 流水录入组件 */}
+      {activeModal === "expense" && (
+        <ExpenseEntry
+          accounts={Array.isArray(accounts) ? accounts : []}
+          onClose={() => setActiveModal(null)}
+          onSave={handleAddFlow}
+        />
+      )}
+      {activeModal === "income" && (
+        <IncomeEntry
+          accounts={Array.isArray(accounts) ? accounts : []}
+          onClose={() => setActiveModal(null)}
+          onSave={handleAddFlow}
+        />
+      )}
+      {activeModal === "transfer" && (
+        <TransferEntry
+          accounts={Array.isArray(accounts) ? accounts : []}
+          onClose={() => setActiveModal(null)}
+          onSave={handleAddFlow}
+        />
       )}
     </div>
   );
