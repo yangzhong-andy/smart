@@ -1155,8 +1155,8 @@ export default function FinanceWorkbenchPage() {
         
         // 计算匹配的账户数量
         const matchingAccounts = Array.isArray(accounts) ? accounts.filter((acc) => {
-          const requestCurrency = request.currency;
-          const accountCurrency = acc.currency;
+          const requestCurrency = request.currency as string;
+          const accountCurrency = acc.currency as string;
           return accountCurrency === requestCurrency || 
                  (requestCurrency === "CNY" && accountCurrency === "RMB") ||
                  (requestCurrency === "RMB" && accountCurrency === "CNY");
@@ -1256,7 +1256,7 @@ export default function FinanceWorkbenchPage() {
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (!selectedExpenseRequest) {
+                  if (!request) {
                     toast.error("申请信息丢失，请重新选择");
                     return;
                   }
@@ -1297,8 +1297,8 @@ export default function FinanceWorkbenchPage() {
         
         // 计算匹配的账户数量
         const matchingAccounts = Array.isArray(accounts) ? accounts.filter((acc) => {
-          const requestCurrency = request.currency;
-          const accountCurrency = acc.currency;
+          const requestCurrency = request.currency as string;
+          const accountCurrency = acc.currency as string;
           return accountCurrency === requestCurrency || 
                  (requestCurrency === "CNY" && accountCurrency === "RMB") ||
                  (requestCurrency === "RMB" && accountCurrency === "CNY");
