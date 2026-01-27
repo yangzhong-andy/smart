@@ -18,7 +18,7 @@ export type PaymentRequest = {
   // 申请信息
   expenseItem: string; // 支出项目
   amount: number; // 金额
-  currency: "USD" | "CNY" | "HKD"; // 币种
+  currency: "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD"; // 币种（与BankAccount保持一致）
   storeId?: string; // 所属店铺ID（可选）
   storeName?: string; // 所属店铺名称（冗余字段）
   country?: string; // 所属国家（可选）

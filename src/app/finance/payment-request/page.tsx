@@ -69,7 +69,7 @@ export default function PaymentRequestPage() {
   const [form, setForm] = useState({
     expenseItem: "",
     amount: "",
-    currency: "CNY" as "USD" | "CNY" | "HKD",
+    currency: "RMB" as "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD",
     storeId: "",
     category: "",
     primaryCategory: "",
@@ -86,7 +86,7 @@ export default function PaymentRequestPage() {
       setForm({
         expenseItem: editingRequest.expenseItem || "",
         amount: String(editingRequest.amount || ""),
-        currency: editingRequest.currency || "CNY",
+        currency: editingRequest.currency || "RMB",
         storeId: editingRequest.storeId || "",
         category: editingRequest.category || "",
         primaryCategory: primary,
@@ -100,7 +100,7 @@ export default function PaymentRequestPage() {
       setForm({
         expenseItem: "",
         amount: "",
-        currency: "CNY",
+        currency: "RMB",
         storeId: "",
         category: "",
         primaryCategory: "",
@@ -394,13 +394,18 @@ export default function PaymentRequestPage() {
                   <span className="text-slate-300">币种 <span className="text-rose-400">*</span></span>
                   <select
                     value={form.currency}
-                    onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value as "USD" | "CNY" | "HKD" }))}
+                    onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value as "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD" }))}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-slate-100"
                     required
                   >
-                    <option value="CNY">人民币 (CNY)</option>
-                    <option value="USD">美元 (USD)</option>
-                    <option value="HKD">港币 (HKD)</option>
+                    <option value="RMB">RMB (人民币)</option>
+                    <option value="USD">USD (美元)</option>
+                    <option value="JPY">JPY (日元)</option>
+                    <option value="EUR">EUR (欧元)</option>
+                    <option value="GBP">GBP (英镑)</option>
+                    <option value="HKD">HKD (港币)</option>
+                    <option value="SGD">SGD (新加坡元)</option>
+                    <option value="AUD">AUD (澳元)</option>
                   </select>
                 </label>
 
