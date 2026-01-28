@@ -27,7 +27,7 @@ const Sidebar = dynamic(() => import("@/components/Sidebar"), {
 
 function RouteChangeRefresher() {
   const pathname = usePathname();
-  const { mutate, cache } = useSWRConfig();
+  const { mutate } = useSWRConfig();
   const prevPathnameRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -88,28 +88,37 @@ function RouteChangeRefresher() {
       
       const endpointsToUpdate = getEndpointsForRoute(pathname);
       
-      // 从数据库重新获取数据，忽略缓存
+      // 从数据库重新获取数据，确保失败时保留旧数据
       Promise.all(
-        endpointsToUpdate.map(endpoint =>
-          mutate(
-            endpoint,
-            async () => {
-              // 重新从数据库获取数据
-              const res = await fetch(endpoint);
-              if (!res.ok) throw new Error(`Failed to fetch ${endpoint}`);
-              return res.json();
-            },
-            { 
-              revalidate: true, // 强制重新验证
-              populateCache: true, // 更新缓存
-              rollbackOnError: false // 不回滚错误
-            }
-          ).catch(() => {
-            // 静默处理错误，某些端点可能不存在
-          })
-        )
-      ).then(() => {
-        console.log(`[RouteChangeRefresher] ✅ 已从数据库更新 ${endpointsToUpdate.length} 个数据源`);
+        endpointsToUpdate.map(async (endpoint) => {
+          try {
+            // 使用 mutate 的 revalidate 选项，这样失败时会保留旧数据
+            await mutate(
+              endpoint,
+              async () => {
+                // 重新从数据库获取数据
+                const res = await fetch(endpoint);
+                if (!res.ok) {
+                  throw new Error(`Failed to fetch ${endpoint}: ${res.status}`);
+                }
+                return res.json();
+              },
+              {
+                revalidate: true, // 强制重新验证
+                populateCache: true, // 更新缓存
+                rollbackOnError: true, // 关键：如果出错，回滚到旧数据，避免数据消失
+              }
+            );
+            return { endpoint, success: true };
+          } catch (error) {
+            // 错误时保留旧数据，不更新缓存
+            console.warn(`[RouteChangeRefresher] 更新 ${endpoint} 时出错，保留旧数据:`, error);
+            return { endpoint, success: false, error };
+          }
+        })
+      ).then((results) => {
+        const successCount = results.filter(r => r?.success).length;
+        console.log(`[RouteChangeRefresher] ✅ 已更新 ${successCount}/${endpointsToUpdate.length} 个数据源`);
       });
     }
     
