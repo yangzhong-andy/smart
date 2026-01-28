@@ -48,14 +48,29 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 等待 session 加载完成
+    // 设置超时，防止无限加载
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     if (status === "loading") {
-      return;
+      timeoutId = setTimeout(() => {
+        console.warn("Session 加载超时，重定向到登录页");
+        setIsChecking(false);
+        router.push("/login");
+      }, 5000); // 5秒超时
+      return () => {
+        if (timeoutId) clearTimeout(timeoutId);
+      };
+    }
+
+    // 清除超时（如果存在）
+    if (timeoutId) {
+      clearTimeout(timeoutId);
     }
 
     // 检查用户是否已登录
     if (status === "unauthenticated" || !session) {
       // 未登录，重定向到登录页
+      setIsChecking(false);
       router.push("/login");
       return;
     }

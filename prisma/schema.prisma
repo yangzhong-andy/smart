@@ -786,7 +786,7 @@ model BankAccount {
   accountType      AccountType
   accountCategory  AccountCategory
   accountPurpose   String
-  currency         String          @default("RMB")
+  currency         String          @default("CNY")
   country          String          @default("CN")
   originalBalance  Decimal         @default(0) @db.Decimal(18, 2) // 当前原币余额（会随流水变化）
   initialCapital   Decimal         @default(0) @db.Decimal(18, 2) // 原始资金（账户初始资金，固定值）
@@ -841,6 +841,13 @@ model CashFlow {
   // 自关联：冲销关系
   reversedBy CashFlow?  @relation("Reversal", fields: [reversedById], references: [id], onDelete: SetNull)
   reversals  CashFlow[] @relation("Reversal")
+
+  @@index([accountId])
+  @@index([date])
+  @@index([type])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
 }
 
 model PurchaseOrder {
@@ -896,6 +903,13 @@ model PurchaseOrder {
   currentStepDept Department? @relation(fields: [currentStep], references: [id], onDelete: SetNull)
 
   @@index([currentStep])
+  @@index([status])
+  @@index([storeId])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([approvalStatus])
+  @@index([riskControlStatus])
+  @@index([contractId])
 }
 
 // 产品-供应商关联表（多对多关系）
@@ -993,6 +1007,8 @@ model ExpenseRequest {
   @@index([createdAt])
   @@index([approvedAt])
   @@index([departmentId])
+  @@index([date])
+  @@index([storeId])
 }
 
 // 收入申请模型
@@ -1034,6 +1050,8 @@ model IncomeRequest {
   @@index([createdBy])
   @@index([createdAt])
   @@index([approvedAt])
+  @@index([date])
+  @@index([storeId])
 }
 
 // 月账单模型
@@ -1101,4 +1119,3 @@ model MonthlyBill {
   @@index([createdAt])
   @@index([approvedAt])
 }
-
