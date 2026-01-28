@@ -134,10 +134,7 @@ export default function HomePage() {
           <h1 className="text-3xl font-bold tracking-tight mb-2.5">
             <span className="text-slate-100">欢迎使用 </span>
             <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
-              TK Smart ERP
-            </span>
-            <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
-              {" "}AI 智能调度中枢
+              AI 智能调度中枢
             </span>
           </h1>
           

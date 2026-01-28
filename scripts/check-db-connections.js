@@ -69,7 +69,7 @@ async function checkDatabaseConnections() {
       const tableStats = await prisma.$queryRaw`
         SELECT 
           schemaname,
-          tablename,
+          relname as tablename,
           n_live_tup as row_count,
           n_dead_tup as dead_rows,
           last_vacuum,

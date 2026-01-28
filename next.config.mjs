@@ -1,4 +1,6 @@
-import packageJson from './package.json' with { type: 'json' };
+import { readFileSync } from 'fs';
+
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
