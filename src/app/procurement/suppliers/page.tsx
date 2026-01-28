@@ -46,8 +46,9 @@ export default function SuppliersPage() {
   // 使用 SWR 加载供应商数据
   const { data: suppliers = [], error: suppliersError, isLoading: suppliersLoading, mutate: mutateSuppliers } = useSWR<Supplier[]>('/api/suppliers', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
     keepPreviousData: true,
+    dedupingInterval: 600000, // 10分钟内去重
     onError: (error) => {
       console.error('Failed to load suppliers:', error);
       toast.error('加载供应商数据失败，请检查网络连接');

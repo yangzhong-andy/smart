@@ -31,13 +31,11 @@ export async function GET() {
       createdAt: s.createdAt.toISOString()
     }))
 
-    return NextResponse.json(transformed)
+    return NextResponse.json(transformed, { status: 200 })
   } catch (error) {
     console.error('Error fetching stores:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch stores' },
-      { status: 500 }
-    )
+    // 返回空数组而不是错误对象，避免前端崩溃
+    return NextResponse.json([], { status: 200 })
   }
 }
 

@@ -21,9 +21,9 @@ export function useExchangeRate() {
     fetcher,
     {
       revalidateOnFocus: false,
-      revalidateOnReconnect: true,
-      refreshInterval: 3600000, // 1小时刷新一次
-      dedupingInterval: 60000, // 1分钟内去重
+      revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+      refreshInterval: 0, // 优化：禁用自动刷新，改为手动刷新
+      dedupingInterval: 600000, // 优化：增加到10分钟内去重
     }
   );
 

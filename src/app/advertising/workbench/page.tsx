@@ -59,12 +59,27 @@ export default function AdAgencyWorkbenchPage() {
     }
   }, []);
 
-  // 使用 SWR 获取数据
-  const { data: agenciesData } = useSWR("agencies", fetcher);
-  const { data: adAccountsData } = useSWR("ad-accounts", fetcher);
-  const { data: consumptionsData } = useSWR("consumptions", fetcher);
-  const { data: rechargesData } = useSWR("recharges", fetcher);
-  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+  // 使用 SWR 获取数据（优化：增加去重间隔以减少数据库访问）
+  const { data: agenciesData } = useSWR("agencies", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
+  const { data: adAccountsData } = useSWR("ad-accounts", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
+  const { data: consumptionsData } = useSWR("consumptions", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
+  const { data: rechargesData } = useSWR("recharges", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
+  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
+  });
 
   // 确保数据是数组并指定类型
   const agencies: Agency[] = Array.isArray(agenciesData) ? (agenciesData as Agency[]) : [];

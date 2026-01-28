@@ -35,7 +35,10 @@ export default function MonthlyBillsPage() {
     if (typeof window === "undefined") return [];
     return await getMonthlyBills();
   };
-  const { data: billsData } = useSWR("monthly-bills-all", fetcher, { revalidateOnFocus: true });
+  const { data: billsData } = useSWR("monthly-bills-all", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 60000 // 1分钟内去重
+  });
   const bills: MonthlyBill[] = Array.isArray(billsData) ? billsData : [];
 
   // 统计信息

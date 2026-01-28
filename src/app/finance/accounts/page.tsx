@@ -62,15 +62,17 @@ export default function BankAccountsPage() {
   // 使用 SWR 加载账户数据
   const { data: accountsData = [], isLoading: accountsLoading, mutate: mutateAccounts } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
   
   // 使用 SWR 加载流水数据（用于计算余额）
   const { data: cashFlowData = [] } = useSWR<any[]>('/api/cash-flow', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
   
   // 基于 API 数据和流水重新计算余额
@@ -260,10 +262,10 @@ export default function BankAccountsPage() {
     fetcher,
     {
       revalidateOnFocus: false, // 优化：关闭焦点刷新以减少数据库访问
-      revalidateOnReconnect: true,
-      refreshInterval: 3600000, // 每 1 小时刷新一次
+      revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+      refreshInterval: 0, // 优化：禁用自动刷新，改为手动刷新
       keepPreviousData: true,
-      dedupingInterval: 300000, // 优化：5 分钟内去重，避免重复请求
+      dedupingInterval: 600000, // 优化：增加到10分钟内去重
     }
   );
   

@@ -53,15 +53,17 @@ export default function StoresPage() {
   // 使用 SWR 从 API 加载账户数据
   const { data: accountsData = [], isLoading: accountsLoading } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
 
   // 使用 SWR 从 API 加载店铺数据
   const { data: storesData = [], isLoading: storesLoading, mutate: mutateStores } = useSWR<Store[]>('/api/stores', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
 
   const accounts = accountsData || [];

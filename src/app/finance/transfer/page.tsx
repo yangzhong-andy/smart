@@ -81,15 +81,17 @@ export default function TransferPage() {
   // 使用 SWR 加载流水数据
   const { data: cashFlowData = [] } = useSWR<CashFlow[]>('/api/cash-flow', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
   
   // 使用 SWR 加载账户数据
   const { data: accountsData = [] } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
   
   const accounts = accountsData || [];

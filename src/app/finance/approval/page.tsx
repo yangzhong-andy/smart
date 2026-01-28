@@ -111,31 +111,40 @@ export default function ApprovalCenterPage() {
   // 使用 SWR 获取数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
   const { data: allBillsData } = useSWR("monthly-bills", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 60000 
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 60000 
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: expenseRequestsData } = useSWR("expense-requests", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: pendingExpenseRequestsData } = useSWR("pending-expense-requests", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: incomeRequestsData } = useSWR("income-requests", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: pendingIncomeRequestsData } = useSWR("pending-income-requests", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
-  const { data: rechargesData } = useSWR("recharges", fetcher);
-  const { data: consumptionsData } = useSWR("consumptions", fetcher);
-  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher);
+  const { data: rechargesData } = useSWR("recharges", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
+  const { data: consumptionsData } = useSWR("consumptions", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
+  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
 
   // 确保数据是数组并指定类型
   const allBills: MonthlyBill[] = Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [];
@@ -486,8 +495,12 @@ export default function ApprovalCenterPage() {
           // 触发自定义事件，通知财务工作台刷新
           window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已批准，已推送给财务人员处理出账");
+          // 关闭确认弹窗
+          setConfirmDialog(null);
         } catch (error: any) {
           toast.error(error.message || "审批失败");
+          // 即使失败也关闭弹窗
+          setConfirmDialog(null);
         }
       }
     });
@@ -517,8 +530,12 @@ export default function ApprovalCenterPage() {
           // 触发自定义事件，通知财务工作台刷新
           window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已批准，已推送给财务人员处理入账");
+          // 关闭确认弹窗
+          setConfirmDialog(null);
         } catch (error: any) {
           toast.error(error.message || "审批失败");
+          // 即使失败也关闭弹窗
+          setConfirmDialog(null);
         }
       }
     });

@@ -176,31 +176,34 @@ export default function FinanceWorkbenchPage() {
     }
   }, []);
 
-  // 使用 SWR 获取数据（优化：减少 revalidateOnFocus 使用，增加去重间隔以减少数据库访问）
+  // 使用 SWR 获取数据（优化：大幅增加去重间隔以减少数据库访问）
   const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
     revalidateOnFocus: false, 
-    dedupingInterval: 30000 // 30秒内去重
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 60000 // 1分钟内去重
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
-  const { data: accountsData } = useSWR("bank-accounts", fetcher);
+  const { data: accountsData } = useSWR("bank-accounts", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
+  });
   const { data: cashFlowData } = useSWR("cash-flow", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 60000
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: approvedExpenseRequestsData } = useSWR("approved-expense-requests", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: approvedIncomeRequestsData } = useSWR("approved-income-requests", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 30000 
+    dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   
   
@@ -212,8 +215,9 @@ export default function FinanceWorkbenchPage() {
     errorCode?: string;
   }>('/api/finance/rates', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新，减少数据库访问
+    keepPreviousData: true,
+    dedupingInterval: 300000 // 5分钟内去重
   });
   
   // 提取汇率数据
@@ -408,22 +412,26 @@ export default function FinanceWorkbenchPage() {
 
   useEffect(() => {
     
-    // 设置定时刷新，每60秒刷新一次审批数据（优化：从3秒改为60秒以支持更多并发用户）
+    // 设置定时刷新，每5分钟刷新一次审批数据（优化：从60秒改为5分钟以大幅减少数据库访问）
     const interval = setInterval(() => {
-      refreshApprovalData();
-    }, 60000); // 60秒 = 60000毫秒
-    
-    // 监听页面可见性变化（当用户切换回页面时刷新）
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
+      // 只在页面可见时才刷新
+      if (document.visibilityState === "visible") {
         refreshApprovalData();
-        mutate("pending-entries");
-        mutate("monthly-bills");
-        mutate("pending-bills");
       }
-    };
+    }, 300000); // 5分钟 = 300000毫秒
     
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    // 监听页面可见性变化（优化：移除自动刷新，改为手动刷新按钮）
+    // 注释掉自动刷新，减少数据库访问
+    // const handleVisibilityChange = () => {
+    //   if (!document.hidden) {
+    //     refreshApprovalData();
+    //     mutate("pending-entries");
+    //     mutate("monthly-bills");
+    //     mutate("pending-bills");
+    //   }
+    // };
+    
+    // document.addEventListener("visibilitychange", handleVisibilityChange); // 已禁用，减少数据库访问
     
     // 监听 localStorage 变化（当审批状态更新时）
     const handleStorageChange = (e: StorageEvent) => {
@@ -443,7 +451,7 @@ export default function FinanceWorkbenchPage() {
     
     return () => {
       clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      // document.removeEventListener("visibilitychange", handleVisibilityChange); // 已禁用
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("approval-updated", handleApprovalUpdate);
     };

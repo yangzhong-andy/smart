@@ -42,8 +42,9 @@ export default function PurchaseOrdersNewPage() {
   // 使用 SWR 加载采购订单数据
   const { data: ordersData = [], isLoading: ordersLoading, mutate: mutateOrders } = useSWR<PurchaseOrder[]>('/api/purchase-orders', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    keepPreviousData: true
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    keepPreviousData: true,
+    dedupingInterval: 600000 // 10分钟内去重
   });
 
   const [products, setProducts] = useState<Product[]>([]);

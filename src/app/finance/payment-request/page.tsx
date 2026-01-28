@@ -45,8 +45,8 @@ export default function PaymentRequestPage() {
   // 使用 SWR 加载数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
   const { data: requestsData = [] } = useSWR<PaymentRequest[]>('/api/payment-requests', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-    dedupingInterval: 30000 // 30秒内去重
+    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    dedupingInterval: 60000 // 优化：增加到60秒内去重
   });
   
   const { data: storesData = [] } = useSWR<Store[]>('stores', async () => {

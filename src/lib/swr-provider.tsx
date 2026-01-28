@@ -66,8 +66,8 @@ export default function SWRProvider({ children }: { children: ReactNode }) {
         fetcher,
         provider,
         revalidateOnFocus: false,
-        revalidateIfStale: true,
-        dedupingInterval: 30000, // 优化：从800ms增加到30秒，减少重复请求
+        revalidateIfStale: false, // 优化：关闭自动重新验证过期数据，减少数据库访问
+        dedupingInterval: 60000, // 优化：增加到60秒，进一步减少重复请求
         shouldRetryOnError: false,
         keepPreviousData: true, // 保持旧数据，避免闪烁
       }}

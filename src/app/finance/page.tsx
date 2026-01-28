@@ -125,10 +125,11 @@ export default function FinanceDashboardPage() {
     };
     
     fetchRates();
-    // 每小时刷新一次（与 API 缓存时间一致）
-    const interval = setInterval(fetchRates, 3600000);
+    // 优化：禁用自动刷新，改为手动刷新（大幅减少数据库访问）
+    // const interval = setInterval(fetchRates, 3600000);
     
-    return () => clearInterval(interval);
+    // return () => clearInterval(interval); // 已禁用自动刷新
+    return () => {}; // 无需清理
   }, []);
 
   const totalAssets = useMemo(() => {
