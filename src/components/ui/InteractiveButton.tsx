@@ -72,7 +72,9 @@ export default function InteractiveButton({
 
   // 变体样式
   const variantStyles = {
-    primary: "bg-primary-500 text-white hover:bg-primary-600 active:bg-primary-700",
+    primary: isLoading 
+      ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-white cursor-wait" 
+      : "bg-primary-500 text-white hover:bg-primary-600 active:bg-primary-700",
     secondary: "bg-slate-700 text-slate-200 hover:bg-slate-600 active:bg-slate-500",
     danger: "bg-rose-500 text-white hover:bg-rose-600 active:bg-rose-700",
     ghost: "bg-transparent text-slate-300 hover:bg-slate-800 active:bg-slate-700",
@@ -85,7 +87,7 @@ export default function InteractiveButton({
       return <CheckCircle2 className="h-4 w-4 text-emerald-400 animate-pulse" />;
     }
     if (isLoading) {
-      return <Loader2 className="h-4 w-4 animate-spin" />;
+      return <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />;
     }
     if (icon) {
       return icon;

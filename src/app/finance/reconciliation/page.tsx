@@ -121,15 +121,24 @@ export default function ReconciliationPage() {
     }
   }, []);
 
-  // 使用 SWR 获取数据
-  const { data: billsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+  // 使用 SWR 获取数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
+  const { data: billsData } = useSWR("monthly-bills", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 60000 // 1分钟内去重
+  });
   const { data: agenciesData } = useSWR("agencies", fetcher);
   const { data: rechargesData } = useSWR("recharges", fetcher);
   const { data: consumptionsData } = useSWR("consumptions", fetcher);
   const { data: deliveryOrdersData } = useSWR("delivery-orders", fetcher);
   const { data: contractsData } = useSWR("contracts", fetcher);
-  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, { revalidateOnFocus: true });
-  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { revalidateOnFocus: true });
+  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 60000 
+  });
+  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 30000 
+  });
   const { data: bankAccountsData } = useSWR("bank-accounts", fetcher);
 
   // 确保数据是数组并指定类型
@@ -2386,7 +2395,7 @@ export default function ReconciliationPage() {
                   {bankAccounts
                     .filter((acc) => {
                       const billCurrency = selectedPendingPaymentBill.currency;
-                      return acc.currency === billCurrency || acc.currency === "RMB";
+                      return acc.currency === billCurrency || acc.currency === "CNY" || acc.currency === "RMB";
                     })
                     .sort((a, b) => {
                       const aMatch = a.currency === selectedPendingPaymentBill.currency;

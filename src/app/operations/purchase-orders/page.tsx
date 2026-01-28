@@ -72,7 +72,8 @@ export default function PurchaseOrdersNewPage() {
     notes: ""
   });
 
-  const orders = ordersData;
+  // 确保 orders 始终是数组
+  const orders = Array.isArray(ordersData) ? ordersData : [];
 
   useEffect(() => {
     if (typeof window === "undefined") return;

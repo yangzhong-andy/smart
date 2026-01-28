@@ -48,13 +48,7 @@ export async function GET() {
       return NextResponse.json(mockStore.map(mapToApiProduct))
     }
 
-    // 确保数据库连接
-    try {
-      await prisma.$connect()
-    } catch (connectError: any) {
-      console.error('数据库连接失败:', connectError)
-      // 继续尝试查询，Prisma 可能会自动重连
-    }
+    // 优化：移除手动连接，Prisma 会自动管理连接池
 
     // 查询所有 Product (SPU) 及其关联的 ProductVariant (SKU)
     const products = await prisma.product.findMany({

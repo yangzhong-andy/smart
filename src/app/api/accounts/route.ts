@@ -5,10 +5,7 @@ import { AccountType, AccountCategory } from '@prisma/client'
 // GET - 获取所有账户
 export async function GET() {
   try {
-    // 确保数据库连接
-    await prisma.$connect().catch(() => {
-      // 连接失败时继续尝试查询，Prisma 会自动重连
-    })
+    // 优化：移除手动连接，Prisma 会自动管理连接池
 
     const accounts = await prisma.bankAccount.findMany({
       include: {
@@ -29,7 +26,7 @@ export async function GET() {
       accountType: acc.accountType === 'CORPORATE' ? '对公' as const : acc.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
       accountCategory: acc.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
       accountPurpose: acc.accountPurpose,
-      currency: acc.currency as 'RMB' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
+      currency: (acc.currency === 'RMB' ? 'CNY' : acc.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
       country: acc.country,
       originalBalance: Number(acc.originalBalance),
       initialCapital: acc.initialCapital ? Number(acc.initialCapital) : undefined,
@@ -86,7 +83,7 @@ export async function POST(request: NextRequest) {
       accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
       accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
       accountPurpose: body.accountPurpose,
-      currency: body.currency || 'RMB',
+      currency: (body.currency === 'RMB' ? 'CNY' : body.currency) || 'CNY',
       country: body.country || 'CN',
       originalBalance: Number(body.originalBalance) || 0,
       initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : (Number(body.originalBalance) || 0),
@@ -126,7 +123,7 @@ export async function POST(request: NextRequest) {
       accountType: account.accountType === 'CORPORATE' ? '对公' as const : account.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
       accountCategory: account.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
       accountPurpose: account.accountPurpose,
-      currency: account.currency as 'RMB' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
+      currency: (account.currency === 'RMB' ? 'CNY' : account.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
       country: account.country,
       originalBalance: Number(account.originalBalance),
       initialCapital: account.initialCapital ? Number(account.initialCapital) : undefined,

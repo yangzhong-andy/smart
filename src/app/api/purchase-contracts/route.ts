@@ -23,24 +23,7 @@ const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
 // GET - 获取所有采购合同
 export async function GET(request: NextRequest) {
   try {
-    // 数据库连接重试逻辑
-    let retries = 3
-    while (retries > 0) {
-      try {
-        await prisma.$connect()
-        break
-      } catch (error: any) {
-        retries--
-        if (retries === 0) {
-          console.error('数据库连接失败:', error)
-          return NextResponse.json(
-            { error: '数据库连接失败，请检查 Neon 数据库是否已唤醒' },
-            { status: 503 }
-          )
-        }
-        await new Promise(resolve => setTimeout(resolve, 2000))
-      }
-    }
+    // 优化：移除手动连接重试逻辑，Prisma 会自动管理连接池和重连
 
     const contracts = await prisma.purchaseContract.findMany({
       include: {

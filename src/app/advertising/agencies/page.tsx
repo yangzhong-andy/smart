@@ -38,6 +38,7 @@ const currency = (n: number, curr: string = "CNY") =>
   );
 
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
+import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import ImageUploader from "@/components/ImageUploader";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { toast } from "sonner";

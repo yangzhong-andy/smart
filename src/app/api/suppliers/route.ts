@@ -11,10 +11,7 @@ import {
 // GET - 获取所有供应商
 export async function GET() {
   try {
-    // 确保数据库连接
-    await prisma.$connect().catch(() => {
-      // 连接失败时继续尝试查询，Prisma 会自动重连
-    })
+    // 优化：移除手动连接，Prisma 会自动管理连接池
 
     const suppliers = await prisma.supplier.findMany({
       orderBy: { name: 'asc' }

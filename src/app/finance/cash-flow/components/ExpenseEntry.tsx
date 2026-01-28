@@ -438,7 +438,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                   }, {} as Record<string, typeof accounts>);
 
                   // 币种显示顺序
-                  const currencyOrder = ["RMB", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
+                  const currencyOrder = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
                   const sortedCurrencies = Object.keys(groupedAccounts).sort((a, b) => {
                     const aIndex = currencyOrder.indexOf(a);
                     const bIndex = currencyOrder.indexOf(b);
@@ -450,7 +450,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
 
                   return sortedCurrencies.flatMap((currency) => {
                     const currencyAccounts = groupedAccounts[currency];
-                    const currencyLabel = currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
+                    const currencyLabel = currency === "CNY" || currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
                     
                     return [
                       <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
@@ -461,7 +461,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                           
                           // 格式化余额
                           let balanceText = "";
-                          if (acc.currency === "RMB") {
+                          if (acc.currency === "CNY" || acc.currency === "RMB") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
                           } else if (acc.currency === "USD") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
@@ -489,7 +489,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                 
                 // 格式化余额显示
                 const formatBalance = (balance: number) => {
-                  if (selectedAccount.currency === "RMB") {
+                  if (selectedAccount.currency === "CNY" || selectedAccount.currency === "RMB") {
                     return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
                   } else if (selectedAccount.currency === "USD") {
                     return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);

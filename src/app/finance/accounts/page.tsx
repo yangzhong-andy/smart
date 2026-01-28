@@ -259,11 +259,11 @@ export default function BankAccountsPage() {
     '/api/finance-rates',
     fetcher,
     {
-      revalidateOnFocus: true, // 窗口获得焦点时刷新
+      revalidateOnFocus: false, // 优化：关闭焦点刷新以减少数据库访问
       revalidateOnReconnect: true,
       refreshInterval: 3600000, // 每 1 小时刷新一次
       keepPreviousData: true,
-      dedupingInterval: 60000, // 1 分钟内去重，避免重复请求
+      dedupingInterval: 300000, // 优化：5 分钟内去重，避免重复请求
     }
   );
   
@@ -319,11 +319,11 @@ export default function BankAccountsPage() {
   // 使用 finance-store 的统计函数（基础数据）
   const { totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
 
-  // 计算人民币账户总金额（只统计币种为RMB的账户）
+  // 计算人民币账户总金额（只统计币种为CNY的账户）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalRMBAccountBalance = useMemo(() => {
     return accounts.reduce((sum, acc) => {
-      if (acc.currency === "RMB") {
+      if (acc.currency === "CNY" || acc.currency === "RMB") {
         // originalBalance 已经包含了 initialCapital + 所有流水
         return sum + (acc.originalBalance || 0);
       }
@@ -331,7 +331,7 @@ export default function BankAccountsPage() {
     }, 0);
   }, [accounts]);
 
-  // 计算USD账户的预估RMB金额（使用实时汇率）
+  // 计算USD账户的预估CNY金额（使用实时汇率）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalUSDRMB = useMemo(() => {
     // 优先使用实时汇率，如果没有则使用账户中存储的汇率
@@ -350,7 +350,7 @@ export default function BankAccountsPage() {
     }, 0);
   }, [accounts, exchangeRates]);
 
-  // 计算JPY账户的预估RMB金额（使用实时汇率）
+  // 计算JPY账户的预估CNY金额（使用实时汇率）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalJPYRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
@@ -369,8 +369,8 @@ export default function BankAccountsPage() {
   // 计算总资产（使用实时汇率）
   const totalAssetsRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
-      if (acc.currency === "RMB") {
-        // RMB 账户直接使用原币余额
+      if (acc.currency === "CNY" || acc.currency === "RMB") {
+        // CNY 账户直接使用原币余额
         return sum + (acc.originalBalance || 0);
       } else if (acc.currency === "USD") {
         // USD 账户使用实时汇率
@@ -471,10 +471,10 @@ export default function BankAccountsPage() {
     }, 0);
     const avgBalance = totalCount > 0 ? totalBalance / totalCount : 0;
     
-    // 计算总RMB余额（originalBalance 已经包含了 initialCapital）
+    // 计算总CNY余额（originalBalance 已经包含了 initialCapital）
     const totalRMBBalance = flattenedAccounts.reduce((sum, acc) => {
       // originalBalance 已经包含了 initialCapital + 所有流水
-      const rmbValue = acc.currency === "RMB" 
+      const rmbValue = acc.currency === "CNY" || acc.currency === "RMB" 
         ? (acc.originalBalance || 0)
         : (acc.originalBalance || 0) * (acc.exchangeRate || 1);
       return sum + rmbValue;
@@ -578,7 +578,7 @@ export default function BankAccountsPage() {
       toast.error("原币余额需为数字");
       return;
     }
-    if (form.currency !== "RMB" && (Number.isNaN(exchangeRate) || exchangeRate <= 0)) {
+    if (form.currency !== "CNY" && form.currency !== "RMB" && (Number.isNaN(exchangeRate) || exchangeRate <= 0)) {
       toast.error("非人民币账户需填写有效汇率");
       return;
     }
@@ -586,7 +586,7 @@ export default function BankAccountsPage() {
       ? 0
       : calculateRMBBalance(
       originalBalance,
-      form.currency === "RMB" ? 1 : exchangeRate,
+      (form.currency === "CNY" || form.currency === "RMB") ? 1 : exchangeRate,
           form.currency as BankAccount["currency"]
     );
     const newAccount: BankAccount = {
@@ -690,7 +690,7 @@ export default function BankAccountsPage() {
       toast.error("原币余额需为数字");
       return;
     }
-    if (form.currency !== "RMB" && (Number.isNaN(exchangeRate) || exchangeRate <= 0)) {
+    if (form.currency !== "CNY" && form.currency !== "RMB" && (Number.isNaN(exchangeRate) || exchangeRate <= 0)) {
       toast.error("非人民币账户需填写有效汇率");
       return;
     }
@@ -698,7 +698,7 @@ export default function BankAccountsPage() {
       ? 0
       : calculateRMBBalance(
       originalBalance,
-      form.currency === "RMB" ? 1 : exchangeRate,
+      (form.currency === "CNY" || form.currency === "RMB") ? 1 : exchangeRate,
           form.currency as BankAccount["currency"]
     );
     try {
@@ -828,7 +828,7 @@ export default function BankAccountsPage() {
       "国家/地区",
       "原币余额",
       "汇率",
-      "折算RMB余额",
+      "折算CNY余额",
       "账号归属人",
       "公司主体",
       "关联店铺",
@@ -945,7 +945,7 @@ export default function BankAccountsPage() {
               </div>
               <div className="text-xs font-medium text-white/80">总资产</div>
             </div>
-            <div className="mb-1 text-xs font-medium text-white/70">折算RMB</div>
+            <div className="mb-1 text-xs font-medium text-white/70">折算CNY</div>
             <div
               className="mb-2 text-3xl font-bold text-white"
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
@@ -981,7 +981,7 @@ export default function BankAccountsPage() {
             >
               {currency(totalUSD, "USD")}
             </div>
-            <div className="mb-1 text-xs text-white/60">预估 RMB</div>
+            <div className="mb-1 text-xs text-white/60">预估 CNY</div>
             <div
               className="mb-2 text-xl font-semibold text-white/90"
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
@@ -1035,7 +1035,7 @@ export default function BankAccountsPage() {
             >
               ¥{formatNumber(totalJPY)} JPY
             </div>
-            <div className="mb-1 text-xs text-white/60">预估 RMB</div>
+            <div className="mb-1 text-xs text-white/60">预估 CNY</div>
             <div
               className="mb-2 text-xl font-semibold text-white/90"
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
@@ -1082,14 +1082,14 @@ export default function BankAccountsPage() {
               </div>
               <div className="text-xs font-medium text-white/80">人民币账户金额</div>
             </div>
-            <div className="mb-1 text-xs font-medium text-white/70">RMB 账户</div>
+            <div className="mb-1 text-xs font-medium text-white/70">CNY 账户</div>
             <div
               className="mb-2 text-3xl font-bold text-white"
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
             >
               {currency(totalRMBAccountBalance, "CNY")}
             </div>
-            <div className="text-xs text-white/60">RMB 账户原币余额（含初始资金）</div>
+            <div className="text-xs text-white/60">CNY 账户原币余额（含初始资金）</div>
           </div>
         </div>
       </section>
@@ -1115,7 +1115,7 @@ export default function BankAccountsPage() {
           </div>
         </div>
         <div className="text-center">
-          <div className="text-xs text-slate-400 mb-1">平均余额（RMB）</div>
+          <div className="text-xs text-slate-400 mb-1">平均余额（CNY）</div>
           <div className="text-2xl font-bold text-emerald-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
             {currency(accountSummary.avgRMBBalance, "CNY")}
           </div>
@@ -1670,10 +1670,10 @@ export default function BankAccountsPage() {
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-slate-400">折算RMB：</span>
+                            <span className="text-slate-400">折算CNY：</span>
                             <span className="text-emerald-300 font-medium" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                               {(() => {
-                                // 计算 RMB 余额（originalBalance 已经包含了 initialCapital）
+                                // 计算 CNY 余额（originalBalance 已经包含了 initialCapital）
                                 const totalOriginalBalance = acc.originalBalance || 0;
                                 if (acc.currency === "RMB") {
                                   return currency(totalOriginalBalance, "CNY");
@@ -1747,7 +1747,7 @@ export default function BankAccountsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-100">{editAccount ? "编辑账户" : "新增账户"}</h2>
-                <p className="text-xs text-slate-400">账户名称是必填项，汇率将自动计算折算RMB余额。</p>
+                <p className="text-xs text-slate-400">账户名称是必填项，汇率将自动计算折算CNY余额。</p>
               </div>
               <button
                 onClick={() => {
@@ -1917,12 +1917,12 @@ export default function BankAccountsPage() {
                       setForm((f) => ({
                         ...f,
                         currency: newCurrency,
-                        exchangeRate: newCurrency === "RMB" ? "1" : f.exchangeRate
+                        exchangeRate: newCurrency === "CNY" ? "1" : f.exchangeRate
                       }));
                     }}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   >
-                    <option value="RMB">RMB (人民币)</option>
+                    <option value="CNY">CNY (人民币)</option>
                     <option value="USD">USD (美元)</option>
                     <option value="JPY">JPY (日元)</option>
                     <option value="EUR">EUR (欧元)</option>
@@ -2094,7 +2094,7 @@ export default function BankAccountsPage() {
                   />
                 </label>
                 <label className="space-y-1 col-span-2">
-                  <span className="text-slate-300">折算RMB余额（自动计算）</span>
+                  <span className="text-slate-300">折算CNY余额（自动计算）</span>
                   <div className="w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-emerald-300 font-medium">
                     {currency(currentRMBBalance, "CNY")}
                   </div>

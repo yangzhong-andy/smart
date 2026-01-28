@@ -197,14 +197,14 @@ export default function ProfitPage() {
         <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-5 backdrop-blur-sm hover:border-emerald-500/50 transition-all duration-300 shadow-lg shadow-emerald-500/5">
           <div className="flex items-center justify-between mb-3">
             <TrendingUp className="h-5 w-5 text-emerald-400" />
-            <div className="text-xs text-slate-400">累计收入（折算RMB）</div>
+            <div className="text-xs text-slate-400">累计收入（折算CNY）</div>
           </div>
           <div className="text-2xl font-bold text-slate-100">{currency(totalIncome, "CNY")}</div>
         </div>
         <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-5 backdrop-blur-sm hover:border-blue-500/50 transition-all duration-300 shadow-lg shadow-blue-500/5">
           <div className="flex items-center justify-between mb-3">
             <TrendingUp className="h-5 w-5 text-blue-400" />
-            <div className="text-xs text-slate-400">本月收入（折算RMB）</div>
+            <div className="text-xs text-slate-400">本月收入（折算CNY）</div>
           </div>
           <div className="text-2xl font-bold text-slate-100">{currency(thisMonthTotal, "CNY")}</div>
         </div>

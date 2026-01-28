@@ -227,6 +227,15 @@ input[type="date"]::-webkit-datetime-edit-year-field {
   }
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 @keyframes toast-exit {
   0% {
     opacity: 1;

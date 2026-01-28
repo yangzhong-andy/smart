@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import useSWR, { mutate } from "swr";
+import useSWRMutation from "swr/mutation";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
+import Skeleton, { SkeletonDetail } from "@/components/ui/Skeleton";
 import Link from "next/link";
 import { getPendingEntries, type PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
@@ -105,8 +107,41 @@ export default function FinanceWorkbenchPage() {
   const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
   const [expenseAccountModal, setExpenseAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
   const [incomeAccountModal, setIncomeAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
-  const [expenseDetailModal, setExpenseDetailModal] = useState<{ open: boolean; request: ExpenseRequest | null }>({ open: false, request: null });
-  const [incomeDetailModal, setIncomeDetailModal] = useState<{ open: boolean; request: IncomeRequest | null }>({ open: false, request: null });
+  // 重构：详情查看改为按需加载，只存储 ID
+  const [expenseDetailModal, setExpenseDetailModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  const [incomeDetailModal, setIncomeDetailModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  
+  // 使用 useSWRMutation 按需获取详情
+  const { trigger: fetchExpenseDetail, data: expenseDetailData, isMutating: isLoadingExpenseDetail } = useSWRMutation(
+    expenseDetailModal.requestId ? `/api/expense-requests/${expenseDetailModal.requestId}` : null,
+    async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch expense request');
+      return res.json();
+    }
+  );
+  
+  const { trigger: fetchIncomeDetail, data: incomeDetailData, isMutating: isLoadingIncomeDetail } = useSWRMutation(
+    incomeDetailModal.requestId ? `/api/income-requests/${incomeDetailModal.requestId}` : null,
+    async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch income request');
+      return res.json();
+    }
+  );
+  
+  // 当详情弹窗打开时，触发数据获取
+  useEffect(() => {
+    if (expenseDetailModal.open && expenseDetailModal.requestId) {
+      fetchExpenseDetail();
+    }
+  }, [expenseDetailModal.open, expenseDetailModal.requestId, fetchExpenseDetail]);
+  
+  useEffect(() => {
+    if (incomeDetailModal.open && incomeDetailModal.requestId) {
+      fetchIncomeDetail();
+    }
+  }, [incomeDetailModal.open, incomeDetailModal.requestId, fetchIncomeDetail]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [paymentVoucher, setPaymentVoucher] = useState<string | string[]>(""); // 转账凭证
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
@@ -141,14 +176,33 @@ export default function FinanceWorkbenchPage() {
     }
   }, []);
 
-  // 使用 SWR 获取数据
-  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { revalidateOnFocus: true });
-  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { revalidateOnFocus: true });
+  // 使用 SWR 获取数据（优化：减少 revalidateOnFocus 使用，增加去重间隔以减少数据库访问）
+  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
+    revalidateOnFocus: false, 
+    dedupingInterval: 30000 // 30秒内去重
+  });
+  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 60000 // 1分钟内去重
+  });
   const { data: accountsData } = useSWR("bank-accounts", fetcher);
-  const { data: cashFlowData } = useSWR("cash-flow", fetcher, { revalidateOnFocus: true });
-  const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { revalidateOnFocus: true });
-  const { data: approvedExpenseRequestsData } = useSWR("approved-expense-requests", fetcher, { revalidateOnFocus: true });
-  const { data: approvedIncomeRequestsData } = useSWR("approved-income-requests", fetcher, { revalidateOnFocus: true });
+  const { data: cashFlowData } = useSWR("cash-flow", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 30000 
+  });
+  const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: approvedExpenseRequestsData } = useSWR("approved-expense-requests", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 30000 
+  });
+  const { data: approvedIncomeRequestsData } = useSWR("approved-income-requests", fetcher, { 
+    revalidateOnFocus: false,
+    dedupingInterval: 30000 
+  });
+  
   
   // 使用 SWR 获取实时汇率（与账户中心保持一致）
   const { data: financeRatesData } = useSWR<{ 
@@ -201,7 +255,7 @@ export default function FinanceWorkbenchPage() {
         return {
           ...acc,
           originalBalance: initialCapital, // 从初始资金开始
-          rmbBalance: acc.currency === "RMB" 
+          rmbBalance: acc.currency === "CNY" || acc.currency === "RMB" 
             ? initialCapital 
             : initialCapital * (acc.exchangeRate || 1),
           initialCapital: initialCapital
@@ -226,7 +280,7 @@ export default function FinanceWorkbenchPage() {
               const newBalance = account.originalBalance + change;
               
               account.originalBalance = newBalance;
-              account.rmbBalance = account.currency === "RMB"
+              account.rmbBalance = account.currency === "CNY" || account.currency === "RMB"
                 ? newBalance
                 : newBalance * (account.exchangeRate || 1);
             }
@@ -244,7 +298,7 @@ export default function FinanceWorkbenchPage() {
           const childAccounts = updatedAccounts.filter((a) => a.parentId === acc.id);
           const totalOriginalBalance = childAccounts.reduce((sum, child) => sum + (child.originalBalance || 0), 0);
           const totalRmbBalance = childAccounts.reduce((sum, child) => {
-            const childRmb = child.currency === "RMB" 
+            const childRmb = child.currency === "CNY" || child.currency === "RMB" 
               ? (child.originalBalance || 0)
               : (child.originalBalance || 0) * (child.exchangeRate || 1);
             return sum + childRmb;
@@ -281,12 +335,12 @@ export default function FinanceWorkbenchPage() {
     setInitialized(true);
   }, []);
 
-  // 刷新审批数据
+  // 刷新审批数据（修复：添加 mutate 到依赖项，避免无限循环）
   const refreshApprovalData = useCallback(() => {
     mutate("approved-expense-requests");
     mutate("approved-income-requests");
     mutate("pending-bills");
-  }, []);
+  }, [mutate]);
 
   // 处理流水记录创建
   const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number) => {
@@ -354,10 +408,10 @@ export default function FinanceWorkbenchPage() {
 
   useEffect(() => {
     
-    // 设置定时刷新，每3秒刷新一次审批数据
+    // 设置定时刷新，每60秒刷新一次审批数据（优化：从3秒改为60秒以支持更多并发用户）
     const interval = setInterval(() => {
       refreshApprovalData();
-    }, 3000);
+    }, 60000); // 60秒 = 60000毫秒
     
     // 监听页面可见性变化（当用户切换回页面时刷新）
     const handleVisibilityChange = () => {
@@ -393,7 +447,7 @@ export default function FinanceWorkbenchPage() {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("approval-updated", handleApprovalUpdate);
     };
-  }, [refreshApprovalData]);
+  }, [refreshApprovalData, mutate]); // 修复：添加 mutate 到依赖项
 
   // 统计信息
   const stats = useMemo(() => {
@@ -421,8 +475,8 @@ export default function FinanceWorkbenchPage() {
 
     // 账户总余额：使用与账户中心相同的计算逻辑（使用实时汇率）
     const totalBalance = accounts.reduce((sum, acc) => {
-      if (acc.currency === "RMB") {
-        // RMB 账户直接使用原币余额
+      if (acc.currency === "CNY" || acc.currency === "RMB") {
+        // CNY 账户直接使用原币余额
         return sum + (acc.originalBalance || 0);
       } else if (acc.currency === "USD") {
         // USD 账户使用实时汇率
@@ -681,20 +735,24 @@ export default function FinanceWorkbenchPage() {
                 内部划拨
               </InteractiveButton>
             </div>
-            <button
-              onClick={() => {
+            <InteractiveButton
+              onClick={async () => {
+                await Promise.all([
+                  mutate("pending-entries"),
+                  mutate("monthly-bills"),
+                  mutate("pending-bills"),
+                ]);
                 refreshApprovalData();
-                mutate("pending-entries");
-                mutate("monthly-bills");
-                mutate("pending-bills");
                 toast.success("数据已刷新");
               }}
-              className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-slate-100 text-sm transition flex items-center gap-2"
-              title="刷新审批数据"
+              variant="secondary"
+              size="md"
+              className="rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 text-cyan-300 hover:from-cyan-500/30 hover:to-blue-500/30 hover:border-cyan-400/50"
+              title="刷新数据"
             >
               <span>🔄</span>
-              <span>刷新</span>
-            </button>
+              <span>刷新数据</span>
+            </InteractiveButton>
             <Link href="/finance/reconciliation">
               <ActionButton variant="secondary" icon={FileText}>
                 对账中心
@@ -841,7 +899,9 @@ export default function FinanceWorkbenchPage() {
             </Link>
           </div>
 
-          {urgentPendingEntries.length === 0 ? (
+          {!pendingEntriesData ? (
+            <SkeletonTable rows={3} cols={2} />
+          ) : urgentPendingEntries.length === 0 ? (
             <div className="text-center py-12 text-slate-500">
               <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
                 <FileText className="h-8 w-8 opacity-30" />
@@ -922,7 +982,7 @@ export default function FinanceWorkbenchPage() {
                     <div className="ml-3">
                       <button
                         onClick={() => {
-                          setExpenseDetailModal({ open: true, request });
+                          setExpenseDetailModal({ open: true, requestId: request.id });
                         }}
                         className="px-3 py-2 rounded-lg bg-slate-700/50 text-slate-300 hover:bg-slate-700 font-medium text-sm transition flex items-center gap-1"
                       >
@@ -974,7 +1034,7 @@ export default function FinanceWorkbenchPage() {
                     <div className="ml-3 flex gap-2">
                       <button
                         onClick={() => {
-                          setIncomeDetailModal({ open: true, request });
+                          setIncomeDetailModal({ open: true, requestId: request.id });
                         }}
                         className="px-3 py-2 rounded-lg bg-slate-700/50 text-slate-300 hover:bg-slate-700 font-medium text-sm transition flex items-center gap-1"
                       >
@@ -1010,7 +1070,9 @@ export default function FinanceWorkbenchPage() {
             </Link>
           </div>
 
-          {urgentBills.length === 0 ? (
+          {!pendingBillsData ? (
+            <SkeletonTable rows={3} cols={2} />
+          ) : urgentBills.length === 0 ? (
             <div className="text-center py-12 text-slate-500">
               <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
                 <AlertCircle className="h-8 w-8 opacity-30" />
@@ -1158,8 +1220,8 @@ export default function FinanceWorkbenchPage() {
           const requestCurrency = request.currency as string;
           const accountCurrency = acc.currency as string;
           return accountCurrency === requestCurrency || 
-                 (requestCurrency === "CNY" && accountCurrency === "RMB") ||
-                 (requestCurrency === "RMB" && accountCurrency === "CNY");
+                 (requestCurrency === "CNY" && (accountCurrency === "CNY" || accountCurrency === "RMB")) ||
+                 ((requestCurrency === "CNY" || requestCurrency === "RMB") && accountCurrency === "CNY");
         }) : [];
         
         return (
@@ -1300,8 +1362,8 @@ export default function FinanceWorkbenchPage() {
           const requestCurrency = request.currency as string;
           const accountCurrency = acc.currency as string;
           return accountCurrency === requestCurrency || 
-                 (requestCurrency === "CNY" && accountCurrency === "RMB") ||
-                 (requestCurrency === "RMB" && accountCurrency === "CNY");
+                 (requestCurrency === "CNY" && (accountCurrency === "CNY" || accountCurrency === "RMB")) ||
+                 ((requestCurrency === "CNY" || requestCurrency === "RMB") && accountCurrency === "CNY");
         }) : [];
         
         return (
@@ -1426,15 +1488,15 @@ export default function FinanceWorkbenchPage() {
         );
       })()}
 
-      {/* 支出申请详情弹窗 */}
-      {expenseDetailModal.open && expenseDetailModal.request && (
+      {/* 支出申请详情弹窗 - 重构为按需加载 */}
+      {expenseDetailModal.open && expenseDetailModal.requestId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur overflow-y-auto">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl my-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-slate-100">支出申请详情</h2>
               <button
                 onClick={() => {
-                  setExpenseDetailModal({ open: false, request: null });
+                  setExpenseDetailModal({ open: false, requestId: null });
                 }}
                 className="text-slate-400 hover:text-slate-200 text-2xl"
               >
@@ -1442,6 +1504,9 @@ export default function FinanceWorkbenchPage() {
               </button>
             </div>
 
+            {isLoadingExpenseDetail ? (
+              <SkeletonDetail />
+            ) : expenseDetailData ? (
             <div className="space-y-4">
               {/* 基本信息 */}
               <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
@@ -1449,64 +1514,64 @@ export default function FinanceWorkbenchPage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-slate-400">摘要：</span>
-                    <span className="text-slate-200 ml-2">{expenseDetailModal.request.summary}</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.summary}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">金额：</span>
-                    <span className="text-rose-300 font-medium ml-2">{formatCurrency(expenseDetailModal.request.amount, expenseDetailModal.request.currency)}</span>
+                    <span className="text-rose-300 font-medium ml-2">{formatCurrency(expenseDetailData.amount, expenseDetailData.currency)}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">分类：</span>
-                    <span className="text-slate-200 ml-2">{expenseDetailModal.request.category}</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.category}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">币种：</span>
-                    <span className="text-slate-200 ml-2">{expenseDetailModal.request.currency}</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.currency}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">日期：</span>
-                    <span className="text-slate-200 ml-2">{formatDate(expenseDetailModal.request.date)}</span>
+                    <span className="text-slate-200 ml-2">{formatDate(expenseDetailData.date)}</span>
                   </div>
-                  {expenseDetailModal.request.businessNumber && (
+                  {expenseDetailData.businessNumber && (
                     <div>
                       <span className="text-slate-400">关联单号：</span>
-                      <span className="text-slate-200 ml-2">{expenseDetailModal.request.businessNumber}</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.businessNumber}</span>
                     </div>
                   )}
-                  {expenseDetailModal.request.storeName && (
+                  {expenseDetailData.storeName && (
                     <div>
                       <span className="text-slate-400">店铺：</span>
-                      <span className="text-slate-200 ml-2">{expenseDetailModal.request.storeName}</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.storeName}</span>
                     </div>
                   )}
-                  {expenseDetailModal.request.departmentName && (
+                  {expenseDetailData.departmentName && (
                     <div>
                       <span className="text-slate-400">部门：</span>
-                      <span className="text-slate-200 ml-2">{expenseDetailModal.request.departmentName}</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.departmentName}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* 备注 */}
-              {expenseDetailModal.request.remark && (
+              {expenseDetailData.remark && (
                 <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">备注</h3>
-                  <p className="text-sm text-slate-300">{expenseDetailModal.request.remark}</p>
+                  <p className="text-sm text-slate-300">{expenseDetailData.remark}</p>
                 </div>
               )}
 
               {/* 凭证 */}
-              {expenseDetailModal.request.voucher && (
+              {expenseDetailData.voucher && (
                 <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-3">凭证</h3>
                   <div className="grid grid-cols-2 gap-3">
-                    {Array.isArray(expenseDetailModal.request.voucher) ? (
-                      expenseDetailModal.request.voucher.map((v, idx) => (
+                    {Array.isArray(expenseDetailData.voucher) ? (
+                      expenseDetailData.voucher.map((v: string, idx: number) => (
                         <img key={idx} src={v} alt={`凭证${idx + 1}`} className="rounded-lg max-h-48 object-contain bg-slate-900" />
                       ))
                     ) : (
-                      <img src={expenseDetailModal.request.voucher} alt="凭证" className="rounded-lg max-h-48 object-contain bg-slate-900" />
+                      <img src={expenseDetailData.voucher} alt="凭证" className="rounded-lg max-h-48 object-contain bg-slate-900" />
                     )}
                   </div>
                 </div>
@@ -1518,73 +1583,78 @@ export default function FinanceWorkbenchPage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-slate-400">发起人：</span>
-                    <span className="text-slate-200 ml-2">{expenseDetailModal.request.createdBy}</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.createdBy}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">创建时间：</span>
-                    <span className="text-slate-200 ml-2">{formatDate(expenseDetailModal.request.createdAt)}</span>
+                    <span className="text-slate-200 ml-2">{formatDate(expenseDetailData.createdAt)}</span>
                   </div>
-                  {expenseDetailModal.request.approvedBy && (
+                  {expenseDetailData.approvedBy && (
                     <>
                       <div>
                         <span className="text-slate-400">审批人：</span>
-                        <span className="text-slate-200 ml-2">{expenseDetailModal.request.approvedBy}</span>
+                        <span className="text-slate-200 ml-2">{expenseDetailData.approvedBy}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">审批时间：</span>
-                        <span className="text-slate-200 ml-2">{formatDate(expenseDetailModal.request.approvedAt)}</span>
+                        <span className="text-slate-200 ml-2">{formatDate(expenseDetailData.approvedAt)}</span>
                       </div>
                     </>
                   )}
-                  {expenseDetailModal.request.rejectionReason && (
+                  {expenseDetailData.rejectionReason && (
                     <div className="col-span-2">
                       <span className="text-slate-400">退回原因：</span>
-                      <span className="text-red-400 ml-2">{expenseDetailModal.request.rejectionReason}</span>
+                      <span className="text-red-400 ml-2">{expenseDetailData.rejectionReason}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* 付款信息（如果已付款） */}
-              {expenseDetailModal.request.paidBy && (
+              {expenseDetailData.paidBy && (
                 <div className="rounded-lg border border-emerald-800/50 bg-emerald-900/20 p-4">
                   <h3 className="text-sm font-semibold text-emerald-300 mb-3">付款信息</h3>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-slate-400">付款人：</span>
-                      <span className="text-emerald-300 ml-2">{expenseDetailModal.request.paidBy}</span>
+                      <span className="text-emerald-300 ml-2">{expenseDetailData.paidBy}</span>
                     </div>
                     <div>
                       <span className="text-slate-400">付款时间：</span>
-                      <span className="text-emerald-300 ml-2">{formatDate(expenseDetailModal.request.paidAt)}</span>
+                      <span className="text-emerald-300 ml-2">{formatDate(expenseDetailData.paidAt)}</span>
                     </div>
-                    {expenseDetailModal.request.financeAccountName && (
+                    {expenseDetailData.financeAccountName && (
                       <div>
                         <span className="text-slate-400">付款账户：</span>
-                        <span className="text-emerald-300 ml-2">{expenseDetailModal.request.financeAccountName}</span>
+                        <span className="text-emerald-300 ml-2">{expenseDetailData.financeAccountName}</span>
                       </div>
                     )}
                   </div>
                 </div>
               )}
             </div>
+            ) : (
+              <div className="text-center py-8 text-slate-400">
+                <p>加载失败，请重试</p>
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
               <button
                 onClick={() => {
-                  setExpenseDetailModal({ open: false, request: null });
+                  setExpenseDetailModal({ open: false, requestId: null });
                 }}
                 className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
               >
                 关闭
               </button>
-              {!expenseDetailModal.request.paidBy && (
+              {expenseDetailData && !expenseDetailData.paidBy && (
                 <button
                   onClick={() => {
-                    setSelectedExpenseRequest(expenseDetailModal.request);
-                    setExpenseDetailModal({ open: false, request: null });
-                    if (expenseDetailModal.request) {
-                      setExpenseAccountModal({ open: true, requestId: expenseDetailModal.request.id });
+                    setSelectedExpenseRequest(expenseDetailData as ExpenseRequest);
+                    setExpenseDetailModal({ open: false, requestId: null });
+                    if (expenseDetailData) {
+                      setExpenseAccountModal({ open: true, requestId: expenseDetailData.id });
                     }
                   }}
                   className="px-4 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600"
@@ -1597,15 +1667,15 @@ export default function FinanceWorkbenchPage() {
         </div>
       )}
 
-      {/* 收入申请详情弹窗 */}
-      {incomeDetailModal.open && incomeDetailModal.request && (
+      {/* 收入申请详情弹窗 - 重构为按需加载 */}
+      {incomeDetailModal.open && incomeDetailModal.requestId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur overflow-y-auto">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl my-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-slate-100">收入申请详情</h2>
               <button
                 onClick={() => {
-                  setIncomeDetailModal({ open: false, request: null });
+                  setIncomeDetailModal({ open: false, requestId: null });
                 }}
                 className="text-slate-400 hover:text-slate-200 text-2xl"
               >
@@ -1613,6 +1683,9 @@ export default function FinanceWorkbenchPage() {
               </button>
             </div>
 
+            {isLoadingIncomeDetail ? (
+              <SkeletonDetail />
+            ) : incomeDetailData ? (
             <div className="space-y-4">
               {/* 基本信息 */}
               <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
@@ -1620,52 +1693,52 @@ export default function FinanceWorkbenchPage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-slate-400">摘要：</span>
-                    <span className="text-slate-200 ml-2">{incomeDetailModal.request.summary}</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.summary}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">金额：</span>
-                    <span className="text-emerald-300 font-medium ml-2">{formatCurrency(incomeDetailModal.request.amount, incomeDetailModal.request.currency)}</span>
+                    <span className="text-emerald-300 font-medium ml-2">{formatCurrency(incomeDetailData.amount, incomeDetailData.currency)}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">分类：</span>
-                    <span className="text-slate-200 ml-2">{incomeDetailModal.request.category}</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.category}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">币种：</span>
-                    <span className="text-slate-200 ml-2">{incomeDetailModal.request.currency}</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.currency}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">日期：</span>
-                    <span className="text-slate-200 ml-2">{formatDate(incomeDetailModal.request.date)}</span>
+                    <span className="text-slate-200 ml-2">{formatDate(incomeDetailData.date)}</span>
                   </div>
-                  {incomeDetailModal.request.storeName && (
+                  {incomeDetailData.storeName && (
                     <div>
                       <span className="text-slate-400">店铺：</span>
-                      <span className="text-slate-200 ml-2">{incomeDetailModal.request.storeName}</span>
+                      <span className="text-slate-200 ml-2">{incomeDetailData.storeName}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* 备注 */}
-              {incomeDetailModal.request.remark && (
+              {incomeDetailData.remark && (
                 <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-2">备注</h3>
-                  <p className="text-sm text-slate-300">{incomeDetailModal.request.remark}</p>
+                  <p className="text-sm text-slate-300">{incomeDetailData.remark}</p>
                 </div>
               )}
 
               {/* 凭证 */}
-              {incomeDetailModal.request.voucher && (
+              {incomeDetailData.voucher && (
                 <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-3">凭证</h3>
                   <div className="grid grid-cols-2 gap-3">
-                    {Array.isArray(incomeDetailModal.request.voucher) ? (
-                      incomeDetailModal.request.voucher.map((v, idx) => (
+                    {Array.isArray(incomeDetailData.voucher) ? (
+                      incomeDetailData.voucher.map((v: string, idx: number) => (
                         <img key={idx} src={v} alt={`凭证${idx + 1}`} className="rounded-lg max-h-48 object-contain bg-slate-900" />
                       ))
                     ) : (
-                      <img src={incomeDetailModal.request.voucher} alt="凭证" className="rounded-lg max-h-48 object-contain bg-slate-900" />
+                      <img src={incomeDetailData.voucher} alt="凭证" className="rounded-lg max-h-48 object-contain bg-slate-900" />
                     )}
                   </div>
                 </div>
@@ -1677,73 +1750,78 @@ export default function FinanceWorkbenchPage() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="text-slate-400">发起人：</span>
-                    <span className="text-slate-200 ml-2">{incomeDetailModal.request.createdBy}</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.createdBy}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">创建时间：</span>
-                    <span className="text-slate-200 ml-2">{formatDate(incomeDetailModal.request.createdAt)}</span>
+                    <span className="text-slate-200 ml-2">{formatDate(incomeDetailData.createdAt)}</span>
                   </div>
-                  {incomeDetailModal.request.approvedBy && (
+                  {incomeDetailData.approvedBy && (
                     <>
                       <div>
                         <span className="text-slate-400">审批人：</span>
-                        <span className="text-slate-200 ml-2">{incomeDetailModal.request.approvedBy}</span>
+                        <span className="text-slate-200 ml-2">{incomeDetailData.approvedBy}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">审批时间：</span>
-                        <span className="text-slate-200 ml-2">{formatDate(incomeDetailModal.request.approvedAt)}</span>
+                        <span className="text-slate-200 ml-2">{formatDate(incomeDetailData.approvedAt)}</span>
                       </div>
                     </>
                   )}
-                  {incomeDetailModal.request.rejectionReason && (
+                  {incomeDetailData.rejectionReason && (
                     <div className="col-span-2">
                       <span className="text-slate-400">退回原因：</span>
-                      <span className="text-red-400 ml-2">{incomeDetailModal.request.rejectionReason}</span>
+                      <span className="text-red-400 ml-2">{incomeDetailData.rejectionReason}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* 收款信息（如果已收款） */}
-              {incomeDetailModal.request.receivedBy && (
+              {incomeDetailData.receivedBy && (
                 <div className="rounded-lg border border-emerald-800/50 bg-emerald-900/20 p-4">
                   <h3 className="text-sm font-semibold text-emerald-300 mb-3">收款信息</h3>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-slate-400">收款人：</span>
-                      <span className="text-emerald-300 ml-2">{incomeDetailModal.request.receivedBy}</span>
+                      <span className="text-emerald-300 ml-2">{incomeDetailData.receivedBy}</span>
                     </div>
                     <div>
                       <span className="text-slate-400">收款时间：</span>
-                      <span className="text-emerald-300 ml-2">{formatDate(incomeDetailModal.request.receivedAt)}</span>
+                      <span className="text-emerald-300 ml-2">{formatDate(incomeDetailData.receivedAt)}</span>
                     </div>
-                    {incomeDetailModal.request.financeAccountName && (
+                    {incomeDetailData.financeAccountName && (
                       <div>
                         <span className="text-slate-400">收款账户：</span>
-                        <span className="text-emerald-300 ml-2">{incomeDetailModal.request.financeAccountName}</span>
+                        <span className="text-emerald-300 ml-2">{incomeDetailData.financeAccountName}</span>
                       </div>
                     )}
                   </div>
                 </div>
               )}
             </div>
+            ) : (
+              <div className="text-center py-8 text-slate-400">
+                <p>加载失败，请重试</p>
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
               <button
                 onClick={() => {
-                  setIncomeDetailModal({ open: false, request: null });
+                  setIncomeDetailModal({ open: false, requestId: null });
                 }}
                 className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
               >
                 关闭
               </button>
-              {!incomeDetailModal.request.receivedBy && (
+              {incomeDetailData && !incomeDetailData.receivedBy && (
                 <button
                   onClick={() => {
-                    setSelectedIncomeRequest(incomeDetailModal.request);
-                    setIncomeDetailModal({ open: false, request: null });
-                    if (incomeDetailModal.request) {
-                      setIncomeAccountModal({ open: true, requestId: incomeDetailModal.request.id });
+                    setSelectedIncomeRequest(incomeDetailData as IncomeRequest);
+                    setIncomeDetailModal({ open: false, requestId: null });
+                    if (incomeDetailData) {
+                      setIncomeAccountModal({ open: true, requestId: incomeDetailData.id });
                     }
                   }}
                   className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"

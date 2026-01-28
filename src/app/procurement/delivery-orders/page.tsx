@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
+import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import { Truck, Search, X, Download, Eye, Package } from "lucide-react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
@@ -385,8 +386,8 @@ export default function DeliveryOrdersPage() {
                           {order.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-300">
-                        {formatCurrency(order.tailAmount, "CNY", "expense")}
+                      <td className="px-4 py-3 text-right">
+                        <MoneyDisplay amount={order.tailAmount} currency="CNY" variant="highlight" />
                       </td>
                       <td className="px-4 py-3 text-right">
                         {isTailPaid ? (

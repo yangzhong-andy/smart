@@ -5,10 +5,7 @@ import { CashFlowType, CashFlowStatus } from '@prisma/client'
 // GET - 获取所有流水
 export async function GET(request: NextRequest) {
   try {
-    // 确保数据库连接
-    await prisma.$connect().catch(() => {
-      // 连接失败时继续尝试查询，Prisma 会自动重连
-    })
+    // 优化：移除手动连接，Prisma 会自动管理连接池
 
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get('accountId')
@@ -152,7 +149,7 @@ export async function POST(request: NextRequest) {
           where: { id: body.accountId },
           data: {
             originalBalance: newBalance,
-            rmbBalance: account.currency === 'RMB' 
+            rmbBalance: account.currency === 'CNY' || account.currency === 'RMB' 
               ? newBalance 
               : newBalance * Number(account.exchangeRate)
           }

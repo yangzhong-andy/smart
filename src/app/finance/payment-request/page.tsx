@@ -42,10 +42,11 @@ export default function PaymentRequestPage() {
   const [detailModal, setDetailModal] = useState<PaymentRequest | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 使用 SWR 加载数据
+  // 使用 SWR 加载数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
   const { data: requestsData = [] } = useSWR<PaymentRequest[]>('/api/payment-requests', fetcher, {
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    dedupingInterval: 30000 // 30秒内去重
   });
   
   const { data: storesData = [] } = useSWR<Store[]>('stores', async () => {
@@ -69,7 +70,7 @@ export default function PaymentRequestPage() {
   const [form, setForm] = useState({
     expenseItem: "",
     amount: "",
-    currency: "RMB" as "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD",
+    currency: "CNY" as "CNY" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD",
     storeId: "",
     category: "",
     primaryCategory: "",
@@ -86,7 +87,7 @@ export default function PaymentRequestPage() {
       setForm({
         expenseItem: editingRequest.expenseItem || "",
         amount: String(editingRequest.amount || ""),
-        currency: editingRequest.currency || "RMB",
+        currency: editingRequest.currency || "CNY",
         storeId: editingRequest.storeId || "",
         category: editingRequest.category || "",
         primaryCategory: primary,
@@ -100,7 +101,7 @@ export default function PaymentRequestPage() {
       setForm({
         expenseItem: "",
         amount: "",
-        currency: "RMB",
+        currency: "CNY",
         storeId: "",
         category: "",
         primaryCategory: "",
@@ -394,11 +395,11 @@ export default function PaymentRequestPage() {
                   <span className="text-slate-300">币种 <span className="text-rose-400">*</span></span>
                   <select
                     value={form.currency}
-                    onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value as "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD" }))}
+                    onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value as "CNY" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD" }))}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-slate-100"
                     required
                   >
-                    <option value="RMB">RMB (人民币)</option>
+                    <option value="CNY">CNY (人民币)</option>
                     <option value="USD">USD (美元)</option>
                     <option value="JPY">JPY (日元)</option>
                     <option value="EUR">EUR (欧元)</option>

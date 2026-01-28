@@ -176,7 +176,7 @@ export default function Sidebar() {
       try {
         const count = await getPendingApprovalCount();
         setPendingApprovalCount(count);
-        // 定期更新角标（每30秒）
+        // 定期更新角标（每5分钟，优化：从30秒改为5分钟以减少数据库访问量）
         const interval = setInterval(async () => {
           try {
             const newCount = await getPendingApprovalCount();
@@ -184,7 +184,7 @@ export default function Sidebar() {
           } catch (e) {
             console.error("Failed to get pending approval count", e);
           }
-        }, 30000);
+        }, 300000); // 5分钟 = 300000毫秒
         return () => clearInterval(interval);
       } catch (e) {
         console.error("Failed to initialize pending approval count", e);

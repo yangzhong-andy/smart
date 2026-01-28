@@ -13,6 +13,8 @@ import TransferEntry from "./components/TransferEntry";
 import { enrichWithUID } from "@/lib/business-utils";
 import { EXPENSE_CATEGORIES, formatCategoryDisplay, parseCategory } from "@/lib/expense-categories";
 import { INCOME_CATEGORIES, formatIncomeCategoryDisplay, parseIncomeCategory } from "@/lib/income-categories";
+import { formatMoney } from "@/lib/constants/currency";
+import MoneyDisplay from "@/components/ui/MoneyDisplay";
 
 export type CashFlow = {
   id: string;
@@ -102,7 +104,7 @@ export default function CashFlowPage() {
         return {
           ...acc,
           originalBalance: initialCapital, // 从初始资金开始
-          rmbBalance: acc.currency === "RMB" 
+          rmbBalance: acc.currency === "CNY" || acc.currency === "RMB" 
             ? initialCapital 
             : initialCapital * (acc.exchangeRate || 1),
           initialCapital: initialCapital
@@ -1072,7 +1074,7 @@ export default function CashFlowPage() {
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             >
               <option value="all">全部</option>
-              <option value="RMB">RMB</option>
+              <option value="CNY">CNY</option>
               <option value="USD">USD</option>
               <option value="JPY">JPY</option>
               <option value="EUR">EUR</option>
@@ -1255,19 +1257,28 @@ export default function CashFlowPage() {
                       )}
                     </div>
                   </td>
-                  <td
-                    className={`px-2 py-1.5 text-right font-medium ${
-                      flow.isReversal
-                        ? "text-rose-400"
-                        : flow.type === "income"
-                          ? "text-emerald-300"
-                          : "text-rose-300"
-                    }`}
-                  >
-                    {flow.type === "income" ? "+" : "-"}
-                    {currency(Math.abs(flow.amount), flow.currency)}
+                  <td className="px-2 py-1.5 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <span className={flow.isReversal ? "text-rose-400" : flow.type === "income" ? "text-emerald-300" : "text-rose-300"}>
+                        {flow.type === "income" ? "+" : "-"}
+                      </span>
+                      {flow.currency === "CNY" || flow.currency === "RMB" ? (
+                        <MoneyDisplay 
+                          amount={Math.abs(flow.amount)} 
+                          currency="CNY" 
+                          variant="highlight"
+                          className="font-semibold"
+                        />
+                      ) : (
+                        <span className="text-cyan-300 font-semibold">
+                          {currency(Math.abs(flow.amount), flow.currency)}
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-2 py-1.5 text-slate-300">{flow.currency}</td>
+                  <td className="px-2 py-1.5 text-slate-500 text-xs">
+                    {flow.currency === "RMB" ? "CNY" : flow.currency}
+                  </td>
                   <td className="px-2 py-1.5 text-slate-300">{flow.accountName}</td>
                   <td className="px-2 py-1.5">
                     <span

@@ -92,7 +92,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
     if (!selectedAccount || !form.amount) return 0;
     const amount = Number(form.amount);
     if (Number.isNaN(amount) || amount <= 0) return 0;
-    if (selectedAccount.currency === "RMB") return amount;
+    if (selectedAccount.currency === "CNY" || selectedAccount.currency === "RMB") return amount;
     return amount * selectedAccount.exchangeRate;
   }, [selectedAccount, form.amount]);
 
@@ -295,7 +295,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
                   }, {} as Record<string, typeof accounts>);
 
                   // 币种显示顺序
-                  const currencyOrder = ["RMB", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
+                  const currencyOrder = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
                   const sortedCurrencies = Object.keys(groupedAccounts).sort((a, b) => {
                     const aIndex = currencyOrder.indexOf(a);
                     const bIndex = currencyOrder.indexOf(b);
@@ -307,7 +307,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
 
                   return sortedCurrencies.flatMap((currency) => {
                     const currencyAccounts = groupedAccounts[currency];
-                    const currencyLabel = currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
+                    const currencyLabel = currency === "CNY" || currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
                     
                     return [
                       <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
@@ -318,7 +318,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
                           
                           // 格式化余额
                           let balanceText = "";
-                          if (account.currency === "RMB") {
+                          if (account.currency === "CNY" || account.currency === "RMB") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
                           } else if (account.currency === "USD") {
                             balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
@@ -351,7 +351,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
                 
                 // 格式化余额显示
                 const formatBalance = (balance: number) => {
-                  if (selectedAccount.currency === "RMB") {
+                  if (selectedAccount.currency === "CNY" || selectedAccount.currency === "RMB") {
                     return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
                   } else if (selectedAccount.currency === "USD") {
                     return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
@@ -375,7 +375,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
                     )}
                     {selectedStore && (
                       <div className="text-slate-400">
-                        币种：{selectedAccount.currency} | 汇率：{selectedAccount.exchangeRate} | 折算RMB：¥{rmbAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        币种：{selectedAccount.currency} | 汇率：{selectedAccount.exchangeRate} | 折算CNY：¥{rmbAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     )}
                   </div>
@@ -412,7 +412,7 @@ export default function IncomeEntry({ accounts, onClose, onSave }: IncomeEntryPr
               />
               {selectedStore && form.amount && (
                 <div className="text-xs text-slate-400 mt-1">
-                  折算RMB：¥{rmbAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  折算CNY：¥{rmbAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               )}
             </label>
