@@ -1,8 +1,9 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useState, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useSWRConfig } from "swr";
 import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
@@ -23,6 +24,101 @@ const Sidebar = dynamic(() => import("@/components/Sidebar"), {
     </aside>
   ),
 });
+
+function RouteChangeRefresher() {
+  const pathname = usePathname();
+  const { mutate, cache } = useSWRConfig();
+  const prevPathnameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // 如果路径发生变化（且不是首次加载），从数据库更新所有相关数据
+    if (prevPathnameRef.current !== null && prevPathnameRef.current !== pathname) {
+      console.log(`[RouteChangeRefresher] 路由变化：${prevPathnameRef.current} -> ${pathname}，从数据库更新数据...`);
+      
+      // 根据当前路由确定需要更新的数据源
+      const getEndpointsForRoute = (route: string): string[] => {
+        const endpoints: string[] = [];
+        
+        // 财务相关路由
+        if (route.startsWith('/finance')) {
+          endpoints.push('/api/accounts', '/api/cash-flow', '/api/payment-requests', '/api/finance-rates');
+        }
+        
+        // 采购相关路由
+        if (route.startsWith('/procurement')) {
+          endpoints.push('/api/suppliers', '/api/purchase-orders', '/api/purchase-contracts', '/api/delivery-orders');
+        }
+        
+        // 物流相关路由
+        if (route.startsWith('/logistics')) {
+          endpoints.push('/api/warehouses', '/api/logistics-channels', '/api/logistics-tracking', '/api/outbound-orders', '/api/pending-inbound');
+        }
+        
+        // 产品相关路由
+        if (route.startsWith('/product-center') || route.startsWith('/products')) {
+          endpoints.push('/api/products');
+        }
+        
+        // 设置相关路由
+        if (route.startsWith('/settings')) {
+          endpoints.push('/api/stores', '/api/users', '/api/departments', '/api/employees');
+        }
+        
+        // 人力资源相关路由
+        if (route.startsWith('/hr')) {
+          endpoints.push('/api/employees', '/api/commission-rules', '/api/commission-records');
+        }
+        
+        // 广告相关路由
+        if (route.startsWith('/advertising')) {
+          endpoints.push('/api/influencers');
+        }
+        
+        // 库存相关路由
+        if (route.startsWith('/inventory')) {
+          endpoints.push('/api/stock', '/api/inventory-stocks', '/api/inventory-movements');
+        }
+        
+        // 通用数据源（所有页面都可能用到）
+        endpoints.push('/api/exchange-rates');
+        
+        // 去重
+        return Array.from(new Set(endpoints));
+      };
+      
+      const endpointsToUpdate = getEndpointsForRoute(pathname);
+      
+      // 从数据库重新获取数据，忽略缓存
+      Promise.all(
+        endpointsToUpdate.map(endpoint =>
+          mutate(
+            endpoint,
+            async () => {
+              // 重新从数据库获取数据
+              const res = await fetch(endpoint);
+              if (!res.ok) throw new Error(`Failed to fetch ${endpoint}`);
+              return res.json();
+            },
+            { 
+              revalidate: true, // 强制重新验证
+              populateCache: true, // 更新缓存
+              rollbackOnError: false // 不回滚错误
+            }
+          ).catch(() => {
+            // 静默处理错误，某些端点可能不存在
+          })
+        )
+      ).then(() => {
+        console.log(`[RouteChangeRefresher] ✅ 已从数据库更新 ${endpointsToUpdate.length} 个数据源`);
+      });
+    }
+    
+    // 更新上一个路径
+    prevPathnameRef.current = pathname;
+  }, [pathname, mutate]);
+
+  return null;
+}
 
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -104,6 +200,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   // 其他页面显示侧边栏
   return (
     <SWRProvider>
+      <RouteChangeRefresher />
       <div className="flex h-full">
         {/* Sidebar */}
         <Sidebar />
