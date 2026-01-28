@@ -8,7 +8,11 @@ import useSWR from "swr";
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function ContentProductionDashboard() {
-  const { data: videoTasks = [], isLoading, mutate } = useSWR('/api/video-tasks', fetcher);
+  const { data: videoTasks = [], isLoading, mutate } = useSWR('/api/video-tasks', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);

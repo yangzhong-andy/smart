@@ -88,9 +88,21 @@ const STATUS_LABELS: Record<TrackingStatus, string> = {
 
 export default function LogisticsTrackingPage() {
   // 使用 SWR 获取数据
-  const { data: tracking = [], mutate: mutateTracking } = useSWR<LogisticsTracking[]>('/api/logistics-tracking', fetcher);
-  const { data: channels = [] } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher);
-  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher);
+  const { data: tracking = [], mutate: mutateTracking } = useSWR<LogisticsTracking[]>('/api/logistics-tracking', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: channels = [] } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   const [filterStatus, setFilterStatus] = useState<TrackingStatus | "all">("all");
   const [selectedTracking, setSelectedTracking] = useState<LogisticsTracking | null>(null);

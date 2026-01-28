@@ -62,22 +62,27 @@ export default function AdAgencyWorkbenchPage() {
   // 使用 SWR 获取数据（优化：增加去重间隔以减少数据库访问）
   const { data: agenciesData } = useSWR("agencies", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: adAccountsData } = useSWR("ad-accounts", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: consumptionsData } = useSWR("consumptions", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: rechargesData } = useSWR("recharges", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
 

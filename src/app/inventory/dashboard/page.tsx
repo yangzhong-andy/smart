@@ -61,8 +61,16 @@ type Warehouse = {
 
 export default function InventoryDashboardPage() {
   // 使用 SWR 加载数据
-  const { data: stockData = [], isLoading: stockLoading, error: stockError } = useSWR<StockItem[]>("/api/stock", fetcher);
-  const { data: warehousesDataRaw = [], error: warehousesError } = useSWR<Warehouse[]>("/api/warehouses", fetcher);
+  const { data: stockData = [], isLoading: stockLoading, error: stockError } = useSWR<StockItem[]>("/api/stock", fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: warehousesDataRaw = [], error: warehousesError } = useSWR<Warehouse[]>("/api/warehouses", fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 确保 warehousesData 始终是数组
   const warehousesData = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : [];

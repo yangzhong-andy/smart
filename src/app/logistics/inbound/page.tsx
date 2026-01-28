@@ -86,10 +86,26 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function InboundPage() {
   // 使用 SWR 获取数据
-  const { data: pendingInboundData = [], mutate: mutatePendingInbound } = useSWR<PendingInbound[]>('/api/pending-inbound', fetcher);
-  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>('/api/delivery-orders', fetcher);
-  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher);
-  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher);
+  const { data: pendingInboundData = [], mutate: mutatePendingInbound } = useSWR<PendingInbound[]>('/api/pending-inbound', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>('/api/delivery-orders', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 从待入库单数据中提取批次
   const batches = useMemo(() => {

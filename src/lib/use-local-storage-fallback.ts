@@ -25,6 +25,9 @@ export function useLocalStorageFallback<T>(
     fetcher,
     {
       ...options,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 600000, // 10分钟内去重
       onError: (err) => {
         console.warn(`[useLocalStorageFallback] API 请求失败，使用 localStorage: ${apiUrl}`, err);
         if (options?.onError) options.onError(err);

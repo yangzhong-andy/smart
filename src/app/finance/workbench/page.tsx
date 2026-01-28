@@ -178,31 +178,38 @@ export default function FinanceWorkbenchPage() {
 
   // 使用 SWR 获取数据（优化：大幅增加去重间隔以减少数据库访问）
   const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
-    revalidateOnFocus: false, 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: accountsData } = useSWR("bank-accounts", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: cashFlowData } = useSWR("cash-flow", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: approvedExpenseRequestsData } = useSWR("approved-expense-requests", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: approvedIncomeRequestsData } = useSWR("approved-income-requests", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   
@@ -723,10 +730,15 @@ export default function FinanceWorkbenchPage() {
             </div>
             <InteractiveButton
               onClick={async () => {
+                // 强制重新验证所有数据，忽略缓存
                 await Promise.all([
-                  mutate("pending-entries"),
-                  mutate("monthly-bills"),
-                  mutate("pending-bills"),
+                  mutate("pending-entries", undefined, { revalidate: true }),
+                  mutate("monthly-bills", undefined, { revalidate: true }),
+                  mutate("pending-bills", undefined, { revalidate: true }),
+                  mutate("bank-accounts", undefined, { revalidate: true }),
+                  mutate("cash-flow", undefined, { revalidate: true }),
+                  mutate("approved-expense-requests", undefined, { revalidate: true }),
+                  mutate("approved-income-requests", undefined, { revalidate: true }),
                 ]);
                 refreshApprovalData();
                 toast.success("数据已刷新");

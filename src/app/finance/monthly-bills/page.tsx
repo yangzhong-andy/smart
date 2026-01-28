@@ -37,7 +37,8 @@ export default function MonthlyBillsPage() {
   };
   const { data: billsData } = useSWR("monthly-bills-all", fetcher, { 
     revalidateOnFocus: false,
-    dedupingInterval: 60000 // 1分钟内去重
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const bills: MonthlyBill[] = Array.isArray(billsData) ? billsData : [];
 

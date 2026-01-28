@@ -263,7 +263,6 @@ export default function BankAccountsPage() {
     {
       revalidateOnFocus: false, // 优化：关闭焦点刷新以减少数据库访问
       revalidateOnReconnect: false, // 优化：关闭重连自动刷新
-      refreshInterval: 0, // 优化：禁用自动刷新，改为手动刷新
       keepPreviousData: true,
       dedupingInterval: 600000, // 优化：增加到10分钟内去重
     }

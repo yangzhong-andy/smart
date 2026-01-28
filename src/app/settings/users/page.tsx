@@ -44,13 +44,25 @@ export default function UsersManagementPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // 获取用户列表
-  const { data: users = [], mutate: mutateUsers } = useSWR<User[]>('/api/users', fetcher);
+  const { data: users = [], mutate: mutateUsers } = useSWR<User[]>('/api/users', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 获取部门列表
-  const { data: departments = [] } = useSWR<Department[]>('/api/departments', fetcher);
+  const { data: departments = [] } = useSWR<Department[]>('/api/departments', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 获取员工列表（用于关联员工档案）
-  const { data: employees = [] } = useSWR<any[]>('/api/employees', fetcher);
+  const { data: employees = [] } = useSWR<any[]>('/api/employees', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   const [form, setForm] = useState({
     email: "",

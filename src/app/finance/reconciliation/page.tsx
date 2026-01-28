@@ -124,38 +124,47 @@ export default function ReconciliationPage() {
   // 使用 SWR 获取数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
   const { data: billsData } = useSWR("monthly-bills", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: agenciesData } = useSWR("agencies", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: rechargesData } = useSWR("recharges", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: consumptionsData } = useSWR("consumptions", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: deliveryOrdersData } = useSWR("delivery-orders", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: contractsData } = useSWR("contracts", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
   const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 300000 // 优化：增加到5分钟内去重
   });
   const { data: bankAccountsData } = useSWR("bank-accounts", fetcher, {
     revalidateOnFocus: false,
+    revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
 

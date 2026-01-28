@@ -82,7 +82,11 @@ export default function CommissionRulesPage() {
   }, [rules, initialized]);
 
   // 从 API 获取部门列表
-  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher);
+  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 将 API 返回的部门数据转换为页面需要的格式
   const departments = useMemo(() => {

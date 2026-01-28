@@ -75,9 +75,21 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function OutboundPage() {
   // 使用 SWR 获取数据
-  const { data: outboundOrdersData = [], mutate: mutateOutboundOrders } = useSWR<OutboundOrder[]>('/api/outbound-orders', fetcher);
-  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher);
-  const { data: productsData = [] } = useSWR<any[]>('/api/products', fetcher);
+  const { data: outboundOrdersData = [], mutate: mutateOutboundOrders } = useSWR<OutboundOrder[]>('/api/outbound-orders', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
+  const { data: productsData = [] } = useSWR<any[]>('/api/products', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 从出库单数据中提取批次
   const batches = useMemo(() => {

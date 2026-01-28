@@ -70,7 +70,11 @@ const locationReverseMap: Record<"国内仓" | "海外仓" | "工厂仓" | "其�
 
 export default function WarehousePage() {
   // 使用 SWR 获取仓库数据
-  const { data: warehousesData = [], mutate: mutateWarehouses } = useSWR<WarehouseInfo[]>('/api/warehouses', fetcher);
+  const { data: warehousesData = [], mutate: mutateWarehouses } = useSWR<WarehouseInfo[]>('/api/warehouses', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   // 转换数据格式（添加 type 和 status 显示字段）
   const warehouses = useMemo(() => {

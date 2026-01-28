@@ -42,7 +42,11 @@ const formatDate = (dateString: string): string => {
 
 export default function LogisticsChannelsPage() {
   // 使用 SWR 获取渠道数据
-  const { data: channels = [], mutate: mutateChannels } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher);
+  const { data: channels = [], mutate: mutateChannels } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000, // 10分钟内去重
+  });
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<LogisticsChannel | null>(null);

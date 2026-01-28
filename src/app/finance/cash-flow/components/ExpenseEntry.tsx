@@ -58,7 +58,12 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
   const fetcher = (url: string) => fetch(url).then(res => res.json());
   const { data: purchaseOrdersData } = useSWR(
     isPurchaseCategory ? '/api/purchase-orders' : null,
-    fetcher
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 600000, // 10分钟内去重
+    }
   );
   // 确保 purchaseOrders 始终是数组
   const purchaseOrders = Array.isArray(purchaseOrdersData) ? purchaseOrdersData : [];
