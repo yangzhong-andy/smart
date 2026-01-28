@@ -431,7 +431,13 @@ export default function CashFlowPage() {
       }
     }
     
-    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // 按创建时间倒序排列，最新创建的数据显示在第1条
+    return filtered.sort((a, b) => {
+      // 优先使用 createdAt，如果没有则使用 date
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.date).getTime();
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.date).getTime();
+      return bTime - aTime; // 倒序：最新的在前
+    });
   }, [cashFlowData, filterCurrency, filterCategory, filterSubCategory, filterStatus, filterDateFrom, filterDateTo, filterYear, filterMonth, quickFilter]);
 
   const thisMonth = new Date().getMonth();
