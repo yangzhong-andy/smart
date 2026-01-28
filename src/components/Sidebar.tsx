@@ -172,20 +172,28 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // 优化：完全移除自动轮询，改为完全手动刷新，减少数据库访问
+    // 只在页面切换时加载一次，后续通过手动刷新或事件触发更新
     (async () => {
       try {
         const count = await getPendingApprovalCount();
         setPendingApprovalCount(count);
-        // 定期更新角标（每5分钟，优化：从30秒改为5分钟以减少数据库访问量）
-        const interval = setInterval(async () => {
+        // 移除自动轮询，改为监听自定义事件来更新
+        // 当审批状态变化时，会触发 'approval-updated' 事件
+        const handleApprovalUpdate = async () => {
           try {
             const newCount = await getPendingApprovalCount();
             setPendingApprovalCount(newCount);
           } catch (e) {
             console.error("Failed to get pending approval count", e);
           }
-        }, 300000); // 5分钟 = 300000毫秒
-        return () => clearInterval(interval);
+        };
+        
+        window.addEventListener("approval-updated", handleApprovalUpdate);
+        
+        return () => {
+          window.removeEventListener("approval-updated", handleApprovalUpdate);
+        };
       } catch (e) {
         console.error("Failed to initialize pending approval count", e);
       }

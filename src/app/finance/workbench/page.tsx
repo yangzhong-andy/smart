@@ -411,27 +411,7 @@ export default function FinanceWorkbenchPage() {
   };
 
   useEffect(() => {
-    
-    // 设置定时刷新，每5分钟刷新一次审批数据（优化：从60秒改为5分钟以大幅减少数据库访问）
-    const interval = setInterval(() => {
-      // 只在页面可见时才刷新
-      if (document.visibilityState === "visible") {
-        refreshApprovalData();
-      }
-    }, 300000); // 5分钟 = 300000毫秒
-    
-    // 监听页面可见性变化（优化：移除自动刷新，改为手动刷新按钮）
-    // 注释掉自动刷新，减少数据库访问
-    // const handleVisibilityChange = () => {
-    //   if (!document.hidden) {
-    //     refreshApprovalData();
-    //     mutate("pending-entries");
-    //     mutate("monthly-bills");
-    //     mutate("pending-bills");
-    //   }
-    // };
-    
-    // document.addEventListener("visibilitychange", handleVisibilityChange); // 已禁用，减少数据库访问
+    // 优化：完全移除自动轮询，改为完全手动刷新，减少数据库访问
     
     // 监听 localStorage 变化（当审批状态更新时）
     const handleStorageChange = (e: StorageEvent) => {
@@ -450,8 +430,6 @@ export default function FinanceWorkbenchPage() {
     window.addEventListener("approval-updated", handleApprovalUpdate);
     
     return () => {
-      clearInterval(interval);
-      // document.removeEventListener("visibilitychange", handleVisibilityChange); // 已禁用
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("approval-updated", handleApprovalUpdate);
     };

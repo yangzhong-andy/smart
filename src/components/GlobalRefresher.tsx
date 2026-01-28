@@ -70,12 +70,13 @@ export default function GlobalRefresher() {
       console.log(`[GlobalRefresher] ✅ 已触发 ${apiEndpoints.length} 个数据源的后台更新`);
     };
 
-    // 设置定时器，每隔 1 小时刷新一次（减少流量消耗）
-    intervalRef.current = setInterval(() => {
-      refreshAllData();
-    }, 3600000); // 1 小时 = 3600000 毫秒
+    // 优化：完全禁用自动刷新，改为完全手动刷新，减少数据库访问
+    // 不再设置定时器，只在用户操作时手动触发刷新
+    // intervalRef.current = setInterval(() => {
+    //   refreshAllData();
+    // }, 3600000); // 已禁用自动刷新
 
-    console.log('[GlobalRefresher] ✅ 已启动，将每 1 小时在后台更新数据（不刷新页面）');
+    console.log('[GlobalRefresher] ✅ 已启动，自动刷新已禁用，改为完全手动刷新');
 
     // 清理定时器
     return () => {
