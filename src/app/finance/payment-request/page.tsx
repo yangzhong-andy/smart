@@ -87,7 +87,7 @@ export default function PaymentRequestPage() {
       setForm({
         expenseItem: editingRequest.expenseItem || "",
         amount: String(editingRequest.amount || ""),
-        currency: editingRequest.currency || "CNY",
+        currency: (editingRequest.currency === "RMB" ? "CNY" : editingRequest.currency) || "CNY",
         storeId: editingRequest.storeId || "",
         category: editingRequest.category || "",
         primaryCategory: primary,

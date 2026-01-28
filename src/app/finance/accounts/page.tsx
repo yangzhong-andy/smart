@@ -185,7 +185,7 @@ export default function BankAccountsPage() {
     accountType: "对公" as BankAccount["accountType"],
     accountCategory: "PRIMARY" as BankAccount["accountCategory"],
     accountPurpose: "",
-    currency: "RMB" as BankAccount["currency"],
+    currency: "CNY" as BankAccount["currency"],
     country: "CN",
     originalBalance: "",
     initialCapital: "",
@@ -600,7 +600,7 @@ export default function BankAccountsPage() {
       country: form.country || "CN",
       originalBalance,
       initialCapital: form.initialCapital ? Number(form.initialCapital) : originalBalance,
-      exchangeRate: form.currency === "RMB" ? 1 : exchangeRate,
+      exchangeRate: (form.currency === "CNY" || form.currency === "RMB") ? 1 : exchangeRate,
       rmbBalance,
       parentId: form.accountCategory === "VIRTUAL" ? form.parentId || undefined : undefined,
       storeId: form.accountCategory === "VIRTUAL" ? (form.storeId || undefined) : (form.storeId || undefined),
@@ -713,7 +713,7 @@ export default function BankAccountsPage() {
         country: form.country || "CN",
         originalBalance,
         initialCapital: form.initialCapital ? Number(form.initialCapital) : originalBalance,
-        exchangeRate: form.currency === "RMB" ? 1 : exchangeRate,
+        exchangeRate: (form.currency === "CNY" || form.currency === "RMB") ? 1 : exchangeRate,
         rmbBalance,
         parentId: form.accountCategory === "VIRTUAL" ? form.parentId || undefined : undefined,
         storeId: form.storeId || undefined,
@@ -779,7 +779,7 @@ export default function BankAccountsPage() {
       accountType: "对公" as BankAccount["accountType"],
       accountCategory: "PRIMARY" as BankAccount["accountCategory"],
       accountPurpose: "",
-      currency: "RMB" as BankAccount["currency"],
+      currency: "CNY" as BankAccount["currency"],
       country: "CN",
       originalBalance: "",
       initialCapital: "",
@@ -806,7 +806,7 @@ export default function BankAccountsPage() {
     if (!Number.isFinite(original) || !Number.isFinite(rate) || rate <= 0) {
       return 0;
     }
-    const exchangeRateValue = form.currency === "RMB" ? 1 : rate;
+    const exchangeRateValue = (form.currency === "CNY" || form.currency === "RMB") ? 1 : rate;
     return calculateRMBBalance(original, exchangeRateValue, form.currency as BankAccount["currency"]);
   }, [form.originalBalance, form.exchangeRate, form.currency, form.accountCategory]);
 
@@ -2080,16 +2080,16 @@ export default function BankAccountsPage() {
                 )}
                 <label className="space-y-1">
                   <span className="text-slate-300">
-                    汇率（对RMB）{form.currency === "RMB" && <span className="text-slate-500">(固定为1)</span>}
+                    汇率（对CNY）{(form.currency === "CNY" || form.currency === "RMB") && <span className="text-slate-500">(固定为1)</span>}
                   </span>
                   <input
                     type="number"
                     step="0.0001"
-                    value={form.currency === "RMB" ? "1" : form.exchangeRate}
+                    value={(form.currency === "CNY" || form.currency === "RMB") ? "1" : form.exchangeRate}
                     onChange={(e) => setForm((f) => ({ ...f, exchangeRate: e.target.value }))}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                     placeholder="如：7.2500"
-                    disabled={form.currency === "RMB"}
+                    disabled={form.currency === "CNY" || form.currency === "RMB"}
                     required={form.currency !== "RMB"}
                   />
                 </label>

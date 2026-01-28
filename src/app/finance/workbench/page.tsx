@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
-import Skeleton, { SkeletonDetail } from "@/components/ui/Skeleton";
+import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
 import Link from "next/link";
 import { getPendingEntries, type PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
