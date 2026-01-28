@@ -22,6 +22,7 @@ export function useExchangeRate() {
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+      revalidateOnMount: false, // 优化：组件挂载时不自动刷新，使用缓存数据
       dedupingInterval: 600000, // 优化：增加到10分钟内去重
     }
   );

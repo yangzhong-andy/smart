@@ -79,8 +79,8 @@ function RouteChangeRefresher() {
           endpoints.push('/api/stock', '/api/inventory-stocks', '/api/inventory-movements');
         }
         
-        // 通用数据源（所有页面都可能用到）
-        endpoints.push('/api/exchange-rates');
+        // 注意：汇率数据不访问数据库，且已在全局缓存，不需要在路由切换时更新
+        // endpoints.push('/api/exchange-rates'); // 已移除：汇率数据不访问数据库
         
         // 去重
         return Array.from(new Set(endpoints));
