@@ -1462,7 +1462,7 @@ export default function AdAgenciesPage() {
   };
 
   // 处理确认创建消耗记录
-  const handleConfirmCreateConsumption = () => {
+  const handleConfirmCreateConsumption = async () => {
     if (!confirmConsumptionModal) return;
     
     const { accountName, month, date, amount, estimatedRebate, currency, campaignName, voucher, notes, storeName } = confirmConsumptionModal;
@@ -1595,10 +1595,16 @@ export default function AdAgenciesPage() {
       return a;
     });
 
-    setConsumptions((prev) => [...prev, newConsumption]);
-    await saveAdConsumptions([...consumptions, newConsumption]);
-    setAdAccounts(updatedAccounts);
-    await saveAdAccounts(updatedAccounts);
+    try {
+      setConsumptions((prev) => [...prev, newConsumption]);
+      await saveAdConsumptions([...consumptions, newConsumption]);
+      setAdAccounts(updatedAccounts);
+      await saveAdAccounts(updatedAccounts);
+    } catch (e) {
+      console.error("保存消耗记录失败", e);
+      toast.error("保存失败，请重试");
+      return;
+    }
 
     // 自动在财务流水中生成"运营-广告-待结算"记录
     if (typeof window !== "undefined") {
@@ -1701,7 +1707,7 @@ export default function AdAgenciesPage() {
   };
 
   // 一键结算功能
-  const handleSettlement = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSettlement = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!settlementData) return;
     
@@ -1902,14 +1908,19 @@ export default function AdAgenciesPage() {
           // 不阻止结算流程，只记录错误
         }
         
-        setConsumptions(updatedConsumptions);
-        await saveAdConsumptions(updatedConsumptions);
-        setAdAccounts(updatedAccounts);
-        await saveAdAccounts(updatedAccounts);
-        
-        setIsSettlementModalOpen(false);
-        setSettlementData(null);
-        setConfirmDialog(null);
+        try {
+          setConsumptions(updatedConsumptions);
+          await saveAdConsumptions(updatedConsumptions);
+          setAdAccounts(updatedAccounts);
+          await saveAdAccounts(updatedAccounts);
+          
+          setIsSettlementModalOpen(false);
+          setSettlementData(null);
+          setConfirmDialog(null);
+        } catch (e) {
+          console.error("保存结算数据失败", e);
+          toast.error("结算失败，请重试");
+        }
         
         toast.success(
           `结算成功！结算金额：${currency(totalRebate, account.currency)}，涉及 ${toSettle.length} 条消耗记录`,
