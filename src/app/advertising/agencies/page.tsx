@@ -210,12 +210,12 @@ export default function AdAgenciesPage() {
     setBankAccounts(loadedBankAccounts);
     
     // 重新计算所有账户余额
-    recalculateAccountBalances(loadedAccounts, loadedConsumptions, loadedRecharges);
+    await recalculateAccountBalances(loadedAccounts, loadedConsumptions, loadedRecharges);
     })();
   }, []);
   
   // 重新计算账户余额：当前余额 = 累计实付充值 - 累计消耗（返点不计入余额）
-  const recalculateAccountBalances = (accounts: AdAccount[], consumptions: AdConsumption[], recharges: AdRecharge[]) => {
+  const recalculateAccountBalances = async (accounts: AdAccount[], consumptions: AdConsumption[], recharges: AdRecharge[]) => {
     // 从充值记录中统计每个账户的累计实付充值（不含返点）
     const rechargesByAccount: Record<string, number> = {};
     const rebatesByAccount: Record<string, number> = {}; // 累计应收返点
@@ -741,7 +741,7 @@ export default function AdAgenciesPage() {
     };
   }, [mounted, filteredAccounts, filteredConsumptions, filteredRecharges, stores, agencies]);
 
-  const handleCreateAgency = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateAgency = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // 防止重复提交
@@ -814,7 +814,7 @@ export default function AdAgenciesPage() {
     setIsAgencyModalOpen(true);
   };
 
-  const handleUpdateAgency = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdateAgency = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // 防止重复提交
@@ -857,7 +857,7 @@ export default function AdAgenciesPage() {
     setIsSubmitting(true);
     try {
       setAgencies(updatedAgencies);
-      saveAgencies(updatedAgencies);
+      await saveAgencies(updatedAgencies);
     
     // 更新关联的广告账户中的代理商名称
     const updatedAccounts = adAccounts.map((acc) =>
@@ -890,28 +890,32 @@ export default function AdAgenciesPage() {
       title: "删除代理商",
       message: "确定要删除这个代理商吗？关联的广告账户也会被删除！",
       type: "danger",
-      onConfirm: () => {
-        const updatedAgencies = agencies.filter((a) => a.id !== id);
-        setAgencies(updatedAgencies);
-        await saveAgencies(updatedAgencies);
-        
-        // 删除关联的广告账户
-        const updatedAccounts = adAccounts.filter((acc) => acc.agencyId !== id);
-        setAdAccounts(updatedAccounts);
-        await saveAdAccounts(updatedAccounts);
-        
-        // 删除关联的消耗记录
-        const accountIds = adAccounts.filter((acc) => acc.agencyId === id).map((acc) => acc.id);
-        const updatedConsumptions = consumptions.filter((c) => !accountIds.includes(c.adAccountId));
-        setConsumptions(updatedConsumptions);
-        await saveAdConsumptions(updatedConsumptions);
-        
-        setConfirmDialog(null);
+      onConfirm: async () => {
+        try {
+          const updatedAgencies = agencies.filter((a) => a.id !== id);
+          setAgencies(updatedAgencies);
+          await saveAgencies(updatedAgencies);
+          
+          // 删除关联的广告账户
+          const updatedAccounts = adAccounts.filter((acc) => acc.agencyId !== id);
+          setAdAccounts(updatedAccounts);
+          await saveAdAccounts(updatedAccounts);
+          
+          // 删除关联的消耗记录
+          const accountIds = adAccounts.filter((acc) => acc.agencyId === id).map((acc) => acc.id);
+          const updatedConsumptions = consumptions.filter((c) => !accountIds.includes(c.adAccountId));
+          setConsumptions(updatedConsumptions);
+          await saveAdConsumptions(updatedConsumptions);
+          setConfirmDialog(null);
+        } catch (e) {
+          console.error("删除代理商失败", e);
+          toast.error("操作失败，请重试");
+        }
       }
     });
   };
 
-  const handleCreateAccount = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!accountForm.agencyId) {
       toast.error("请选择代理商");
@@ -980,7 +984,7 @@ export default function AdAgenciesPage() {
     setIsAccountModalOpen(true);
   };
 
-  const handleUpdateAccount = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editAccount) return;
     if (!accountForm.accountName.trim()) {
@@ -1050,22 +1054,26 @@ export default function AdAgenciesPage() {
       title: "删除广告账户",
       message: "确定要删除这个广告账户吗？关联的消耗记录也会被删除！",
       type: "danger",
-      onConfirm: () => {
-        const updatedAccounts = adAccounts.filter((a) => a.id !== id);
-        setAdAccounts(updatedAccounts);
-        await saveAdAccounts(updatedAccounts);
-        
-        // 删除关联的消耗记录
-        const updatedConsumptions = consumptions.filter((c) => c.adAccountId !== id);
-        setConsumptions(updatedConsumptions);
-        await saveAdConsumptions(updatedConsumptions);
-        
-        setConfirmDialog(null);
+      onConfirm: async () => {
+        try {
+          const updatedAccounts = adAccounts.filter((a) => a.id !== id);
+          setAdAccounts(updatedAccounts);
+          await saveAdAccounts(updatedAccounts);
+          
+          // 删除关联的消耗记录
+          const updatedConsumptions = consumptions.filter((c) => c.adAccountId !== id);
+          setConsumptions(updatedConsumptions);
+          await saveAdConsumptions(updatedConsumptions);
+          setConfirmDialog(null);
+        } catch (e) {
+          console.error("删除广告账户失败", e);
+          toast.error("操作失败，请重试");
+        }
       }
     });
   };
 
-  const handleCreateRecharge = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateRecharge = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!rechargeAccount) {
       toast.error("广告账户不存在");
@@ -1359,7 +1367,7 @@ export default function AdAgenciesPage() {
     setIsRechargeModalOpen(false);
 
     // 重新计算余额
-    recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);
+    await recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);
   };
 
   const handleDeleteRecharge = (id: string) => {
@@ -1368,37 +1376,41 @@ export default function AdAgenciesPage() {
       title: "删除充值记录",
       message: "确定要删除这条充值记录吗？广告账户余额会相应扣减。",
       type: "warning",
-      onConfirm: () => {
-        const recharge = recharges.find((r) => r.id === id);
-        if (!recharge) {
+      onConfirm: async () => {
+        try {
+          const recharge = recharges.find((r) => r.id === id);
+          if (!recharge) {
+            setConfirmDialog(null);
+            return;
+          }
+
+          // 扣减广告账户余额（包括返点）
+          const totalDeduction = recharge.amount + (recharge.rebateAmount || 0);
+          const updatedAccounts = adAccounts.map((acc) =>
+            acc.id === recharge.adAccountId
+              ? { ...acc, currentBalance: Math.max(0, acc.currentBalance - totalDeduction) }
+              : acc
+          );
+          setAdAccounts(updatedAccounts);
+          await saveAdAccounts(updatedAccounts);
+
+          // 删除充值记录
+          const updatedRecharges = recharges.filter((r) => r.id !== id);
+          setRecharges(updatedRecharges);
+          await saveAdRecharges(updatedRecharges);
+
+          // 重新计算余额
+          await recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);
           setConfirmDialog(null);
-          return;
+        } catch (e) {
+          console.error("删除充值记录失败", e);
+          toast.error("操作失败，请重试");
         }
-
-        // 扣减广告账户余额（包括返点）
-        const totalDeduction = recharge.amount + (recharge.rebateAmount || 0);
-        const updatedAccounts = adAccounts.map((acc) =>
-          acc.id === recharge.adAccountId
-            ? { ...acc, currentBalance: Math.max(0, acc.currentBalance - totalDeduction) }
-            : acc
-        );
-        setAdAccounts(updatedAccounts);
-        await saveAdAccounts(updatedAccounts);
-
-        // 删除充值记录
-        const updatedRecharges = recharges.filter((r) => r.id !== id);
-        setRecharges(updatedRecharges);
-        await saveAdRecharges(updatedRecharges);
-
-        // 重新计算余额
-        recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);
-        
-        setConfirmDialog(null);
       }
     });
   };
 
-  const handleCreateConsumption = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateConsumption = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!consumptionForm.adAccountId) {
       alert("请选择广告账户");
@@ -1661,25 +1673,29 @@ export default function AdAgenciesPage() {
       title: "删除消耗记录",
       message: "确定要删除这条消耗记录吗？账户余额将恢复。",
       type: "warning",
-      onConfirm: () => {
-        // 恢复广告账户余额
-        const updatedAccounts = adAccounts.map((a) => {
-          if (a.id === consumption.adAccountId) {
-            return {
-              ...a,
-              currentBalance: a.currentBalance + consumption.amount
-            };
-          }
-          return a;
-        });
+      onConfirm: async () => {
+        try {
+          // 恢复广告账户余额
+          const updatedAccounts = adAccounts.map((a) => {
+            if (a.id === consumption.adAccountId) {
+              return {
+                ...a,
+                currentBalance: a.currentBalance + consumption.amount
+              };
+            }
+            return a;
+          });
 
-        const updatedConsumptions = consumptions.filter((c) => c.id !== id);
-        setConsumptions(updatedConsumptions);
-        await saveAdConsumptions(updatedConsumptions);
-        setAdAccounts(updatedAccounts);
-        await saveAdAccounts(updatedAccounts);
-        
-        setConfirmDialog(null);
+          const updatedConsumptions = consumptions.filter((c) => c.id !== id);
+          setConsumptions(updatedConsumptions);
+          await saveAdConsumptions(updatedConsumptions);
+          setAdAccounts(updatedAccounts);
+          await saveAdAccounts(updatedAccounts);
+          setConfirmDialog(null);
+        } catch (e) {
+          console.error("删除消耗记录失败", e);
+          toast.error("操作失败，请重试");
+        }
       }
     });
   };
