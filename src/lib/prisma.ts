@@ -1,24 +1,33 @@
 import { PrismaClient } from '@prisma/client'
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+/**
+ * 创建 PrismaClient 实例（工厂函数）
+ * 集中配置日志等选项
+ */
+function createPrismaClient(): PrismaClient {
+  return new PrismaClient({
+    log:
+      process.env.NODE_ENV === 'development'
+        ? ['query', 'error', 'warn']
+        : process.env.ENABLE_QUERY_LOG === 'true'
+          ? ['query', 'error']
+          : ['error'],
+  })
 }
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    // 🔍 排查模式：开启 query 日志以监控数据库访问量
-    // 注意：这会输出所有 SQL 查询，生产环境请关闭
-    log: process.env.NODE_ENV === 'development' 
-      ? ['query', 'error', 'warn'] 
-      : process.env.ENABLE_QUERY_LOG === 'true'
-      ? ['query', 'error']
-      : ['error'],
-  })
+/**
+ * 单例模式：将 prisma 挂载到 globalThis，防止开发环境 HMR 时重复创建连接
+ * 参考：https://www.prisma.io/docs/orm/more/help-and-troubleshooting/help-articles/nextjs-prisma-client-dev-practices
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined
+}
 
-// 确保开发环境下使用全局单例（防止热更新产生多个实例）
+export const prisma = globalThis.prisma ?? createPrismaClient()
+
 if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
+  globalThis.prisma = prisma
 }
 
 // 数据库连接重试辅助函数

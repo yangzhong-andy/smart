@@ -66,10 +66,11 @@ export default function SWRProvider({ children }: { children: ReactNode }) {
         fetcher,
         provider,
         revalidateOnFocus: false,
-        revalidateIfStale: true, // 修复：页面首次加载时重新验证过期数据，确保刷新后能获取新数据
-        revalidateOnMount: true, // 修复：组件挂载时重新验证，确保刷新页面后获取最新数据
-        dedupingInterval: 60000, // 优化：增加到60秒，进一步减少重复请求
-        shouldRetryOnError: false,
+        revalidateIfStale: false, // 已禁用：减少自动刷新，数据由用户操作或手动刷新触发
+        revalidateOnMount: false, // 已禁用：挂载时优先使用缓存，无缓存时才请求，减少数据库访问
+        dedupingInterval: 300000, // 5分钟内相同 key 不重复请求
+        shouldRetryOnError: false, // 接口报错（如 500）时不自动重试，避免死循环
+        errorRetryCount: 0, // 最大重试次数为 0
         keepPreviousData: true, // 保持旧数据，避免闪烁
       }}
     >

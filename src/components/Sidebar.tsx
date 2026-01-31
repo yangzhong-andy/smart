@@ -172,33 +172,33 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // 优化：完全移除自动轮询，改为完全手动刷新，减少数据库访问
-    // 只在页面切换时加载一次，后续通过手动刷新或事件触发更新
+    // 已禁用路由切换时的重复请求：仅首次挂载时拉取一次，后续通过 approval-updated 事件更新
+    let cancelled = false;
     (async () => {
       try {
         const count = await getPendingApprovalCount();
-        setPendingApprovalCount(count);
-        // 移除自动轮询，改为监听自定义事件来更新
-        // 当审批状态变化时，会触发 'approval-updated' 事件
-        const handleApprovalUpdate = async () => {
-          try {
-            const newCount = await getPendingApprovalCount();
-            setPendingApprovalCount(newCount);
-          } catch (e) {
-            console.error("Failed to get pending approval count", e);
-          }
-        };
-        
-        window.addEventListener("approval-updated", handleApprovalUpdate);
-        
-        return () => {
-          window.removeEventListener("approval-updated", handleApprovalUpdate);
-        };
+        if (!cancelled) setPendingApprovalCount(count);
       } catch (e) {
-        console.error("Failed to initialize pending approval count", e);
+        console.error("Failed to get pending approval count", e);
       }
     })();
-  }, [pathname]);
+    
+    const handleApprovalUpdate = async () => {
+      try {
+        const newCount = await getPendingApprovalCount();
+        if (!cancelled) setPendingApprovalCount(newCount);
+      } catch (e) {
+        console.error("Failed to get pending approval count", e);
+      }
+    };
+    
+    window.addEventListener("approval-updated", handleApprovalUpdate);
+    
+    return () => {
+      cancelled = true;
+      window.removeEventListener("approval-updated", handleApprovalUpdate);
+    };
+  }, []); // 空依赖：仅挂载时请求一次，不再随 pathname 发起请求
 
   const toggleExpand = (label: string) => {
     if (isCollapsed) return; // 收起状态下不处理点击展开

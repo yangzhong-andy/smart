@@ -25,94 +25,72 @@ const Sidebar = dynamic(() => import("@/components/Sidebar"), {
   ),
 });
 
+/**
+ * 路由切换刷新器
+ * 已禁用：不再在路由切换时主动请求数据库，数据由各页面的 useSWR 按需加载
+ * 如需恢复，将 ENABLE_ROUTE_REFRESH 设为 true
+ */
 function RouteChangeRefresher() {
+  const ENABLE_ROUTE_REFRESH = false; // 设为 true 可恢复路由切换时预加载数据
   const pathname = usePathname();
   const { mutate } = useSWRConfig();
   const prevPathnameRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!ENABLE_ROUTE_REFRESH) {
+      prevPathnameRef.current = pathname;
+      return;
+    }
     // 如果路径发生变化（且不是首次加载），从数据库更新所有相关数据
     if (prevPathnameRef.current !== null && prevPathnameRef.current !== pathname) {
       console.log(`[RouteChangeRefresher] 路由变化：${prevPathnameRef.current} -> ${pathname}，从数据库更新数据...`);
       
-      // 根据当前路由确定需要更新的数据源
       const getEndpointsForRoute = (route: string): string[] => {
         const endpoints: string[] = [];
-        
-        // 财务相关路由
         if (route.startsWith('/finance')) {
           endpoints.push('/api/accounts', '/api/cash-flow', '/api/payment-requests', '/api/finance-rates');
         }
-        
-        // 采购相关路由
         if (route.startsWith('/procurement')) {
           endpoints.push('/api/suppliers', '/api/purchase-orders', '/api/purchase-contracts', '/api/delivery-orders');
         }
-        
-        // 物流相关路由
         if (route.startsWith('/logistics')) {
           endpoints.push('/api/warehouses', '/api/logistics-channels', '/api/logistics-tracking', '/api/outbound-orders', '/api/pending-inbound');
         }
-        
-        // 产品相关路由
         if (route.startsWith('/product-center') || route.startsWith('/products')) {
           endpoints.push('/api/products');
         }
-        
-        // 设置相关路由
         if (route.startsWith('/settings')) {
           endpoints.push('/api/stores', '/api/users', '/api/departments', '/api/employees');
         }
-        
-        // 人力资源相关路由
         if (route.startsWith('/hr')) {
           endpoints.push('/api/employees', '/api/commission-rules', '/api/commission-records');
         }
-        
-        // 广告相关路由
         if (route.startsWith('/advertising')) {
           endpoints.push('/api/influencers');
         }
-        
-        // 库存相关路由
         if (route.startsWith('/inventory')) {
           endpoints.push('/api/stock', '/api/inventory-stocks', '/api/inventory-movements');
         }
-        
-        // 注意：汇率数据不访问数据库，且已在全局缓存，不需要在路由切换时更新
-        // endpoints.push('/api/exchange-rates'); // 已移除：汇率数据不访问数据库
-        
-        // 去重
         return Array.from(new Set(endpoints));
       };
       
       const endpointsToUpdate = getEndpointsForRoute(pathname);
       
-      // 从数据库重新获取数据，确保失败时保留旧数据
       Promise.all(
         endpointsToUpdate.map(async (endpoint) => {
           try {
-            // 使用 mutate 的 revalidate 选项，这样失败时会保留旧数据
             await mutate(
               endpoint,
               async () => {
-                // 重新从数据库获取数据
                 const res = await fetch(endpoint);
-                if (!res.ok) {
-                  throw new Error(`Failed to fetch ${endpoint}: ${res.status}`);
-                }
+                if (!res.ok) throw new Error(`Failed to fetch ${endpoint}: ${res.status}`);
                 return res.json();
               },
-              {
-                revalidate: true, // 强制重新验证
-                populateCache: true, // 更新缓存
-                rollbackOnError: true, // 关键：如果出错，回滚到旧数据，避免数据消失
-              }
+              { revalidate: true, populateCache: true, rollbackOnError: true }
             );
             return { endpoint, success: true };
           } catch (error) {
-            // 错误时保留旧数据，不更新缓存
-            console.warn(`[RouteChangeRefresher] 更新 ${endpoint} 时出错，保留旧数据:`, error);
+            console.warn(`[RouteChangeRefresher] 更新 ${endpoint} 时出错:`, error);
             return { endpoint, success: false, error };
           }
         })
@@ -122,7 +100,6 @@ function RouteChangeRefresher() {
       });
     }
     
-    // 更新上一个路径
     prevPathnameRef.current = pathname;
   }, [pathname, mutate]);
 

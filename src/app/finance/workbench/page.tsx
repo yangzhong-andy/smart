@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
+import MaintenanceView from "@/components/MaintenanceView";
 import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
 import Link from "next/link";
 import { getPendingEntries, type PendingEntry } from "@/lib/pending-entry-store";
@@ -147,7 +148,7 @@ export default function FinanceWorkbenchPage() {
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [isSavingFlow, setIsSavingFlow] = useState(false);
 
-  // SWR fetcher 函数
+  // SWR fetcher 函数：API 报错时抛出异常，由 SWR 捕获并触发 error 状态（不重试，显示系统维护中）
   const fetcher = useCallback(async (key: string) => {
     if (typeof window === "undefined") return null;
     switch (key) {
@@ -155,16 +156,20 @@ export default function FinanceWorkbenchPage() {
         return getPendingEntries();
       case "monthly-bills":
         return await getMonthlyBills();
-      case "bank-accounts":
-        // 使用 API 端点，与财务中心保持一致
-        const response = await fetch('/api/accounts');
-        if (!response.ok) return [];
+      case "bank-accounts": {
+        const response = await fetch("/api/accounts");
+        if (!response.ok) {
+          throw new Error(`API 错误: ${response.status}`);
+        }
         return await response.json();
-      case "cash-flow":
-        // 加载现金流数据用于重新计算余额
-        const cashFlowResponse = await fetch('/api/cash-flow');
-        if (!cashFlowResponse.ok) return [];
+      }
+      case "cash-flow": {
+        const cashFlowResponse = await fetch("/api/cash-flow");
+        if (!cashFlowResponse.ok) {
+          throw new Error(`API 错误: ${cashFlowResponse.status}`);
+        }
         return await cashFlowResponse.json();
+      }
       case "pending-bills":
         return await getBillsByStatus("Pending_Approval");
       case "approved-expense-requests":
@@ -172,60 +177,77 @@ export default function FinanceWorkbenchPage() {
       case "approved-income-requests":
         return await getIncomeRequestsByStatus("Approved");
       default:
+        // 处理 URL 形式的 key（如 /api/finance/rates）
+        if (typeof key === "string" && key.startsWith("/api/")) {
+          const res = await fetch(key);
+          if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+          return res.json();
+        }
         return null;
     }
   }, []);
 
+  const swrOptions = {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: false as const,
+    errorRetryCount: 0,
+  };
+
   // 使用 SWR 获取数据（优化：大幅增加去重间隔以减少数据库访问）
-  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 优化：增加到5分钟内去重
+  const { data: pendingEntriesData, error: pendingEntriesError } = useSWR("pending-entries", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 300000,
   });
-  const { data: monthlyBillsData } = useSWR("monthly-bills", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 优化：增加到10分钟内去重
+  const { data: monthlyBillsData, error: monthlyBillsError } = useSWR("monthly-bills", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 600000,
   });
-  const { data: accountsData } = useSWR("bank-accounts", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 优化：增加到10分钟内去重
+  const { data: accountsData, error: accountsError } = useSWR("bank-accounts", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 600000,
   });
-  const { data: cashFlowData } = useSWR("cash-flow", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 优化：增加到5分钟内去重
+  const { data: cashFlowData, error: cashFlowError } = useSWR("cash-flow", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 300000,
   });
-  const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 优化：增加到10分钟内去重
+  const { data: pendingBillsData, error: pendingBillsError } = useSWR("pending-bills", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 600000,
   });
-  const { data: approvedExpenseRequestsData } = useSWR("approved-expense-requests", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 优化：增加到5分钟内去重
-  });
-  const { data: approvedIncomeRequestsData } = useSWR("approved-income-requests", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 优化：增加到5分钟内去重
-  });
-  
-  
+  const { data: approvedExpenseRequestsData, error: approvedExpenseError } = useSWR(
+    "approved-expense-requests",
+    fetcher,
+    { ...swrOptions, dedupingInterval: 300000 }
+  );
+  const { data: approvedIncomeRequestsData, error: approvedIncomeError } = useSWR(
+    "approved-income-requests",
+    fetcher,
+    { ...swrOptions, dedupingInterval: 300000 }
+  );
+
   // 使用 SWR 获取实时汇率（与账户中心保持一致）
-  const { data: financeRatesData } = useSWR<{ 
-    success: boolean; 
-    data?: FinanceRates; 
+  const { data: financeRatesData, error: financeRatesError } = useSWR<{
+    success: boolean;
+    data?: FinanceRates;
     error?: string;
     errorCode?: string;
-  }>('/api/finance/rates', fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新，减少数据库访问
+  }>("/api/finance/rates", fetcher, {
+    ...swrOptions,
     keepPreviousData: true,
-    dedupingInterval: 300000 // 5分钟内去重
+    dedupingInterval: 300000,
   });
+
+  // 任一 API 报错时显示「系统维护中」，避免死循环重试
+  const hasApiError =
+    pendingEntriesError ||
+    monthlyBillsError ||
+    accountsError ||
+    cashFlowError ||
+    pendingBillsError ||
+    approvedExpenseError ||
+    approvedIncomeError ||
+    financeRatesError;
   
   // 提取汇率数据
   const exchangeRates = useMemo(() => {
@@ -694,6 +716,28 @@ export default function FinanceWorkbenchPage() {
       toast.error(error.message || "处理失败，请重试");
     }
   };
+
+  const handleRetryFromMaintenance = useCallback(() => {
+    mutate("pending-entries");
+    mutate("monthly-bills");
+    mutate("bank-accounts");
+    mutate("cash-flow");
+    mutate("pending-bills");
+    mutate("approved-expense-requests");
+    mutate("approved-income-requests");
+    mutate("/api/finance/rates");
+  }, [mutate]);
+
+  if (hasApiError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 flex items-center justify-center p-6">
+        <MaintenanceView
+          description="数据加载失败，可能是系统维护或网络异常，请稍后再试"
+          onRetry={handleRetryFromMaintenance}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
