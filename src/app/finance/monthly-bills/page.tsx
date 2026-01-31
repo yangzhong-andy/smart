@@ -248,7 +248,10 @@ export default function MonthlyBillsPage() {
         const agencies = agenciesRes.ok ? await agenciesRes.json() : [];
         const consumptions = consumptionsRes.ok ? await consumptionsRes.json() : [];
 
-        agencies.forEach((agency) => {
+        type AgencyData = { id: string; name: string };
+        type ConsumptionData = { id: string; agencyId: string; month: string; amount: number; estimatedRebate: number; currency: string };
+        
+        (agencies as AgencyData[]).forEach((agency: AgencyData) => {
           // 检查是否已存在该代理商该月的账单
           const existing = existingBills.find(
             (b) => b.agencyId === agency.id && b.month === targetMonth && b.billType === "广告"
@@ -256,15 +259,15 @@ export default function MonthlyBillsPage() {
           if (existing) return;
 
           // 筛选该代理商该月的消耗记录
-          const monthConsumptions = consumptions.filter(
-            (c) => c.agencyId === agency.id && c.month === targetMonth
+          const monthConsumptions = (consumptions as ConsumptionData[]).filter(
+            (c: ConsumptionData) => c.agencyId === agency.id && c.month === targetMonth
           );
 
           if (monthConsumptions.length === 0) return;
 
           // 汇总消耗和返点
-          const totalConsumption = monthConsumptions.reduce((sum, c) => sum + (c.amount || 0), 0);
-          const totalRebate = monthConsumptions.reduce((sum, c) => sum + (c.estimatedRebate || 0), 0);
+          const totalConsumption = monthConsumptions.reduce((sum: number, c: ConsumptionData) => sum + (c.amount || 0), 0);
+          const totalRebate = monthConsumptions.reduce((sum: number, c: ConsumptionData) => sum + (c.estimatedRebate || 0), 0);
           const netAmount = totalConsumption - totalRebate;
           const currency = monthConsumptions[0]?.currency || "USD";
 
@@ -282,7 +285,7 @@ export default function MonthlyBillsPage() {
             currency: currency as "USD" | "CNY" | "HKD",
             rebateAmount: totalRebate,
             netAmount: netAmount,
-            consumptionIds: monthConsumptions.map((c) => c.id),
+            consumptionIds: monthConsumptions.map((c: ConsumptionData) => c.id),
             status: "Draft",
             createdBy: "系统自动生成",
             createdAt: new Date().toISOString(),

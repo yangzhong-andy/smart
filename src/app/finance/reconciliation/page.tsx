@@ -2846,7 +2846,7 @@ export default function ReconciliationPage() {
             </div>
 
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
                 const amount = Number(adjustmentForm.amount);
                 if (Number.isNaN(amount) || amount === 0) {
@@ -2889,12 +2889,17 @@ export default function ReconciliationPage() {
                   return r;
                 });
 
-                saveRebateReceivables(updatedReceivables);
-                mutate("rebate-receivables");
-                setSelectedRebateReceivable(updatedReceivables.find((r) => r.id === selectedRebateReceivable.id) || null);
-                setIsAdjustmentModalOpen(false);
-                setAdjustmentForm({ amount: "", reason: "" });
-                toast.success("已手动平账");
+                try {
+                  await saveRebateReceivables(updatedReceivables);
+                  mutate("rebate-receivables");
+                  setSelectedRebateReceivable(updatedReceivables.find((r) => r.id === selectedRebateReceivable.id) || null);
+                  setIsAdjustmentModalOpen(false);
+                  setAdjustmentForm({ amount: "", reason: "" });
+                  toast.success("已手动平账");
+                } catch (err) {
+                  console.error("保存平账失败", err);
+                  toast.error("操作失败，请重试");
+                }
               }}
               className="space-y-4"
             >

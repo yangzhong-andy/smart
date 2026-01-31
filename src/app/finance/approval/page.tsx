@@ -265,9 +265,9 @@ export default function ApprovalCenterPage() {
                 if (rebateAmount > 0) {
                   // 获取关联的充值记录（API）
                   const rechargesRes = await fetch("/api/ad-recharges");
-                  const recharges = rechargesRes.ok ? await rechargesRes.json() : [];
+                  const recharges: Array<{ id: string; date: string }> = rechargesRes.ok ? await rechargesRes.json() : [];
                   const relatedRecharges = bill.rechargeIds 
-                    ? recharges.filter((r) => bill.rechargeIds?.includes(r.id))
+                    ? recharges.filter((r: { id: string }) => bill.rechargeIds?.includes(r.id))
                     : [];
                   
                   // 如果没有关联充值记录，使用账单的月份作为充值日期
@@ -282,9 +282,9 @@ export default function ApprovalCenterPage() {
                   
                   // 检查是否已存在该账单的返点应收款（API）
                   const receivablesRes = await fetch("/api/rebate-receivables");
-                  const existingReceivables = receivablesRes.ok ? await receivablesRes.json() : [];
+                  const existingReceivables: Array<{ id: string; rechargeId: string }> = receivablesRes.ok ? await receivablesRes.json() : [];
                   const existingReceivable = existingReceivables.find(
-                    (r) => r.rechargeId === rechargeId || r.rechargeId === billId
+                    (r: { rechargeId: string }) => r.rechargeId === rechargeId || r.rechargeId === billId
                   );
                   
                   if (!existingReceivable) {

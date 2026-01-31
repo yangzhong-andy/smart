@@ -26,7 +26,9 @@ import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill } from "@/lib/reconciliation-store";
 import { 
   type RebateReceivable,
-  getRebateReceivableByRechargeId 
+  getRebateReceivables,
+  getRebateReceivableByRechargeId,
+  saveRebateReceivables
 } from "@/lib/rebate-receivable-store";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
 
@@ -1516,7 +1518,7 @@ export default function AdAgenciesPage() {
     // 逻辑：消耗总额 = 实付本金 + 返点抵扣，返点抵扣金额 = 消耗总额 * (返点率 / (100 + 返点率))
     // 例如：如果返点率是10%，那么10000消耗中，约有909是返点抵扣，9091是实付本金
     try {
-      const existingReceivables = getRebateReceivables();
+      const existingReceivables = await getRebateReceivables();
       // 获取该账户所有未结清的返点应收款记录（按创建时间排序，先消耗先核销）
       const unsettledReceivables = existingReceivables
         .filter((r) => 
@@ -1577,7 +1579,7 @@ export default function AdAgenciesPage() {
         }
       }
       
-      saveRebateReceivables(updatedReceivables);
+      await saveRebateReceivables(updatedReceivables);
     } catch (e) {
       console.error("Failed to writeoff rebate receivable", e);
       // 不阻止消耗流程，只记录错误

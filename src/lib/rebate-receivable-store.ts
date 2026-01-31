@@ -92,3 +92,65 @@ export async function getTotalUnsettledRebatesAsync(): Promise<{ USD: number; CN
     });
   return totals;
 }
+
+/**
+ * 保存返点应收款列表（全量同步）
+ * 对比现有数据，执行新增/更新/删除
+ */
+export async function saveRebateReceivables(receivables: RebateReceivable[]): Promise<void> {
+  if (typeof window === "undefined") return;
+  
+  try {
+    // 获取现有数据
+    const existing = await getRebateReceivables();
+    const existingIds = new Set(existing.map((r) => r.id));
+    const newIds = new Set(receivables.map((r) => r.id));
+    
+    // 删除不在新列表中的记录
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/rebate-receivables/${e.id}`, { method: "DELETE" });
+      }
+    }
+    
+    // 新增或更新
+    for (const r of receivables) {
+      const body = {
+        ...r,
+        writeoffRecords: r.writeoffRecords || [],
+        adjustments: r.adjustments || []
+      };
+      
+      if (existingIds.has(r.id)) {
+        // 更新
+        await fetch(`/api/rebate-receivables/${r.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else {
+        // 新增
+        await fetch("/api/rebate-receivables", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to save rebate receivables", e);
+    throw e;
+  }
+}
+
+/**
+ * 更新单条返点应收款
+ */
+export async function updateRebateReceivable(id: string, data: Partial<RebateReceivable>): Promise<void> {
+  const res = await fetch(`/api/rebate-receivables/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`更新返点应收款失败: ${res.status}`);
+}
