@@ -19,7 +19,7 @@ export type Store = {
 const STORES_KEY = "stores";
 
 /**
- * 获取所有店铺
+ * 获取所有店铺（同步，从 localStorage）
  */
 export function getStores(): Store[] {
   if (typeof window === "undefined") return [];
@@ -33,30 +33,61 @@ export function getStores(): Store[] {
   }
 }
 
+/** 从 API 获取店铺 */
+export async function getStoresFromAPI(): Promise<Store[]> {
+  const res = await fetch("/api/stores");
+  if (!res.ok) throw new Error("Failed to fetch stores");
+  return res.json();
+}
+
 /**
- * 保存店铺列表
+ * 保存店铺列表（同步到 API）
  */
-export function saveStores(stores: Store[]): void {
+export async function saveStores(stores: Store[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORES_KEY, JSON.stringify(stores));
+    const existing: Store[] = await fetch("/api/stores").then((r) => (r.ok ? r.json() : []));
+    const existingIds = new Set(existing.map((s) => s.id));
+    const newIds = new Set(stores.map((s) => s.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/stores/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const s of stores) {
+      if (existingIds.has(s.id)) {
+        await fetch(`/api/stores/${s.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(s),
+        });
+      } else {
+        await fetch("/api/stores", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(s),
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save stores", e);
+    throw e;
   }
 }
 
 /**
- * 根据ID获取店铺
+ * 根据ID获取店铺（需传入 stores 或从 API 获取）
  */
-export function getStoreById(storeId: string): Store | null {
-  const stores = getStores();
-  return stores.find((s) => s.id === storeId) || null;
+export function getStoreById(storeId: string, stores?: Store[]): Store | null {
+  if (stores) return stores.find((s) => s.id === storeId) || null;
+  const list = getStores();
+  return list.find((s) => s.id === storeId) || null;
 }
 
 /**
  * 根据账户ID获取店铺
  */
-export function getStoresByAccountId(accountId: string): Store[] {
-  const stores = getStores();
-  return stores.filter((s) => s.accountId === accountId);
+export function getStoresByAccountId(accountId: string, stores?: Store[]): Store[] {
+  const list = stores ?? getStores();
+  return list.filter((s) => s.accountId === accountId);
 }

@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { getAccounts, type BankAccount } from "@/lib/finance-store";
+import type { BankAccount } from "@/lib/finance-store";
 import { getOrderTracking, getBatchReceipts, getDocuments, type OrderTracking, type BatchReceipt, type Document } from "@/lib/supply-chain-store";
-import { getStores, type Store } from "@/lib/store-store";
+import type { Store } from "@/lib/store-store";
 
 type CashFlow = {
   id: string;
@@ -64,10 +64,13 @@ export default function FactoriesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedAccounts = getAccounts();
-    setAccounts(loadedAccounts);
-    const loadedStores = getStores();
-    setStores(loadedStores);
+    (async () => {
+    const [accRes, storesRes] = await Promise.all([
+      fetch("/api/accounts"),
+      fetch("/api/stores"),
+    ]);
+    setAccounts(accRes.ok ? await accRes.json() : []);
+    setStores(storesRes.ok ? await storesRes.json() : []);
     const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
     if (storedFlow) {
       try {
@@ -87,6 +90,7 @@ export default function FactoriesPage() {
     setOrderTracking(getOrderTracking());
     setBatchReceipts(getBatchReceipts());
     setDocuments(getDocuments());
+    })();
   }, []);
 
   // 获取所有供应商列表

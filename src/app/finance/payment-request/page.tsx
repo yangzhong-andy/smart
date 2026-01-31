@@ -21,7 +21,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import useSWR, { mutate } from "swr";
 import { getPaymentRequests, createPaymentRequest, updatePaymentRequest, getPaymentRequestsByStatus, type PaymentRequest } from "@/lib/payment-request-store";
 import { type BillStatus } from "@/lib/reconciliation-store";
-import { getStores, type Store } from "@/lib/store-store";
+import type { Store } from "@/lib/store-store";
 import { type BankAccount } from "@/lib/finance-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import { COUNTRIES } from "@/lib/country-config";
@@ -49,10 +49,7 @@ export default function PaymentRequestPage() {
     dedupingInterval: 60000 // 优化：增加到60秒内去重
   });
   
-  const { data: storesData = [] } = useSWR<Store[]>('stores', async () => {
-    if (typeof window === "undefined") return [];
-    return getStores();
-  });
+  const { data: storesData = [] } = useSWR<Store[]>('/api/stores', fetcher);
   
   const { data: accountsData = [] } = useSWR<BankAccount[]>('/api/accounts', fetcher);
 

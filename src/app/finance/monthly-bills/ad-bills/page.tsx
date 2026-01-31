@@ -6,10 +6,7 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Megaphone, Plus, X, Save, ArrowLeft, FileText, Zap, CheckCircle } from "lucide-react";
 import { PageHeader, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
-import { 
-  getAgencies, 
-  getAdConsumptions, 
-  getAdRecharges,
+import {
   type Agency, 
   type AdConsumption,
   type AdRecharge 
@@ -82,10 +79,16 @@ export default function AdBillsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    
-    setAgencies(getAgencies());
-    setConsumptions(getAdConsumptions());
-    setRecharges(getAdRecharges());
+    (async () => {
+      const [a, c, r] = await Promise.all([
+        fetch("/api/ad-agencies").then((res) => (res.ok ? res.json() : [])),
+        fetch("/api/ad-consumptions").then((res) => (res.ok ? res.json() : [])),
+        fetch("/api/ad-recharges").then((res) => (res.ok ? res.json() : [])),
+      ]);
+      setAgencies(a);
+      setConsumptions(c);
+      setRecharges(r);
+    })();
   }, []);
 
   // 自动汇总账单明细

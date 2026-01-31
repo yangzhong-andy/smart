@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { type Store, getStores } from "@/lib/store-store";
-import { type BankAccount, getAccounts } from "@/lib/finance-store";
+import type { Store } from "@/lib/store-store";
+import type { BankAccount } from "@/lib/finance-store";
 import type { CashFlow } from "../cash-flow/page";
 
 const CASH_FLOW_KEY = "cashFlow";
@@ -24,10 +24,13 @@ export default function StoreReportPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedStores = getStores();
-    setStores(loadedStores);
-    const loadedAccounts = getAccounts();
-    setAccounts(loadedAccounts);
+    (async () => {
+    const [storesRes, accRes] = await Promise.all([
+      fetch("/api/stores"),
+      fetch("/api/accounts"),
+    ]);
+    setStores(storesRes.ok ? await storesRes.json() : []);
+    setAccounts(accRes.ok ? await accRes.json() : []);
     const stored = window.localStorage.getItem(CASH_FLOW_KEY);
     if (stored) {
       try {
@@ -37,6 +40,7 @@ export default function StoreReportPage() {
         console.error("Failed to parse cash flow", e);
       }
     }
+    })();
   }, []);
 
   // 根据时间筛选条件过滤流水记录

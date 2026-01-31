@@ -44,7 +44,7 @@ export function calculateRMBBalance(
 }
 
 /**
- * 获取所有账户
+ * 获取所有账户（同步，从 localStorage，兼容旧代码）
  */
 export function getAccounts(): BankAccount[] {
   if (typeof window === "undefined") return [];
@@ -58,15 +58,49 @@ export function getAccounts(): BankAccount[] {
   }
 }
 
+/** 从 API 获取账户 */
+export async function getAccountsFromAPI(): Promise<BankAccount[]> {
+  const res = await fetch("/api/accounts");
+  if (!res.ok) throw new Error("Failed to fetch accounts");
+  return res.json();
+}
+
 /**
- * 保存账户列表
+ * 保存账户列表（同步到 API）
  */
-export function saveAccounts(accounts: BankAccount[]): void {
+export async function saveAccounts(accounts: BankAccount[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+    const existing: BankAccount[] = await fetch("/api/accounts").then((r) => (r.ok ? r.json() : []));
+    const existingIds = new Set(existing.map((a) => a.id));
+    const newIds = new Set(accounts.map((a) => a.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/accounts/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const a of accounts) {
+      const body = {
+        ...a,
+        currency: a.currency === "RMB" ? "CNY" : a.currency,
+      };
+      if (existingIds.has(a.id)) {
+        await fetch(`/api/accounts/${a.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } else {
+        await fetch("/api/accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save bank accounts", e);
+    throw e;
   }
 }
 
@@ -245,34 +279,50 @@ export function getAccountTree(accounts: BankAccount[]): Array<BankAccount & { c
 }
 
 /**
- * 更新账户余额（用于支付等操作）
+ * 更新账户余额（用于支付等操作，同步到 API）
  */
-export function updateAccountBalance(
+export async function updateAccountBalance(
   accountId: string,
   amount: number,
   type: "add" | "subtract"
-): boolean {
-  const accounts = getAccounts();
-  const accountIndex = accounts.findIndex((acc) => acc.id === accountId);
-  if (accountIndex === -1) return false;
-
-  const account = accounts[accountIndex];
-  const newOriginalBalance =
-    type === "add" ? account.originalBalance + amount : account.originalBalance - amount;
-
-  // 允许余额为负数
-  accounts[accountIndex] = {
-    ...account,
-    originalBalance: newOriginalBalance,
-    rmbBalance: calculateRMBBalance(newOriginalBalance, account.exchangeRate, account.currency)
-  };
-
-  saveAccounts(accounts);
-  return true;
+): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/accounts/${accountId}`);
+    if (!res.ok) return false;
+    const account = await res.json();
+    const newOriginalBalance =
+      type === "add" ? account.originalBalance + amount : account.originalBalance - amount;
+    const putRes = await fetch(`/api/accounts/${accountId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...account,
+        originalBalance: newOriginalBalance,
+        rmbBalance: calculateRMBBalance(newOriginalBalance, account.exchangeRate, account.currency),
+      }),
+    });
+    return putRes.ok;
+  } catch (e) {
+    console.error("Failed to update account balance", e);
+    return false;
+  }
 }
 
 /**
- * 获取账户信息（兼容新旧数据结构）
+ * 获取账户信息（从 API）
+ */
+export async function getAccountInfoFromAPI(accountId: string): Promise<BankAccount | null> {
+  try {
+    const res = await fetch(`/api/accounts/${accountId}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 获取账户信息（兼容：优先 localStorage）
  */
 export function getAccountInfo(accountId: string): BankAccount | null {
   const accounts = getAccounts();

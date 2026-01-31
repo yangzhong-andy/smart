@@ -1119,3 +1119,162 @@ model MonthlyBill {
   @@index([createdAt])
   @@index([approvedAt])
 }
+
+// 广告平台枚举
+enum AdPlatform {
+  FB
+  Google
+  TikTok
+  OTHER
+}
+
+// 待入账任务
+model PendingEntry {
+  id               String    @id @default(uuid())
+  type             String // Bill | PaymentRequest
+  relatedId        String
+  billCategory     String?
+  billType         String?
+  month            String?
+  agencyName       String?
+  supplierName     String?
+  factoryName      String?
+  accountName      String?
+  expenseItem      String?
+  storeName        String?
+  amount           Decimal   @db.Decimal(18, 2)
+  currency         String
+  netAmount        Decimal   @db.Decimal(18, 2)
+  approvedBy       String
+  approvedAt       DateTime
+  status           String    @default("Pending") // Pending | Completed | Cancelled
+  entryAccountId   String?
+  entryAccountName String?
+  entryDate        DateTime?
+  entryBy          String?
+  entryAt          DateTime?
+  entryFlowId      String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([type])
+  @@index([relatedId])
+  @@index([status])
+}
+
+// 广告代理商
+model AdAgency {
+  id                 String     @id @default(uuid())
+  name               String
+  platform           AdPlatform @default(OTHER)
+  rebateRate         Decimal    @default(0) @db.Decimal(5, 2)
+  rebateConfig       Json? // { rate, period }
+  settlementCurrency String?
+  creditTerm         String?
+  contact            String?
+  phone              String?
+  notes              String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  accounts AdAccount[]
+}
+
+// 广告账户
+model AdAccount {
+  id               String   @id @default(uuid())
+  agencyId         String
+  agencyName       String?
+  accountName      String
+  currentBalance   Decimal  @default(0) @db.Decimal(18, 2)
+  rebateReceivable Decimal  @default(0) @db.Decimal(18, 2)
+  creditLimit      Decimal  @default(0) @db.Decimal(18, 2)
+  currency         String
+  country          String?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  agency       AdAgency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  consumptions AdConsumption[]
+  recharges    AdRecharge[]
+}
+
+// 广告消耗记录
+model AdConsumption {
+  id               String    @id @default(uuid())
+  adAccountId      String
+  accountName      String?
+  agencyId         String?
+  agencyName       String?
+  storeId          String?
+  storeName        String?
+  month            String
+  date             DateTime
+  amount           Decimal   @db.Decimal(18, 2)
+  currency         String
+  estimatedRebate  Decimal?  @db.Decimal(18, 2)
+  rebateRate       Decimal?  @db.Decimal(5, 2)
+  campaignName     String?
+  dueDate          DateTime?
+  rebateDueDate    DateTime?
+  isSettled        Boolean   @default(false)
+  settledAt        DateTime?
+  settlementFlowId String?
+  voucher          String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  account AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+}
+
+// 广告充值记录
+model AdRecharge {
+  id            String   @id @default(uuid())
+  uid           String?  @unique
+  adAccountId   String
+  accountName   String?
+  agencyId      String
+  agencyName    String?
+  amount        Decimal  @db.Decimal(18, 2)
+  currency      String
+  rebateAmount  Decimal? @db.Decimal(18, 2)
+  rebateRate    Decimal? @db.Decimal(5, 2)
+  date          DateTime
+  month         String
+  paymentStatus String   @default("Pending") // Pending | Paid | Cancelled
+  voucher       String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  account AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+}
+
+// 返点应收款
+model RebateReceivable {
+  id              String   @id @default(uuid())
+  rechargeId      String
+  rechargeDate    DateTime
+  agencyId        String
+  agencyName      String
+  adAccountId     String
+  accountName     String
+  platform        String
+  rebateAmount    Decimal  @db.Decimal(18, 2)
+  currency        String
+  currentBalance  Decimal  @db.Decimal(18, 2)
+  status          String   @default("待核销") // 待核销 | 核销中 | 已结清
+  writeoffRecords Json?    @default("[]") // 核销流水 JSON
+  adjustments     Json?    @default("[]") // 手动修正 JSON
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agencyId])
+  @@index([adAccountId])
+  @@index([rechargeId])
+  @@index([status])
+}

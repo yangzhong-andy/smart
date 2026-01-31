@@ -11,7 +11,7 @@ import {
   type PurchaseOrderStatus
 } from "@/lib/purchase-orders-store";
 import { getProducts, type Product } from "@/lib/products-store";
-import { getStores, type Store } from "@/lib/store-store";
+import type { Store } from "@/lib/store-store";
 
 // SWR fetcher
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -78,9 +78,12 @@ export default function PurchaseOrdersNewPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    (async () => {
     setProducts(getProducts());
-    setStores(getStores());
+    const storesRes = await fetch("/api/stores");
+    setStores(storesRes.ok ? await storesRes.json() : []);
     setInitialized(true);
+    })();
   }, []);
 
   // 统计信息

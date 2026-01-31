@@ -7,16 +7,7 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Megaphone, TrendingUp, DollarSign, Clock, AlertCircle, ArrowRight, Eye, Plus, CreditCard, BarChart3 } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
-import {
-  getAgencies,
-  getAdAccounts,
-  getAdConsumptions,
-  getAdRecharges,
-  type Agency,
-  type AdAccount,
-  type AdConsumption,
-  type AdRecharge
-} from "@/lib/ad-agency-store";
+import type { Agency, AdAccount, AdConsumption, AdRecharge } from "@/lib/ad-agency-store";
 import { getMonthlyBills, type MonthlyBill } from "@/lib/reconciliation-store";
 
 const formatDate = (dateString?: string) => {
@@ -43,20 +34,19 @@ export default function AdAgencyWorkbenchPage() {
   // SWR fetcher 函数
   const fetcher = useCallback(async (key: string) => {
     if (typeof window === "undefined") return null;
-    switch (key) {
-      case "agencies":
-        return getAgencies();
-      case "ad-accounts":
-        return getAdAccounts();
-      case "consumptions":
-        return getAdConsumptions();
-      case "recharges":
-        return getAdRecharges();
-      case "monthly-bills":
-        return await getMonthlyBills();
-      default:
-        return null;
+    const apiMap: Record<string, string> = {
+      agencies: "/api/ad-agencies",
+      "ad-accounts": "/api/ad-accounts",
+      consumptions: "/api/ad-consumptions",
+      recharges: "/api/ad-recharges",
+    };
+    if (apiMap[key]) {
+      const res = await fetch(apiMap[key]);
+      if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+      return res.json();
     }
+    if (key === "monthly-bills") return await getMonthlyBills();
+    return null;
   }, []);
 
   // 使用 SWR 获取数据（优化：增加去重间隔以减少数据库访问）

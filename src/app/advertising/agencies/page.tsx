@@ -20,13 +20,11 @@ import {
   calculateDueDate,
   calculateRebateDueDate
 } from "@/lib/ad-agency-store";
-import { getAccounts, type BankAccount, saveAccounts } from "@/lib/finance-store";
-import { getStores, type Store, getStoreById } from "@/lib/store-store";
+import { type BankAccount, saveAccounts } from "@/lib/finance-store";
+import { type Store, getStoreById } from "@/lib/store-store";
 import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill } from "@/lib/reconciliation-store";
 import { 
-  getRebateReceivables, 
-  saveRebateReceivables, 
   type RebateReceivable,
   getRebateReceivableByRechargeId 
 } from "@/lib/rebate-receivable-store";
@@ -185,25 +183,35 @@ export default function AdAgenciesPage() {
       setIsAccountModalOpen(true);
     } else if (action === "add-consumption") {
       setIsConsumptionModalOpen(true);
-    } else if (action === "add-recharge") {
+    } else     if (action === "add-recharge") {
       setIsRechargeModalOpen(true);
     }
     
-    const loadedAgencies = getAgencies();
+    (async () => {
+    const [agenciesRes, accountsRes, consumptionsRes, rechargesRes, storesRes, bankRes] = await Promise.all([
+      fetch("/api/ad-agencies"),
+      fetch("/api/ad-accounts"),
+      fetch("/api/ad-consumptions"),
+      fetch("/api/ad-recharges"),
+      fetch("/api/stores"),
+      fetch("/api/accounts"),
+    ]);
+    const loadedAgencies = agenciesRes.ok ? await agenciesRes.json() : [];
+    const loadedAccounts = accountsRes.ok ? await accountsRes.json() : [];
+    const loadedConsumptions = consumptionsRes.ok ? await consumptionsRes.json() : [];
+    const loadedRecharges = rechargesRes.ok ? await rechargesRes.json() : [];
+    const loadedStores = storesRes.ok ? await storesRes.json() : [];
+    const loadedBankAccounts = bankRes.ok ? await bankRes.json() : [];
     setAgencies(loadedAgencies);
-    const loadedAccounts = getAdAccounts();
     setAdAccounts(loadedAccounts);
-    const loadedConsumptions = getAdConsumptions();
     setConsumptions(loadedConsumptions);
-    const loadedRecharges = getAdRecharges();
     setRecharges(loadedRecharges);
-    const loadedBankAccounts = getAccounts();
-    setBankAccounts(loadedBankAccounts);
-    const loadedStores = getStores();
     setStores(loadedStores);
+    setBankAccounts(loadedBankAccounts);
     
     // 重新计算所有账户余额
     recalculateAccountBalances(loadedAccounts, loadedConsumptions, loadedRecharges);
+    })();
   }, []);
   
   // 重新计算账户余额：当前余额 = 累计实付充值 - 累计消耗（返点不计入余额）
@@ -304,7 +312,7 @@ export default function AdAgenciesPage() {
       (acc.rebateReceivable || 0) !== (accounts[idx].rebateReceivable || 0)
     );
     if (hasChanges) {
-      saveAdAccounts(updatedAccounts);
+      await saveAdAccounts(updatedAccounts);
       setAdAccounts(updatedAccounts);
     }
   };
@@ -772,7 +780,7 @@ export default function AdAgenciesPage() {
     setIsSubmitting(true);
     try {
       setAgencies((prev) => [...prev, newAgency]);
-      saveAgencies([...agencies, newAgency]);
+      await saveAgencies([...agencies, newAgency]);
     setAgencyForm({ 
       name: "", 
       platform: "TikTok", 
@@ -856,7 +864,7 @@ export default function AdAgenciesPage() {
       acc.agencyId === editAgency.id ? { ...acc, agencyName: agencyForm.name.trim() } : acc
     );
     setAdAccounts(updatedAccounts);
-    saveAdAccounts(updatedAccounts);
+    await saveAdAccounts(updatedAccounts);
 
     setAgencyForm({ 
       name: "", 
@@ -885,18 +893,18 @@ export default function AdAgenciesPage() {
       onConfirm: () => {
         const updatedAgencies = agencies.filter((a) => a.id !== id);
         setAgencies(updatedAgencies);
-        saveAgencies(updatedAgencies);
+        await saveAgencies(updatedAgencies);
         
         // 删除关联的广告账户
         const updatedAccounts = adAccounts.filter((acc) => acc.agencyId !== id);
         setAdAccounts(updatedAccounts);
-        saveAdAccounts(updatedAccounts);
+        await saveAdAccounts(updatedAccounts);
         
         // 删除关联的消耗记录
         const accountIds = adAccounts.filter((acc) => acc.agencyId === id).map((acc) => acc.id);
         const updatedConsumptions = consumptions.filter((c) => !accountIds.includes(c.adAccountId));
         setConsumptions(updatedConsumptions);
-        saveAdConsumptions(updatedConsumptions);
+        await saveAdConsumptions(updatedConsumptions);
         
         setConfirmDialog(null);
       }
@@ -945,7 +953,7 @@ export default function AdAgenciesPage() {
     };
 
     setAdAccounts((prev) => [...prev, newAccount]);
-    saveAdAccounts([...adAccounts, newAccount]);
+    await saveAdAccounts([...adAccounts, newAccount]);
     setAccountForm({
       agencyId: "",
       accountName: "",
@@ -1014,14 +1022,14 @@ export default function AdAgenciesPage() {
     );
 
     setAdAccounts(updatedAccounts);
-    saveAdAccounts(updatedAccounts);
+    await saveAdAccounts(updatedAccounts);
 
     // 更新消耗记录中的账户名称
     const updatedConsumptions = consumptions.map((c) =>
       c.adAccountId === editAccount.id ? { ...c, accountName: accountForm.accountName.trim() } : c
     );
     setConsumptions(updatedConsumptions);
-    saveAdConsumptions(updatedConsumptions);
+    await saveAdConsumptions(updatedConsumptions);
 
     setAccountForm({
       agencyId: "",
@@ -1045,12 +1053,12 @@ export default function AdAgenciesPage() {
       onConfirm: () => {
         const updatedAccounts = adAccounts.filter((a) => a.id !== id);
         setAdAccounts(updatedAccounts);
-        saveAdAccounts(updatedAccounts);
+        await saveAdAccounts(updatedAccounts);
         
         // 删除关联的消耗记录
         const updatedConsumptions = consumptions.filter((c) => c.adAccountId !== id);
         setConsumptions(updatedConsumptions);
-        saveAdConsumptions(updatedConsumptions);
+        await saveAdConsumptions(updatedConsumptions);
         
         setConfirmDialog(null);
       }
@@ -1223,35 +1231,31 @@ export default function AdAgenciesPage() {
     // 如果有返点，自动生成返点应收款记录和对账中心的广告返点账单
     if (rebateAmount > 0) {
       try {
-        const existingReceivables = getRebateReceivables();
-        // 检查是否已存在该充值记录的返点应收款（防止重复创建）
-        const existingReceivable = getRebateReceivableByRechargeId(newRecharge.id);
+        const existingReceivable = await getRebateReceivableByRechargeId(newRecharge.id);
         
         if (!existingReceivable) {
-          // 创建新的返点应收款记录
-          const newReceivable: RebateReceivable = {
-            id: `rebate-receivable-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            rechargeId: newRecharge.id,
-            rechargeDate: date,
-            agencyId: rechargeAccount.agencyId,
-            agencyName: agency.name,
-            adAccountId: rechargeAccount.id,
-            accountName: rechargeAccount.accountName,
-            platform: agency.platform,
-            rebateAmount: rebateAmount,
-            currency: currency as "USD" | "CNY" | "HKD",
-            currentBalance: rebateAmount, // 初始余额等于返点金额
-            status: "待核销" as const,
-            writeoffRecords: [],
-            adjustments: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            notes: `自动生成：广告账户 ${rechargeAccount.accountName} 充值返点`
-          };
-          
-          const updatedReceivables = [...existingReceivables, newReceivable];
-          saveRebateReceivables(updatedReceivables);
-          console.log(`✅ 已生成返点应收款记录：${newReceivable.id}，金额：${rebateAmount} ${currency}`);
+          const createRes = await fetch("/api/rebate-receivables", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              rechargeId: newRecharge.id,
+              rechargeDate: date,
+              agencyId: rechargeAccount.agencyId,
+              agencyName: agency.name,
+              adAccountId: rechargeAccount.id,
+              accountName: rechargeAccount.accountName,
+              platform: agency.platform,
+              rebateAmount,
+              currency: currency as "USD" | "CNY" | "HKD",
+              currentBalance: rebateAmount,
+              status: "待核销",
+              notes: `自动生成：广告账户 ${rechargeAccount.accountName} 充值返点`,
+            }),
+          });
+          if (createRes.ok) {
+            const created = await createRes.json();
+            console.log(`✅ 已生成返点应收款记录：${created.id}，金额：${rebateAmount} ${currency}`);
+          }
 
           // 在对账中心生成"广告返点"类型的应收款账单
           try {
@@ -1330,7 +1334,7 @@ export default function AdAgenciesPage() {
         : acc
     );
     setAdAccounts(updatedAccounts);
-    saveAdAccounts(updatedAccounts);
+    await saveAdAccounts(updatedAccounts);
 
     // 显示成功提示
     toast.success(
@@ -1379,12 +1383,12 @@ export default function AdAgenciesPage() {
             : acc
         );
         setAdAccounts(updatedAccounts);
-        saveAdAccounts(updatedAccounts);
+        await saveAdAccounts(updatedAccounts);
 
         // 删除充值记录
         const updatedRecharges = recharges.filter((r) => r.id !== id);
         setRecharges(updatedRecharges);
-        saveAdRecharges(updatedRecharges);
+        await saveAdRecharges(updatedRecharges);
 
         // 重新计算余额
         recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);
@@ -1580,9 +1584,9 @@ export default function AdAgenciesPage() {
     });
 
     setConsumptions((prev) => [...prev, newConsumption]);
-    saveAdConsumptions([...consumptions, newConsumption]);
+    await saveAdConsumptions([...consumptions, newConsumption]);
     setAdAccounts(updatedAccounts);
-    saveAdAccounts(updatedAccounts);
+    await saveAdAccounts(updatedAccounts);
 
     // 自动在财务流水中生成"运营-广告-待结算"记录
     if (typeof window !== "undefined") {
@@ -1671,9 +1675,9 @@ export default function AdAgenciesPage() {
 
         const updatedConsumptions = consumptions.filter((c) => c.id !== id);
         setConsumptions(updatedConsumptions);
-        saveAdConsumptions(updatedConsumptions);
+        await saveAdConsumptions(updatedConsumptions);
         setAdAccounts(updatedAccounts);
-        saveAdAccounts(updatedAccounts);
+        await saveAdAccounts(updatedAccounts);
         
         setConfirmDialog(null);
       }
@@ -1794,7 +1798,7 @@ export default function AdAgenciesPage() {
                 }
                 return b;
               });
-              saveAccounts(updatedBankAccounts);
+              await saveAccounts(updatedBankAccounts);
               setBankAccounts(updatedBankAccounts);
               
               console.log(`✅ 广告返点结算成功：${settlementFlow.summary}`);
@@ -1883,9 +1887,9 @@ export default function AdAgenciesPage() {
         }
         
         setConsumptions(updatedConsumptions);
-        saveAdConsumptions(updatedConsumptions);
+        await saveAdConsumptions(updatedConsumptions);
         setAdAccounts(updatedAccounts);
-        saveAdAccounts(updatedAccounts);
+        await saveAdAccounts(updatedAccounts);
         
         setIsSettlementModalOpen(false);
         setSettlementData(null);

@@ -11,7 +11,7 @@ import {
   getAccountTree,
   calculatePrimaryAccountBalance
 } from "@/lib/finance-store";
-import { type Store, getStores, saveStores } from "@/lib/store-store";
+import { type Store, saveStores } from "@/lib/store-store";
 import { COUNTRIES, getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
 import { type FinanceRates } from "@/lib/exchange";
 import { Wallet, CreditCard, Building2, Pencil, Trash2, List, TrendingUp, DollarSign, Coins, Search, X, SortAsc, SortDesc, Info, Download, Globe, Calculator } from "lucide-react";
@@ -242,11 +242,10 @@ export default function BankAccountsPage() {
     return getAccountTree(accounts);
   }, [accounts]);
 
-  // 加载店铺数据（暂时仍用 localStorage，后续迁移）
+  // 加载店铺数据（API）
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedStores = getStores();
-    setStores(loadedStores);
+    fetch("/api/stores").then((r) => (r.ok ? r.json() : [])).then(setStores);
   }, []);
 
   // 使用 SWR 获取实时汇率

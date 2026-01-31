@@ -24,7 +24,7 @@ import {
   completePendingEntry,
   type PendingEntry 
 } from "@/lib/pending-entry-store";
-import { getAccounts, saveAccounts, type BankAccount } from "@/lib/finance-store";
+import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
 import { enrichWithUID, createBusinessEntityWithRelations } from "@/lib/business-utils";
 import { getProducts } from "@/lib/products-store";
 import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
@@ -97,28 +97,34 @@ export default function ReconciliationPage() {
   // SWR fetcher 函数
   const fetcher = useCallback(async (key: string) => {
     if (typeof window === "undefined") return null;
-    switch (key) {
-      case "monthly-bills":
-        return await getMonthlyBills();
-      case "agencies":
-        return getAgencies();
-      case "recharges":
-        return getAdRecharges();
-      case "consumptions":
-        return getAdConsumptions();
-      case "delivery-orders":
-        return getDeliveryOrders();
-      case "contracts":
-        return getPurchaseContracts();
-      case "rebate-receivables":
-        return getRebateReceivables();
-      case "pending-entries":
-        return getPendingEntriesByStatus("Pending");
-      case "bank-accounts":
-        return getAccounts();
-      default:
-        return null;
+    const apiMap: Record<string, string> = {
+      agencies: "/api/ad-agencies",
+      recharges: "/api/ad-recharges",
+      consumptions: "/api/ad-consumptions",
+      "rebate-receivables": "/api/rebate-receivables",
+      "pending-entries": "/api/pending-entries",
+      "bank-accounts": "/api/accounts",
+    };
+    if (apiMap[key]) {
+      const url = key === "pending-entries" ? "/api/pending-entries" : apiMap[key];
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+      const data = await res.json();
+      if (key === "pending-entries") return data.filter((e: { status: string }) => e.status === "Pending");
+      return data;
     }
+    if (key === "monthly-bills") return await getMonthlyBills();
+    if (key === "delivery-orders") {
+      const res = await fetch("/api/delivery-orders");
+      if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+      return res.json();
+    }
+    if (key === "contracts") {
+      const res = await fetch("/api/purchase-contracts");
+      if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+      return res.json();
+    }
+    return null;
   }, []);
 
   // 使用 SWR 获取数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
@@ -731,9 +737,7 @@ export default function ReconciliationPage() {
           onClick={() => {
             setActiveCategory("PendingEntry");
             setFilterType("all"); // 切换板块时重置类型筛选
-            // 刷新待入账任务列表
-            const loadedPendingEntries = getPendingEntriesByStatus("Pending");
-            setPendingEntries(loadedPendingEntries);
+            mutate("pending-entries"); // 刷新待入账任务列表（API）
           }}
           className={`px-6 py-3 text-sm font-medium transition-all duration-200 border-b-2 relative ${
             activeCategory === "PendingEntry"
@@ -852,9 +856,8 @@ export default function ReconciliationPage() {
                         <button
                           onClick={() => {
                             setSelectedPendingPaymentBill(bill);
-                            // 刷新账户列表，确保显示最新数据
-                            const refreshedAccounts = getAccounts();
-                            setBankAccounts(refreshedAccounts);
+                            // 刷新账户列表（API）
+                            getAccountsFromAPI().then(setBankAccounts);
                             setPaymentForm({
                               accountId: "",
                               paymentDate: new Date().toISOString().slice(0, 10),
@@ -945,9 +948,8 @@ export default function ReconciliationPage() {
                             onClick={() => {
                               setSelectedPendingEntry(entry);
                               setIsEntryModalOpen(true);
-                              // 刷新账户列表，确保显示最新数据
-                              const refreshedAccounts = getAccounts();
-                              setBankAccounts(refreshedAccounts);
+                              // 刷新账户列表（API）
+                              getAccountsFromAPI().then(setBankAccounts);
                               // 如果有账单，预填充入账日期为账单月份的第一天
                               if (entry.month) {
                                 setEntryForm({
@@ -2283,13 +2285,11 @@ export default function ReconciliationPage() {
                     });
                     setBankAccounts(updatedAccounts);
                     if (typeof window !== "undefined") {
-                      const { saveAccounts } = require("@/lib/finance-store");
-                      saveAccounts(updatedAccounts);
+                      await saveAccounts(updatedAccounts);
                     }
 
-                    // 完成待入账任务
-                    const { savePendingEntries } = require("@/lib/pending-entry-store");
-                    completePendingEntry(
+                    // 完成待入账任务（API）
+                    await completePendingEntry(
                       selectedPendingEntry.id,
                       entryForm.accountId,
                       account.name,
@@ -2333,9 +2333,7 @@ export default function ReconciliationPage() {
                     }
 
                     // 刷新待入账任务列表
-                    const { getPendingEntriesByStatus } = require("@/lib/pending-entry-store");
-                    const updatedPendingEntries = getPendingEntriesByStatus("Pending");
-                    setPendingEntries(updatedPendingEntries);
+                    mutate("pending-entries");
 
                     setIsEntryModalOpen(false);
                     setSelectedPendingEntry(null);
@@ -2609,7 +2607,7 @@ export default function ReconciliationPage() {
                       return a;
                     });
                     setBankAccounts(updatedAccounts);
-                    saveAccounts(updatedAccounts);
+                    await saveAccounts(updatedAccounts);
 
                     // 更新账单状态为已支付，保存付款明细
                     const allBills = await getMonthlyBills();

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, AlertCircle, ArrowRight } from "lucide-react";
-import { type Store, getStores } from "@/lib/store-store";
-import { type BankAccount, getAccounts } from "@/lib/finance-store";
+import type { Store } from "@/lib/store-store";
+import type { BankAccount } from "@/lib/finance-store";
 import type { CashFlow } from "./finance/cash-flow/page";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
 import Link from "next/link";
@@ -24,11 +24,14 @@ export default function HomePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     
+    (async () => {
     try {
-      const loadedStores = getStores();
-      setStores(loadedStores);
-      const loadedAccounts = getAccounts();
-      setAccounts(loadedAccounts);
+      const [storesRes, accRes] = await Promise.all([
+        fetch("/api/stores"),
+        fetch("/api/accounts"),
+      ]);
+      setStores(storesRes.ok ? await storesRes.json() : []);
+      setAccounts(accRes.ok ? await accRes.json() : []);
       const stored = window.localStorage.getItem(CASH_FLOW_KEY);
       if (stored) {
         try {
@@ -51,6 +54,7 @@ export default function HomePage() {
     } catch (e) {
       console.error("Failed to initialize page", e);
     }
+    })();
   }, []);
 
   // 计算店铺贡献排行

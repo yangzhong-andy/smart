@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { TrendingUp, FileText } from "lucide-react";
-import { type BankAccount, getAccounts } from "@/lib/finance-store";
-import { type Store, getStores } from "@/lib/store-store";
+import type { BankAccount } from "@/lib/finance-store";
+import type { Store } from "@/lib/store-store";
 import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
 import type { CashFlow } from "../cash-flow/page";
 
@@ -30,10 +30,13 @@ export default function ProfitPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedAccounts = getAccounts();
-    setAccounts(loadedAccounts);
-    const loadedStores = getStores();
-    setStores(loadedStores);
+    (async () => {
+    const [accRes, storesRes] = await Promise.all([
+      fetch("/api/accounts"),
+      fetch("/api/stores"),
+    ]);
+    setAccounts(accRes.ok ? await accRes.json() : []);
+    setStores(storesRes.ok ? await storesRes.json() : []);
     const stored = window.localStorage.getItem(CASH_FLOW_KEY);
     if (stored) {
       try {
@@ -43,6 +46,7 @@ export default function ProfitPage() {
         console.error("Failed to parse cash flow", e);
       }
     }
+    })();
   }, []);
 
   // 按国家汇总资产

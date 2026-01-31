@@ -7,12 +7,10 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useSWR, { mutate } from "swr";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
-import { getAdConsumptions, getAdRecharges, getAgencies, type Agency } from "@/lib/ad-agency-store";
+import type { Agency } from "@/lib/ad-agency-store";
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import { createPendingEntry, getPendingEntryByRelatedId } from "@/lib/pending-entry-store";
 import { 
-  getRebateReceivables, 
-  saveRebateReceivables, 
   getRebateReceivableByRechargeId,
   type RebateReceivable 
 } from "@/lib/rebate-receivable-store";
@@ -97,12 +95,21 @@ export default function ApprovalCenterPage() {
         return await getIncomeRequests();
       case "pending-income-requests":
         return await getIncomeRequestsByStatus("Pending_Approval");
-      case "recharges":
-        return getAdRecharges();
-      case "consumptions":
-        return getAdConsumptions();
-      case "rebate-receivables":
-        return getRebateReceivables();
+      case "recharges": {
+        const res = await fetch("/api/ad-recharges");
+        if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+        return res.json();
+      }
+      case "consumptions": {
+        const res = await fetch("/api/ad-consumptions");
+        if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+        return res.json();
+      }
+      case "rebate-receivables": {
+        const res = await fetch("/api/rebate-receivables");
+        if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+        return res.json();
+      }
       default:
         return null;
     }
@@ -241,8 +248,9 @@ export default function ApprovalCenterPage() {
         if (bill.billType === "广告" && bill.agencyId && bill.adAccountId) {
           (async () => {
             try {
-              // 获取代理商信息，用于获取返点比例
-              const agencies = getAgencies();
+              // 获取代理商信息，用于获取返点比例（API）
+              const agenciesRes = await fetch("/api/ad-agencies");
+              const agencies: Agency[] = agenciesRes.ok ? await agenciesRes.json() : [];
               const agency = bill.agencyId ? agencies.find((a: Agency) => a.id === bill.agencyId) : null;
               
               if (agency && bill.agencyId) {
@@ -255,8 +263,9 @@ export default function ApprovalCenterPage() {
                 
                 // 如果有返点金额且大于0，生成返点应收款记录
                 if (rebateAmount > 0) {
-                  // 获取关联的充值记录（账单应该至少关联一个充值记录）
-                  const recharges = getAdRecharges();
+                  // 获取关联的充值记录（API）
+                  const rechargesRes = await fetch("/api/ad-recharges");
+                  const recharges = rechargesRes.ok ? await rechargesRes.json() : [];
                   const relatedRecharges = bill.rechargeIds 
                     ? recharges.filter((r) => bill.rechargeIds?.includes(r.id))
                     : [];
@@ -271,37 +280,38 @@ export default function ApprovalCenterPage() {
                     ? relatedRecharges[0].id 
                     : billId;
                   
-                  // 检查是否已存在该账单的返点应收款（防止重复创建）
-                  const existingReceivables = getRebateReceivables();
+                  // 检查是否已存在该账单的返点应收款（API）
+                  const receivablesRes = await fetch("/api/rebate-receivables");
+                  const existingReceivables = receivablesRes.ok ? await receivablesRes.json() : [];
                   const existingReceivable = existingReceivables.find(
                     (r) => r.rechargeId === rechargeId || r.rechargeId === billId
                   );
                   
                   if (!existingReceivable) {
-                    // 创建新的返点应收款记录
-                    const newReceivable: RebateReceivable = {
-                      id: `rebate-receivable-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                      rechargeId: rechargeId,
-                      rechargeDate: rechargeDate,
-                      agencyId: bill.agencyId, // 此时 bill.agencyId 已确保存在
-                      agencyName: bill.agencyName || agency.name,
-                      adAccountId: bill.adAccountId || "",
-                      accountName: bill.accountName || "-",
-                      platform: agency.platform || "其他",
-                      rebateAmount: rebateAmount,
-                      currency: bill.currency,
-                      currentBalance: rebateAmount, // 初始余额等于返点金额
-                      status: "待核销" as const,
-                      writeoffRecords: [],
-                      adjustments: [],
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                      notes: `审批通过后自动生成：广告账单 ${billId} 的返点应收款（实付金额：${formatCurrency(bill.netAmount, bill.currency, "expense")}，返点比例：${rebateRate}%）`
-                    };
-                    
-                    const updatedReceivables = [...existingReceivables, newReceivable];
-                    saveRebateReceivables(updatedReceivables);
-                    console.log(`✅ 已生成返点应收款记录：${newReceivable.id}，金额：${formatCurrency(rebateAmount, bill.currency, "income")}`);
+                    // 创建新的返点应收款记录（API）
+                    const createRes = await fetch("/api/rebate-receivables", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        rechargeId,
+                        rechargeDate,
+                        agencyId: bill.agencyId,
+                        agencyName: bill.agencyName || agency.name,
+                        adAccountId: bill.adAccountId || "",
+                        accountName: bill.accountName || "-",
+                        platform: agency.platform || "其他",
+                        rebateAmount,
+                        currency: bill.currency,
+                        currentBalance: rebateAmount,
+                        status: "待核销",
+                        notes: `审批通过后自动生成：广告账单 ${billId} 的返点应收款（实付金额：${formatCurrency(bill.netAmount, bill.currency, "expense")}，返点比例：${rebateRate}%）`,
+                      }),
+                    });
+                    if (createRes.ok) {
+                      const created = await createRes.json();
+                      mutate("rebate-receivables");
+                      console.log(`✅ 已生成返点应收款记录：${created.id}，金额：${formatCurrency(rebateAmount, bill.currency, "income")}`);
+                    }
                     
                     // 在对账中心生成"广告返点"类型的应收款账单
                     const existingBills = await getMonthlyBills();
@@ -372,10 +382,10 @@ export default function ApprovalCenterPage() {
         // 应付款（Payable）不创建待入账任务，会自动出现在待付款列表中
         if (bill.billCategory === "Receivable") {
           // 应收款：创建待入账任务，推送给财务人员处理入账
-          const existingEntry = getPendingEntryByRelatedId("Bill", billId);
+          const existingEntry = await getPendingEntryByRelatedId("Bill", billId);
           if (!existingEntry) {
             try {
-              createPendingEntry({
+              await createPendingEntry({
                 type: "Bill",
                 relatedId: billId,
                 billCategory: bill.billCategory,

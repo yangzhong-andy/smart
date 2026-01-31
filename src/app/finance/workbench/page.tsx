@@ -10,14 +10,14 @@ import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui"
 import MaintenanceView from "@/components/MaintenanceView";
 import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
 import Link from "next/link";
-import { getPendingEntries, type PendingEntry } from "@/lib/pending-entry-store";
+import type { PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { type BankAccount, getAccountStats } from "@/lib/finance-store";
 import { type FinanceRates } from "@/lib/exchange";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { formatCurrency as formatCurrencyUtil, formatCurrencyString } from "@/lib/currency-utils";
-import { getAdConsumptions, getAdRecharges, getAgencies, type Agency } from "@/lib/ad-agency-store";
-import { getRebateReceivables, type RebateReceivable } from "@/lib/rebate-receivable-store";
+import type { Agency } from "@/lib/ad-agency-store";
+import type { RebateReceivable } from "@/lib/rebate-receivable-store";
 import { FileImage } from "lucide-react";
 import ImageUploader from "@/components/ImageUploader";
 import { 
@@ -152,8 +152,11 @@ export default function FinanceWorkbenchPage() {
   const fetcher = useCallback(async (key: string) => {
     if (typeof window === "undefined") return null;
     switch (key) {
-      case "pending-entries":
-        return getPendingEntries();
+      case "pending-entries": {
+        const res = await fetch("/api/pending-entries");
+        if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+        return res.json();
+      }
       case "monthly-bills":
         return await getMonthlyBills();
       case "bank-accounts": {

@@ -6,8 +6,8 @@ import { Wallet, TrendingUp, TrendingDown, Package, DollarSign, AlertCircle } fr
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { getAccounts, type BankAccount } from "@/lib/finance-store";
-import { getStores, type Store } from "@/lib/store-store";
+import type { BankAccount } from "@/lib/finance-store";
+import type { Store } from "@/lib/store-store";
 import { getPaymentRequests } from "@/lib/payment-request-store";
 import { getPendingEntryCount } from "@/lib/pending-entry-store";
 import { getProducts } from "@/lib/products-store";
@@ -84,11 +84,13 @@ export default function FinanceDashboardPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    
-    const loadedAccounts = getAccounts();
-    setAccounts(loadedAccounts);
-    const loadedStores = getStores();
-    setStores(loadedStores);
+    (async () => {
+    const [accRes, storesRes] = await Promise.all([
+      fetch("/api/accounts"),
+      fetch("/api/stores"),
+    ]);
+    setAccounts(accRes.ok ? await accRes.json() : []);
+    setStores(storesRes.ok ? await storesRes.json() : []);
     const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
     if (storedFlow) {
       try {
@@ -105,9 +107,9 @@ export default function FinanceDashboardPage() {
         console.error("Failed to parse purchase orders", e);
       }
     }
-    // 加载待入账任务数量
-    const count = getPendingEntryCount();
-    setPendingEntryCount(count);
+    // 加载待入账任务数量（API）
+    getPendingEntryCount().then(setPendingEntryCount).catch(() => setPendingEntryCount(0));
+    })();
   }, []);
 
   // 获取汇率数据

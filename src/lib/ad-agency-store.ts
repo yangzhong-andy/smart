@@ -155,7 +155,7 @@ const AD_CONSUMPTIONS_KEY = "adConsumptions";
 const AD_RECHARGES_KEY = "adRecharges";
 
 /**
- * 获取所有代理商
+ * 获取所有代理商（同步，从 localStorage 读取；优先使用 API）
  */
 export function getAgencies(): Agency[] {
   if (typeof window === "undefined") return [];
@@ -169,20 +169,43 @@ export function getAgencies(): Agency[] {
   }
 }
 
+/** 从 API 获取代理商 */
+export async function getAgenciesFromAPI(): Promise<Agency[]> {
+  const res = await fetch("/api/ad-agencies");
+  return res.ok ? res.json() : [];
+}
+
 /**
- * 保存代理商列表
+ * 保存代理商列表（同步到 API）
  */
-export function saveAgencies(agencies: Agency[]): void {
+export async function saveAgencies(agencies: Agency[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(AGENCIES_KEY, JSON.stringify(agencies));
+    const existing: Agency[] = await fetch("/api/ad-agencies").then((r) => (r.ok ? r.json() : []));
+    const existingIds = new Set(existing.map((a) => a.id));
+    const newIds = new Set(agencies.map((a) => a.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/ad-agencies/${e.id}`, { method: "DELETE" });
+      }
+    }
+    const platformMap: Record<string, string> = { FB: "FB", Google: "Google", TikTok: "TikTok", "其他": "OTHER", OTHER: "OTHER" };
+    for (const a of agencies) {
+      const body = { ...a, platform: platformMap[a.platform] ?? "OTHER", rebateRate: a.rebateRate ?? 0 };
+      if (existingIds.has(a.id)) {
+        await fetch(`/api/ad-agencies/${a.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      } else {
+        await fetch("/api/ad-agencies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      }
+    }
   } catch (e) {
     console.error("Failed to save agencies", e);
+    throw e;
   }
 }
 
 /**
- * 获取所有广告账户
+ * 获取所有广告账户（同步，从 localStorage）
  */
 export function getAdAccounts(): AdAccount[] {
   if (typeof window === "undefined") return [];
@@ -196,20 +219,42 @@ export function getAdAccounts(): AdAccount[] {
   }
 }
 
+/** 从 API 获取广告账户 */
+export async function getAdAccountsFromAPI(): Promise<AdAccount[]> {
+  const res = await fetch("/api/ad-accounts");
+  return res.ok ? res.json() : [];
+}
+
 /**
- * 保存广告账户列表
+ * 保存广告账户列表（同步到 API）
  */
-export function saveAdAccounts(accounts: AdAccount[]): void {
+export async function saveAdAccounts(accounts: AdAccount[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(AD_ACCOUNTS_KEY, JSON.stringify(accounts));
+    const existing: AdAccount[] = await fetch("/api/ad-accounts").then((r) => (r.ok ? r.json() : []));
+    const existingIds = new Set(existing.map((a) => a.id));
+    const newIds = new Set(accounts.map((a) => a.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/ad-accounts/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const a of accounts) {
+      const body = { ...a, currentBalance: a.currentBalance ?? 0, rebateReceivable: a.rebateReceivable ?? 0, creditLimit: a.creditLimit ?? 0 };
+      if (existingIds.has(a.id)) {
+        await fetch(`/api/ad-accounts/${a.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      } else {
+        await fetch("/api/ad-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      }
+    }
   } catch (e) {
     console.error("Failed to save ad accounts", e);
+    throw e;
   }
 }
 
 /**
- * 获取所有消耗记录
+ * 获取所有消耗记录（同步，从 localStorage）
  */
 export function getAdConsumptions(): AdConsumption[] {
   if (typeof window === "undefined") return [];
@@ -223,36 +268,58 @@ export function getAdConsumptions(): AdConsumption[] {
   }
 }
 
+/** 从 API 获取消耗记录 */
+export async function getAdConsumptionsFromAPI(): Promise<AdConsumption[]> {
+  const res = await fetch("/api/ad-consumptions");
+  return res.ok ? res.json() : [];
+}
+
 /**
- * 保存消耗记录列表
+ * 保存消耗记录列表（同步到 API）
  */
-export function saveAdConsumptions(consumptions: AdConsumption[]): void {
+export async function saveAdConsumptions(consumptions: AdConsumption[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(AD_CONSUMPTIONS_KEY, JSON.stringify(consumptions));
+    const existing: AdConsumption[] = await fetch("/api/ad-consumptions").then((r) => (r.ok ? r.json() : []));
+    const existingIds = new Set(existing.map((c) => c.id));
+    const newIds = new Set(consumptions.map((c) => c.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/ad-consumptions/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const c of consumptions) {
+      const body = { ...c, date: c.date?.length === 10 ? c.date : c.date?.slice(0, 10) };
+      if (existingIds.has(c.id)) {
+        await fetch(`/api/ad-consumptions/${c.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      } else {
+        await fetch("/api/ad-consumptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      }
+    }
   } catch (e) {
     console.error("Failed to save ad consumptions", e);
+    throw e;
   }
 }
 
 /**
- * 根据代理商ID获取广告账户
+ * 根据代理商ID获取广告账户（可选传入accounts，否则从API获取）
  */
-export function getAdAccountsByAgency(agencyId: string): AdAccount[] {
-  const accounts = getAdAccounts();
-  return accounts.filter((acc) => acc.agencyId === agencyId);
+export function getAdAccountsByAgency(agencyId: string, accounts?: AdAccount[]): AdAccount[] {
+  if (accounts) return accounts.filter((acc) => acc.agencyId === agencyId);
+  return getAdAccounts().filter((acc) => acc.agencyId === agencyId);
 }
 
 /**
  * 根据广告账户ID获取消耗记录
  */
-export function getConsumptionsByAccount(accountId: string): AdConsumption[] {
-  const consumptions = getAdConsumptions();
-  return consumptions.filter((c) => c.adAccountId === accountId);
+export function getConsumptionsByAccount(accountId: string, consumptions?: AdConsumption[]): AdConsumption[] {
+  if (consumptions) return consumptions.filter((c) => c.adAccountId === accountId);
+  return getAdConsumptions().filter((c) => c.adAccountId === accountId);
 }
 
 /**
- * 获取所有充值记录
+ * 获取所有充值记录（同步，从 localStorage）
  */
 export function getAdRecharges(): AdRecharge[] {
   if (typeof window === "undefined") return [];
@@ -266,22 +333,44 @@ export function getAdRecharges(): AdRecharge[] {
   }
 }
 
+/** 从 API 获取充值记录 */
+export async function getAdRechargesFromAPI(): Promise<AdRecharge[]> {
+  const res = await fetch("/api/ad-recharges");
+  return res.ok ? res.json() : [];
+}
+
 /**
- * 保存充值记录列表
+ * 保存充值记录列表（同步到 API）
  */
-export function saveAdRecharges(recharges: AdRecharge[]): void {
+export async function saveAdRecharges(recharges: AdRecharge[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(AD_RECHARGES_KEY, JSON.stringify(recharges));
+    const existing: AdRecharge[] = await fetch("/api/ad-recharges").then((r) => (r.ok ? r.json() : []));
+    const existingIds = new Set(existing.map((r) => r.id));
+    const newIds = new Set(recharges.map((r) => r.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/ad-recharges/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const r of recharges) {
+      const body = { ...r, date: r.date?.length === 10 ? r.date : r.date?.slice(0, 10) };
+      if (existingIds.has(r.id)) {
+        await fetch(`/api/ad-recharges/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      } else {
+        await fetch("/api/ad-recharges", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      }
+    }
   } catch (e) {
     console.error("Failed to save ad recharges", e);
+    throw e;
   }
 }
 
 /**
  * 根据广告账户ID获取充值记录
  */
-export function getRechargesByAccount(accountId: string): AdRecharge[] {
-  const recharges = getAdRecharges();
-  return recharges.filter((r) => r.adAccountId === accountId);
+export function getRechargesByAccount(accountId: string, recharges?: AdRecharge[]): AdRecharge[] {
+  if (recharges) return recharges.filter((r) => r.adAccountId === accountId);
+  return getAdRecharges().filter((r) => r.adAccountId === accountId);
 }

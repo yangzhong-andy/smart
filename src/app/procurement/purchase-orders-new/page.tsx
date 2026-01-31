@@ -15,7 +15,7 @@ import {
   type PurchaseOrderStatus
 } from "@/lib/purchase-orders-store";
 import { getProducts, type Product } from "@/lib/products-store";
-import { getStores, type Store } from "@/lib/store-store";
+import type { Store } from "@/lib/store-store";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -69,10 +69,13 @@ export default function PurchaseOrdersNewPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    (async () => {
     setOrders(getPurchaseOrders());
     setProducts(getProducts());
-    setStores(getStores());
+    const storesRes = await fetch("/api/stores");
+    setStores(storesRes.ok ? await storesRes.json() : []);
     setInitialized(true);
+    })();
   }, []);
 
   // 统计信息

@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { getDeliveryOrders } from "@/lib/delivery-orders-store";
 import { getPurchaseContracts } from "@/lib/purchase-contracts-store";
-import { getAgencies, getAdConsumptions } from "@/lib/ad-agency-store";
 
 const formatDate = (dateString: string) => {
   try {
@@ -242,8 +241,12 @@ export default function MonthlyBillsPage() {
 
       // 2. 生成广告月账单
       try {
-        const agencies = getAgencies();
-        const consumptions = getAdConsumptions();
+        const [agenciesRes, consumptionsRes] = await Promise.all([
+          fetch("/api/ad-agencies"),
+          fetch("/api/ad-consumptions"),
+        ]);
+        const agencies = agenciesRes.ok ? await agenciesRes.json() : [];
+        const consumptions = consumptionsRes.ok ? await consumptionsRes.json() : [];
 
         agencies.forEach((agency) => {
           // 检查是否已存在该代理商该月的账单
