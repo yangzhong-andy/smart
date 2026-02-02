@@ -64,6 +64,13 @@ if (envVars.NEXTAUTH_SECRET) {
   console.log('✗ NEXTAUTH_SECRET: 未设置\n');
 }
 
+// EXCHANGERATE_API_KEY（可选，用于财务工作台实时汇率）
+if (envVars.EXCHANGERATE_API_KEY) {
+  console.log('✓ EXCHANGERATE_API_KEY: 已设置（财务工作台将使用实时汇率）\n');
+} else {
+  console.log('○ EXCHANGERATE_API_KEY: 未设置（可选，见 docs/汇率接口配置.md）\n');
+}
+
 // NEXTAUTH_URL
 if (envVars.NEXTAUTH_URL) {
   const url = envVars.NEXTAUTH_URL;

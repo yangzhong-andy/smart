@@ -111,7 +111,12 @@ export default function ExchangeRateBar() {
             {isLoading && !timestamp ? (
               <span className="text-slate-400">加载汇率中...</span>
             ) : error ? (
-              <span className="text-rose-400">汇率同步失败</span>
+              <span 
+                className="text-rose-400 cursor-help" 
+                title="请配置 EXCHANGERATE_API_KEY：.env.local 或部署平台环境变量，详见 docs/汇率接口配置.md"
+              >
+                汇率同步失败（未配置 API Key）
+              </span>
             ) : (
               <>
                 {rateTexts}

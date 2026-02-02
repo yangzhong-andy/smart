@@ -100,14 +100,14 @@ export async function POST(request: NextRequest) {
     // 哈希密码
     const hashedPassword = await bcrypt.hash(password, 10)
 
-    // 创建用户
+    // 创建用户（role 为必填，未传时用默认值 USER）
     const user = await prisma.user.create({
       data: {
         email: email.trim().toLowerCase(),
         password: hashedPassword,
         name: name.trim(),
-        role: role || null,
-        departmentId: departmentId || null,
+        role: (role && String(role).trim()) ? String(role).trim() : 'USER',
+        departmentId: (departmentId && String(departmentId).trim()) ? departmentId : null,
         isActive: true
       },
       include: {
@@ -129,8 +129,16 @@ export async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error: any) {
     console.error('Error creating user:', error)
+    // 将 Prisma 等底层错误转为用户可读提示
+    const message = error?.message || ''
+    const userMessage =
+      message.includes('Unique constraint') || message.includes('unique')
+        ? '该邮箱已被使用'
+        : message.includes('Invalid') && message.includes('role')
+          ? '请选择有效角色或留空使用默认'
+          : 'Failed to create user'
     return NextResponse.json(
-      { error: 'Failed to create user', details: error.message },
+      { error: userMessage, details: error.message },
       { status: 500 }
     )
   }

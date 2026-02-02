@@ -242,7 +242,7 @@ export default function FinanceWorkbenchPage() {
     dedupingInterval: 300000,
   });
 
-  // 任一 API 报错时显示「系统维护中」，避免死循环重试
+  // 任一核心 API 报错时显示「系统维护中」（汇率接口失败不计入，不影响工作台主流程）
   const hasApiError =
     pendingEntriesError ||
     monthlyBillsError ||
@@ -250,8 +250,7 @@ export default function FinanceWorkbenchPage() {
     cashFlowError ||
     pendingBillsError ||
     approvedExpenseError ||
-    approvedIncomeError ||
-    financeRatesError;
+    approvedIncomeError;
   
   // 提取汇率数据
   const exchangeRates = useMemo(() => {
