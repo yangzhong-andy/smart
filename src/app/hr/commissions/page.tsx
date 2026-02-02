@@ -7,10 +7,13 @@ import { DollarSign, RefreshCw, Download, Search, X, CheckCircle2, XCircle, Cloc
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import {
   getCommissionRecords,
+  getCommissionRecordsFromAPI,
   saveCommissionRecords,
   upsertCommissionRecord,
   getEmployees,
+  getEmployeesFromAPI,
   getCommissionRules,
+  getCommissionRulesFromAPI,
   calculateCommission,
   type CommissionRecord,
   type Department
@@ -33,11 +36,17 @@ export default function CommissionsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loaded = getCommissionRecords();
-    setRecords(loaded);
-    setEmployees(getEmployees());
-    setRules(getCommissionRules());
-    setInitialized(true);
+    Promise.all([
+      getCommissionRecordsFromAPI(),
+      getEmployeesFromAPI(),
+      getCommissionRulesFromAPI()
+    ]).then(([recordsData, employeesData, rulesData]) => {
+      setRecords(recordsData);
+      setEmployees(employeesData);
+      setRules(rulesData);
+      saveCommissionRecords(recordsData);
+      setInitialized(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -116,8 +125,9 @@ export default function CommissionsPage() {
   const handleCalculateCommissions = async () => {
     setCalculating(true);
     try {
-      const allEmployees = getEmployees().filter((e) => e.status === "在职");
-      const allRules = getCommissionRules().filter((r) => r.enabled);
+      const [employeesList, rulesList] = await Promise.all([getEmployeesFromAPI(), getCommissionRulesFromAPI()]);
+      const allEmployees = employeesList.filter((e) => e.status === "在职");
+      const allRules = rulesList.filter((r) => r.enabled);
       const newRecords: CommissionRecord[] = [];
       
       // 获取当前月份

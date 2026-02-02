@@ -58,8 +58,37 @@ const BATCH_RECEIPTS_KEY = "batchReceipts";
 const DOCUMENTS_KEY = "documents";
 const SALES_VELOCITY_KEY = "salesVelocity";
 
+const statusToFront: Record<string, OrderStatus> = {
+  PURCHASING: "采购中",
+  PRODUCING: "生产中",
+  SHIPPED: "已发货",
+  PARTIAL_ARRIVAL: "部分到货",
+  ARRIVED: "已到货",
+  COMPLETED: "已完成",
+};
+
 /**
- * 获取订单追踪记录
+ * 从 API 获取订单追踪记录
+ */
+export async function getOrderTrackingFromAPI(poId?: string): Promise<OrderTracking[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const url = poId ? `/api/order-tracking?poId=${encodeURIComponent(poId)}` : "/api/order-tracking";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).map((t: any) => ({
+      ...t,
+      status: statusToFront[t.status] ?? t.status,
+    }));
+  } catch (e) {
+    console.error("Failed to fetch order tracking from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取订单追踪记录（本地缓存，同步）
  */
 export function getOrderTracking(poId?: string): OrderTracking[] {
   if (typeof window === "undefined") return [];
@@ -87,9 +116,22 @@ export function saveOrderTracking(tracking: OrderTracking[]): void {
 }
 
 /**
- * 添加订单追踪记录
+ * 添加订单追踪记录（优先走 API，失败则落本地）
  */
-export function addOrderTracking(poId: string, status: OrderStatus, notes?: string): OrderTracking {
+export async function addOrderTracking(poId: string, status: OrderStatus, notes?: string): Promise<OrderTracking> {
+  try {
+    const res = await fetch("/api/order-tracking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ poId, status, statusDate: new Date().toISOString(), notes }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      return { ...created, status: statusToFront[created.status] ?? created.status };
+    }
+  } catch (e) {
+    console.warn("Add order tracking API failed, fallback to local", e);
+  }
   const tracking: OrderTracking = {
     id: crypto.randomUUID(),
     poId,
@@ -105,7 +147,24 @@ export function addOrderTracking(poId: string, status: OrderStatus, notes?: stri
 }
 
 /**
- * 获取分批拿货记录
+ * 从 API 获取分批拿货记录
+ */
+export async function getBatchReceiptsFromAPI(poId?: string): Promise<BatchReceipt[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const url = poId ? `/api/batch-receipts?poId=${encodeURIComponent(poId)}` : "/api/batch-receipts";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch batch receipts from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取分批拿货记录（本地缓存，同步）
  */
 export function getBatchReceipts(poId?: string): BatchReceipt[] {
   if (typeof window === "undefined") return [];
@@ -133,7 +192,27 @@ export function saveBatchReceipts(receipts: BatchReceipt[]): void {
 }
 
 /**
- * 获取文档列表
+ * 从 API 获取文档列表
+ */
+export async function getDocumentsFromAPI(entityType?: "factory" | "order", entityId?: string): Promise<Document[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const searchParams = new URLSearchParams();
+    if (entityType) searchParams.set("entityType", entityType);
+    if (entityId) searchParams.set("entityId", entityId);
+    const url = `/api/documents${searchParams.toString() ? `?${searchParams}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch documents from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取文档列表（本地缓存，同步）
  */
 export function getDocuments(entityType?: "factory" | "order", entityId?: string): Document[] {
   if (typeof window === "undefined") return [];
@@ -165,9 +244,22 @@ export function saveDocuments(documents: Document[]): void {
 }
 
 /**
- * 添加文档
+ * 添加文档（优先走 API，失败则落本地）
  */
-export function addDocument(document: Omit<Document, "id" | "uploadDate">): Document {
+export async function addDocument(document: Omit<Document, "id" | "uploadDate">): Promise<Document> {
+  try {
+    const res = await fetch("/api/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...document, uploadDate: new Date().toISOString() }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      return { ...created, uploadDate: created.uploadDate ?? new Date().toISOString() };
+    }
+  } catch (e) {
+    console.warn("Add document API failed, fallback to local", e);
+  }
   const newDoc: Document = {
     ...document,
     id: crypto.randomUUID(),
@@ -180,16 +272,42 @@ export function addDocument(document: Omit<Document, "id" | "uploadDate">): Docu
 }
 
 /**
- * 删除文档
+ * 删除文档（优先走 API，并更新本地）
  */
-export function deleteDocument(docId: string): void {
+export async function deleteDocument(docId: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    if (res.ok) {
+      const all = getDocuments();
+      saveDocuments(all.filter((d) => d.id !== docId));
+      return;
+    }
+  } catch (e) {
+    console.warn("Delete document API failed, fallback to local", e);
+  }
   const all = getDocuments();
-  const filtered = all.filter((d) => d.id !== docId);
-  saveDocuments(filtered);
+  saveDocuments(all.filter((d) => d.id !== docId));
 }
 
 /**
- * 获取销售速度数据
+ * 从 API 获取销售速度数据
+ */
+export async function getSalesVelocityFromAPI(storeId?: string): Promise<SalesVelocity[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const url = storeId ? `/api/sales-velocity?storeId=${encodeURIComponent(storeId)}` : "/api/sales-velocity";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch sales velocity from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取销售速度数据（本地缓存，同步）
  */
 export function getSalesVelocity(): SalesVelocity[] {
   if (typeof window === "undefined") return [];

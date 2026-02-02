@@ -69,7 +69,7 @@ function RouteChangeRefresher() {
           endpoints.push('/api/influencers');
         }
         if (route.startsWith('/inventory')) {
-          endpoints.push('/api/stock', '/api/inventory-stocks', '/api/inventory-movements');
+          endpoints.push('/api/stock', '/api/stock-logs', '/api/inventory-stocks', '/api/inventory-movements');
         }
         return Array.from(new Set(endpoints));
       };

@@ -352,10 +352,10 @@ export default function ReconciliationPage() {
         mutate("monthly-bills");
         await saveMonthlyBills(updatedBills);
         
-        // 创建出纳打款通知（仅对应付款账单）
+        // 创建出纳打款通知（仅对应付款账单，异步不阻塞）
         if (bill.billCategory === "Payable" || (!bill.billCategory && ["广告", "物流", "工厂订单"].includes(bill.billType))) {
           const payeeName = bill.agencyName || bill.supplierName || bill.factoryName || "未知";
-          createPaymentNotification(
+          void createPaymentNotification(
             bill.id,
             bill.billType,
             bill.month,
@@ -2584,10 +2584,8 @@ export default function ReconciliationPage() {
                     mutate("monthly-bills");
 
                     // 标记相关通知为已读
-                    const relatedNotifications = findNotificationsByRelated(selectedPendingPaymentBill.id, "monthly_bill");
-                    relatedNotifications.forEach((notif) => {
-                      markNotificationAsRead(notif.id);
-                    });
+                    const relatedNotifications = await findNotificationsByRelated(selectedPendingPaymentBill.id, "monthly_bill");
+                    await Promise.all(relatedNotifications.map((notif) => markNotificationAsRead(notif.id)));
 
                     setIsPaymentModalOpen(false);
                     setSelectedPendingPaymentBill(null);

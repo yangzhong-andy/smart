@@ -110,7 +110,24 @@ const SUPPLIER_BILLS_KEY = "supplierMonthlyBills";
 const SUPPLIER_PAYMENTS_KEY = "supplierPayments";
 
 /**
- * 获取所有供应商档案
+ * 从 API 获取供应商档案列表（支持 type 筛选：广告代理商/物流商/供货商）
+ */
+export async function getSupplierProfilesFromAPI(type?: SupplierType): Promise<SupplierProfile[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const url = type ? `/api/supplier-profiles?type=${encodeURIComponent(type)}` : "/api/supplier-profiles";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch supplier profiles from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取所有供应商档案（本地缓存，同步）
  */
 export function getSupplierProfiles(): SupplierProfile[] {
   if (typeof window === "undefined") return [];
@@ -153,7 +170,32 @@ export function getSupplierProfilesByType(type: SupplierType): SupplierProfile[]
 }
 
 /**
- * 获取所有供应商月度账单
+ * 从 API 获取供应商月度账单
+ */
+export async function getSupplierMonthlyBillsFromAPI(params?: {
+  supplierProfileId?: string;
+  month?: string;
+  status?: SupplierBillStatus;
+}): Promise<SupplierMonthlyBill[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const searchParams = new URLSearchParams();
+    if (params?.supplierProfileId) searchParams.set("supplierProfileId", params.supplierProfileId);
+    if (params?.month) searchParams.set("month", params.month);
+    if (params?.status) searchParams.set("status", params.status);
+    const url = `/api/supplier-monthly-bills${searchParams.toString() ? `?${searchParams}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch supplier monthly bills from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取所有供应商月度账单（本地缓存，同步）
  */
 export function getSupplierMonthlyBills(): SupplierMonthlyBill[] {
   if (typeof window === "undefined") return [];
@@ -204,7 +246,27 @@ export function getSupplierBillsByProfileId(profileId: string): SupplierMonthlyB
 }
 
 /**
- * 获取所有供应商付款记录
+ * 从 API 获取供应商付款记录
+ */
+export async function getSupplierPaymentsFromAPI(params?: { billId?: string; supplierProfileId?: string }): Promise<SupplierPayment[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const searchParams = new URLSearchParams();
+    if (params?.billId) searchParams.set("billId", params.billId);
+    if (params?.supplierProfileId) searchParams.set("supplierProfileId", params.supplierProfileId);
+    const url = `/api/supplier-payments${searchParams.toString() ? `?${searchParams}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch supplier payments from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取所有供应商付款记录（本地缓存，同步）
  */
 export function getSupplierPayments(): SupplierPayment[] {
   if (typeof window === "undefined") return [];

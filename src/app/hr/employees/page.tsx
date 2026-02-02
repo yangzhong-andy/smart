@@ -59,9 +59,11 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loaded = getEmployees();
-    setEmployees(loaded);
-    setInitialized(true);
+    getEmployeesFromAPI().then((loaded) => {
+      setEmployees(loaded);
+      saveEmployees(loaded);
+      setInitialized(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -189,7 +191,7 @@ export default function EmployeesPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // 防止重复提交
@@ -230,9 +232,10 @@ export default function EmployeesPage() {
     
     setIsSubmitting(true);
     try {
-      upsertEmployee(employeeData);
-      const updatedEmployees = getEmployees();
+      await upsertEmployee(employeeData);
+      const updatedEmployees = await getEmployeesFromAPI();
       setEmployees(updatedEmployees);
+      saveEmployees(updatedEmployees);
       toast.success(editingEmployee ? "员工信息已更新" : "员工已添加");
       resetForm();
       setIsModalOpen(false);

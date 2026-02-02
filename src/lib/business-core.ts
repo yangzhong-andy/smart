@@ -166,9 +166,46 @@ export type BusinessTraceResult = {
 const RELATIONS_KEY = "businessRelations";
 
 /**
- * 保存业务关联关系
+ * 从 API 获取所有业务关联（支持 sourceUID、targetUID 筛选）
  */
-export function saveBusinessRelation(relation: BusinessRelation): void {
+export async function getBusinessRelationsFromAPI(params?: { sourceUID?: string; targetUID?: string }): Promise<BusinessRelation[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const searchParams = new URLSearchParams();
+    if (params?.sourceUID) searchParams.set("sourceUID", params.sourceUID);
+    if (params?.targetUID) searchParams.set("targetUID", params.targetUID);
+    const url = `/api/business-relations${searchParams.toString() ? `?${searchParams}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : [];
+    return list.map((r: any) => ({
+      sourceUID: r.sourceUID,
+      targetUID: r.targetUID,
+      relationType: r.relationType,
+      createdAt: r.createdAt,
+      metadata: r.metadata,
+    }));
+  } catch (e) {
+    console.error("Failed to fetch business relations from API", e);
+    return [];
+  }
+}
+
+/**
+ * 保存业务关联关系（优先走 API，失败则落本地）
+ */
+export async function saveBusinessRelation(relation: BusinessRelation): Promise<void> {
+  try {
+    const res = await fetch("/api/business-relations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(relation),
+    });
+    if (res.ok) return;
+  } catch (e) {
+    console.warn("Save business relation API failed, fallback to local", e);
+  }
   if (typeof window === "undefined") return;
   try {
     const stored = window.localStorage.getItem(RELATIONS_KEY);
@@ -203,13 +240,43 @@ export function getBusinessRelations(): BusinessRelation[] {
 }
 
 /**
- * 根据UID查询关联的业务实体
+ * 根据 UID 查询关联的业务实体（同步，读本地）
  */
 export function getRelatedEntities(uid: string): BusinessRelation[] {
   const relations = getBusinessRelations();
   return relations.filter(
     (r) => r.sourceUID === uid || r.targetUID === uid
   );
+}
+
+/**
+ * 根据 UID 查询关联的业务实体（优先 API，失败则用本地）
+ */
+export async function getRelatedEntitiesFromAPI(uid: string): Promise<BusinessRelation[]> {
+  try {
+    const [bySource, byTarget] = await Promise.all([
+      fetch(`/api/business-relations?sourceUID=${encodeURIComponent(uid)}`).then((r) => (r.ok ? r.json() : [])),
+      fetch(`/api/business-relations?targetUID=${encodeURIComponent(uid)}`).then((r) => (r.ok ? r.json() : [])),
+    ]);
+    const seen = new Set<string>();
+    const merged: BusinessRelation[] = [];
+    for (const r of [...(Array.isArray(bySource) ? bySource : []), ...(Array.isArray(byTarget) ? byTarget : [])]) {
+      const key = `${r.sourceUID}-${r.targetUID}-${r.relationType}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({
+        sourceUID: r.sourceUID,
+        targetUID: r.targetUID,
+        relationType: r.relationType,
+        createdAt: r.createdAt,
+        metadata: r.metadata,
+      });
+    }
+    return merged;
+  } catch (e) {
+    console.warn("getRelatedEntitiesFromAPI failed, fallback to local", e);
+    return getRelatedEntities(uid);
+  }
 }
 
 /**
@@ -431,19 +498,21 @@ export function createBusinessRelation(
     createdAt: new Date().toISOString(),
     metadata
   };
-  saveBusinessRelation(relation);
+  void saveBusinessRelation(relation);
 }
 
 /**
- * 批量创建业务关联关系
+ * 批量创建业务关联关系（异步）
  */
-export function createBusinessRelations(relations: Omit<BusinessRelation, "createdAt">[]): void {
-  relations.forEach((rel) => {
-    saveBusinessRelation({
-      ...rel,
-      createdAt: new Date().toISOString()
-    });
-  });
+export async function createBusinessRelations(relations: Omit<BusinessRelation, "createdAt">[]): Promise<void> {
+  await Promise.all(
+    relations.map((rel) =>
+      saveBusinessRelation({
+        ...rel,
+        createdAt: new Date().toISOString()
+      })
+    )
+  );
 }
 
 /**

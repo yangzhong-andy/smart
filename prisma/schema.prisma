@@ -1278,3 +1278,247 @@ model RebateReceivable {
   @@index([rechargeId])
   @@index([status])
 }
+
+// ========== 通知、供应商对账、供应链扩展、业财关联（原 localStorage 迁移） ==========
+
+enum NotificationType {
+  payment_required
+  approval_rejected
+  payment_completed
+  cashier_review_required
+  finance_payment_required
+}
+
+enum NotificationRelatedType {
+  monthly_bill
+  payment_request
+  other
+}
+
+enum NotificationPriority {
+  high
+  medium
+  low
+}
+
+model Notification {
+  id         String                 @id @default(uuid())
+  type       NotificationType
+  title      String
+  message    String
+  relatedId  String
+  relatedType NotificationRelatedType
+  read       Boolean                @default(false)
+  readAt     DateTime?
+  actionUrl  String?
+  priority   NotificationPriority   @default(medium)
+  createdAt  DateTime               @default(now())
+
+  @@index([relatedId, relatedType])
+  @@index([read])
+}
+
+enum SupplierTypeEnum {
+  AD_AGENCY   // 广告代理商
+  LOGISTICS   // 物流商
+  VENDOR      // 供货商
+}
+
+model SupplierProfile {
+  id            String    @id @default(uuid())
+  name          String
+  type          SupplierTypeEnum
+  contact       String
+  phone         String
+  email         String?
+  address       String?
+  rebateRate    Decimal?   @db.Decimal(5, 2)
+  settlementDay Int?
+  creditTerm    String?
+  currency      String?    // USD | CNY | HKD
+  agencyId      String?
+  supplierId    String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  monthlyBills  SupplierMonthlyBill[]
+  payments      SupplierPayment[]
+
+  @@index([type])
+}
+
+enum SupplierBillStatus {
+  Draft
+  Pending_Approval
+  Approved
+  Paid
+  Rejected
+}
+
+model SupplierMonthlyBill {
+  id                  String              @id @default(uuid())
+  uid                 String?             @unique
+  supplierProfileId   String
+  supplierName        String
+  supplierType        SupplierTypeEnum
+  month               String
+  billNumber          String?
+  billDate            DateTime
+  supplierBillAmount Decimal             @db.Decimal(18, 2)
+  systemAmount        Decimal             @db.Decimal(18, 2)
+  difference          Decimal             @db.Decimal(18, 2)
+  currency            String
+  rebateAmount        Decimal             @db.Decimal(18, 2)
+  rebateRate          Decimal?            @db.Decimal(5, 2)
+  netAmount           Decimal             @db.Decimal(18, 2)
+  relatedFlowIds      String[]            @default([])
+  uploadedBillFile    String?
+  status              SupplierBillStatus
+  createdBy           String
+  createdAt           DateTime            @default(now())
+  submittedAt         DateTime?
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectionReason     String?
+  paidBy              String?
+  paidAt              DateTime?
+  paymentAccountId    String?
+  paymentAccountName  String?
+  paymentMethod       String?
+  paymentFlowId       String?
+  paymentVoucher      String?
+  notes               String?
+
+  profile             SupplierProfile     @relation(fields: [supplierProfileId], references: [id], onDelete: Cascade)
+  payment             SupplierPayment?
+
+  @@index([supplierProfileId])
+  @@index([month])
+  @@index([status])
+}
+
+model SupplierPayment {
+  id                  String   @id @default(uuid())
+  billId              String
+  supplierProfileId  String
+  supplierName       String
+  amount             Decimal  @db.Decimal(18, 2)
+  currency           String
+  paymentDate        DateTime
+  paymentAccountId   String
+  paymentAccountName String
+  paymentMethod      String
+  paymentFlowId      String
+  paymentVoucher     String?
+  paidBy             String
+  paidAt             DateTime
+  notes              String?
+
+  profile             SupplierProfile     @relation(fields: [supplierProfileId], references: [id], onDelete: Cascade)
+  bill                SupplierMonthlyBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@unique([billId])
+  @@index([supplierProfileId])
+}
+
+enum OrderTrackingStatus {
+  PURCHASING    // 采购中
+  PRODUCING     // 生产中
+  SHIPPED       // 已发货
+  PARTIAL_ARRIVAL  // 部分到货
+  ARRIVED       // 已到货
+  COMPLETED     // 已完成
+}
+
+model OrderTracking {
+  id         String              @id @default(uuid())
+  poId       String
+  status     OrderTrackingStatus
+  statusDate DateTime
+  notes      String?
+  createdAt  DateTime            @default(now())
+
+  @@index([poId])
+}
+
+model BatchReceipt {
+  id           String   @id @default(uuid())
+  poId         String
+  receiptId    String
+  qty          Int
+  receivedQty  Int
+  ownership    Json     // [{ storeId, storeName, percentage }]
+  receivedDate DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([poId])
+}
+
+enum DocumentEntityType {
+  factory
+  order
+}
+
+enum DocumentType {
+  contract
+  invoice
+  packing_list
+  other
+}
+
+model Document {
+  id         String             @id @default(uuid())
+  entityType DocumentEntityType
+  entityId   String
+  name       String
+  type       DocumentType
+  fileUrl    String?
+  uploadDate DateTime           @default(now())
+  uploadedBy String?
+  notes      String?
+
+  @@index([entityType, entityId])
+}
+
+model SalesVelocity {
+  id                 String   @id @default(uuid())
+  storeId            String
+  storeName          String
+  sku                String
+  dailySales         Decimal   @db.Decimal(12, 2)
+  currentStock        Int
+  inTransitQty        Int       @default(0)
+  daysUntilStockout   Int
+  recommendedRestock Int
+  lastUpdated        DateTime  @updatedAt
+
+  @@unique([storeId, sku])
+  @@index([storeId])
+}
+
+model BusinessRelation {
+  id         String   @id @default(uuid())
+  sourceUID  String
+  targetUID  String
+  relationType String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([sourceUID])
+  @@index([targetUID])
+  @@unique([sourceUID, targetUID, relationType])
+}
+
+// 业财 UID 映射：业务 ID（oldId）↔ 业务 UID，用于穿透查询兼容
+model BusinessUidMapping {
+  id         String   @id @default(uuid())
+  entityType String   // ORDER, CASH_FLOW, BILL 等
+  oldId      String   // 原业务表 id
+  uid        String   // 业务 UID
+  createdAt  DateTime @default(now())
+
+  @@unique([oldId])
+  @@index([entityType])
+  @@index([uid])
+}

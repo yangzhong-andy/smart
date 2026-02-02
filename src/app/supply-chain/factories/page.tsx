@@ -802,10 +802,10 @@ export default function FactoriesPage() {
                         </div>
                       </div>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (confirm("确定要删除这个文档吗？")) {
-                            const { deleteDocument } = require("@/lib/supply-chain-store");
-                            deleteDocument(doc.id);
+                            const { deleteDocument, getDocuments } = require("@/lib/supply-chain-store");
+                            await deleteDocument(doc.id);
                             setDocuments(getDocuments());
                           }
                         }}

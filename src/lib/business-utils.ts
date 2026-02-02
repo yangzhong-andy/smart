@@ -84,7 +84,7 @@ export function linkBusinessEntities(
 }
 
 /**
- * 从旧ID迁移到UID（兼容性处理）
+ * 从旧ID迁移到UID（兼容性处理）- 优先写 API，失败则落本地
  */
 export function migrateToUID<T extends { id: string; uid?: string }>(
   entity: T,
@@ -93,27 +93,31 @@ export function migrateToUID<T extends { id: string; uid?: string }>(
   if (entity.uid) {
     return entity as T & { uid: string };
   }
-  
-  // 为旧数据生成UID
+
   const uid = generateBusinessUID(entityType);
-  
-  // 建立旧ID到新UID的映射关系（用于查询兼容）
+
   if (typeof window !== "undefined") {
-    const mappingKey = "uidIdMapping";
-    const stored = window.localStorage.getItem(mappingKey);
-    const mapping: Record<string, string> = stored ? JSON.parse(stored) : {};
-    mapping[entity.id] = uid;
-    window.localStorage.setItem(mappingKey, JSON.stringify(mapping));
+    const writeLocal = () => {
+      const mappingKey = "uidIdMapping";
+      const stored = window.localStorage.getItem(mappingKey);
+      const mapping: Record<string, string> = stored ? JSON.parse(stored) : {};
+      mapping[entity.id] = uid;
+      window.localStorage.setItem(mappingKey, JSON.stringify(mapping));
+    };
+    fetch("/api/business-uid-mappings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entityType, oldId: entity.id, uid }),
+    })
+      .then((res) => { if (res.ok) writeLocal(); })
+      .catch(writeLocal);
   }
-  
-  return {
-    ...entity,
-    uid
-  };
+
+  return { ...entity, uid };
 }
 
 /**
- * 通过旧ID查找UID
+ * 通过旧ID查找UID（同步：仅读本地；异步用 findUIDByOldIdFromAPI）
  */
 export function findUIDByOldId(oldId: string): string | null {
   if (typeof window === "undefined") return null;
@@ -126,6 +130,21 @@ export function findUIDByOldId(oldId: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 通过旧ID查找UID（优先 API，失败则读本地）
+ */
+export async function findUIDByOldIdFromAPI(oldId: string): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const res = await fetch(`/api/business-uid-mappings?oldId=${encodeURIComponent(oldId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.uid) return data.uid;
+    }
+  } catch (_) {}
+  return findUIDByOldId(oldId);
 }
 
 /**

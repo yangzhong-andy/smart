@@ -22,7 +22,32 @@ export type Notification = {
 const NOTIFICATIONS_KEY = "notifications";
 
 /**
- * 获取所有通知
+ * 从 API 获取所有通知（支持 relatedId、relatedType、read 筛选）
+ */
+export async function getNotificationsFromAPI(params?: {
+  relatedId?: string;
+  relatedType?: Notification["relatedType"];
+  read?: boolean;
+}): Promise<Notification[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const searchParams = new URLSearchParams();
+    if (params?.relatedId) searchParams.set("relatedId", params.relatedId);
+    if (params?.relatedType) searchParams.set("relatedType", params.relatedType);
+    if (params?.read !== undefined) searchParams.set("read", String(params.read));
+    const url = `/api/notifications${searchParams.toString() ? `?${searchParams}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error("Failed to fetch notifications from API", e);
+    return [];
+  }
+}
+
+/**
+ * 获取所有通知（本地缓存，同步）
  */
 export function getNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
@@ -44,27 +69,53 @@ export function saveNotifications(notifications: Notification[]): void {
 }
 
 /**
- * 创建新通知
+ * 创建新通知（优先走 API，失败时落本地）
  */
-export function createNotification(notification: Omit<Notification, "id" | "createdAt" | "read">): Notification {
+export async function createNotification(notification: Omit<Notification, "id" | "createdAt" | "read">): Promise<Notification> {
+  try {
+    const res = await fetch("/api/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(notification),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      return { ...created, readAt: created.readAt ?? undefined };
+    }
+  } catch (e) {
+    console.warn("Create notification API failed, fallback to local", e);
+  }
   const newNotification: Notification = {
     ...notification,
     id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
     createdAt: new Date().toISOString(),
     read: false,
   };
-  
   const notifications = getNotifications();
-  notifications.unshift(newNotification); // 新通知放在最前面
+  notifications.unshift(newNotification);
   saveNotifications(notifications);
-  
   return newNotification;
 }
 
 /**
- * 标记通知为已读
+ * 标记通知为已读（优先走 API，并更新本地）
  */
-export function markNotificationAsRead(notificationId: string): void {
+export async function markNotificationAsRead(notificationId: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/notifications/${notificationId}`, { method: "PATCH" });
+    if (res.ok) {
+      const notifications = getNotifications();
+      const updated = notifications.map((n) =>
+        n.id === notificationId
+          ? { ...n, read: true, readAt: new Date().toISOString() }
+          : n
+      );
+      saveNotifications(updated);
+      return;
+    }
+  } catch (e) {
+    console.warn("Mark notification read API failed, fallback to local", e);
+  }
   const notifications = getNotifications();
   const updated = notifications.map((n) =>
     n.id === notificationId
@@ -111,12 +162,16 @@ export function getUnreadNotifications(): Notification[] {
 }
 
 /**
- * 根据关联ID和类型查找通知
+ * 根据关联ID和类型查找通知（优先 API，失败则用本地）
  */
-export function findNotificationsByRelated(
+export async function findNotificationsByRelated(
   relatedId: string,
   relatedType: Notification["relatedType"]
-): Notification[] {
+): Promise<Notification[]> {
+  try {
+    const list = await getNotificationsFromAPI({ relatedId, relatedType });
+    if (list.length >= 0) return list;
+  } catch (_) {}
   const notifications = getNotifications();
   return notifications.filter(
     (n) => n.relatedId === relatedId && n.relatedType === relatedType
@@ -124,16 +179,16 @@ export function findNotificationsByRelated(
 }
 
 /**
- * 创建出纳打款通知（审批通过后调用）
+ * 创建出纳打款通知（审批通过后调用，异步）
  */
-export function createPaymentNotification(
+export async function createPaymentNotification(
   billId: string,
   billType: string,
   billMonth: string,
   amount: number,
   currency: string,
   payeeName: string
-): Notification {
+): Promise<Notification> {
   return createNotification({
     type: "payment_required",
     title: "待出纳打款",
