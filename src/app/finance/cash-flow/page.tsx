@@ -402,8 +402,10 @@ export default function CashFlowPage() {
         }
       }
       
-      if (fromDate) filtered = filtered.filter((f) => f.date >= fromDate);
-      if (toDate) filtered = filtered.filter((f) => f.date <= toDate);
+      // API 返回的 date 为 ISO 字符串（含时间），比较时取日期部分 YYYY-MM-DD
+      const toDateOnly = (d: string) => d.slice(0, 10);
+      if (fromDate) filtered = filtered.filter((f) => toDateOnly(f.date) >= fromDate);
+      if (toDate) filtered = filtered.filter((f) => toDateOnly(f.date) <= toDate);
     } else {
       // 按年筛选
       if (filterYear) {
@@ -422,12 +424,13 @@ export default function CashFlowPage() {
         });
       }
       
-      // 日期范围筛选
+      // 日期范围筛选（API 返回的 date 可能含时间，取日期部分比较）
+      const toDateOnly = (d: string) => d.slice(0, 10);
       if (filterDateFrom) {
-        filtered = filtered.filter((f) => f.date >= filterDateFrom);
+        filtered = filtered.filter((f) => toDateOnly(f.date) >= filterDateFrom);
       }
       if (filterDateTo) {
-        filtered = filtered.filter((f) => f.date <= filterDateTo);
+        filtered = filtered.filter((f) => toDateOnly(f.date) <= filterDateTo);
       }
     }
     

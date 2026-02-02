@@ -173,10 +173,12 @@ export default function TransferPage() {
 
   // 筛选后的划拨记录
   const filteredTransfers = useMemo(() => {
+    // API 返回的 date 为 ISO 字符串（含时间），比较时取日期部分 YYYY-MM-DD
+    const toDateOnly = (d: string) => d.slice(0, 10);
     return transfers.filter((transfer) => {
       // 日期筛选
-      if (filterDateFrom && transfer.date < filterDateFrom) return false;
-      if (filterDateTo && transfer.date > filterDateTo) return false;
+      if (filterDateFrom && toDateOnly(transfer.date) < filterDateFrom) return false;
+      if (filterDateTo && toDateOnly(transfer.date) > filterDateTo) return false;
       
       // 转出账户筛选
       if (filterFromAccount !== "all" && transfer.fromAccountId !== filterFromAccount) return false;
