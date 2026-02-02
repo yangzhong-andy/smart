@@ -57,10 +57,11 @@ export async function GET(request: NextRequest) {
     const month = searchParams.get('month');
     const status = searchParams.get('status');
 
-    const where: { supplierProfileId?: string; month?: string; status?: string } = {};
+    const validStatuses = ['Draft', 'Pending_Approval', 'Approved', 'Paid', 'Rejected'] as const;
+    const where: { supplierProfileId?: string; month?: string; status?: typeof validStatuses[number] } = {};
     if (supplierProfileId) where.supplierProfileId = supplierProfileId;
     if (month) where.month = month;
-    if (status) where.status = status;
+    if (status && validStatuses.includes(status as typeof validStatuses[number])) where.status = status as typeof validStatuses[number];
 
     const list = await prisma.supplierMonthlyBill.findMany({
       where,
