@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const entityType = searchParams.get('entityType');
     const entityId = searchParams.get('entityId');
 
-    const where: { entityType?: string; entityId?: string } = {};
+    const where: { entityType?: 'factory' | 'order'; entityId?: string } = {};
     if (entityType === 'factory' || entityType === 'order') where.entityType = entityType;
     if (entityId) where.entityId = entityId;
 

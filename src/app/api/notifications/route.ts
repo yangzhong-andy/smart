@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
     const relatedType = searchParams.get('relatedType');
     const read = searchParams.get('read');
 
-    const where: { relatedId?: string; relatedType?: string; read?: boolean } = {};
+    const where: { relatedId?: string; relatedType?: 'monthly_bill' | 'payment_request' | 'other'; read?: boolean } = {};
     if (relatedId) where.relatedId = relatedId;
-    if (relatedType && (relatedType === 'monthly_bill' || relatedType === 'payment_request' || relatedType === 'other'))
+    if (relatedType === 'monthly_bill' || relatedType === 'payment_request' || relatedType === 'other')
       where.relatedType = relatedType;
     if (read !== undefined && read !== null && read !== '') where.read = read === 'true';
 
