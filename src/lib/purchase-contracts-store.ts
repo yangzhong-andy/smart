@@ -51,12 +51,48 @@ export function getPurchaseContracts(): PurchaseContract[] {
   }
 }
 
-export function savePurchaseContracts(contracts: PurchaseContract[]): void {
+export async function getPurchaseContractsFromAPI(): Promise<PurchaseContract[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/purchase-contracts");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch purchase contracts", e);
+    return [];
+  }
+}
+
+export async function savePurchaseContracts(contracts: PurchaseContract[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(CONTRACTS_KEY, JSON.stringify(contracts));
+    const existing = await getPurchaseContractsFromAPI();
+    const existingIds = new Set(existing.map((c) => c.id));
+    const newIds = new Set(contracts.map((c) => c.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/purchase-contracts/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const c of contracts) {
+      const body = { ...c };
+      if (existingIds.has(c.id)) {
+        await fetch(`/api/purchase-contracts/${c.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else {
+        await fetch("/api/purchase-contracts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save purchase contracts", e);
+    throw e;
   }
 }
 
@@ -65,75 +101,144 @@ export function getPurchaseContractById(id: string): PurchaseContract | undefine
   return contracts.find((c) => c.id === id);
 }
 
-export function upsertPurchaseContract(contract: PurchaseContract): void {
-  const contracts = getPurchaseContracts();
-  const index = contracts.findIndex((c) => c.id === contract.id);
-  if (index >= 0) {
-    contracts[index] = { ...contract, updatedAt: new Date().toISOString() };
+export async function upsertPurchaseContract(contract: PurchaseContract): Promise<void> {
+  const body = { ...contract, updatedAt: new Date().toISOString() };
+  const existing = await getPurchaseContractsFromAPI();
+  const exists = existing.some((c) => c.id === contract.id);
+  if (exists) {
+    const res = await fetch(`/api/purchase-contracts/${contract.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to update purchase contract");
   } else {
-    contracts.push({ ...contract, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const res = await fetch("/api/purchase-contracts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to create purchase contract");
   }
-  savePurchaseContracts(contracts);
 }
 
-export function deletePurchaseContract(id: string): boolean {
-  const contracts = getPurchaseContracts();
-  const index = contracts.findIndex((c) => c.id === id);
-  if (index >= 0) {
-    contracts.splice(index, 1);
-    savePurchaseContracts(contracts);
-    return true;
+export async function deletePurchaseContract(id: string): Promise<boolean> {
+  const res = await fetch(`/api/purchase-contracts/${id}`, { method: "DELETE" });
+  return res.ok;
+}
+
+/**
+ * 从 API 根据 ID 获取采购合同
+ */
+export async function getPurchaseContractByIdFromAPI(id: string): Promise<PurchaseContract | undefined> {
+  try {
+    const res = await fetch(`/api/purchase-contracts/${id}`);
+    if (!res.ok) return undefined;
+    return await res.json();
+  } catch {
+    return undefined;
   }
-  return false;
 }
 
 /**
  * 更新合同已取货数量（子单创建后自动调用）
  */
-export function updateContractPickedQty(contractId: string, additionalQty: number): boolean {
-  const contracts = getPurchaseContracts();
-  const contract = contracts.find((c) => c.id === contractId);
+export async function updateContractPickedQty(contractId: string, additionalQty: number): Promise<boolean> {
+  const contract = await getPurchaseContractByIdFromAPI(contractId);
   if (!contract) return false;
-
   const newPickedQty = contract.pickedQty + additionalQty;
-  if (newPickedQty > contract.totalQty) {
-    console.error(`Cannot update picked qty: ${newPickedQty} exceeds total qty ${contract.totalQty}`);
-    return false;
-  }
-
-  contract.pickedQty = newPickedQty;
-  contract.status =
-    newPickedQty >= contract.totalQty
-      ? "发货完成"
-      : newPickedQty > 0
-        ? "部分发货"
-        : "待发货";
-  contract.updatedAt = new Date().toISOString();
-
-  savePurchaseContracts(contracts);
+  if (newPickedQty > contract.totalQty) return false;
+  const updated: PurchaseContract = {
+    ...contract,
+    pickedQty: newPickedQty,
+    status: (newPickedQty >= contract.totalQty ? "发货完成" : newPickedQty > 0 ? "部分发货" : "待发货") as PurchaseContractStatus,
+    updatedAt: new Date().toISOString()
+  };
+  await upsertPurchaseContract(updated);
   return true;
+}
+
+/** 财务/工厂页使用的「旧版 PO」格式（合同 + 发货单汇总） */
+export type LegacyPurchaseOrder = {
+  id: string;
+  poNumber: string;
+  supplierId: string;
+  supplierName: string;
+  sku: string;
+  unitPrice: number;
+  quantity: number;
+  totalAmount: number;
+  depositRate: number;
+  depositAmount: number;
+  depositPaid: number;
+  tailPeriodDays: number;
+  receivedQty: number;
+  status: "待收货" | "部分收货" | "收货完成，待结清" | "已清款";
+  receipts: Array<{ id: string; qty: number; tailAmount: number; dueDate: string; createdAt: string }>;
+  createdAt: string;
+};
+
+const CONTRACT_STATUS_TO_LEGACY: Record<string, "待收货" | "部分收货" | "收货完成，待结清" | "已清款"> = {
+  待发货: "待收货",
+  部分发货: "部分收货",
+  发货完成: "收货完成，待结清",
+  已结清: "已清款",
+  已取消: "已清款"
+};
+
+/** 从 API 获取并转为财务/工厂页使用的旧版 PO 列表 */
+export async function getLegacyPurchaseOrdersFromAPI(): Promise<LegacyPurchaseOrder[]> {
+  const { getDeliveryOrdersFromAPI } = await import("./delivery-orders-store");
+  const [contracts, deliveryOrders] = await Promise.all([
+    getPurchaseContractsFromAPI(),
+    getDeliveryOrdersFromAPI()
+  ]);
+  return contracts.map((c: PurchaseContract) => {
+    const dos = deliveryOrders.filter((o: { contractId: string }) => o.contractId === c.id);
+    const receivedQty = dos.reduce((sum: number, o: { qty: number }) => sum + o.qty, 0);
+    const receipts = dos.map((o: { id: string; qty: number; tailAmount: number; tailDueDate?: string; createdAt: string }) => ({
+      id: o.id,
+      qty: o.qty,
+      tailAmount: o.tailAmount,
+      dueDate: o.tailDueDate || o.createdAt,
+      createdAt: o.createdAt
+    }));
+    return {
+      id: c.id,
+      poNumber: c.contractNumber,
+      supplierId: c.supplierId || "",
+      supplierName: c.supplierName,
+      sku: c.sku,
+      unitPrice: c.unitPrice,
+      quantity: c.totalQty,
+      totalAmount: c.totalAmount,
+      depositRate: c.depositRate,
+      depositAmount: c.depositAmount,
+      depositPaid: c.depositPaid || 0,
+      tailPeriodDays: c.tailPeriodDays,
+      receivedQty,
+      status: (CONTRACT_STATUS_TO_LEGACY[c.status] || "待收货") as "待收货" | "部分收货" | "收货完成，待结清" | "已清款",
+      receipts,
+      createdAt: c.createdAt
+    };
+  });
 }
 
 /**
  * 更新合同财务信息（支付后调用）
  */
-export function updateContractPayment(contractId: string, amount: number, type: "deposit" | "tail"): boolean {
-  const contracts = getPurchaseContracts();
-  const contract = contracts.find((c) => c.id === contractId);
+export async function updateContractPayment(contractId: string, amount: number, type: "deposit" | "tail"): Promise<boolean> {
+  const contract = await getPurchaseContractByIdFromAPI(contractId);
   if (!contract) return false;
-
-  if (type === "deposit") {
-    contract.depositPaid = (contract.depositPaid || 0) + amount;
-  }
-  contract.totalPaid = (contract.totalPaid || 0) + amount;
-  contract.totalOwed = contract.totalAmount - contract.totalPaid;
-  contract.updatedAt = new Date().toISOString();
-
-  // 如果已付总额 >= 合同总额，标记为已结清
-  if (contract.totalPaid >= contract.totalAmount) {
-    contract.status = "已结清";
-  }
-
-  savePurchaseContracts(contracts);
+  const totalPaid = (contract.totalPaid || 0) + amount;
+  const updated = {
+    ...contract,
+    ...(type === "deposit" ? { depositPaid: (contract.depositPaid || 0) + amount } : {}),
+    totalPaid,
+    totalOwed: contract.totalAmount - totalPaid,
+    status: totalPaid >= contract.totalAmount ? "已结清" : contract.status,
+    updatedAt: new Date().toISOString()
+  };
+  await upsertPurchaseContract(updated);
   return true;
 }

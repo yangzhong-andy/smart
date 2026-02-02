@@ -25,8 +25,8 @@ import {
   type PendingEntry 
 } from "@/lib/pending-entry-store";
 import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
+import { createCashFlow } from "@/lib/cash-flow-store";
 import { enrichWithUID, createBusinessEntityWithRelations } from "@/lib/business-utils";
-import { getProducts } from "@/lib/products-store";
 import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { createPaymentNotification, markNotificationAsRead, findNotificationsByRelated } from "@/lib/notification-store";
@@ -104,6 +104,7 @@ export default function ReconciliationPage() {
       "rebate-receivables": "/api/rebate-receivables",
       "pending-entries": "/api/pending-entries",
       "bank-accounts": "/api/accounts",
+      products: "/api/products",
     };
     if (apiMap[key]) {
       const url = key === "pending-entries" ? "/api/pending-entries" : apiMap[key];
@@ -173,6 +174,11 @@ export default function ReconciliationPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000 // 10分钟内去重
   });
+  const { data: productsData } = useSWR("products", fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 600000 // 10分钟内去重
+  });
 
   // 确保数据是数组并指定类型
   const bills: MonthlyBill[] = Array.isArray(billsData) ? (billsData as MonthlyBill[]) : [];
@@ -184,6 +190,7 @@ export default function ReconciliationPage() {
   const rebateReceivables: RebateReceivable[] = Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [];
   const pendingEntriesFromSWR: PendingEntry[] = Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [];
   const bankAccountsFromSWR: BankAccount[] = Array.isArray(bankAccountsData) ? (bankAccountsData as BankAccount[]) : [];
+  const products: Array<{ sku_id?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }> = Array.isArray(productsData) ? productsData : [];
 
   // 更新本地状态（用于兼容现有代码）
   useEffect(() => {
@@ -477,7 +484,6 @@ export default function ReconciliationPage() {
 
   // 计算库存统计
   const inventoryStats = useMemo(() => {
-    const products = getProducts();
     let totalValue = 0;
     let factoryQty = 0;
     let factoryValue = 0;
@@ -535,7 +541,7 @@ export default function ReconciliationPage() {
       transitQty,
       transitValue
     };
-  }, []); // 当组件加载时计算
+  }, [products]);
 
   return (
     <div className="p-6 space-y-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
@@ -2189,26 +2195,6 @@ export default function ReconciliationPage() {
 
                   // 生成财务流水记录
                   try {
-                    const CASH_FLOW_KEY = "cashFlow";
-                    const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-                    const cashFlow: Array<{
-                      id: string;
-                      date: string;
-                      summary: string;
-                      category: string;
-                      type: "income" | "expense";
-                      amount: number;
-                      accountId: string;
-                      accountName: string;
-                      currency: string;
-                      remark: string;
-                      relatedId?: string;
-                      businessNumber?: string;
-                      status: "confirmed" | "pending";
-                      isReversal?: boolean;
-                      createdAt: string;
-                    }> = storedFlow ? JSON.parse(storedFlow) : [];
-
                     // 确定流水类型和金额：
                     // 1. 应收款（Receivable）：收入（income），金额为正数（+netAmount）
                     // 2. 应付款（Payable）：支出（expense），金额为负数（-netAmount）
@@ -2232,7 +2218,6 @@ export default function ReconciliationPage() {
                       : new Date().toISOString();
 
                     const newFlow = {
-                      id: crypto.randomUUID(),
                       date: entryDateTime,
                       summary,
                       category: selectedPendingEntry.type === "Bill" 
@@ -2254,14 +2239,9 @@ export default function ReconciliationPage() {
                         : `REQ-${selectedPendingEntry.relatedId.slice(0, 8)}`,
                       status: "confirmed" as const,
                       isReversal: false,
-                      voucher: voucherValue || undefined,
-                      createdAt: new Date().toISOString()
+                      voucher: voucherValue || undefined
                     };
-
-                    // 自动生成唯一业务ID
-                    const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
-                    cashFlow.push(flowWithUID);
-                    window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(cashFlow));
+                    const createdFlow = await createCashFlow(newFlow);
 
                     // 更新账户余额
                     // 逻辑：根据 flowType 和 flowAmount 计算余额变化，与现金流水页面保持一致
@@ -2284,9 +2264,7 @@ export default function ReconciliationPage() {
                       return a;
                     });
                     setBankAccounts(updatedAccounts);
-                    if (typeof window !== "undefined") {
-                      await saveAccounts(updatedAccounts);
-                    }
+                    await saveAccounts(updatedAccounts);
 
                     // 完成待入账任务（API）
                     await completePendingEntry(
@@ -2295,7 +2273,7 @@ export default function ReconciliationPage() {
                       account.name,
                       entryForm.entryDate,
                       "财务人员", // 实际应该从用户系统获取
-                      newFlow.id
+                      createdFlow.id
                     );
 
                     // 更新账单或付款申请状态为"已支付"
@@ -2308,7 +2286,7 @@ export default function ReconciliationPage() {
                               status: "Paid" as BillStatus,
                               paidBy: "出纳",
                               paidAt: new Date().toISOString(),
-                              paymentFlowId: newFlow.id
+                              paymentFlowId: createdFlow.id
                             }
                           : b
                       );
@@ -2325,7 +2303,7 @@ export default function ReconciliationPage() {
                               status: "Paid" as BillStatus,
                               paidBy: "出纳",
                               paidAt: new Date().toISOString(),
-                              paymentFlowId: newFlow.id
+                              paymentFlowId: createdFlow.id
                             }
                           : r
                       );
@@ -2525,27 +2503,6 @@ export default function ReconciliationPage() {
 
                   // 生成财务流水记录
                   try {
-                    const CASH_FLOW_KEY = "cashFlow";
-                    const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-                    const cashFlow: Array<{
-                      id: string;
-                      date: string;
-                      summary: string;
-                      category: string;
-                      type: "income" | "expense";
-                      amount: number;
-                      accountId: string;
-                      accountName: string;
-                      currency: string;
-                      remark: string;
-                      relatedId?: string;
-                      businessNumber?: string;
-                      status: "confirmed" | "pending";
-                      isReversal?: boolean;
-                      voucher?: string;
-                      createdAt: string;
-                    }> = storedFlow ? JSON.parse(storedFlow) : [];
-
                     const voucherValue = Array.isArray(paymentForm.voucher) 
                       ? (paymentForm.voucher.length > 0 ? paymentForm.voucher[0] : "") 
                       : paymentForm.voucher;
@@ -2562,7 +2519,6 @@ export default function ReconciliationPage() {
                       : new Date().toISOString();
 
                     const newFlow = {
-                      id: crypto.randomUUID(),
                       date: paymentDateTime,
                       summary: `${selectedPendingPaymentBill.billType} - ${selectedPendingPaymentBill.agencyName || selectedPendingPaymentBill.supplierName || selectedPendingPaymentBill.factoryName}`,
                       category: selectedPendingPaymentBill.billType === "广告" ? "运营-广告" :
@@ -2579,14 +2535,9 @@ export default function ReconciliationPage() {
                       businessNumber: paymentVoucherNumber,
                       status: "confirmed" as const,
                       isReversal: false,
-                      voucher: voucherValue || undefined,
-                      createdAt: new Date().toISOString()
+                      voucher: voucherValue || undefined
                     };
-
-                    // 自动生成唯一业务ID
-                    const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
-                    cashFlow.push(flowWithUID);
-                    window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(cashFlow));
+                    const createdFlow = await createCashFlow(newFlow);
 
                     // 更新账户余额
                     // 逻辑：待付款是支出操作 → expense 类型 → 余额减少
@@ -2623,7 +2574,7 @@ export default function ReconciliationPage() {
                             paymentAccountName: account.name,
                             paymentVoucher: paymentForm.voucher,
                             paymentVoucherNumber: paymentVoucherNumber,
-                            paymentFlowId: newFlow.id,
+                            paymentFlowId: createdFlow.id,
                             paymentRemarks: `付款单号：${paymentVoucherNumber}`
                           }
                         : b

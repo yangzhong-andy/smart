@@ -45,7 +45,7 @@ const CHANNELS_KEY = "logisticsChannels";
 const TRACKING_KEY = "logisticsTracking";
 
 /**
- * 获取所有物流渠道
+ * 获取所有物流渠道（同步，localStorage）
  */
 export function getLogisticsChannels(): LogisticsChannel[] {
   if (typeof window === "undefined") return [];
@@ -60,14 +60,50 @@ export function getLogisticsChannels(): LogisticsChannel[] {
 }
 
 /**
- * 保存物流渠道列表
+ * 从 API 获取物流渠道
  */
-export function saveLogisticsChannels(channels: LogisticsChannel[]): void {
+export async function getLogisticsChannelsFromAPI(): Promise<LogisticsChannel[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/logistics-channels");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch logistics channels", e);
+    return [];
+  }
+}
+
+/**
+ * 保存物流渠道列表（同步到 API - 全量）
+ */
+export async function saveLogisticsChannels(channels: LogisticsChannel[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(CHANNELS_KEY, JSON.stringify(channels));
+    const existing = await getLogisticsChannelsFromAPI();
+    const existingIds = new Set(existing.map((c) => c.id));
+    const newIds = new Set(channels.map((c) => c.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) await fetch(`/api/logistics-channels/${e.id}`, { method: "DELETE" });
+    }
+    for (const c of channels) {
+      if (existingIds.has(c.id)) {
+        await fetch(`/api/logistics-channels/${c.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(c)
+        });
+      } else {
+        await fetch("/api/logistics-channels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(c)
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save logistics channels", e);
+    throw e;
   }
 }
 
@@ -80,45 +116,39 @@ export function getLogisticsChannelById(id: string): LogisticsChannel | undefine
 }
 
 /**
- * 创建或更新物流渠道
+ * 创建或更新物流渠道（同步到 API）
  */
-export function upsertLogisticsChannel(channel: LogisticsChannel): void {
-  const channels = getLogisticsChannels();
-  const existingIndex = channels.findIndex((c) => c.id === channel.id);
-  
-  if (existingIndex >= 0) {
-    channels[existingIndex] = {
-      ...channel,
-      updatedAt: new Date().toISOString()
-    };
-  } else {
-    channels.push({
-      ...channel,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+export async function upsertLogisticsChannel(channel: LogisticsChannel): Promise<void> {
+  const body = { ...channel, updatedAt: new Date().toISOString() };
+  const existing = await getLogisticsChannelsFromAPI();
+  const exists = existing.some((c) => c.id === channel.id);
+  if (exists) {
+    const res = await fetch(`/api/logistics-channels/${channel.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
+    if (!res.ok) throw new Error("Failed to update logistics channel");
+  } else {
+    const res = await fetch("/api/logistics-channels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to create logistics channel");
   }
-  
-  saveLogisticsChannels(channels);
 }
 
 /**
  * 删除物流渠道
  */
-export function deleteLogisticsChannel(id: string): boolean {
-  const channels = getLogisticsChannels();
-  const filtered = channels.filter((c) => c.id !== id);
-  
-  if (filtered.length === channels.length) {
-    return false; // 未找到
-  }
-  
-  saveLogisticsChannels(filtered);
-  return true;
+export async function deleteLogisticsChannel(id: string): Promise<boolean> {
+  const res = await fetch(`/api/logistics-channels/${id}`, { method: "DELETE" });
+  return res.ok;
 }
 
 /**
- * 获取所有物流跟踪记录
+ * 获取所有物流跟踪记录（同步，localStorage）
  */
 export function getLogisticsTracking(): LogisticsTracking[] {
   if (typeof window === "undefined") return [];
@@ -128,6 +158,30 @@ export function getLogisticsTracking(): LogisticsTracking[] {
     return JSON.parse(stored);
   } catch (e) {
     console.error("Failed to parse logistics tracking", e);
+    return [];
+  }
+}
+
+/**
+ * 从 API 获取物流跟踪记录
+ */
+export async function getLogisticsTrackingFromAPI(params?: {
+  channelId?: string;
+  storeId?: string;
+  status?: TrackingStatus;
+}): Promise<LogisticsTracking[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const query = new URLSearchParams();
+    if (params?.channelId) query.set("channelId", params.channelId);
+    if (params?.storeId) query.set("storeId", params.storeId);
+    if (params?.status) query.set("status", params.status);
+    const url = query.toString() ? `/api/logistics-tracking?${query}` : "/api/logistics-tracking";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch logistics tracking", e);
     return [];
   }
 }
@@ -161,49 +215,43 @@ export function getLogisticsTrackingByStatus(status: TrackingStatus): LogisticsT
 }
 
 /**
- * 创建或更新物流跟踪记录
+ * 创建或更新物流跟踪记录（同步到 API）
  */
-export function upsertLogisticsTracking(tracking: LogisticsTracking): void {
-  const allTracking = getLogisticsTracking();
-  const existingIndex = allTracking.findIndex((t) => t.id === tracking.id);
-  
-  // 计算运输时长
+export async function upsertLogisticsTracking(tracking: LogisticsTracking): Promise<void> {
   const shippedDate = new Date(tracking.shippedDate);
   const now = new Date();
   const transportDays = Math.floor((now.getTime() - shippedDate.getTime()) / (1000 * 60 * 60 * 24));
-  
-  const trackingWithDays = {
+  const body = {
     ...tracking,
     transportDays: transportDays >= 0 ? transportDays : 0,
     lastUpdatedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  
-  if (existingIndex >= 0) {
-    allTracking[existingIndex] = trackingWithDays;
-  } else {
-    allTracking.push({
-      ...trackingWithDays,
-      createdAt: new Date().toISOString()
+  const existing = await getLogisticsTrackingFromAPI();
+  const exists = existing.some((t) => t.id === tracking.id);
+  if (exists) {
+    const res = await fetch(`/api/logistics-tracking/${tracking.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
+    if (!res.ok) throw new Error("Failed to update logistics tracking");
+  } else {
+    const res = await fetch("/api/logistics-tracking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, createdAt: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error("Failed to create logistics tracking");
   }
-  
-  saveLogisticsTracking(allTracking);
 }
 
 /**
  * 删除物流跟踪记录
  */
-export function deleteLogisticsTracking(id: string): boolean {
-  const tracking = getLogisticsTracking();
-  const filtered = tracking.filter((t) => t.id !== id);
-  
-  if (filtered.length === tracking.length) {
-    return false; // 未找到
-  }
-  
-  saveLogisticsTracking(filtered);
-  return true;
+export async function deleteLogisticsTracking(id: string): Promise<boolean> {
+  const res = await fetch(`/api/logistics-tracking/${id}`, { method: "DELETE" });
+  return res.ok;
 }
 
 /**

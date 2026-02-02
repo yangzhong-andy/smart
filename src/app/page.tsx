@@ -4,11 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, AlertCircle, ArrowRight } from "lucide-react";
 import type { Store } from "@/lib/store-store";
 import type { BankAccount } from "@/lib/finance-store";
-import type { CashFlow } from "./finance/cash-flow/page";
+import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
 import Link from "next/link";
-
-const CASH_FLOW_KEY = "cashFlow";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -32,15 +30,8 @@ export default function HomePage() {
       ]);
       setStores(storesRes.ok ? await storesRes.json() : []);
       setAccounts(accRes.ok ? await accRes.json() : []);
-      const stored = window.localStorage.getItem(CASH_FLOW_KEY);
-      if (stored) {
-        try {
-          const parsed: CashFlow[] = JSON.parse(stored);
-          setCashFlow(parsed);
-        } catch (e) {
-          console.error("Failed to parse cash flow", e);
-        }
-      }
+      const flowList = await getCashFlowFromAPI();
+      setCashFlow(flowList);
       
       // 获取待审批账单数量
       (async () => {

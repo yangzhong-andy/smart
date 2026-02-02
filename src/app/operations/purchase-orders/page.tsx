@@ -10,7 +10,7 @@ import {
   type PurchaseOrder,
   type PurchaseOrderStatus
 } from "@/lib/purchase-orders-store";
-import { getProducts, type Product } from "@/lib/products-store";
+import { getProductsFromAPI, type Product } from "@/lib/products-store";
 import type { Store } from "@/lib/store-store";
 
 // SWR fetcher
@@ -79,7 +79,8 @@ export default function PurchaseOrdersNewPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     (async () => {
-    setProducts(getProducts());
+    const prods = await getProductsFromAPI();
+    setProducts(prods);
     const storesRes = await fetch("/api/stores");
     setStores(storesRes.ok ? await storesRes.json() : []);
     setInitialized(true);

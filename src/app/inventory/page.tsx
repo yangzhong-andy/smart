@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, Fragment } from "react";
-import { getProducts } from "@/lib/products-store";
+import { getProductsFromAPI } from "@/lib/products-store";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { Package, Search, X, Download, History, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
@@ -123,8 +123,7 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedProducts = getProducts();
-    setProducts(loadedProducts);
+    getProductsFromAPI().then(setProducts);
   }, []);
 
   // 加载变动历史

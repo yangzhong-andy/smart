@@ -21,7 +21,7 @@ import {
   BarChart3
 } from "lucide-react";
 import {
-  getInfluencers,
+  getInfluencersFromAPI,
   saveInfluencers,
   upsertInfluencer,
   deleteInfluencer,
@@ -33,7 +33,7 @@ import {
   type CooperationStatus,
   type SampleStatus
 } from "@/lib/influencer-bd-store";
-import { getProducts } from "@/lib/products-store";
+import { getProductsFromAPI } from "@/lib/products-store";
 import { StatCard, ActionButton, PageHeader, SearchBar, EmptyState } from "@/components/ui";
 
 // 格式化粉丝数
@@ -97,12 +97,11 @@ export default function InfluencersPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loaded = getInfluencers();
-    setInfluencers(loaded);
-    setInfluencersReady(true);
-    
-    const loadedProducts = getProducts();
-    setProducts(loadedProducts);
+    getInfluencersFromAPI().then((loaded) => {
+      setInfluencers(loaded);
+      setInfluencersReady(true);
+    });
+    getProductsFromAPI().then(setProducts);
   }, []);
 
   useEffect(() => {
@@ -200,20 +199,26 @@ export default function InfluencersPage() {
     };
 
     upsertInfluencer(influencerData);
-    setInfluencers(getInfluencers());
+    getInfluencersFromAPI().then(setInfluencers);
     toast.success(editingInfluencer ? "达人信息已更新" : "达人已创建");
     resetForm();
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("⚠️ 确定要删除这个达人吗？\n此操作不可恢复！")) return;
-
-    if (deleteInfluencer(id)) {
-      setInfluencers(getInfluencers());
-      toast.success("达人已删除");
-    } else {
-      toast.error("删除失败");
+    try {
+      const ok = await deleteInfluencer(id);
+      if (ok) {
+        const updated = await getInfluencersFromAPI();
+        setInfluencers(updated);
+        toast.success("达人已删除");
+      } else {
+        toast.error("删除失败");
+      }
+    } catch (e) {
+      console.error("删除达人失败", e);
+      toast.error("删除失败，请重试");
     }
   };
 
@@ -226,26 +231,31 @@ export default function InfluencersPage() {
     setIsSampleModalOpen(true);
   };
 
-  const handleConfirmSample = () => {
+  const handleConfirmSample = async () => {
     if (!selectedInfluencer || !sampleForm.productSku || !sampleForm.sampleOrderNumber) {
       toast.error("请选择产品和填写寄样单号");
       return;
     }
 
-    const result = confirmSample(
-      selectedInfluencer.id,
-      sampleForm.productSku,
-      sampleForm.sampleOrderNumber
-    );
+    try {
+      const result = await confirmSample(
+        selectedInfluencer.id,
+        sampleForm.productSku,
+        sampleForm.sampleOrderNumber
+      );
 
-    if (result.success) {
-      setInfluencers(getInfluencers());
-      setProducts(getProducts());
-      toast.success(result.message);
-      setIsSampleModalOpen(false);
-      setSelectedInfluencer(null);
-    } else {
-      toast.error(result.message);
+      if (result.success) {
+        getInfluencersFromAPI().then(setInfluencers);
+        getProductsFromAPI().then(setProducts);
+        toast.success(result.message);
+        setIsSampleModalOpen(false);
+        setSelectedInfluencer(null);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (e) {
+      console.error("寄样失败", e);
+      toast.error("操作失败，请重试");
     }
   };
 
@@ -265,7 +275,7 @@ export default function InfluencersPage() {
     }
 
     updateTracking(selectedInfluencer.id, trackingForm.trackingNumber, trackingForm.status);
-    setInfluencers(getInfluencers());
+    getInfluencersFromAPI().then(setInfluencers);
     toast.success("物流信息已更新");
     
     if (trackingForm.status === "已签收") {

@@ -6,8 +6,8 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Factory, Plus, X, Save, ArrowLeft, FileText, Zap, CheckCircle } from "lucide-react";
 import { PageHeader, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
-import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
-import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { getPurchaseContractsFromAPI, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import type { DeliveryOrder } from "@/lib/delivery-orders-store";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill } from "@/lib/reconciliation-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -35,19 +35,6 @@ type Supplier = {
   createdAt?: string;
 };
 
-const SUPPLIERS_KEY = "suppliers";
-
-function getSuppliers(): Supplier[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(SUPPLIERS_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored);
-  } catch (e) {
-    console.error("Failed to parse suppliers", e);
-    return [];
-  }
-}
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -113,10 +100,15 @@ export default function SupplierBillsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    
-    setSuppliers(getSuppliers());
-    setContracts(getPurchaseContracts());
-    setDeliveryOrders(getDeliveryOrders());
+    Promise.all([
+      fetch("/api/suppliers").then((r) => (r.ok ? r.json() : [])),
+      getPurchaseContractsFromAPI(),
+      fetch("/api/delivery-orders").then((r) => (r.ok ? r.json() : []))
+    ]).then(([s, c, d]) => {
+      setSuppliers(Array.isArray(s) ? s : []);
+      setContracts(Array.isArray(c) ? c : []);
+      setDeliveryOrders(Array.isArray(d) ? d : []);
+    });
   }, []);
 
   // 自动汇总账单明细

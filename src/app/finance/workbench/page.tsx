@@ -13,6 +13,7 @@ import Link from "next/link";
 import type { PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { type BankAccount, getAccountStats } from "@/lib/finance-store";
+import { getCashFlowFromAPI, type CashFlow as CashFlowType } from "@/lib/cash-flow-store";
 import { type FinanceRates } from "@/lib/exchange";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { formatCurrency as formatCurrencyUtil, formatCurrencyString } from "@/lib/currency-utils";
@@ -356,19 +357,16 @@ export default function FinanceWorkbenchPage() {
   // 加载现金流数据
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("cashFlow");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        setCashFlow(Array.isArray(parsed) ? parsed : []);
-      } catch (e) {
-        console.error("Failed to parse cash flow", e);
+    getCashFlowFromAPI()
+      .then((data) => {
+        setCashFlow(Array.isArray(data) ? (data as unknown as CashFlow[]) : []);
+        setInitialized(true);
+      })
+      .catch((e) => {
+        console.error("Failed to fetch cash flow", e);
         setCashFlow([]);
-      }
-    } else {
-      setCashFlow([]);
-    }
-    setInitialized(true);
+        setInitialized(true);
+      });
   }, []);
 
   // 刷新审批数据（修复：添加 mutate 到依赖项，避免无限循环）

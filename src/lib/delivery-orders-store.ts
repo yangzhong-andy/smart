@@ -36,12 +36,49 @@ export function getDeliveryOrders(): DeliveryOrder[] {
   }
 }
 
-export function saveDeliveryOrders(orders: DeliveryOrder[]): void {
+export async function getDeliveryOrdersFromAPI(contractId?: string): Promise<DeliveryOrder[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const url = contractId ? `/api/delivery-orders?contractId=${encodeURIComponent(contractId)}` : "/api/delivery-orders";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch delivery orders", e);
+    return [];
+  }
+}
+
+export async function saveDeliveryOrders(orders: DeliveryOrder[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(DELIVERY_ORDERS_KEY, JSON.stringify(orders));
+    const existing = await getDeliveryOrdersFromAPI();
+    const existingIds = new Set(existing.map((o) => o.id));
+    const newIds = new Set(orders.map((o) => o.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/delivery-orders/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const o of orders) {
+      const body = { ...o };
+      if (existingIds.has(o.id)) {
+        await fetch(`/api/delivery-orders/${o.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else {
+        await fetch("/api/delivery-orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save delivery orders", e);
+    throw e;
   }
 }
 
@@ -55,70 +92,54 @@ export function getDeliveryOrdersByContractId(contractId: string): DeliveryOrder
   return orders.filter((o) => o.contractId === contractId);
 }
 
-export function upsertDeliveryOrder(order: DeliveryOrder): void {
-  const orders = getDeliveryOrders();
-  const index = orders.findIndex((o) => o.id === order.id);
-  if (index >= 0) {
-    orders[index] = { ...order, updatedAt: new Date().toISOString() };
+export async function upsertDeliveryOrder(order: DeliveryOrder): Promise<void> {
+  const body = { ...order, updatedAt: new Date().toISOString() };
+  const existing = await getDeliveryOrdersFromAPI();
+  const exists = existing.some((o) => o.id === order.id);
+  if (exists) {
+    const res = await fetch(`/api/delivery-orders/${order.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to update delivery order");
   } else {
-    orders.push({ ...order, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const res = await fetch("/api/delivery-orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to create delivery order");
   }
-  saveDeliveryOrders(orders);
 }
 
-export function deleteDeliveryOrder(id: string): boolean {
-  const orders = getDeliveryOrders();
-  const index = orders.findIndex((o) => o.id === id);
-  if (index >= 0) {
-    orders.splice(index, 1);
-    saveDeliveryOrders(orders);
-    return true;
-  }
-  return false;
+export async function deleteDeliveryOrder(id: string): Promise<boolean> {
+  const res = await fetch(`/api/delivery-orders/${id}`, { method: "DELETE" });
+  return res.ok;
 }
 
 /**
  * 创建新的拿货单（子单）
  * 会自动更新母单的已取货数量
  */
-export function createDeliveryOrder(
+export async function createDeliveryOrder(
   contractId: string,
   qty: number,
   domesticTrackingNumber?: string,
   shippedDate?: string
-): { success: boolean; order?: DeliveryOrder; error?: string } {
-  // 导入母单存储（避免循环依赖）
-  const contractsKey = "purchaseContracts";
-  let contract: any = null;
-  try {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(contractsKey) : null;
-    if (stored) {
-      const contracts = JSON.parse(stored);
-      contract = contracts.find((c: any) => c.id === contractId);
-    }
-  } catch (e) {
-    console.error("Failed to load contract", e);
-  }
+): Promise<{ success: boolean; order?: DeliveryOrder; error?: string }> {
+  const { getPurchaseContractByIdFromAPI } = await import("./purchase-contracts-store");
+  const contract = await getPurchaseContractByIdFromAPI(contractId);
+  if (!contract) return { success: false, error: "合同不存在" };
 
-  if (!contract) {
-    return { success: false, error: "合同不存在" };
-  }
-
-  // 检查剩余数量
   const remainingQty = contract.totalQty - contract.pickedQty;
   if (qty > remainingQty) {
     return { success: false, error: `本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}` };
   }
+  if (qty <= 0) return { success: false, error: "拿货数量必须大于 0" };
 
-  if (qty <= 0) {
-    return { success: false, error: "拿货数量必须大于 0" };
-  }
-
-  // 计算本次尾款金额
   const tailBase = contract.totalAmount - contract.depositAmount;
   const tailAmount = tailBase * (qty / contract.totalQty);
-
-  // 计算尾款到期日
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + contract.tailPeriodDays);
 
@@ -138,29 +159,10 @@ export function createDeliveryOrder(
     updatedAt: new Date().toISOString()
   };
 
-  // 保存子单
-  upsertDeliveryOrder(newOrder);
+  await upsertDeliveryOrder(newOrder);
 
-  // 更新母单的已取货数量
-  try {
-    const contracts = JSON.parse(typeof window !== "undefined" ? window.localStorage.getItem(contractsKey) || "[]" : "[]");
-    const contractIndex = contracts.findIndex((c: any) => c.id === contractId);
-    if (contractIndex >= 0) {
-      contracts[contractIndex].pickedQty = (contracts[contractIndex].pickedQty || 0) + qty;
-      contracts[contractIndex].status =
-        contracts[contractIndex].pickedQty >= contracts[contractIndex].totalQty
-          ? "发货完成"
-          : contracts[contractIndex].pickedQty > 0
-            ? "部分发货"
-            : "待发货";
-      contracts[contractIndex].updatedAt = new Date().toISOString();
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(contractsKey, JSON.stringify(contracts));
-      }
-    }
-  } catch (e) {
-    console.error("Failed to update contract picked qty", e);
-  }
+  const { updateContractPickedQty } = await import("./purchase-contracts-store");
+  await updateContractPickedQty(contractId, qty);
 
   return { success: true, order: newOrder };
 }
@@ -168,38 +170,16 @@ export function createDeliveryOrder(
 /**
  * 更新子单尾款支付状态
  */
-export function updateDeliveryOrderPayment(orderId: string, amount: number): boolean {
-  const orders = getDeliveryOrders();
+export async function updateDeliveryOrderPayment(orderId: string, amount: number): Promise<boolean> {
+  const orders = await getDeliveryOrdersFromAPI();
   const order = orders.find((o) => o.id === orderId);
   if (!order) return false;
 
-  order.tailPaid = (order.tailPaid || 0) + amount;
-  order.updatedAt = new Date().toISOString();
+  const updated = { ...order, tailPaid: (order.tailPaid || 0) + amount, updatedAt: new Date().toISOString() };
+  await upsertDeliveryOrder(updated);
 
-  saveDeliveryOrders(orders);
-
-  // 同时更新母单的财务信息
-  try {
-    const contractsKey = "purchaseContracts";
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(contractsKey) : null;
-    if (stored) {
-      const contracts = JSON.parse(stored);
-      const contract = contracts.find((c: any) => c.id === order.contractId);
-      if (contract) {
-        contract.totalPaid = (contract.totalPaid || 0) + amount;
-        contract.totalOwed = contract.totalAmount - contract.totalPaid;
-        contract.updatedAt = new Date().toISOString();
-        if (contract.totalPaid >= contract.totalAmount) {
-          contract.status = "已结清";
-        }
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(contractsKey, JSON.stringify(contracts));
-        }
-      }
-    }
-  } catch (e) {
-    console.error("Failed to update contract payment", e);
-  }
+  const { updateContractPayment } = await import("./purchase-contracts-store");
+  await updateContractPayment(order.contractId, amount, "tail");
 
   return true;
 }

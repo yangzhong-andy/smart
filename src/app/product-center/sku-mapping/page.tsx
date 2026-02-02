@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import {
-  getProducts,
+  getProductsFromAPI,
   type Product,
   type PlatformSKUMapping,
   addPlatformSKUMapping,
@@ -26,8 +26,7 @@ export default function SKUMappingPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedProducts = getProducts();
-    setProducts(loadedProducts);
+    getProductsFromAPI().then(setProducts);
   }, []);
 
   const productsWithMappings = useMemo(() => {
@@ -158,7 +157,7 @@ export default function SKUMappingPage() {
     setIsModalOpen(true);
   };
 
-  const handleAddMapping = () => {
+  const handleAddMapping = async () => {
     if (!selectedProduct) return;
     
     if (!mappingForm.platformSkuId.trim()) {
@@ -183,50 +182,59 @@ export default function SKUMappingPage() {
       platformSkuName: mappingForm.platformSkuName.trim() || undefined
     };
     
-    if (addPlatformSKUMapping(selectedProduct.sku_id, mapping)) {
-      // 更新本地状态
-      const updatedProducts = products.map((p) =>
-        p.sku_id === selectedProduct.sku_id
-          ? {
-              ...p,
-              platform_sku_mapping: [
-                ...(p.platform_sku_mapping || []).filter((m) => m.platform !== mappingForm.platform),
-                mapping
-              ]
-            }
-          : p
-      );
-      setProducts(updatedProducts);
-      toast.success("映射已添加");
-      setMappingForm({
-        platform: "TikTok",
-        platformSkuId: "",
-        platformSkuName: ""
-      });
-      setIsModalOpen(false);
-    } else {
-      toast.error("添加映射失败");
+    try {
+      if (await addPlatformSKUMapping(selectedProduct.sku_id, mapping)) {
+        const updatedProducts = products.map((p) =>
+          p.sku_id === selectedProduct.sku_id
+            ? {
+                ...p,
+                platform_sku_mapping: [
+                  ...(p.platform_sku_mapping || []).filter((m) => m.platform !== mappingForm.platform),
+                  mapping
+                ]
+              }
+            : p
+        );
+        setProducts(updatedProducts);
+        toast.success("映射已添加");
+        setMappingForm({
+          platform: "TikTok",
+          platformSkuId: "",
+          platformSkuName: ""
+        });
+        setIsModalOpen(false);
+      } else {
+        toast.error("添加映射失败");
+      }
+    } catch (e) {
+      console.error("添加映射失败", e);
+      toast.error("操作失败，请重试");
     }
   };
 
-  const handleRemoveMapping = (product: Product, platform: string) => {
+  const handleRemoveMapping = async (product: Product, platform: string) => {
     if (!confirm(`确定要删除 ${platform} 平台的映射吗？`)) return;
-    
-    if (removePlatformSKUMapping(product.sku_id, platform)) {
-      const updatedProducts = products.map((p) =>
-        p.sku_id === product.sku_id
-          ? {
-              ...p,
-              platform_sku_mapping: (p.platform_sku_mapping || []).filter(
-                (m) => m.platform !== platform
-              )
-            }
-          : p
-      );
-      setProducts(updatedProducts);
-      toast.success("映射已删除");
-    } else {
-      toast.error("删除映射失败");
+
+    try {
+      if (await removePlatformSKUMapping(product.sku_id, platform)) {
+        const updatedProducts = products.map((p) =>
+          p.sku_id === product.sku_id
+            ? {
+                ...p,
+                platform_sku_mapping: (p.platform_sku_mapping || []).filter(
+                  (m) => m.platform !== platform
+                )
+              }
+            : p
+        );
+        setProducts(updatedProducts);
+        toast.success("映射已删除");
+      } else {
+        toast.error("删除映射失败");
+      }
+    } catch (e) {
+      console.error("删除映射失败", e);
+      toast.error("操作失败，请重试");
     }
   };
 

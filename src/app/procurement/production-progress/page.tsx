@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Factory, Package, TrendingUp, Calendar, AlertCircle, CheckCircle2, Clock, Play, AlertTriangle, Edit2, Save, X } from "lucide-react";
 import { PageHeader, StatCard, SearchBar, EmptyState } from "@/components/ui";
-import { getPurchaseContracts, upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
-import { getDeliveryOrders } from "@/lib/delivery-orders-store";
-import { getProductBySkuId, upsertProduct } from "@/lib/products-store";
+import { getPurchaseContractsFromAPI, upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import { getDeliveryOrdersFromAPI } from "@/lib/delivery-orders-store";
+import { getProductBySkuIdFromAPI, upsertProduct } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -44,13 +44,17 @@ export default function ProductionProgressPage() {
     loadData();
   }, []);
 
-  const loadData = () => {
-    setContracts(getPurchaseContracts());
-    setDeliveryOrders(getDeliveryOrders());
+  const loadData = async () => {
+    const [conts, orders] = await Promise.all([
+      getPurchaseContractsFromAPI(),
+      getDeliveryOrdersFromAPI()
+    ]);
+    setContracts(conts);
+    setDeliveryOrders(orders);
   };
 
   // 处理更新完工数量
-  const handleUpdateFinishedQty = (contractId: string) => {
+  const handleUpdateFinishedQty = async (contractId: string) => {
     const contract = contracts.find(c => c.id === contractId);
     if (!contract) {
       toast.error("合同不存在");
@@ -75,17 +79,22 @@ export default function ProductionProgressPage() {
     // 更新合同
     contract.finishedQty = newFinishedQty;
     contract.updatedAt = new Date().toISOString();
-    upsertPurchaseContract(contract);
+    try {
+      await upsertPurchaseContract(contract);
+    } catch (e) {
+      console.error("更新合同失败", e);
+      toast.error("更新失败，请重试");
+      return;
+    }
 
     // 更新产品库存（如果有关联产品）
     if (contract.skuId && additionalQty > 0) {
-      const product = getProductBySkuId(contract.skuId);
+      const product = await getProductBySkuIdFromAPI(contract.skuId);
       if (product) {
-        const currentAtFactory = product.at_factory || 0;
+        const currentAtFactory = (product as any).at_factory || 0;
         const newAtFactory = currentAtFactory + additionalQty;
-        product.at_factory = newAtFactory;
-        product.updatedAt = new Date().toISOString();
-        upsertProduct(product);
+        const updatedProduct = { ...product, at_factory: newAtFactory, updatedAt: new Date().toISOString() };
+        await upsertProduct(updatedProduct);
 
         // 记录库存变动
         addInventoryMovement({

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
 import {
-  getPurchaseContracts,
+  getPurchaseContractsFromAPI,
   upsertPurchaseContract,
   type PurchaseContract
 } from "@/lib/purchase-contracts-store";
@@ -15,7 +15,7 @@ import {
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
 import {
-  getDeliveryOrdersByContractId,
+  getDeliveryOrdersFromAPI,
   createDeliveryOrder,
   type DeliveryOrder
 } from "@/lib/delivery-orders-store";
@@ -24,8 +24,10 @@ import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@
 import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory } from "lucide-react";
 import ImageUploader from "@/components/ImageUploader";
 import InventoryDistribution from "@/components/InventoryDistribution";
-import { getProductBySkuId, upsertProduct, getProducts } from "@/lib/products-store";
+import { getProductsFromAPI, upsertProduct, type Product as ProductType } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
+import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
+import { getCashFlowFromAPI, createCashFlow } from "@/lib/cash-flow-store";
 
 type Supplier = {
   id: string;
@@ -53,10 +55,7 @@ type Product = {
   currency?: string;
 };
 
-const SUPPLIERS_KEY = "suppliers";
 const PRODUCTS_KEY = "products";
-const ACCOUNTS_KEY = "bankAccounts";
-const CASH_FLOW_KEY = "cashFlow";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -70,6 +69,7 @@ export default function PurchaseOrdersPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [contracts, setContracts] = useState<PurchaseContract[]>([]);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
   const [suppliersReady, setSuppliersReady] = useState(false);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -177,59 +177,51 @@ export default function PurchaseOrdersPage() {
     }
   }, [sourceOrder, products, suppliers]);
 
-  // Load suppliers
+  // Load suppliers from API
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(SUPPLIERS_KEY);
-    if (stored) {
-      try {
-        const parsed: Supplier[] = JSON.parse(stored);
-        setSuppliers(parsed);
-        if (parsed.length && !form.supplierId) {
+    fetch("/api/suppliers")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((parsed: Supplier[]) => {
+        setSuppliers(Array.isArray(parsed) ? parsed : []);
+        if (Array.isArray(parsed) && parsed.length && !form.supplierId) {
           setForm((f) => ({ ...f, supplierId: parsed[0].id }));
         }
-      } catch (e) {
-        console.error("Failed to parse suppliers", e);
-      }
-    }
-    setSuppliersReady(true);
+        setSuppliersReady(true);
+      })
+      .catch((e) => {
+        console.error("Failed to load suppliers", e);
+        setSuppliersReady(true);
+      });
   }, []);
 
-  // Load products
+  // Load products from API
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(PRODUCTS_KEY);
-    if (stored) {
-      try {
-        const parsed: any[] = JSON.parse(stored);
-        const normalizedProducts: Product[] = parsed.map((p) => {
-          if (p.sku_id) {
-            return {
-              ...p,
-              id: p.sku_id,
-              sku: p.sku_id,
-              name: p.name,
-              cost: p.cost_price,
-              primarySupplierId: p.factory_id,
-              imageUrl: p.main_image
-            };
-          }
-          return p;
-        });
-        setProducts(normalizedProducts);
-      } catch (e) {
-        console.error("Failed to parse products", e);
-      }
-    }
+    getProductsFromAPI().then((parsed) => {
+      const normalizedProducts: Product[] = parsed.map((p: any) => {
+        if (p.sku_id) {
+          return {
+            ...p,
+            id: p.sku_id,
+            sku: p.sku_id,
+            name: p.name,
+            cost: p.cost_price,
+            primarySupplierId: p.factory_id,
+            imageUrl: p.main_image
+          };
+        }
+        return p;
+      });
+      setProducts(normalizedProducts);
+    }).catch((e) => console.error("Failed to load products", e));
   }, []);
 
   // Load accounts
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(ACCOUNTS_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
+    getAccountsFromAPI()
+      .then((parsed) => {
         setAccounts(
           parsed.map((a: any) => ({
             ...a,
@@ -239,16 +231,20 @@ export default function PurchaseOrdersPage() {
         if (parsed.length && !paymentModal.accountId) {
           setPaymentModal((m) => ({ ...m, accountId: parsed[0].id }));
         }
-      } catch (e) {
-        console.error("Failed to parse accounts", e);
-      }
-    }
+      })
+      .catch((e) => console.error("Failed to load accounts", e));
   }, []);
 
-  // Load contracts
+  // Load contracts and delivery orders
   useEffect(() => {
-    const loaded = getPurchaseContracts();
-    setContracts(loaded);
+    (async () => {
+      const [contRes, doRes] = await Promise.all([
+        getPurchaseContractsFromAPI(),
+        getDeliveryOrdersFromAPI()
+      ]);
+      setContracts(contRes);
+      setDeliveryOrders(doRes);
+    })();
   }, []);
 
   const selectedSupplier = useMemo(() => {
@@ -275,7 +271,7 @@ export default function PurchaseOrdersPage() {
   }, [selectedSupplier, totalAmount]);
 
   // 创建新合同（母单）
-  const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedSupplier) {
       toast.error("请先在供应商库新增供应商后再创建采购合同", { icon: "⚠️" });
@@ -326,12 +322,18 @@ export default function PurchaseOrdersPage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    upsertPurchaseContract(newContract);
+    try {
+      await upsertPurchaseContract(newContract);
+    } catch (err) {
+      console.error("创建合同失败", err);
+      toast.error("创建失败，请重试");
+      return;
+    }
     setContracts((prev) => [...prev, newContract]);
     
     // 如果是从采购订单创建的，自动关联订单
     if (sourceOrder) {
-      const linked = linkPurchaseContract(
+      const linked = await linkPurchaseContract(
         sourceOrder.id,
         newContract.id,
         newContract.contractNumber
@@ -361,7 +363,7 @@ export default function PurchaseOrdersPage() {
   };
 
   // 处理发起拿货
-  const handleDelivery = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleDelivery = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!deliveryModal.contractId) return;
     const qty = Number(deliveryModal.qty);
@@ -384,7 +386,7 @@ export default function PurchaseOrdersPage() {
     }
 
     // 创建子单
-    const result = createDeliveryOrder(
+    const result = await createDeliveryOrder(
       deliveryModal.contractId,
       qty,
       deliveryModal.trackingNumber || undefined,
@@ -398,14 +400,15 @@ export default function PurchaseOrdersPage() {
 
     // 自动创建待入库单
     if (result.order) {
-      const inboundResult = createPendingInboundFromDeliveryOrder(result.order.id);
+      const inboundResult = await createPendingInboundFromDeliveryOrder(result.order.id);
       if (!inboundResult.success) {
         console.warn("创建待入库单失败:", inboundResult.error);
       }
     }
 
     // 刷新合同列表
-    const updated = getPurchaseContracts();
+    const { getPurchaseContractsFromAPI } = await import("@/lib/purchase-contracts-store");
+    const updated = await getPurchaseContractsFromAPI();
     setContracts(updated);
 
     // 如果详情页打开，刷新详情数据
@@ -508,14 +511,12 @@ export default function PurchaseOrdersPage() {
 
     // 尾款支付：直接支付（不需要审批）
     if (type === "tail" && deliveryOrderId) {
-      const deliveryOrders = getDeliveryOrdersByContractId(contractId);
+      const contractOrders = deliveryOrders.filter((o) => o.contractId === contractId);
       const order = deliveryOrders.find((o) => o.id === deliveryOrderId);
       if (!order) return;
       // 检查是否已支付
-      const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-      if (storedFlow) {
-        try {
-          const flow: Array<{ relatedId?: string; amount: number }> = JSON.parse(storedFlow);
+      getCashFlowFromAPI()
+        .then((flow) => {
           const isPaid = flow.some(
             (f) => f.relatedId === deliveryOrderId && Math.abs(Math.abs(f.amount) - order.tailAmount) < 0.01
           );
@@ -523,16 +524,14 @@ export default function PurchaseOrdersPage() {
             toast.error("该笔尾款已支付", { icon: "⚠️" });
             return;
           }
-        } catch (e) {
-          console.error("Failed to check payment", e);
-        }
-      }
-      setPaymentModal({ contractId, type, deliveryOrderId, accountId: accounts[0]?.id || "" });
+          setPaymentModal({ contractId, type, deliveryOrderId, accountId: accounts[0]?.id || "" });
+        })
+        .catch((e) => console.error("Failed to check payment", e));
     }
   };
 
   // 确认支付
-  const confirmPayment = () => {
+  const confirmPayment = async () => {
     if (!paymentModal.contractId || !paymentModal.type || !paymentModal.accountId) return;
     const contract = contracts.find((c) => c.id === paymentModal.contractId);
     const account = accounts.find((a) => a.id === paymentModal.accountId);
@@ -550,8 +549,8 @@ export default function PurchaseOrdersPage() {
       category = "采购货款";
       relatedId = `${contract.id}-deposit`;
     } else if (paymentModal.type === "tail" && paymentModal.deliveryOrderId) {
-      const deliveryOrders = getDeliveryOrdersByContractId(contract.id);
-      const order = deliveryOrders.find((o) => o.id === paymentModal.deliveryOrderId);
+      const contractOrders = deliveryOrders.filter((o: DeliveryOrder) => o.contractId === contract.id);
+      const order = contractOrders.find((o: DeliveryOrder) => o.id === paymentModal.deliveryOrderId);
       if (!order) {
         toast.error("拿货单不存在", { icon: "❌" });
         return;
@@ -586,17 +585,14 @@ export default function PurchaseOrdersPage() {
       return acc;
     });
     setAccounts(updatedAccounts);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(updatedAccounts));
-    }
+    await saveAccounts(updatedAccounts as BankAccount[]);
 
-    // 生成收支明细
+    // 生成收支明细（API）
     const paymentType = paymentModal.type === "deposit" ? "支付定金" : "支付尾款";
-    const newFlow = {
-      id: crypto.randomUUID(),
+    await createCashFlow({
       date: new Date().toISOString().slice(0, 10),
       summary: `${paymentType} - ${contract.supplierName}`,
-      type: "expense" as const,
+      type: "expense",
       category: "采购",
       amount: -amount,
       accountId: paymentModal.accountId,
@@ -604,38 +600,23 @@ export default function PurchaseOrdersPage() {
       currency: account.currency,
       remark: `${paymentType} - ${contract.contractNumber}`,
       businessNumber: contract.contractNumber,
-      relatedId,
-      createdAt: new Date().toISOString()
-    };
-    const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-    const flowList = storedFlow ? JSON.parse(storedFlow) : [];
-    flowList.push(newFlow);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(flowList));
-    }
+      relatedId
+    });
 
     // 更新合同财务信息
     if (paymentModal.type === "deposit") {
       contract.depositPaid = (contract.depositPaid || 0) + amount;
     } else if (paymentModal.type === "tail" && paymentModal.deliveryOrderId) {
-      const deliveryOrders = getDeliveryOrdersByContractId(contract.id);
-      const order = deliveryOrders.find((o) => o.id === paymentModal.deliveryOrderId);
+      const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
+      const order = contractOrders.find((o) => o.id === paymentModal.deliveryOrderId);
       if (order) {
-        order.tailPaid = (order.tailPaid || 0) + amount;
-        // 更新子单存储
-        const allOrders = getDeliveryOrdersByContractId(contract.id);
-        const orderIndex = allOrders.findIndex((o) => o.id === paymentModal.deliveryOrderId);
-        if (orderIndex >= 0) {
-          allOrders[orderIndex] = order;
-          if (typeof window !== "undefined") {
-            const allDeliveryOrders = JSON.parse(window.localStorage.getItem("deliveryOrders") || "[]");
-            const globalIndex = allDeliveryOrders.findIndex((o: any) => o.id === paymentModal.deliveryOrderId);
-            if (globalIndex >= 0) {
-              allDeliveryOrders[globalIndex] = order;
-              window.localStorage.setItem("deliveryOrders", JSON.stringify(allDeliveryOrders));
-            }
-          }
-        }
+        const updatedOrder = { ...order, tailPaid: (order.tailPaid || 0) + amount, updatedAt: new Date().toISOString() };
+        const { upsertDeliveryOrder } = await import("@/lib/delivery-orders-store");
+        const { updateContractPayment } = await import("@/lib/purchase-contracts-store");
+        await upsertDeliveryOrder(updatedOrder);
+        await updateContractPayment(contract.id, amount, "tail");
+        const doRes = await getDeliveryOrdersFromAPI();
+        setDeliveryOrders(doRes);
       }
     }
     contract.totalPaid = (contract.totalPaid || 0) + amount;
@@ -643,7 +624,7 @@ export default function PurchaseOrdersPage() {
     if (contract.totalPaid >= contract.totalAmount) {
       contract.status = "已结清";
     }
-    upsertPurchaseContract(contract);
+    await upsertPurchaseContract(contract);
     setContracts((prev) => prev.map((c) => (c.id === contract.id ? contract : c)));
 
     setPaymentModal({ contractId: null, type: null, accountId: "" });
@@ -659,12 +640,11 @@ export default function PurchaseOrdersPage() {
     if (!detailModal.contractId) return null;
     // 每次 detailRefreshKey 变化时重新获取数据
     // 始终从 store 中获取最新数据（确保包含合同凭证等所有字段）
-    const allContracts = getPurchaseContracts();
-    const contract = allContracts.find((c) => c.id === detailModal.contractId);
+    const contract = contracts.find((c) => c.id === detailModal.contractId);
     if (!contract) return null;
-    const deliveryOrders = getDeliveryOrdersByContractId(contract.id);
-    return { contract, deliveryOrders };
-  }, [detailModal.contractId, detailRefreshKey]);
+    const orders = deliveryOrders.filter((o) => o.contractId === contract.id);
+    return { contract, deliveryOrders: orders };
+  }, [detailModal.contractId, detailRefreshKey, contracts, deliveryOrders]);
 
   // 筛选和排序后的合同列表
   const filteredContracts = useMemo(() => {
@@ -717,7 +697,7 @@ export default function PurchaseOrdersPage() {
   }, [filteredContracts]);
 
   // 处理工厂完工
-  const handleFactoryFinished = (contractId: string) => {
+  const handleFactoryFinished = async (contractId: string) => {
     const contract = contracts.find((c) => c.id === contractId);
     if (!contract) {
       toast.error("合同不存在", { icon: "❌" });
@@ -740,13 +720,18 @@ export default function PurchaseOrdersPage() {
     
     // 更新产品的 at_factory 库存
     if (contract.skuId) {
-      const product = getProductBySkuId(contract.skuId);
+      const product = products.find((p) => p.sku_id === contract.skuId || (p.id || p.sku) === contract.skuId);
       if (product) {
-        const currentAtFactory = product.at_factory || 0;
+        const currentAtFactory = (product as any).at_factory || 0;
         const newAtFactory = currentAtFactory + availableQty;
-        product.at_factory = newAtFactory;
-        product.updatedAt = new Date().toISOString();
-        upsertProduct(product);
+        const updatedProduct = { ...product, at_factory: newAtFactory, updatedAt: new Date().toISOString() } as any;
+        try {
+          await upsertProduct(updatedProduct);
+        } catch (e) {
+          console.error("更新产品库存失败", e);
+          toast.error("更新库存失败，请重试");
+          return;
+        }
 
         // 记录库存变动
         addInventoryMovement({
@@ -1595,7 +1580,7 @@ export default function PurchaseOrdersPage() {
 
               {/* 库存分布 */}
               {contractDetail.contract.skuId && (() => {
-                const product = getProductBySkuId(contractDetail.contract.skuId!);
+                const product = products.find((p) => p.sku_id === contractDetail.contract.skuId || (p.id || p.sku) === contractDetail.contract.skuId);
                 if (product) {
                   return (
                     <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
@@ -1604,9 +1589,9 @@ export default function PurchaseOrdersPage() {
                         库存分布
                       </h3>
                       <InventoryDistribution
-                        atFactory={product.at_factory || 0}
-                        atDomestic={product.at_domestic || 0}
-                        inTransit={product.in_transit || 0}
+                        atFactory={(product as any).at_factory || 0}
+                        atDomestic={(product as any).at_domestic || 0}
+                        inTransit={(product as any).in_transit || 0}
                         unitPrice={contractDetail.contract.unitPrice}
                         size="md"
                         showValue={true}
@@ -1833,8 +1818,8 @@ export default function PurchaseOrdersPage() {
                 if (paymentModal.type === "deposit") {
                   amount = contract.depositAmount - (contract.depositPaid || 0);
                 } else if (paymentModal.type === "tail" && paymentModal.deliveryOrderId) {
-                  const deliveryOrders = getDeliveryOrdersByContractId(contract.id);
-                  const order = deliveryOrders.find((o) => o.id === paymentModal.deliveryOrderId);
+                  const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
+                  const order = contractOrders.find((o) => o.id === paymentModal.deliveryOrderId);
                   if (order) amount = order.tailAmount;
                 }
                 const account = accounts.find((a) => a.id === paymentModal.accountId);

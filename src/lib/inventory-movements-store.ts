@@ -51,7 +51,7 @@ export type InventoryMovement = {
 const INVENTORY_MOVEMENTS_KEY = "inventoryMovements";
 
 /**
- * 获取所有库存变动记录
+ * 获取所有库存变动记录（同步，localStorage）
  */
 export function getInventoryMovements(): InventoryMovement[] {
   if (typeof window === "undefined") return [];
@@ -66,29 +66,77 @@ export function getInventoryMovements(): InventoryMovement[] {
 }
 
 /**
- * 保存库存变动记录
+ * 从 API 获取库存变动记录
  */
-export function saveInventoryMovements(movements: InventoryMovement[]): void {
-  if (typeof window === "undefined") return;
+export async function getInventoryMovementsFromAPI(params?: {
+  variantId?: string;
+  location?: InventoryLocation;
+  movementType?: InventoryMovementType;
+}): Promise<InventoryMovement[]> {
+  if (typeof window === "undefined") return [];
   try {
-    window.localStorage.setItem(INVENTORY_MOVEMENTS_KEY, JSON.stringify(movements));
+    const query = new URLSearchParams();
+    if (params?.variantId) query.set("variantId", params.variantId);
+    if (params?.location) query.set("location", params.location);
+    if (params?.movementType) query.set("movementType", params.movementType);
+    const url = query.toString() ? `/api/inventory-movements?${query}` : "/api/inventory-movements";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
   } catch (e) {
-    console.error("Failed to save inventory movements", e);
+    console.error("Failed to fetch inventory movements", e);
+    return [];
   }
 }
 
 /**
- * 添加库存变动记录
+ * 保存库存变动记录（同步到 API）
  */
-export function addInventoryMovement(movement: Omit<InventoryMovement, "id" | "createdAt">): InventoryMovement {
-  const movements = getInventoryMovements();
+export async function saveInventoryMovements(movements: InventoryMovement[]): Promise<void> {
+  if (typeof window === "undefined") return;
+  // 简化：只用于 localStorage 向后兼容；新数据走 addInventoryMovement
+  window.localStorage.setItem(INVENTORY_MOVEMENTS_KEY, JSON.stringify(movements));
+}
+
+/**
+ * 添加库存变动记录（同步到 API）
+ */
+export async function addInventoryMovement(movement: Omit<InventoryMovement, "id" | "createdAt">): Promise<InventoryMovement> {
   const newMovement: InventoryMovement = {
     ...movement,
     id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `movement-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     createdAt: new Date().toISOString(),
   };
+  try {
+    const res = await fetch("/api/inventory-movements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        variantId: movement.skuId,
+        location: movement.location,
+        movementType: movement.movementType,
+        qty: movement.qty,
+        qtyBefore: movement.qtyBefore,
+        qtyAfter: movement.qtyAfter,
+        unitCost: movement.unitCost,
+        totalCost: movement.totalCost,
+        currency: movement.currency,
+        relatedOrderId: movement.relatedOrderId,
+        relatedOrderType: movement.relatedOrderType,
+        relatedOrderNumber: movement.relatedOrderNumber,
+        operator: movement.operator,
+        operationDate: movement.operationDate,
+        notes: movement.notes
+      })
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.error("Failed to add inventory movement to API", e);
+  }
+  // 回退到 localStorage
+  const movements = getInventoryMovements();
   movements.push(newMovement);
-  saveInventoryMovements(movements);
+  window.localStorage.setItem(INVENTORY_MOVEMENTS_KEY, JSON.stringify(movements));
   return newMovement;
 }
 

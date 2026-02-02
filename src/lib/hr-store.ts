@@ -128,7 +128,7 @@ const COMMISSION_RULES_KEY = "hr_commission_rules";
 const COMMISSION_RECORDS_KEY = "hr_commission_records";
 
 /**
- * 员工管理
+ * 员工管理 - 同步版（localStorage）
  */
 export function getEmployees(): Employee[] {
   if (typeof window === "undefined") return [];
@@ -142,6 +142,21 @@ export function getEmployees(): Employee[] {
   }
 }
 
+/**
+ * 从 API 获取员工列表
+ */
+export async function getEmployeesFromAPI(): Promise<Employee[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/employees");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch employees", e);
+    return [];
+  }
+}
+
 export function saveEmployees(employees: Employee[]): void {
   if (typeof window === "undefined") return;
   try {
@@ -151,29 +166,30 @@ export function saveEmployees(employees: Employee[]): void {
   }
 }
 
-export function upsertEmployee(employee: Employee): void {
-  const employees = getEmployees();
-  const index = employees.findIndex((e) => e.id === employee.id);
-  
-  if (index >= 0) {
-    employees[index] = { ...employee, updatedAt: new Date().toISOString() };
-  } else {
-    employees.push({
-      ...employee,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+export async function upsertEmployee(employee: Employee): Promise<void> {
+  const body = { ...employee, updatedAt: new Date().toISOString() };
+  const existing = await getEmployeesFromAPI();
+  const exists = existing.some((e) => e.id === employee.id);
+  if (exists) {
+    const res = await fetch(`/api/employees/${employee.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
+    if (!res.ok) throw new Error("Failed to update employee");
+  } else {
+    const res = await fetch("/api/employees", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, createdAt: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error("Failed to create employee");
   }
-  
-  saveEmployees(employees);
 }
 
-export function deleteEmployee(id: string): boolean {
-  const employees = getEmployees();
-  const filtered = employees.filter((e) => e.id !== id);
-  if (filtered.length === employees.length) return false;
-  saveEmployees(filtered);
-  return true;
+export async function deleteEmployee(id: string): Promise<boolean> {
+  const res = await fetch(`/api/employees/${id}`, { method: "DELETE" });
+  return res.ok;
 }
 
 export function getEmployeeById(id: string): Employee | undefined {
@@ -185,7 +201,7 @@ export function getEmployeesByDepartment(department: Department): Employee[] {
 }
 
 /**
- * 提成规则管理
+ * 提成规则管理 - 同步版（localStorage）
  */
 export function getCommissionRules(): CommissionRule[] {
   if (typeof window === "undefined") return [];
@@ -199,6 +215,21 @@ export function getCommissionRules(): CommissionRule[] {
   }
 }
 
+/**
+ * 从 API 获取提成规则
+ */
+export async function getCommissionRulesFromAPI(): Promise<CommissionRule[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/commission-rules");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch commission rules", e);
+    return [];
+  }
+}
+
 export function saveCommissionRules(rules: CommissionRule[]): void {
   if (typeof window === "undefined") return;
   try {
@@ -208,29 +239,30 @@ export function saveCommissionRules(rules: CommissionRule[]): void {
   }
 }
 
-export function upsertCommissionRule(rule: CommissionRule): void {
-  const rules = getCommissionRules();
-  const index = rules.findIndex((r) => r.id === rule.id);
-  
-  if (index >= 0) {
-    rules[index] = { ...rule, updatedAt: new Date().toISOString() };
-  } else {
-    rules.push({
-      ...rule,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+export async function upsertCommissionRule(rule: CommissionRule): Promise<void> {
+  const body = { ...rule, updatedAt: new Date().toISOString() };
+  const existing = await getCommissionRulesFromAPI();
+  const exists = existing.some((r) => r.id === rule.id);
+  if (exists) {
+    const res = await fetch(`/api/commission-rules/${rule.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
+    if (!res.ok) throw new Error("Failed to update commission rule");
+  } else {
+    const res = await fetch("/api/commission-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, createdAt: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error("Failed to create commission rule");
   }
-  
-  saveCommissionRules(rules);
 }
 
-export function deleteCommissionRule(id: string): boolean {
-  const rules = getCommissionRules();
-  const filtered = rules.filter((r) => r.id !== id);
-  if (filtered.length === rules.length) return false;
-  saveCommissionRules(filtered);
-  return true;
+export async function deleteCommissionRule(id: string): Promise<boolean> {
+  const res = await fetch(`/api/commission-rules/${id}`, { method: "DELETE" });
+  return res.ok;
 }
 
 export function getCommissionRulesByDepartment(department: Department): CommissionRule[] {
@@ -238,7 +270,7 @@ export function getCommissionRulesByDepartment(department: Department): Commissi
 }
 
 /**
- * 提成记录管理
+ * 提成记录管理 - 同步版（localStorage）
  */
 export function getCommissionRecords(): CommissionRecord[] {
   if (typeof window === "undefined") return [];
@@ -252,6 +284,21 @@ export function getCommissionRecords(): CommissionRecord[] {
   }
 }
 
+/**
+ * 从 API 获取提成记录
+ */
+export async function getCommissionRecordsFromAPI(): Promise<CommissionRecord[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/commission-records");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch commission records", e);
+    return [];
+  }
+}
+
 export function saveCommissionRecords(records: CommissionRecord[]): void {
   if (typeof window === "undefined") return;
   try {
@@ -261,21 +308,25 @@ export function saveCommissionRecords(records: CommissionRecord[]): void {
   }
 }
 
-export function upsertCommissionRecord(record: CommissionRecord): void {
-  const records = getCommissionRecords();
-  const index = records.findIndex((r) => r.id === record.id);
-  
-  if (index >= 0) {
-    records[index] = { ...record, updatedAt: new Date().toISOString() };
-  } else {
-    records.push({
-      ...record,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+export async function upsertCommissionRecord(record: CommissionRecord): Promise<void> {
+  const body = { ...record, updatedAt: new Date().toISOString() };
+  const existing = await getCommissionRecordsFromAPI();
+  const exists = existing.some((r) => r.id === record.id);
+  if (exists) {
+    const res = await fetch(`/api/commission-records/${record.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
+    if (!res.ok) throw new Error("Failed to update commission record");
+  } else {
+    const res = await fetch("/api/commission-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, createdAt: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error("Failed to create commission record");
   }
-  
-  saveCommissionRecords(records);
 }
 
 /**

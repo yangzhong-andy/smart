@@ -80,7 +80,7 @@ export type Product = {
 const PRODUCTS_KEY = "products";
 
 /**
- * 获取所有产品
+ * 获取所有产品（同步，从 localStorage，向后兼容）
  */
 export function getProducts(): Product[] {
   if (typeof window === "undefined") return [];
@@ -95,19 +95,89 @@ export function getProducts(): Product[] {
 }
 
 /**
- * 保存产品列表
+ * 从 API 获取所有产品
  */
-export function saveProducts(products: Product[]): void {
-  if (typeof window === "undefined") return;
+export async function getProductsFromAPI(): Promise<Product[]> {
+  if (typeof window === "undefined") return [];
   try {
-    window.localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+    const res = await fetch("/api/products");
+    if (!res.ok) return [];
+    return await res.json();
   } catch (e) {
-    console.error("Failed to save products", e);
+    console.error("Failed to fetch products from API", e);
+    return [];
   }
 }
 
 /**
- * 根据SKU ID获取产品
+ * 保存产品列表（全量同步到 API）
+ */
+export async function saveProducts(products: Product[]): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = await getProductsFromAPI();
+    const existingSkuIds = new Set(existing.map((p) => p.sku_id));
+    const newSkuIds = new Set(products.map((p) => p.sku_id));
+
+    for (const e of existing) {
+      if (!newSkuIds.has(e.sku_id)) {
+        await fetch(`/api/products/${encodeURIComponent(e.sku_id)}`, { method: "DELETE" });
+      }
+    }
+
+    for (const p of products) {
+      const body = {
+        sku_id: p.sku_id,
+        name: p.name,
+        main_image: p.main_image || "",
+        category: p.category,
+        brand: p.brand,
+        description: p.description,
+        material: p.material,
+        customs_name_cn: p.customs_name_cn,
+        customs_name_en: p.customs_name_en,
+        default_supplier_id: p.default_supplier_id,
+        status: p.status,
+        cost_price: p.cost_price,
+        target_roi: p.target_roi,
+        currency: p.currency || "CNY",
+        weight_kg: p.weight_kg,
+        length: p.length,
+        width: p.width,
+        height: p.height,
+        volumetric_divisor: p.volumetric_divisor,
+        at_factory: p.at_factory ?? 0,
+        at_domestic: p.at_domestic ?? 0,
+        in_transit: p.in_transit ?? 0,
+        color: p.color,
+        size: p.size,
+        barcode: p.barcode,
+        stock_quantity: p.stock_quantity,
+        suppliers: p.suppliers,
+        platform_sku_mapping: p.platform_sku_mapping
+      };
+      if (existingSkuIds.has(p.sku_id)) {
+        await fetch(`/api/products/${encodeURIComponent(p.sku_id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else {
+        await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to save products", e);
+    throw e;
+  }
+}
+
+/**
+ * 根据SKU ID获取产品（同步，从 localStorage）
  */
 export function getProductBySkuId(skuId: string): Product | undefined {
   const products = getProducts();
@@ -115,7 +185,15 @@ export function getProductBySkuId(skuId: string): Product | undefined {
 }
 
 /**
- * 根据状态获取产品列表
+ * 从 API 根据 SKU ID 获取产品
+ */
+export async function getProductBySkuIdFromAPI(skuId: string): Promise<Product | undefined> {
+  const products = await getProductsFromAPI();
+  return products.find((p) => p.sku_id === skuId);
+}
+
+/**
+ * 根据状态获取产品列表（同步）
  */
 export function getProductsByStatus(status: ProductStatus): Product[] {
   const products = getProducts();
@@ -123,7 +201,21 @@ export function getProductsByStatus(status: ProductStatus): Product[] {
 }
 
 /**
- * 根据工厂ID获取产品列表（支持多供应商）
+ * 从 API 根据工厂ID获取产品列表
+ */
+export async function getProductsByFactoryIdFromAPI(factoryId: string): Promise<Product[]> {
+  const products = await getProductsFromAPI();
+  return products.filter((p) => {
+    if (p.factory_id === factoryId) return true;
+    if (p.suppliers && Array.isArray(p.suppliers)) {
+      return p.suppliers.some((s) => s.id === factoryId);
+    }
+    return false;
+  });
+}
+
+/**
+ * 根据工厂ID获取产品列表（同步，支持多供应商）
  */
 export function getProductsByFactoryId(factoryId: string): Product[] {
   const products = getProducts();
@@ -154,84 +246,100 @@ export function getProductByPlatformSku(platform: string, platformSkuId: string)
 }
 
 /**
- * 创建或更新产品
+ * 创建或更新产品（同步到 API）
  */
-export function upsertProduct(product: Product): void {
-  const products = getProducts();
-  const existingIndex = products.findIndex((p) => p.sku_id === product.sku_id);
-  
-  if (existingIndex >= 0) {
-    // 更新现有产品
-    products[existingIndex] = {
-      ...product,
-      updatedAt: new Date().toISOString()
-    };
+export async function upsertProduct(product: Product): Promise<void> {
+  const products = await getProductsFromAPI();
+  const existing = products.find((p) => p.sku_id === product.sku_id);
+  const body = {
+    sku_id: product.sku_id,
+    name: product.name,
+    main_image: product.main_image || "",
+    category: product.category,
+    brand: product.brand,
+    description: product.description,
+    material: product.material,
+    customs_name_cn: product.customs_name_cn,
+    customs_name_en: product.customs_name_en,
+    default_supplier_id: product.default_supplier_id,
+    status: product.status,
+    cost_price: product.cost_price,
+    target_roi: product.target_roi,
+    currency: product.currency || "CNY",
+    weight_kg: product.weight_kg,
+    length: product.length,
+    width: product.width,
+    height: product.height,
+    volumetric_divisor: product.volumetric_divisor,
+    at_factory: product.at_factory ?? 0,
+    at_domestic: product.at_domestic ?? 0,
+    in_transit: product.in_transit ?? 0,
+    color: product.color,
+    size: product.size,
+    barcode: product.barcode,
+    stock_quantity: product.stock_quantity,
+    suppliers: product.suppliers,
+    platform_sku_mapping: product.platform_sku_mapping
+  };
+  if (existing) {
+    await fetch(`/api/products/${encodeURIComponent(product.sku_id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
   } else {
-    // 新增产品
-    products.push({
-      ...product,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
   }
-  
-  saveProducts(products);
 }
 
 /**
  * 删除产品
  */
-export function deleteProduct(skuId: string): boolean {
-  const products = getProducts();
-  const filtered = products.filter((p) => p.sku_id !== skuId);
-  
-  if (filtered.length === products.length) {
-    return false; // 未找到产品
-  }
-  
-  saveProducts(filtered);
+export async function deleteProduct(skuId: string): Promise<boolean> {
+  const products = await getProductsFromAPI();
+  const found = products.some((p) => p.sku_id === skuId);
+  if (!found) return false;
+  const res = await fetch(`/api/products/${encodeURIComponent(skuId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete product");
   return true;
 }
 
 /**
  * 添加平台SKU映射
  */
-export function addPlatformSKUMapping(
+export async function addPlatformSKUMapping(
   skuId: string,
   mapping: PlatformSKUMapping
-): boolean {
-  const product = getProductBySkuId(skuId);
+): Promise<boolean> {
+  const product = await getProductBySkuIdFromAPI(skuId);
   if (!product) return false;
-  
+
   const mappings = product.platform_sku_mapping || [];
-  // 检查是否已存在相同平台的映射
   const existingIndex = mappings.findIndex((m) => m.platform === mapping.platform);
-  
   if (existingIndex >= 0) {
     mappings[existingIndex] = mapping;
   } else {
     mappings.push(mapping);
   }
-  
   product.platform_sku_mapping = mappings;
-  upsertProduct(product);
+  await upsertProduct(product);
   return true;
 }
 
 /**
  * 删除平台SKU映射
  */
-export function removePlatformSKUMapping(
+export async function removePlatformSKUMapping(
   skuId: string,
   platform: string
-): boolean {
-  const product = getProductBySkuId(skuId);
+): Promise<boolean> {
+  const product = await getProductBySkuIdFromAPI(skuId);
   if (!product || !product.platform_sku_mapping) return false;
-  
-  product.platform_sku_mapping = product.platform_sku_mapping.filter(
-    (m) => m.platform !== platform
-  );
-  
-  upsertProduct(product);
+  product.platform_sku_mapping = product.platform_sku_mapping.filter((m) => m.platform !== platform);
+  await upsertProduct(product);
   return true;
 }

@@ -9,8 +9,8 @@ import { formatCurrency } from "@/lib/currency-utils";
 import Link from "next/link";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
-import { getDeliveryOrders } from "@/lib/delivery-orders-store";
-import { getPurchaseContracts } from "@/lib/purchase-contracts-store";
+import { getDeliveryOrdersFromAPI } from "@/lib/delivery-orders-store";
+import { getPurchaseContractsFromAPI } from "@/lib/purchase-contracts-store";
 
 const formatDate = (dateString: string) => {
   try {
@@ -147,12 +147,12 @@ export default function MonthlyBillsPage() {
 
       // 1. 生成供应商月账单
       try {
-        // 从localStorage获取供应商
-        const suppliersKey = "suppliers";
-        const suppliersData = typeof window !== "undefined" ? window.localStorage.getItem(suppliersKey) : null;
-        const suppliers = suppliersData ? JSON.parse(suppliersData) : [];
-        const deliveryOrders = getDeliveryOrders();
-        const contracts = getPurchaseContracts();
+        const [suppliersRes, deliveryOrders, contracts] = await Promise.all([
+          fetch("/api/suppliers"),
+          getDeliveryOrdersFromAPI(),
+          getPurchaseContractsFromAPI()
+        ]);
+        const suppliers = suppliersRes.ok ? await suppliersRes.json() : [];
 
         suppliers.forEach((supplier: any) => {
           // 检查是否已存在该供应商该月的账单

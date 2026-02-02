@@ -3,7 +3,7 @@
  * 管理达人账号、寄样追踪、合作状态等
  */
 
-import { getProducts, saveProducts, getProductBySkuId } from "./products-store";
+import { getProductsFromAPI, getProductBySkuIdFromAPI, saveProducts } from "./products-store";
 import { addInventoryMovement } from "./inventory-movements-store";
 
 export type CooperationStatus = "待寄样" | "创作中" | "已发布" | "已结束" | "暂停合作";
@@ -47,7 +47,7 @@ export type InfluencerBD = {
 const INFLUENCER_BD_KEY = "influencerBD";
 
 /**
- * 获取所有达人
+ * 获取所有达人（同步，localStorage）
  */
 export function getInfluencers(): InfluencerBD[] {
   if (typeof window === "undefined") return [];
@@ -62,41 +62,87 @@ export function getInfluencers(): InfluencerBD[] {
 }
 
 /**
- * 保存达人列表
+ * 从 API 获取达人列表
  */
-export function saveInfluencers(influencers: InfluencerBD[]): void {
-  if (typeof window === "undefined") return;
+export async function getInfluencersFromAPI(): Promise<InfluencerBD[]> {
+  if (typeof window === "undefined") return [];
   try {
-    window.localStorage.setItem(INFLUENCER_BD_KEY, JSON.stringify(influencers));
+    const res = await fetch("/api/influencers");
+    if (!res.ok) return [];
+    return await res.json();
   } catch (e) {
-    console.error("Failed to save influencers", e);
+    console.error("Failed to fetch influencers", e);
+    return [];
   }
 }
 
 /**
- * 新增或更新达人
+ * 保存达人列表（同步到 API）
  */
-export function upsertInfluencer(influencer: InfluencerBD): void {
-  const influencers = getInfluencers();
-  const index = influencers.findIndex((i) => i.id === influencer.id);
-  
-  if (index >= 0) {
-    influencers[index] = { ...influencer, updatedAt: new Date().toISOString() };
-  } else {
-    influencers.push({
-      ...influencer,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
+export async function saveInfluencers(influencers: InfluencerBD[]): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const existing = await getInfluencersFromAPI();
+    const existingIds = new Set(existing.map((i) => i.id));
+    const newIds = new Set(influencers.map((i) => i.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) await fetch(`/api/influencers/${e.id}`, { method: "DELETE" });
+    }
+    for (const i of influencers) {
+      if (existingIds.has(i.id)) {
+        await fetch(`/api/influencers/${i.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(i)
+        });
+      } else {
+        await fetch("/api/influencers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(i)
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to save influencers", e);
+    throw e;
   }
-  
-  saveInfluencers(influencers);
+}
+
+/**
+ * 新增或更新达人（同步到 API）
+ */
+export async function upsertInfluencer(influencer: InfluencerBD): Promise<void> {
+  const body = { ...influencer, updatedAt: new Date().toISOString() };
+  const existing = await getInfluencersFromAPI();
+  const exists = existing.some((i) => i.id === influencer.id);
+  if (exists) {
+    const res = await fetch(`/api/influencers/${influencer.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to update influencer");
+  } else {
+    const res = await fetch("/api/influencers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, createdAt: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error("Failed to create influencer");
+  }
 }
 
 /**
  * 删除达人
  */
-export function deleteInfluencer(id: string): boolean {
+export async function deleteInfluencer(id: string): Promise<boolean> {
+  const res = await fetch(`/api/influencers/${id}`, { method: "DELETE" });
+  return res.ok;
+}
+
+// 同步版，向后兼容
+function deleteInfluencerSync(id: string): boolean {
   const influencers = getInfluencers();
   const filtered = influencers.filter((i) => i.id !== id);
   
@@ -117,27 +163,25 @@ export function getInfluencerById(id: string): InfluencerBD | undefined {
 /**
  * 确认寄样 - 扣减库存并更新状态
  */
-export function confirmSample(
+export async function confirmSample(
   influencerId: string,
   productSku: string,
   sampleOrderNumber: string
-): { success: boolean; message: string } {
-  const product = getProductBySkuId(productSku);
+): Promise<{ success: boolean; message: string }> {
+  const product = await getProductBySkuIdFromAPI(productSku);
   if (!product) {
     return { success: false, message: "产品不存在" };
   }
-  
-  // 检查国内库存
+
   const domesticStock = product.at_domestic || 0;
   if (domesticStock < 1) {
     return { success: false, message: "国内库存不足，无法寄样" };
   }
-  
-  // 扣减库存
-  const products = getProducts();
+
+  const products = await getProductsFromAPI();
   const currentAtDomestic = product.at_domestic || 0;
   const newAtDomestic = Math.max(0, currentAtDomestic - 1);
-  
+
   const updatedProducts = products.map((p: any) => {
     if (p.sku_id === productSku) {
       return {
@@ -148,7 +192,7 @@ export function confirmSample(
     }
     return p;
   });
-  saveProducts(updatedProducts);
+  await saveProducts(updatedProducts);
 
   // 更新达人状态
   const influencers = getInfluencers();

@@ -3,6 +3,72 @@ import { prisma } from '@/lib/prisma'
 import { PurchaseOrderStatus, Platform } from '@prisma/client'
 import type { PurchaseOrderStatus as FrontendPurchaseOrderStatus } from '@/lib/purchase-orders-store'
 
+const statusMap: Record<PurchaseOrderStatus, string> = {
+  PENDING_RISK: '待风控',
+  RISK_APPROVED: '风控通过',
+  RISK_REJECTED: '风控拒绝',
+  PENDING_APPROVAL: '待审批',
+  APPROVED: '审批通过',
+  REJECTED: '审批拒绝',
+  PUSHED_TO_PROCUREMENT: '已推送采购',
+  CONTRACT_CREATED: '已创建合同',
+  CANCELLED: '已取消'
+}
+
+function toFrontend(po: any) {
+  return {
+    id: po.id,
+    orderNumber: po.orderNumber,
+    uid: po.uid || undefined,
+    createdBy: po.createdBy,
+    platform: po.platform === 'TIKTOK' ? 'TikTok' as const : po.platform === 'AMAZON' ? 'Amazon' as const : '其他' as const,
+    storeId: po.storeId || undefined,
+    storeName: po.storeName || undefined,
+    sku: po.sku,
+    skuId: po.skuId || undefined,
+    productName: po.productName || undefined,
+    quantity: po.quantity,
+    expectedDeliveryDate: po.expectedDeliveryDate?.toISOString?.() || undefined,
+    urgency: po.urgency || '普通',
+    notes: po.notes || undefined,
+    riskControlStatus: po.riskControlStatus || '待评估',
+    riskControlBy: po.riskControlBy || undefined,
+    riskControlAt: po.riskControlAt?.toISOString?.() || undefined,
+    riskControlNotes: po.riskControlNotes || undefined,
+    riskControlSnapshot: po.riskControlSnapshot ? JSON.parse(JSON.stringify(po.riskControlSnapshot)) : undefined,
+    approvalStatus: po.approvalStatus || '待审批',
+    approvedBy: po.approvedBy || undefined,
+    approvedAt: po.approvedAt?.toISOString?.() || undefined,
+    approvalNotes: po.approvalNotes || undefined,
+    pushedToProcurementAt: po.pushedToProcurementAt?.toISOString?.() || undefined,
+    pushedBy: po.pushedBy || undefined,
+    procurementNotes: po.procurementNotes || undefined,
+    relatedContractId: po.contractId || undefined,
+    relatedContractNumber: po.contract?.contractNumber || undefined,
+    status: (statusMap[po.status as PurchaseOrderStatus] || '待风控') as FrontendPurchaseOrderStatus,
+    createdAt: po.createdAt.toISOString(),
+    updatedAt: po.updatedAt.toISOString()
+  }
+}
+
+// GET - 获取单个采购订单
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: params.id },
+      include: { store: true, contract: true }
+    })
+    if (!po) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json(toFrontend(po))
+  } catch (error) {
+    console.error('Error fetching purchase order:', error)
+    return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
+  }
+}
+
 // PUT - 更新采购订单
 export async function PUT(
   request: NextRequest,
@@ -69,20 +135,6 @@ export async function PUT(
       }
     })
 
-    // 状态映射：Prisma 枚举 -> 中文状态
-    const statusMap: Record<PurchaseOrderStatus, string> = {
-      PENDING_RISK: '待风控',
-      RISK_APPROVED: '风控通过',
-      RISK_REJECTED: '风控拒绝',
-      PENDING_APPROVAL: '待审批',
-      APPROVED: '审批通过',
-      REJECTED: '审批拒绝',
-      PUSHED_TO_PROCUREMENT: '已推送采购',
-      CONTRACT_CREATED: '已创建合同',
-      CANCELLED: '已取消'
-    }
-
-    // 转换返回格式
     const transformed = {
       id: updated.id,
       orderNumber: updated.orderNumber,
@@ -112,7 +164,7 @@ export async function PUT(
       procurementNotes: updated.procurementNotes || undefined,
       relatedContractId: updated.contractId || undefined,
       relatedContractNumber: updated.contract?.contractNumber || undefined,
-      status: (statusMap[updated.status] || '待风控') as FrontendPurchaseOrderStatus,
+      status: (statusMap[updated.status as PurchaseOrderStatus] || '待风控') as FrontendPurchaseOrderStatus,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString()
     }

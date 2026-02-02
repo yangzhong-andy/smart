@@ -8,6 +8,7 @@ import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/com
 import useSWR from "swr";
 import {
   getCommissionRules,
+  getCommissionRulesFromAPI,
   saveCommissionRules,
   upsertCommissionRule,
   deleteCommissionRule,
@@ -223,13 +224,20 @@ export default function CommissionRulesPage() {
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("确定要删除这个规则吗？")) return;
-    if (deleteCommissionRule(id)) {
-      setRules(getCommissionRules());
-      toast.success("规则已删除");
-    } else {
-      toast.error("删除失败");
+    try {
+      const ok = await deleteCommissionRule(id);
+      if (ok) {
+        const updated = await getCommissionRulesFromAPI();
+        setRules(updated);
+        toast.success("规则已删除");
+      } else {
+        toast.error("删除失败");
+      }
+    } catch (e) {
+      console.error("删除规则失败", e);
+      toast.error("删除失败，请重试");
     }
   };
 

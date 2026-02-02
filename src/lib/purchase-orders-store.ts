@@ -80,7 +80,7 @@ function generateOrderNumber(): string {
 }
 
 /**
- * 获取所有采购订单
+ * 获取所有采购订单（同步，localStorage，向后兼容）
  */
 export function getPurchaseOrders(): PurchaseOrder[] {
   if (typeof window === "undefined") return [];
@@ -95,14 +95,53 @@ export function getPurchaseOrders(): PurchaseOrder[] {
 }
 
 /**
- * 保存采购订单列表
+ * 从 API 获取所有采购订单
  */
-export function savePurchaseOrders(orders: PurchaseOrder[]): void {
+export async function getPurchaseOrdersFromAPI(): Promise<PurchaseOrder[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/purchase-orders");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch purchase orders", e);
+    return [];
+  }
+}
+
+/**
+ * 保存采购订单列表（全量同步到 API）
+ */
+export async function savePurchaseOrders(orders: PurchaseOrder[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(PURCHASE_ORDERS_KEY, JSON.stringify(orders));
+    const existing = await getPurchaseOrdersFromAPI();
+    const existingIds = new Set(existing.map((o) => o.id));
+    const newIds = new Set(orders.map((o) => o.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) {
+        await fetch(`/api/purchase-orders/${e.id}`, { method: "DELETE" });
+      }
+    }
+    for (const o of orders) {
+      const body = { ...o };
+      if (existingIds.has(o.id)) {
+        await fetch(`/api/purchase-orders/${o.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else {
+        await fetch("/api/purchase-orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save purchase orders", e);
+    throw e;
   }
 }
 
@@ -144,25 +183,42 @@ export function getPushedToProcurementOrders(): PurchaseOrder[] {
 }
 
 /**
- * 创建或更新采购订单
+ * 创建或更新采购订单（同步到 API）
  */
-export function upsertPurchaseOrder(order: PurchaseOrder): void {
-  const orders = getPurchaseOrders();
-  const index = orders.findIndex((o) => o.id === order.id);
-  if (index >= 0) {
-    orders[index] = { ...order, updatedAt: new Date().toISOString() };
-  } else {
-    orders.push({ ...order, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+export async function upsertPurchaseOrder(order: PurchaseOrder): Promise<void> {
+  const body = { ...order, updatedAt: new Date().toISOString() };
+  if (order.id) {
+    const putRes = await fetch(`/api/purchase-orders/${order.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (putRes.ok) return;
+    if (putRes.status === 404) {
+      const postRes = await fetch("/api/purchase-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!postRes.ok) throw new Error("Failed to create purchase order");
+      return;
+    }
+    throw new Error("Failed to update purchase order");
   }
-  savePurchaseOrders(orders);
+  const res = await fetch("/api/purchase-orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error("Failed to create purchase order");
 }
 
 /**
  * 创建新的采购订单（运营下单）
  */
-export function createPurchaseOrder(
+export async function createPurchaseOrder(
   data: Omit<PurchaseOrder, "id" | "orderNumber" | "status" | "riskControlStatus" | "approvalStatus" | "createdAt" | "updatedAt">
-): PurchaseOrder {
+): Promise<PurchaseOrder> {
   const newOrder: PurchaseOrder = {
     id: crypto.randomUUID(),
     orderNumber: generateOrderNumber(),
@@ -173,23 +229,16 @@ export function createPurchaseOrder(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  
-  upsertPurchaseOrder(newOrder);
+  await upsertPurchaseOrder(newOrder);
   return newOrder;
 }
 
 /**
  * 删除采购订单
  */
-export function deletePurchaseOrder(id: string): boolean {
-  const orders = getPurchaseOrders();
-  const index = orders.findIndex((o) => o.id === id);
-  if (index >= 0) {
-    orders.splice(index, 1);
-    savePurchaseOrders(orders);
-    return true;
-  }
-  return false;
+export async function deletePurchaseOrder(id: string): Promise<boolean> {
+  const res = await fetch(`/api/purchase-orders/${id}`, { method: "DELETE" });
+  return res.ok;
 }
 
 /**
@@ -241,22 +290,30 @@ export function checkInventoryForRiskControl(skuId: string): {
 }
 
 /**
+ * 从 API 根据 ID 获取采购订单
+ */
+export async function getPurchaseOrderByIdFromAPI(id: string): Promise<PurchaseOrder | undefined> {
+  try {
+    const res = await fetch(`/api/purchase-orders/${id}`);
+    if (!res.ok) return undefined;
+    return await res.json();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * 执行风控评估
  */
-export function performRiskControl(
+export async function performRiskControl(
   orderId: string,
   result: "通过" | "拒绝",
   notes: string,
   riskControlBy: string
-): boolean {
-  const order = getPurchaseOrderById(orderId);
+): Promise<boolean> {
+  const order = await getPurchaseOrderByIdFromAPI(orderId);
   if (!order) return false;
-  
-  // 获取库存快照
-  const inventorySnapshot = order.skuId 
-    ? checkInventoryForRiskControl(order.skuId)
-    : undefined;
-  
+  const inventorySnapshot = order.skuId ? checkInventoryForRiskControl(order.skuId) : undefined;
   const updatedOrder: PurchaseOrder = {
     ...order,
     riskControlStatus: result,
@@ -267,23 +324,21 @@ export function performRiskControl(
     status: result === "通过" ? "待审批" : "风控拒绝",
     updatedAt: new Date().toISOString()
   };
-  
-  upsertPurchaseOrder(updatedOrder);
+  await upsertPurchaseOrder(updatedOrder);
   return true;
 }
 
 /**
  * 审批订单
  */
-export function approvePurchaseOrder(
+export async function approvePurchaseOrder(
   orderId: string,
   result: "通过" | "拒绝",
   notes: string,
   approvedBy: string
-): boolean {
-  const order = getPurchaseOrderById(orderId);
+): Promise<boolean> {
+  const order = await getPurchaseOrderByIdFromAPI(orderId);
   if (!order) return false;
-  
   const updatedOrder: PurchaseOrder = {
     ...order,
     approvalStatus: result,
@@ -294,22 +349,20 @@ export function approvePurchaseOrder(
     pushedToProcurementAt: result === "通过" ? new Date().toISOString() : order.pushedToProcurementAt,
     updatedAt: new Date().toISOString()
   };
-  
-  upsertPurchaseOrder(updatedOrder);
+  await upsertPurchaseOrder(updatedOrder);
   return true;
 }
 
 /**
  * 关联采购合同（单个订单）
  */
-export function linkPurchaseContract(
+export async function linkPurchaseContract(
   orderId: string,
   contractId: string,
   contractNumber: string
-): boolean {
-  const order = getPurchaseOrderById(orderId);
+): Promise<boolean> {
+  const order = await getPurchaseOrderByIdFromAPI(orderId);
   if (!order) return false;
-  
   const updatedOrder: PurchaseOrder = {
     ...order,
     relatedContractId: contractId,
@@ -317,24 +370,21 @@ export function linkPurchaseContract(
     status: "已创建合同",
     updatedAt: new Date().toISOString()
   };
-  
-  upsertPurchaseOrder(updatedOrder);
+  await upsertPurchaseOrder(updatedOrder);
   return true;
 }
 
 /**
  * 批量关联采购合同（多个订单合并）
  */
-export function linkPurchaseContractBatch(
+export async function linkPurchaseContractBatch(
   orderIds: string[],
   contractId: string,
   contractNumber: string
-): boolean {
-  const orders = getPurchaseOrders();
-  let successCount = 0;
-  
-  orderIds.forEach(orderId => {
-    const order = orders.find(o => o.id === orderId);
+): Promise<boolean> {
+  const orders = await getPurchaseOrdersFromAPI();
+  for (const orderId of orderIds) {
+    const order = orders.find((o) => o.id === orderId);
     if (order && !order.relatedContractId) {
       const updatedOrder: PurchaseOrder = {
         ...order,
@@ -343,18 +393,8 @@ export function linkPurchaseContractBatch(
         status: "已创建合同",
         updatedAt: new Date().toISOString()
       };
-      
-      const index = orders.findIndex(o => o.id === orderId);
-      if (index >= 0) {
-        orders[index] = updatedOrder;
-        successCount++;
-      }
+      await upsertPurchaseOrder(updatedOrder);
     }
-  });
-  
-  if (successCount > 0) {
-    savePurchaseOrders(orders);
   }
-  
-  return successCount === orderIds.length;
+  return true;
 }

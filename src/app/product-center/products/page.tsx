@@ -29,34 +29,20 @@ const calculateChargeableWeight = (actualWeight: number, volumetricWeight: numbe
   return Math.max(actualWeight || 0, volumetricWeight || 0);
 };
 
-// 兼容加载供应商数据（从旧的suppliers存储或新的supplier-reconciliation-store）
-function loadSuppliers() {
+// 兼容加载供应商数据（优先从 API 加载）
+async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
   if (typeof window === "undefined") return [];
-  
-  // 先尝试从新的供应商对账存储加载
   try {
-    const { getSupplierProfiles } = require("@/lib/supplier-reconciliation-store");
-    const profiles = getSupplierProfiles();
-    if (profiles.length > 0) {
-      return profiles.map((p: any) => ({ id: p.id, name: p.name }));
-    }
-  } catch (e) {
-    // 忽略错误，继续尝试旧的方式
-  }
-  
-  // 尝试从旧的suppliers存储加载
-  try {
-    const stored = window.localStorage.getItem("suppliers");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((s: any) => ({ id: s.id, name: s.name }));
+    const res = await fetch("/api/suppliers");
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map((s: any) => ({ id: s.id, name: s.name }));
       }
     }
   } catch (e) {
     console.error("Failed to load suppliers", e);
   }
-  
   return [];
 }
 
@@ -147,8 +133,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedSuppliers = loadSuppliers();
-    setSuppliers(loadedSuppliers);
+    loadSuppliers().then(setSuppliers);
   }, []);
 
   // 获取所有分类

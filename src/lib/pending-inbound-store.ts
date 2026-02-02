@@ -37,12 +37,52 @@ export function getPendingInbound(): PendingInbound[] {
   }
 }
 
-export function savePendingInbound(items: PendingInbound[]): void {
+/** 从 API 获取待入库列表 */
+export async function getPendingInboundFromAPI(deliveryOrderId?: string, status?: string): Promise<PendingInbound[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const params = new URLSearchParams();
+    if (deliveryOrderId) params.set("deliveryOrderId", deliveryOrderId);
+    if (status) params.set("status", status);
+    const url = params.toString() ? `/api/pending-inbound?${params}` : "/api/pending-inbound";
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data.map((i: any) => ({ ...i, batches: i.batches || [] })) : [];
+  } catch (e) {
+    console.error("Failed to fetch pending inbound", e);
+    return [];
+  }
+}
+
+export async function savePendingInbound(items: PendingInbound[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(PENDING_INBOUND_KEY, JSON.stringify(items));
+    const existing = await getPendingInboundFromAPI();
+    const existingIds = new Set(existing.map((i) => i.id));
+    const newIds = new Set(items.map((i) => i.id));
+    for (const e of existing) {
+      if (!newIds.has(e.id)) await fetch(`/api/pending-inbound/${e.id}`, { method: "DELETE" });
+    }
+    for (const i of items) {
+      const body = { ...i };
+      if (existingIds.has(i.id)) {
+        await fetch(`/api/pending-inbound/${i.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      } else {
+        await fetch("/api/pending-inbound", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+      }
+    }
   } catch (e) {
     console.error("Failed to save pending inbound", e);
+    throw e;
   }
 }
 
@@ -56,69 +96,54 @@ export function getPendingInboundByDeliveryOrderId(deliveryOrderId: string): Pen
   return items.find((i) => i.deliveryOrderId === deliveryOrderId);
 }
 
-export function upsertPendingInbound(item: PendingInbound): void {
-  const items = getPendingInbound();
-  const index = items.findIndex((i) => i.id === item.id);
-  if (index >= 0) {
-    items[index] = { ...item, updatedAt: new Date().toISOString() };
+export async function upsertPendingInbound(item: PendingInbound): Promise<void> {
+  const body = { ...item, updatedAt: new Date().toISOString() };
+  const existing = await getPendingInboundFromAPI();
+  const exists = existing.some((i) => i.id === item.id);
+  if (exists) {
+    const res = await fetch(`/api/pending-inbound/${item.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to update pending inbound");
   } else {
-    items.push({ ...item, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    const res = await fetch("/api/pending-inbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Failed to create pending inbound");
   }
-  savePendingInbound(items);
 }
 
-export function deletePendingInbound(id: string): boolean {
-  const items = getPendingInbound();
-  const index = items.findIndex((i) => i.id === id);
-  if (index >= 0) {
-    items.splice(index, 1);
-    savePendingInbound(items);
-    return true;
-  }
-  return false;
+export async function deletePendingInbound(id: string): Promise<boolean> {
+  const res = await fetch(`/api/pending-inbound/${id}`, { method: "DELETE" });
+  return res.ok;
+}
+
+/** 从 API 根据 deliveryOrderId 查询是否已有待入库单 */
+export async function getPendingInboundByDeliveryOrderIdFromAPI(deliveryOrderId: string): Promise<PendingInbound | undefined> {
+  const items = await getPendingInboundFromAPI(deliveryOrderId);
+  return items.find((i) => i.deliveryOrderId === deliveryOrderId);
 }
 
 /**
  * 从子单创建待入库单（子单创建后自动调用）
  */
-export function createPendingInboundFromDeliveryOrder(deliveryOrderId: string): { success: boolean; inbound?: PendingInbound; error?: string } {
-  // 加载子单数据
-  const deliveryOrdersKey = "deliveryOrders";
-  const contractsKey = "purchaseContracts";
-  let deliveryOrder: any = null;
-  let contract: any = null;
+export async function createPendingInboundFromDeliveryOrder(deliveryOrderId: string): Promise<{ success: boolean; inbound?: PendingInbound; error?: string }> {
+  const { getDeliveryOrdersFromAPI } = await import("./delivery-orders-store");
+  const { getPurchaseContractByIdFromAPI } = await import("./purchase-contracts-store");
 
-  try {
-    const storedOrders = typeof window !== "undefined" ? window.localStorage.getItem(deliveryOrdersKey) : null;
-    if (storedOrders) {
-      const orders = JSON.parse(storedOrders);
-      deliveryOrder = orders.find((o: any) => o.id === deliveryOrderId);
-    }
+  const orders = await getDeliveryOrdersFromAPI();
+  const deliveryOrder = orders.find((o) => o.id === deliveryOrderId);
+  if (!deliveryOrder) return { success: false, error: "拿货单不存在" };
 
-    if (deliveryOrder) {
-      const storedContracts = typeof window !== "undefined" ? window.localStorage.getItem(contractsKey) : null;
-      if (storedContracts) {
-        const contracts = JSON.parse(storedContracts);
-        contract = contracts.find((c: any) => c.id === deliveryOrder.contractId);
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load delivery order or contract", e);
-  }
+  const contract = await getPurchaseContractByIdFromAPI(deliveryOrder.contractId);
+  if (!contract) return { success: false, error: "关联的合同不存在" };
 
-  if (!deliveryOrder) {
-    return { success: false, error: "拿货单不存在" };
-  }
-
-  if (!contract) {
-    return { success: false, error: "关联的合同不存在" };
-  }
-
-  // 检查是否已存在待入库单
-  const existing = getPendingInboundByDeliveryOrderId(deliveryOrderId);
-  if (existing) {
-    return { success: false, error: "该拿货单已存在待入库单" };
-  }
+  const existing = await getPendingInboundByDeliveryOrderIdFromAPI(deliveryOrderId);
+  if (existing) return { success: false, error: "该拿货单已存在待入库单" };
 
   const newInbound: PendingInbound = {
     id: crypto.randomUUID(),
@@ -138,6 +163,6 @@ export function createPendingInboundFromDeliveryOrder(deliveryOrderId: string): 
     updatedAt: new Date().toISOString()
   };
 
-  upsertPendingInbound(newInbound);
+  await upsertPendingInbound(newInbound);
   return { success: true, inbound: newInbound };
 }

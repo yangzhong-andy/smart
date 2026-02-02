@@ -5,6 +5,8 @@ import Link from "next/link";
 import type { BankAccount } from "@/lib/finance-store";
 import { getOrderTracking, getBatchReceipts, getDocuments, type OrderTracking, type BatchReceipt, type Document } from "@/lib/supply-chain-store";
 import type { Store } from "@/lib/store-store";
+import { getCashFlowFromAPI } from "@/lib/cash-flow-store";
+import { getLegacyPurchaseOrdersFromAPI, type LegacyPurchaseOrder } from "@/lib/purchase-contracts-store";
 
 type CashFlow = {
   id: string;
@@ -16,33 +18,7 @@ type CashFlow = {
   currency?: string;
 };
 
-type PurchaseOrder = {
-  id: string;
-  poNumber: string;
-  supplierId: string;
-  supplierName: string;
-  sku: string;
-  unitPrice: number;
-  quantity: number;
-  totalAmount: number;
-  depositRate: number;
-  depositAmount: number;
-  depositPaid: number;
-  tailPeriodDays: number;
-  receivedQty: number;
-  status: "待收货" | "部分收货" | "收货完成，待结清" | "已清款";
-  receipts: Array<{
-    id: string;
-    qty: number;
-    tailAmount: number;
-    dueDate: string;
-    createdAt: string;
-  }>;
-  createdAt: string;
-};
-
-const CASH_FLOW_KEY = "cashFlow";
-const PO_KEY = "purchaseOrders";
+type PurchaseOrder = LegacyPurchaseOrder;
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -71,22 +47,9 @@ export default function FactoriesPage() {
     ]);
     setAccounts(accRes.ok ? await accRes.json() : []);
     setStores(storesRes.ok ? await storesRes.json() : []);
-    const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-    if (storedFlow) {
-      try {
-        setCashFlow(JSON.parse(storedFlow));
-      } catch (e) {
-        console.error("Failed to parse cash flow", e);
-      }
-    }
-    const storedPO = window.localStorage.getItem(PO_KEY);
-    if (storedPO) {
-      try {
-        setPurchaseOrders(JSON.parse(storedPO));
-      } catch (e) {
-        console.error("Failed to parse purchase orders", e);
-      }
-    }
+    const [flowList, legacyPOs] = await Promise.all([getCashFlowFromAPI(), getLegacyPurchaseOrdersFromAPI()]);
+    setCashFlow(flowList as CashFlow[]);
+    setPurchaseOrders(legacyPOs);
     setOrderTracking(getOrderTracking());
     setBatchReceipts(getBatchReceipts());
     setDocuments(getDocuments());
@@ -661,14 +624,11 @@ export default function FactoriesPage() {
                               saveBatchReceipts(allBatchReceipts);
                               setBatchReceipts(allBatchReceipts);
                               
-                              // 更新采购订单的已收货数量
+                              // 更新采购订单的已收货数量（仅本地状态，分批拿货来自 supply-chain-store）
                               const updatedPOs = purchaseOrders.map((p) =>
                                 p.id === po.id ? { ...p, receivedQty: (p.receivedQty || 0) + qty } : p
                               );
                               setPurchaseOrders(updatedPOs);
-                              if (typeof window !== "undefined") {
-                                window.localStorage.setItem(PO_KEY, JSON.stringify(updatedPOs));
-                              }
                               
                               alert("分批拿货记录已创建");
                             }}

@@ -11,8 +11,8 @@ import {
   type LogisticsTracking,
   type TrackingStatus
 } from "@/lib/logistics-store";
-import { getPendingInbound, type PendingInbound } from "@/lib/pending-inbound-store";
-import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { getPendingInboundFromAPI, type PendingInbound } from "@/lib/pending-inbound-store";
+import { getDeliveryOrdersFromAPI, type DeliveryOrder } from "@/lib/delivery-orders-store";
 
 const STATUS_COLORS: Record<TrackingStatus, { bg: string; text: string }> = {
   Pending: {
@@ -59,8 +59,8 @@ export default function LogisticsWorkbenchPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setTracking(getLogisticsTracking());
-    setPendingInbound(getPendingInbound());
-    setDeliveryOrders(getDeliveryOrders());
+    getPendingInboundFromAPI().then(setPendingInbound);
+    getDeliveryOrdersFromAPI().then(setDeliveryOrders);
     setInitialized(true);
   }, []);
 

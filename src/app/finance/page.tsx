@@ -10,10 +10,14 @@ import type { BankAccount } from "@/lib/finance-store";
 import type { Store } from "@/lib/store-store";
 import { getPaymentRequests } from "@/lib/payment-request-store";
 import { getPendingEntryCount } from "@/lib/pending-entry-store";
-import { getProducts } from "@/lib/products-store";
+import { getProductsFromAPI } from "@/lib/products-store";
 import { getFinanceRates, type FinanceRates } from "@/lib/exchange";
+import { getCashFlowFromAPI, createCashFlow, type CashFlow } from "@/lib/cash-flow-store";
+import { getLegacyPurchaseOrdersFromAPI, type LegacyPurchaseOrder, updateContractPayment } from "@/lib/purchase-contracts-store";
+import { getDeliveryOrdersFromAPI, upsertDeliveryOrder } from "@/lib/delivery-orders-store";
+import { saveAccounts } from "@/lib/finance-store";
 
-type CashFlow = {
+type LegacyCashFlow = {
   id: string;
   date: string;
   type: "income" | "expense";
@@ -23,35 +27,9 @@ type CashFlow = {
   currency?: string;
 };
 
-type Receipt = {
-  id: string;
-  qty: number;
-  tailAmount: number;
-  dueDate: string;
-  createdAt: string;
-};
 
-type PurchaseOrder = {
-  id: string;
-  poNumber: string;
-  supplierId: string;
-  supplierName: string;
-  sku: string;
-  unitPrice: number;
-  quantity: number;
-  totalAmount: number;
-  depositRate: number;
-  depositAmount: number;
-  depositPaid: number;
-  tailPeriodDays: number;
-  receivedQty: number;
-  status: "待收货" | "部分收货" | "收货完成，待结清" | "已清款";
-  receipts: Receipt[];
-  createdAt: string;
-};
-
-const CASH_FLOW_KEY = "cashFlow";
-const PO_KEY = "purchaseOrders";
+type Receipt = { id: string; qty: number; tailAmount: number; dueDate: string; createdAt: string };
+type PurchaseOrder = LegacyPurchaseOrder;
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -63,6 +41,7 @@ const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 export default function FinanceDashboardPage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [products, setProducts] = useState<Array<{ sku_id: string; name?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }>>([]);
   const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [paymentModal, setPaymentModal] = useState<{
@@ -85,28 +64,18 @@ export default function FinanceDashboardPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     (async () => {
-    const [accRes, storesRes] = await Promise.all([
+    const [accRes, storesRes, productsRes, flowList, legacyPOs] = await Promise.all([
       fetch("/api/accounts"),
       fetch("/api/stores"),
+      fetch("/api/products"),
+      getCashFlowFromAPI(),
+      getLegacyPurchaseOrdersFromAPI()
     ]);
     setAccounts(accRes.ok ? await accRes.json() : []);
     setStores(storesRes.ok ? await storesRes.json() : []);
-    const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-    if (storedFlow) {
-      try {
-        setCashFlow(JSON.parse(storedFlow));
-      } catch (e) {
-        console.error("Failed to parse cash flow", e);
-      }
-    }
-    const storedPO = window.localStorage.getItem(PO_KEY);
-    if (storedPO) {
-      try {
-        setPurchaseOrders(JSON.parse(storedPO));
-      } catch (e) {
-        console.error("Failed to parse purchase orders", e);
-      }
-    }
+    setProducts(productsRes.ok ? await productsRes.json() : []);
+    setCashFlow(flowList);
+    setPurchaseOrders(legacyPOs);
     // 加载待入账任务数量（API）
     getPendingEntryCount().then(setPendingEntryCount).catch(() => setPendingEntryCount(0));
     })();
@@ -176,7 +145,6 @@ export default function FinanceDashboardPage() {
 
   // 计算库存资产总值
   const inventoryAssetValue = useMemo(() => {
-    const products = getProducts();
     let totalValue = 0;
     
     products.forEach((product) => {
@@ -203,7 +171,7 @@ export default function FinanceDashboardPage() {
     });
     
     return totalValue;
-  }, []);
+  }, [products]);
 
   const thisMonth = new Date().getMonth();
   const thisYear = new Date().getFullYear();
@@ -442,7 +410,7 @@ export default function FinanceDashboardPage() {
   };
 
   // 保存付款并更新采购订单状态
-  const handleSavePayment = (accountId: string, date: string, remark: string) => {
+  const handleSavePayment = async (accountId: string, date: string, remark: string) => {
     if (!paymentModal.poId || !paymentModal.type) return;
 
     const po = purchaseOrders.find((p) => p.id === paymentModal.poId);
@@ -458,70 +426,62 @@ export default function FinanceDashboardPage() {
     const newFlow: CashFlow = {
       id: crypto.randomUUID(),
       date,
+      summary: `${paymentModal.type === "deposit" ? "定金" : "尾款"}支付 - ${paymentModal.poNumber}`,
+      category: "采购付款",
       type: "expense",
       amount: -Math.abs(paymentModal.amount),
-      relatedId: paymentModal.type === "tail" ? paymentModal.receiptId : paymentModal.poId,
+      relatedId: paymentModal.type === "tail" ? paymentModal.receiptId : (paymentModal.poId || ""),
       accountId,
-      currency: account.currency
+      accountName: account.name || account.accountNumber,
+      currency: account.currency,
+      createdAt: new Date().toISOString()
     };
 
-    const updatedCashFlow = [...cashFlow, newFlow];
-    setCashFlow(updatedCashFlow);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(updatedCashFlow));
-    }
+    try {
+      await createCashFlow(newFlow);
+      const updatedCashFlow = [...cashFlow, newFlow];
+      setCashFlow(updatedCashFlow);
 
-    // 更新采购订单
-    const updatedPOs = purchaseOrders.map((p) => {
-      if (p.id !== paymentModal.poId) return p;
-
-      let updatedPo = { ...p };
-
+      // 更新合同/发货单（API）
+      const poId = paymentModal.poId!;
       if (paymentModal.type === "deposit") {
-        updatedPo.depositPaid = (updatedPo.depositPaid || 0) + paymentModal.amount;
+        await updateContractPayment(poId, paymentModal.amount, "deposit");
       } else if (paymentModal.type === "tail" && paymentModal.receiptId) {
-        // 尾款已支付，标记在receipt中（通过检查cashFlow来判断）
+        const dos = await getDeliveryOrdersFromAPI(poId);
+        const doToUpdate = dos.find((o) => o.id === paymentModal.receiptId);
+        if (doToUpdate) {
+          await upsertDeliveryOrder({
+            ...doToUpdate,
+            tailPaid: (doToUpdate.tailPaid || 0) + paymentModal.amount
+          });
+        }
+        await updateContractPayment(poId, paymentModal.amount, "tail");
       }
 
-      // 检查是否所有款项都已付清
-      const unpaidDeposit = updatedPo.depositAmount - (updatedPo.depositPaid || 0);
-      const allTailsPaid = updatedPo.receipts.every((receipt) => {
-        return updatedCashFlow.some(
-          (flow) => flow.type === "expense" && flow.relatedId === receipt.id && Math.abs(flow.amount - receipt.tailAmount) < 0.01
-        );
+      const refreshedPOs = await getLegacyPurchaseOrdersFromAPI();
+      setPurchaseOrders(refreshedPOs);
+
+      // 更新账户余额（API）
+      const updatedAccounts = accounts.map((acc) => {
+        if (acc.id === accountId) {
+          const newBalance = (acc.originalBalance || 0) + newFlow.amount;
+          return {
+            ...acc,
+            originalBalance: newBalance,
+            rmbBalance: acc.currency === "RMB" ? newBalance : newBalance * (acc.exchangeRate || 1)
+          };
+        }
+        return acc;
       });
+      setAccounts(updatedAccounts);
+      await saveAccounts(updatedAccounts);
 
-      if (unpaidDeposit <= 0 && allTailsPaid && updatedPo.status !== "已清款") {
-        updatedPo.status = "已清款";
-      }
-
-      return updatedPo;
-    });
-
-    setPurchaseOrders(updatedPOs);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PO_KEY, JSON.stringify(updatedPOs));
+      setPaymentModal({ poId: null, type: null, amount: 0, supplierName: "", poNumber: "" });
+      toast.success("付款成功！");
+    } catch (e) {
+      console.error("付款记录保存失败", e);
+      toast.error("付款记录保存失败，请重试");
     }
-
-    // 更新账户余额
-    const updatedAccounts = accounts.map((acc) => {
-      if (acc.id === accountId) {
-        const newBalance = (acc.originalBalance || 0) + newFlow.amount;
-        return {
-          ...acc,
-          originalBalance: newBalance,
-          rmbBalance: acc.currency === "RMB" ? newBalance : newBalance * (acc.exchangeRate || 1)
-        };
-      }
-      return acc;
-    });
-    setAccounts(updatedAccounts);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("bankAccounts", JSON.stringify(updatedAccounts));
-    }
-
-    setPaymentModal({ poId: null, type: null, amount: 0, supplierName: "", poNumber: "" });
-    toast.success("付款成功！");
   };
 
   return (

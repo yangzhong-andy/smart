@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import useSWR, { mutate as swrMutate } from "swr";
 import ImageUploader from "@/components/ImageUploader";
 import { Factory, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Building2, Package, ChevronDown, ChevronUp, ExternalLink, MapPin } from "lucide-react";
-import { getProductsByFactoryId, getProducts, type Product } from "@/lib/products-store";
+import { getProductsFromAPI, type Product } from "@/lib/products-store";
 import { SETTLE_BASE_LABEL, INVOICE_REQUIREMENT_LABEL } from "@/lib/enum-mapping";
 
 type Supplier = {
@@ -59,6 +59,11 @@ export default function SuppliersPage() {
     setMounted(true);
   }, []);
 
+  const { data: productsData = [] } = useSWR<Product[]>('/api/products', fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000
+  });
+  const products = Array.isArray(productsData) ? productsData : [];
   const initialized = !suppliersLoading;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -197,34 +202,27 @@ export default function SuppliersPage() {
     };
   }, [filteredSuppliers]);
 
-  // 获取供应商关联的产品信息
+  // 获取供应商关联的产品信息（使用 API 数据）
   const getSupplierProducts = (supplierId: string): Product[] => {
-    if (typeof window === "undefined") return [];
-    try {
-      // 方法1: 通过 factory_id 匹配
-      const productsByFactoryId = getProductsByFactoryId(supplierId);
-      
-      // 方法2: 通过 factory_name 匹配（兼容旧数据或手动输入的情况）
-      const supplier = suppliers.find((s) => s.id === supplierId);
-      if (supplier) {
-        const allProducts = getProducts();
-        const productsByName = allProducts.filter(
-          (p) => p.factory_name === supplier.name && !p.factory_id
-        );
-        
-        // 合并两种方式的结果，去重
-        const allLinkedProducts = [...productsByFactoryId, ...productsByName];
-        const uniqueProducts = allLinkedProducts.filter(
-          (product, index, self) => index === self.findIndex((p) => p.sku_id === product.sku_id)
-        );
-        return uniqueProducts;
+    if (!products || products.length === 0) return [];
+    const supplier = suppliers.find((s) => s.id === supplierId);
+    const productsByFactoryId = products.filter((p) => {
+      if (p.factory_id === supplierId) return true;
+      if (p.suppliers && Array.isArray(p.suppliers)) {
+        return p.suppliers.some((s) => s.id === supplierId);
       }
-      
-      return productsByFactoryId;
-    } catch (error) {
-      console.error("获取供应商产品失败:", error);
-      return [];
+      return false;
+    });
+    if (supplier) {
+      const productsByName = products.filter(
+        (p) => p.factory_name === supplier.name && !p.factory_id
+      );
+      const allLinkedProducts = [...productsByFactoryId, ...productsByName];
+      return allLinkedProducts.filter(
+        (product, index, self) => index === self.findIndex((p) => p.sku_id === product.sku_id)
+      );
     }
+    return productsByFactoryId;
   };
 
   // 获取供应商产品统计

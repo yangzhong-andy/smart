@@ -8,6 +8,7 @@ import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/com
 import useSWR from "swr";
 import {
   getEmployees,
+  getEmployeesFromAPI,
   saveEmployees,
   upsertEmployee,
   deleteEmployee,
@@ -243,13 +244,20 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("确定要删除这个员工吗？")) return;
-    if (deleteEmployee(id)) {
-      setEmployees(getEmployees());
-      toast.success("员工已删除");
-    } else {
-      toast.error("删除失败");
+    try {
+      const ok = await deleteEmployee(id);
+      if (ok) {
+        const updated = await getEmployeesFromAPI();
+        setEmployees(updated);
+        toast.success("员工已删除");
+      } else {
+        toast.error("删除失败");
+      }
+    } catch (e) {
+      console.error("删除员工失败", e);
+      toast.error("删除失败，请重试");
     }
   };
 

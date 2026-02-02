@@ -6,7 +6,7 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Package, Plus, Search, X, Eye, Clock, CheckCircle2, XCircle, AlertCircle, Download } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import {
-  getPurchaseOrders,
+  getPurchaseOrdersFromAPI,
   createPurchaseOrder,
   upsertPurchaseOrder,
   deletePurchaseOrder,
@@ -14,7 +14,7 @@ import {
   type PurchaseOrder,
   type PurchaseOrderStatus
 } from "@/lib/purchase-orders-store";
-import { getProducts, type Product } from "@/lib/products-store";
+import { getProductsFromAPI, type Product } from "@/lib/products-store";
 import type { Store } from "@/lib/store-store";
 
 const formatDate = (dateString?: string) => {
@@ -70,8 +70,10 @@ export default function PurchaseOrdersNewPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     (async () => {
-    setOrders(getPurchaseOrders());
-    setProducts(getProducts());
+    const ords = await getPurchaseOrdersFromAPI();
+    setOrders(ords);
+    const prods = await getProductsFromAPI();
+    setProducts(prods);
     const storesRes = await fetch("/api/stores");
     setStores(storesRes.ok ? await storesRes.json() : []);
     setInitialized(true);
@@ -132,7 +134,7 @@ export default function PurchaseOrdersNewPage() {
   }, [orders, filterStatus, filterPlatform, searchKeyword]);
 
   // 创建订单
-  const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!form.createdBy.trim()) {
@@ -154,22 +156,28 @@ export default function PurchaseOrdersNewPage() {
     const selectedProduct = products.find((p) => p.sku_id === form.skuId);
     const selectedStore = stores.find((s) => s.id === form.storeId);
 
-    const newOrder = createPurchaseOrder({
-      createdBy: form.createdBy.trim(),
-      platform: form.platform,
-      storeId: form.storeId || undefined,
-      storeName: selectedStore?.name,
-      sku: form.sku || selectedProduct?.sku_id || "",
-      skuId: form.skuId || undefined,
-      productName: selectedProduct?.name,
-      quantity,
-      expectedDeliveryDate: form.expectedDeliveryDate || undefined,
-      urgency: form.urgency,
-      notes: form.notes.trim() || undefined
-    });
-
-    setOrders(getPurchaseOrders());
-    toast.success("采购订单已创建，等待风控评估");
+    try {
+      const newOrder = await createPurchaseOrder({
+        createdBy: form.createdBy.trim(),
+        platform: form.platform,
+        storeId: form.storeId || undefined,
+        storeName: selectedStore?.name,
+        sku: form.sku || selectedProduct?.sku_id || "",
+        skuId: form.skuId || undefined,
+        productName: selectedProduct?.name,
+        quantity,
+        expectedDeliveryDate: form.expectedDeliveryDate || undefined,
+        urgency: form.urgency,
+        notes: form.notes.trim() || undefined
+      });
+      const ords = await getPurchaseOrdersFromAPI();
+      setOrders(ords);
+      toast.success("采购订单已创建，等待风控评估");
+    } catch (err) {
+      console.error("创建订单失败", err);
+      toast.error("创建失败，请重试");
+      return;
+    }
     
     // 重置表单
     setForm({
@@ -193,7 +201,7 @@ export default function PurchaseOrdersNewPage() {
   };
 
   // 取消订单
-  const handleCancel = (orderId: string) => {
+  const handleCancel = async (orderId: string) => {
     if (!confirm("确定要取消这个订单吗？")) return;
     
     const order = orders.find((o) => o.id === orderId);
@@ -210,9 +218,15 @@ export default function PurchaseOrdersNewPage() {
       updatedAt: new Date().toISOString()
     };
     
-    upsertPurchaseOrder(updatedOrder);
-    setOrders(getPurchaseOrders());
-    toast.success("订单已取消");
+    try {
+      await upsertPurchaseOrder(updatedOrder);
+      const ords = await getPurchaseOrdersFromAPI();
+      setOrders(ords);
+      toast.success("订单已取消");
+    } catch (err) {
+      console.error("取消订单失败", err);
+      toast.error("操作失败，请重试");
+    }
   };
 
   // 导出数据

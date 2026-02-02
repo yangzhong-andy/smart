@@ -6,8 +6,7 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { CheckCircle2, XCircle, Search, Eye, FileCheck } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import {
-  getPurchaseOrders,
-  getPendingApprovalOrders,
+  getPurchaseOrdersFromAPI,
   approvePurchaseOrder,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
@@ -35,7 +34,7 @@ export default function ApprovalPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setOrders(getPendingApprovalOrders());
+    getPurchaseOrdersFromAPI().then((ords) => setOrders(ords.filter((o) => o.status === "待审批")));
   }, []);
 
   // 筛选订单
@@ -76,7 +75,7 @@ export default function ApprovalPage() {
   };
 
   // 提交审批
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!selectedOrder) return;
@@ -86,16 +85,17 @@ export default function ApprovalPage() {
       return;
     }
     
-    const success = approvePurchaseOrder(
+    const success = await approvePurchaseOrder(
       selectedOrder.id,
       approvalForm.result,
       approvalForm.notes,
       approvalForm.approvedBy.trim()
     );
-    
+
     if (success) {
       toast.success(`审批${approvalForm.result === "通过" ? "通过" : "拒绝"}`);
-      setOrders(getPendingApprovalOrders());
+      const ords = await getPurchaseOrdersFromAPI();
+      setOrders(ords.filter((o) => o.status === "待审批"));
       setIsModalOpen(false);
       setSelectedOrder(null);
       setApprovalForm({

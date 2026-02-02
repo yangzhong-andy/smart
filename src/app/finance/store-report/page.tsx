@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Store } from "@/lib/store-store";
 import type { BankAccount } from "@/lib/finance-store";
-import type { CashFlow } from "../cash-flow/page";
-
-const CASH_FLOW_KEY = "cashFlow";
+import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -31,15 +29,8 @@ export default function StoreReportPage() {
     ]);
     setStores(storesRes.ok ? await storesRes.json() : []);
     setAccounts(accRes.ok ? await accRes.json() : []);
-    const stored = window.localStorage.getItem(CASH_FLOW_KEY);
-    if (stored) {
-      try {
-        const parsed: CashFlow[] = JSON.parse(stored);
-        setCashFlow(parsed);
-      } catch (e) {
-        console.error("Failed to parse cash flow", e);
-      }
-    }
+    const flowList = await getCashFlowFromAPI();
+    setCashFlow(flowList);
     })();
   }, []);
 

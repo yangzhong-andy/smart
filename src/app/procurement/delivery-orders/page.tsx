@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
-import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import { getDeliveryOrdersFromAPI, type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { getPurchaseContractsFromAPI, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import { Truck, Search, X, Download, Eye, Package } from "lucide-react";
@@ -42,10 +42,14 @@ export default function DeliveryOrdersPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadedOrders = getDeliveryOrders();
-    setDeliveryOrders(loadedOrders);
-    const loadedContracts = getPurchaseContracts();
-    setContracts(loadedContracts);
+    (async () => {
+      const [loadedOrders, loadedContracts] = await Promise.all([
+        getDeliveryOrdersFromAPI(),
+        getPurchaseContractsFromAPI()
+      ]);
+      setDeliveryOrders(loadedOrders);
+      setContracts(loadedContracts);
+    })();
   }, []);
 
   // 筛选和排序拿货单

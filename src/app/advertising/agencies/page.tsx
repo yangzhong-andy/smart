@@ -21,6 +21,7 @@ import {
   calculateRebateDueDate
 } from "@/lib/ad-agency-store";
 import { type BankAccount, saveAccounts } from "@/lib/finance-store";
+import { getCashFlowFromAPI, createCashFlow, type CashFlow as CashFlowStoreType } from "@/lib/cash-flow-store";
 import { type Store, getStoreById } from "@/lib/store-store";
 import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill } from "@/lib/reconciliation-store";
@@ -57,6 +58,7 @@ export default function AdAgenciesPage() {
   const [recharges, setRecharges] = useState<AdRecharge[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [cashFlowList, setCashFlowList] = useState<CashFlowStoreType[]>([]);
   const [activeTab, setActiveTab] = useState<"dashboard" | "agencies" | "accounts" | "consumptions" | "recharges">("dashboard");
   const [isAgencyModalOpen, setIsAgencyModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -211,6 +213,10 @@ export default function AdAgenciesPage() {
     setStores(loadedStores);
     setBankAccounts(loadedBankAccounts);
     
+    // 加载 cashFlow
+    const flowList = await getCashFlowFromAPI();
+    setCashFlowList(flowList);
+    
     // 重新计算所有账户余额
     await recalculateAccountBalances(loadedAccounts, loadedConsumptions, loadedRecharges);
     })();
@@ -235,51 +241,31 @@ export default function AdAgenciesPage() {
     });
     
     // 从财务流水中统计已结算的返点（用于计算已返点金额）
-    const CASH_FLOW_KEY = "cashFlow";
     let settledRebatesByAccount: Record<string, number> = {};
     let totalSettledRebate = 0; // 总已返点金额
     
-    if (typeof window !== "undefined") {
-      const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-      if (storedFlow) {
-        try {
-          const cashFlow: Array<{
-            type: "income" | "expense";
-            category: string;
-            amount: number;
-            remark?: string;
-            relatedId?: string;
-            status?: string;
-            isReversal?: boolean;
-          }> = JSON.parse(storedFlow);
-          
-          cashFlow.forEach((flow) => {
-            // 统计已结算的返点（分类为"运营-广告-已结算"）
-            if (
-              flow.category === "运营-广告-已结算" &&
-              flow.type === "income" &&
-              !flow.isReversal &&
-              (flow.status === "confirmed" || !flow.status) &&
-              flow.relatedId
-            ) {
-              const rebateAmount = Math.abs(flow.amount || 0);
-              totalSettledRebate += rebateAmount;
-              // relatedId应该是消耗记录的ID
-              const consumption = consumptions.find((c) => c.id === flow.relatedId);
-              if (consumption && consumption.isSettled) {
-                const accountId = consumption.adAccountId;
-                if (!settledRebatesByAccount[accountId]) {
-                  settledRebatesByAccount[accountId] = 0;
-                }
-                settledRebatesByAccount[accountId] += rebateAmount;
-              }
-            }
-          });
-        } catch (e) {
-          console.error("Failed to parse cash flow for balance calculation", e);
+    cashFlowList.forEach((flow) => {
+      // 统计已结算的返点（分类为"运营-广告-已结算"）
+      if (
+        flow.category === "运营-广告-已结算" &&
+        flow.type === "income" &&
+        !flow.isReversal &&
+        (flow.status === "confirmed" || !flow.status) &&
+        flow.relatedId
+      ) {
+        const rebateAmount = Math.abs(flow.amount || 0);
+        totalSettledRebate += rebateAmount;
+        // relatedId应该是消耗记录的ID
+        const consumption = consumptions.find((c) => c.id === flow.relatedId);
+        if (consumption && consumption.isSettled) {
+          const accountId = consumption.adAccountId;
+          if (!settledRebatesByAccount[accountId]) {
+            settledRebatesByAccount[accountId] = 0;
+          }
+          settledRebatesByAccount[accountId] += rebateAmount;
         }
       }
-    }
+    });
     
     // 计算每个账户的累计消耗
     const consumptionByAccount: Record<string, number> = {};
@@ -663,34 +649,17 @@ export default function AdAgenciesPage() {
     
     // 计算已返点金额和未返点金额
     // 从财务流水中统计已结算的返点
-    const CASH_FLOW_KEY_FOR_REBATE = "cashFlow";
     let totalSettledRebateAmount = 0;
-    if (typeof window !== "undefined") {
-      const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY_FOR_REBATE);
-      if (storedFlow) {
-        try {
-          const cashFlow: Array<{
-            type: "income" | "expense";
-            category: string;
-            amount: number;
-            isReversal?: boolean;
-            status?: string;
-          }> = JSON.parse(storedFlow);
-          cashFlow.forEach((flow) => {
-            if (
-              flow.category === "运营-广告-已结算" &&
-              flow.type === "income" &&
-              !flow.isReversal &&
-              (flow.status === "confirmed" || !flow.status)
-            ) {
-              totalSettledRebateAmount += Math.abs(flow.amount || 0);
-            }
-          });
-        } catch (e) {
-          console.error("Failed to parse cash flow for rebate calculation", e);
-        }
+    cashFlowList.forEach((flow) => {
+      if (
+        flow.category === "运营-广告-已结算" &&
+        flow.type === "income" &&
+        !flow.isReversal &&
+        (flow.status === "confirmed" || !flow.status)
+      ) {
+        totalSettledRebateAmount += Math.abs(flow.amount || 0);
       }
-    }
+    });
     
     const totalRebateAmount = totalEstimatedRebate; // 总返点金额 = 预估返点总额
     const totalUnsettledRebateAmount = Math.max(0, totalRebateAmount - totalSettledRebateAmount); // 未返点金额
@@ -1609,53 +1578,29 @@ export default function AdAgenciesPage() {
     }
 
     // 自动在财务流水中生成"运营-广告-待结算"记录
-    if (typeof window !== "undefined") {
-      try {
-        const CASH_FLOW_KEY = "cashFlow";
-        const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-        const cashFlow: Array<{
-          id: string;
-          date: string;
-          summary: string;
-          category: string;
-          type: "income" | "expense";
-          amount: number;
-          accountId: string;
-          accountName: string;
-          currency: string;
-          remark: string;
-          relatedId?: string;
-          businessNumber?: string;
-          status: "confirmed" | "pending";
-          isReversal?: boolean;
-          createdAt: string;
-        }> = storedFlow ? JSON.parse(storedFlow) : [];
-        
-        // 生成待结算记录（收入类型，金额为预估返点）
-        const settlementFlow = {
-          id: crypto.randomUUID(),
-          date: newConsumption.date,
-          summary: `广告返点待结算 - ${account.accountName} - ${month}`,
-          category: "运营-广告-待结算",
-          type: "income" as const,
-          amount: estimatedRebate, // 正数表示收入
-          accountId: account.id, // 使用广告账户ID作为关联（如果没有对应银行账户，可能需要调整）
-          accountName: account.accountName,
-          currency: account.currency,
-          remark: `店铺：${store?.name || "未指定"} | 消耗金额：${amount} | 返点比例：${agency?.rebateRate || 0}%`,
-          relatedId: newConsumption.id, // 关联消耗记录ID
-          businessNumber: `AD-${month.replace("-", "")}-${newConsumption.id.slice(0, 8)}`,
-          status: "pending" as const, // 待结算状态
-          isReversal: false,
-          createdAt: new Date().toISOString()
-        };
-        
-        cashFlow.push(settlementFlow);
-        window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(cashFlow));
-        console.log(`✅ 已生成财务流水待结算记录：${settlementFlow.summary}`);
-      } catch (e) {
-        console.error("Failed to create settlement flow", e);
-      }
+    try {
+      const settlementFlow = {
+        date: newConsumption.date,
+        summary: `广告返点待结算 - ${account.accountName} - ${month}`,
+        category: "运营-广告-待结算",
+        type: "income" as const,
+        amount: estimatedRebate, // 正数表示收入
+        accountId: account.id,
+        accountName: account.accountName,
+        currency: account.currency,
+        remark: `店铺：${store?.name || "未指定"} | 消耗金额：${amount} | 返点比例：${agency?.rebateRate || 0}%`,
+        relatedId: newConsumption.id,
+        businessNumber: `AD-${month.replace("-", "")}-${newConsumption.id.slice(0, 8)}`,
+        status: "pending" as const,
+        isReversal: false
+      };
+      await createCashFlow(settlementFlow);
+      // 刷新 cashFlowList
+      const updatedFlow = await getCashFlowFromAPI();
+      setCashFlowList(updatedFlow);
+      console.log(`✅ 已生成财务流水待结算记录：${settlementFlow.summary}`);
+    } catch (e) {
+      console.error("Failed to create settlement flow", e);
     }
 
     setConsumptionForm({
@@ -1753,83 +1698,49 @@ export default function AdAgenciesPage() {
         });
         
         // 在财务流水中生成结算记录（收入）
-        if (typeof window !== "undefined") {
-          try {
-            const CASH_FLOW_KEY = "cashFlow";
-            const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-            const cashFlow: Array<{
-              id: string;
-              date: string;
-              summary: string;
-              category: string;
-              type: "income" | "expense";
-              amount: number;
-              accountId: string;
-              accountName: string;
-              currency: string;
-              remark: string;
-              relatedId?: string;
-              businessNumber?: string;
-              status: "confirmed" | "pending";
-              isReversal?: boolean;
-              createdAt: string;
-            }> = storedFlow ? JSON.parse(storedFlow) : [];
+        try {
+          // 生成结算记录（从银行账户收入返点）
+          const bankAccount = bankAccounts.length > 0 ? bankAccounts[0] : null;
+          
+          if (bankAccount) {
+            const settlementFlow = {
+              date: new Date().toISOString().slice(0, 10),
+              summary: `广告返点结算 - ${account.accountName} - ${month}`,
+              category: "运营-广告-已结算",
+              type: "income" as const,
+              amount: totalRebate,
+              accountId: bankAccount.id,
+              accountName: bankAccount.name,
+              currency: account.currency,
+              remark: `结算月份：${month} | 账户：${account.accountName} | 消耗记录数：${toSettle.length}`,
+              relatedId: toSettle.map((c) => c.id).join(","),
+              businessNumber: `AD-SETTLE-${month.replace("-", "")}`,
+              status: "confirmed" as const,
+              isReversal: false
+            };
             
-            // 更新之前的待结算记录状态为已确认
-            toSettle.forEach((c) => {
-              const pendingFlow = cashFlow.find((f) => f.relatedId === c.id && f.category === "运营-广告-待结算");
-              if (pendingFlow) {
-                pendingFlow.status = "confirmed";
-                pendingFlow.summary = `广告返点已结算 - ${account.accountName} - ${month}`;
+            await createCashFlow(settlementFlow);
+            const updatedFlow = await getCashFlowFromAPI();
+            setCashFlowList(updatedFlow);
+            
+            // 更新银行账户余额
+            const updatedBankAccounts = bankAccounts.map((b) => {
+              if (b.id === bankAccount.id) {
+                return {
+                  ...b,
+                  originalBalance: b.originalBalance + totalRebate,
+                  rmbBalance: b.currency === "RMB" ? b.originalBalance + totalRebate : (b.originalBalance + totalRebate) * b.exchangeRate
+                };
               }
+              return b;
             });
+            await saveAccounts(updatedBankAccounts);
+            setBankAccounts(updatedBankAccounts);
             
-            // 生成结算记录（从银行账户收入返点）
-            // 注意：这里需要选择一个银行账户来收款，可以使用账户关联的银行账户
-            // 暂时使用第一个银行账户（实际应该根据业务逻辑选择）
-            const bankAccount = bankAccounts.length > 0 ? bankAccounts[0] : null;
-            
-            if (bankAccount) {
-              const settlementFlow = {
-                id: crypto.randomUUID(),
-                date: new Date().toISOString().slice(0, 10),
-                summary: `广告返点结算 - ${account.accountName} - ${month}`,
-                category: "运营-广告-已结算",
-                type: "income" as const,
-                amount: totalRebate, // 正数表示收入
-                accountId: bankAccount.id,
-                accountName: bankAccount.name,
-                currency: account.currency,
-                remark: `结算月份：${month} | 账户：${account.accountName} | 消耗记录数：${toSettle.length}`,
-                relatedId: toSettle.map((c) => c.id).join(","), // 关联所有消耗记录ID
-                businessNumber: `AD-SETTLE-${month.replace("-", "")}`,
-                status: "confirmed" as const,
-                isReversal: false,
-                createdAt: new Date().toISOString()
-              };
-              
-              cashFlow.push(settlementFlow);
-              window.localStorage.setItem(CASH_FLOW_KEY, JSON.stringify(cashFlow));
-              
-              // 更新银行账户余额
-              const updatedBankAccounts = bankAccounts.map((b) => {
-                if (b.id === bankAccount.id) {
-                  return {
-                    ...b,
-                    originalBalance: b.originalBalance + totalRebate,
-                    rmbBalance: b.currency === "RMB" ? b.originalBalance + totalRebate : (b.originalBalance + totalRebate) * b.exchangeRate
-                  };
-                }
-                return b;
-              });
-              await saveAccounts(updatedBankAccounts);
-              setBankAccounts(updatedBankAccounts);
-              
-              console.log(`✅ 广告返点结算成功：${settlementFlow.summary}`);
-            }
-          } catch (e) {
-            console.error("Failed to create settlement flow", e);
+            console.log(`✅ 广告返点结算成功：${settlementFlow.summary}`);
           }
+        } catch (e) {
+          console.error("Failed to create settlement flow", e);
         }
         
         // 自动生成应收款账单并推送到对账中心
@@ -2708,39 +2619,20 @@ export default function AdAgenciesPage() {
                     
                     // 从财务流水中统计该账户的已结算返点（用于余额计算）
                     let totalSettledRebate = 0;
-                    if (typeof window !== "undefined") {
-                      try {
-                        const CASH_FLOW_KEY = "cashFlow";
-                        const storedFlow = window.localStorage.getItem(CASH_FLOW_KEY);
-                        if (storedFlow) {
-                          const cashFlow: Array<{
-                            type: "income" | "expense";
-                            category: string;
-                            amount: number;
-                            relatedId?: string;
-                            status?: string;
-                            isReversal?: boolean;
-                          }> = JSON.parse(storedFlow);
-                          
-                          cashFlow.forEach((flow) => {
-                            if (
-                              flow.category === "运营-广告-已结算" &&
-                              flow.type === "income" &&
-                              !flow.isReversal &&
-                              (flow.status === "confirmed" || !flow.status) &&
-                              flow.relatedId
-                            ) {
-                              const consumption = accountConsumptions.find((c) => c.id === flow.relatedId);
-                              if (consumption && consumption.isSettled) {
-                                totalSettledRebate += Math.abs(flow.amount);
-                              }
-                            }
-                          });
+                    cashFlowList.forEach((flow) => {
+                      if (
+                        flow.category === "运营-广告-已结算" &&
+                        flow.type === "income" &&
+                        !flow.isReversal &&
+                        (flow.status === "confirmed" || !flow.status) &&
+                        flow.relatedId
+                      ) {
+                        const consumption = accountConsumptions.find((c) => c.id === flow.relatedId);
+                        if (consumption && consumption.isSettled) {
+                          totalSettledRebate += Math.abs(flow.amount);
                         }
-                      } catch (e) {
-                        console.error("Failed to parse cash flow for balance calculation", e);
                       }
-                    }
+                    });
                     
                     // 计算当前余额：累计实付充值 - 累计消耗 + 已结算返点（返点不计入余额，但已结算的返点会回到账户）
                     const calculatedBalance = totalRecharge - totalConsumption + totalSettledRebate;

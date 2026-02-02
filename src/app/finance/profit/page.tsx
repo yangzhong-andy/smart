@@ -5,7 +5,7 @@ import { TrendingUp, FileText } from "lucide-react";
 import type { BankAccount } from "@/lib/finance-store";
 import type { Store } from "@/lib/store-store";
 import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
-import type { CashFlow } from "../cash-flow/page";
+import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
 
 // 确保 CashFlow 类型完整
 type CashFlowWithDefaults = CashFlow & {
@@ -14,8 +14,6 @@ type CashFlowWithDefaults = CashFlow & {
   accountId?: string;
   currency?: string;
 };
-
-const CASH_FLOW_KEY = "cashFlow";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -37,15 +35,8 @@ export default function ProfitPage() {
     ]);
     setAccounts(accRes.ok ? await accRes.json() : []);
     setStores(storesRes.ok ? await storesRes.json() : []);
-    const stored = window.localStorage.getItem(CASH_FLOW_KEY);
-    if (stored) {
-      try {
-        const parsed: CashFlowWithDefaults[] = JSON.parse(stored);
-        setCashFlow(parsed);
-      } catch (e) {
-        console.error("Failed to parse cash flow", e);
-      }
-    }
+    const flowList = await getCashFlowFromAPI();
+    setCashFlow(flowList as CashFlowWithDefaults[]);
     })();
   }, []);
 

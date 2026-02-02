@@ -6,14 +6,13 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { ShoppingCart, Search, Eye, Plus, Link as LinkIcon, Package, CheckSquare, Square, Layers } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import {
-  getPurchaseOrders,
-  getPushedToProcurementOrders,
+  getPurchaseOrdersFromAPI,
   linkPurchaseContract,
   linkPurchaseContractBatch,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
-import { getPurchaseContracts, upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
-import { getProducts, getProductBySkuId } from "@/lib/products-store";
+import { getPurchaseContractsFromAPI, upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import { getProductsFromAPI, type Product } from "@/lib/products-store";
 // 供应商数据直接从 localStorage 读取
 import Link from "next/link";
 
@@ -53,16 +52,17 @@ export default function ProcurementOrdersPage() {
     loadData();
   }, []);
 
-  const loadData = () => {
-    setOrders(getPushedToProcurementOrders());
-    setContracts(getPurchaseContracts());
-    setProducts(getProducts());
-    // 加载供应商数据
+  const loadData = async () => {
+    const [ords, conts] = await Promise.all([
+      getPurchaseOrdersFromAPI().then((os) => os.filter((o) => o.status === "已推送采购")),
+      getPurchaseContractsFromAPI()
+    ]);
+    setOrders(ords);
+    setContracts(conts);
+    getProductsFromAPI().then(setProducts);
     try {
-      const stored = window.localStorage.getItem("suppliers");
-      if (stored) {
-        setSuppliers(JSON.parse(stored));
-      }
+      const res = await fetch("/api/suppliers");
+      if (res.ok) setSuppliers(await res.json());
     } catch (e) {
       console.error("Failed to load suppliers", e);
     }
@@ -150,7 +150,7 @@ export default function ProcurementOrdersPage() {
     }>();
 
     selectedOrders.forEach(order => {
-      const product = order.skuId ? getProductBySkuId(order.skuId) : null;
+      const product = order.skuId ? products.find((p: Product) => p.sku_id === order.skuId) : null;
       // 获取产品的主供应商
       let supplierId = "";
       let supplierName = "";
@@ -163,7 +163,7 @@ export default function ProcurementOrdersPage() {
             supplierName = supplier.name;
           }
         } else if (product.suppliers && product.suppliers.length > 0) {
-          const primarySupplier = product.suppliers.find(s => s.isPrimary) || product.suppliers[0];
+          const primarySupplier = product.suppliers.find((s: { id: string; isPrimary?: boolean }) => s.isPrimary) || product.suppliers[0];
           const supplier = suppliers.find(s => s.id === primarySupplier.id);
           if (supplier) {
             supplierId = supplier.id;
@@ -197,7 +197,7 @@ export default function ProcurementOrdersPage() {
 
     // 计算单价（使用产品的成本价）
     const groups = Array.from(groupMap.values()).map(group => {
-      const product = group.skuId ? getProductBySkuId(group.skuId) : null;
+      const product = group.skuId ? products.find((p: Product) => p.sku_id === group.skuId) : null;
       const unitPrice = product?.cost_price || 0;
       return {
         ...group,
@@ -260,10 +260,10 @@ export default function ProcurementOrdersPage() {
           updatedAt: new Date().toISOString()
         };
 
-        upsertPurchaseContract(contract);
+        await         await upsertPurchaseContract(contract);
 
         // 关联订单
-        linkPurchaseContractBatch(
+        await linkPurchaseContractBatch(
           group.orders.map(o => o.id),
           contract.id,
           contract.contractNumber

@@ -6,13 +6,12 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Shield, CheckCircle2, XCircle, Search, Eye, AlertTriangle, Package } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import {
-  getPurchaseOrders,
-  getPendingRiskControlOrders,
+  getPurchaseOrdersFromAPI,
   performRiskControl,
   checkInventoryForRiskControl,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
-import { getProducts } from "@/lib/products-store";
+import { getProductsFromAPI } from "@/lib/products-store";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -38,8 +37,8 @@ export default function RiskControlPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setOrders(getPendingRiskControlOrders());
-    setProducts(getProducts());
+    getPurchaseOrdersFromAPI().then((ords) => setOrders(ords.filter((o) => o.status === "待风控")));
+    getProductsFromAPI().then(setProducts);
   }, []);
 
   // 筛选订单
@@ -105,7 +104,7 @@ export default function RiskControlPage() {
   };
 
   // 提交风控评估
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!selectedOrder) return;
@@ -115,7 +114,7 @@ export default function RiskControlPage() {
       return;
     }
     
-    const success = performRiskControl(
+    const success = await performRiskControl(
       selectedOrder.id,
       riskControlForm.result,
       riskControlForm.notes,
@@ -124,7 +123,7 @@ export default function RiskControlPage() {
     
     if (success) {
       toast.success(`风控评估${riskControlForm.result === "通过" ? "通过" : "拒绝"}`);
-      setOrders(getPendingRiskControlOrders());
+      getPurchaseOrdersFromAPI().then((ords) => setOrders(ords.filter((o) => o.status === "待风控")));
       setIsModalOpen(false);
       setSelectedOrder(null);
       setRiskControlForm({
