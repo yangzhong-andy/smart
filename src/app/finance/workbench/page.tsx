@@ -236,7 +236,7 @@ export default function FinanceWorkbenchPage() {
     data?: FinanceRates;
     error?: string;
     errorCode?: string;
-  }>("/api/finance/rates", fetcher, {
+  }>("/api/finance-rates", fetcher, {
     ...swrOptions,
     keepPreviousData: true,
     dedupingInterval: 300000,
@@ -726,7 +726,7 @@ export default function FinanceWorkbenchPage() {
     mutate("pending-bills");
     mutate("approved-expense-requests");
     mutate("approved-income-requests");
-    mutate("/api/finance/rates");
+    mutate("/api/finance-rates");
   }, [mutate]);
 
   if (hasApiError) {
