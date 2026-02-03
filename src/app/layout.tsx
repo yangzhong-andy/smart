@@ -8,7 +8,7 @@ import LayoutWrapper from "./layout-wrapper";
 
 export const metadata: Metadata = {
   title: "Smart ERP - 国内端管理",
-  description: "面向跨境电商卖家的 TikTok Shop 智能管理系统 - 国内端管理"
+  description: "面向跨境电商卖家的 TikTok Shop 智能管理系统 - 国内端管理",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

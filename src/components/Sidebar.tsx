@@ -284,7 +284,7 @@ export default function Sidebar() {
         {isCollapsed && (
           <div className="text-center">
             <div className="text-xl font-bold">
-              <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">TK</span>
+              <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">S</span>
             </div>
           </div>
         )}
