@@ -638,7 +638,7 @@ export default function Sidebar() {
           ) : (
             <div className="text-xs text-slate-600 font-mono text-center">
               <div>Version {APP_VERSION}</div>
-              <div className="text-[10px] text-slate-700 mt-0.5">TK Smart ERP</div>
+              <div className="text-[10px] text-slate-700 mt-0.5">Smart ERP</div>
             </div>
           )}
         </div>
