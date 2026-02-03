@@ -243,15 +243,31 @@ export default function FinanceWorkbenchPage() {
   });
 
   // 任一核心 API 报错时显示「系统维护中」（汇率接口失败不计入，不影响工作台主流程）
-  const hasApiError =
-    pendingEntriesError ||
-    monthlyBillsError ||
-    accountsError ||
-    cashFlowError ||
-    pendingBillsError ||
-    approvedExpenseError ||
-    approvedIncomeError;
-  
+  const apiErrorSources: string[] = [];
+  if (pendingEntriesError) apiErrorSources.push("待办/待入账");
+  if (monthlyBillsError) apiErrorSources.push("月账单");
+  if (accountsError) apiErrorSources.push("银行账户");
+  if (cashFlowError) apiErrorSources.push("流水");
+  if (pendingBillsError) apiErrorSources.push("待审批账单");
+  if (approvedExpenseError) apiErrorSources.push("已审批支出");
+  if (approvedIncomeError) apiErrorSources.push("已审批收入");
+  const hasApiError = apiErrorSources.length > 0;
+  const failedSourceText = apiErrorSources.length > 0 ? apiErrorSources.join("、") : undefined;
+
+  useEffect(() => {
+    if (!hasApiError) return;
+    const errs = [
+      pendingEntriesError,
+      monthlyBillsError,
+      accountsError,
+      cashFlowError,
+      pendingBillsError,
+      approvedExpenseError,
+      approvedIncomeError,
+    ].filter(Boolean);
+    console.error("[财务工作台] 以下接口加载失败，请检查网络或后端:", failedSourceText, errs);
+  }, [hasApiError, failedSourceText, pendingEntriesError, monthlyBillsError, accountsError, cashFlowError, pendingBillsError, approvedExpenseError, approvedIncomeError]);
+
   // 提取汇率数据
   const exchangeRates = useMemo(() => {
     if (!financeRatesData) return null;
@@ -299,10 +315,10 @@ export default function FinanceWorkbenchPage() {
       }
     });
 
-    // 遍历所有流水记录，更新账户余额（在 initialCapital 基础上累加）
+    // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
     if (cashFlowData.length > 0) {
       cashFlowData.forEach((flow: any) => {
-        if (flow.status === "confirmed" && !flow.isReversal && flow.accountId) {
+        if (flow.status === "confirmed" && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
           if (account) {
             const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
@@ -573,10 +589,15 @@ export default function FinanceWorkbenchPage() {
     }
     
     try {
-      // 处理凭证：如果是数组，保持数组格式；如果是字符串，保持字符串格式
-      const voucherValue = paymentVoucher || request.voucher || null;
+      // 凭证分开传：发起付款时的凭证 -> paymentVoucher，财务打款后上传的 -> transferVoucher
+      const toVoucherStr = (v: string | string[] | null | undefined): string | null => {
+        if (v == null || v === "") return null;
+        if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
+        return typeof v === "string" ? v : null;
+      };
+      const paymentVoucherStr = toVoucherStr(request.voucher); // 发起时的凭证
+      const transferVoucherStr = toVoucherStr(paymentVoucher);   // 财务上传的转账凭证
       
-      // 创建现金流记录
       const cashFlowData = {
         date: request.date,
         summary: request.summary,
@@ -590,8 +611,9 @@ export default function FinanceWorkbenchPage() {
         businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
         relatedId: ('relatedId' in request ? request.relatedId : null) || null,
         status: "confirmed" as const,
-        voucher: voucherValue, // 优先使用上传的转账凭证
-        // 不包含 createdAt，由 API 自动处理
+        paymentVoucher: paymentVoucherStr ?? undefined,  // 发起付款时的凭证（申请单上的）
+        transferVoucher: transferVoucherStr ?? undefined, // 财务打款后的转账凭证
+        voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined, // 兼容旧逻辑
       };
       
       // 调用 API 创建现金流
@@ -602,8 +624,14 @@ export default function FinanceWorkbenchPage() {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || '创建现金流失败');
+        let errMsg = '创建现金流失败';
+        try {
+          const error = await response.json();
+          errMsg = error.details ? `${error.error || errMsg}：${error.details}` : (error.error || errMsg);
+        } catch (_) {
+          errMsg = `请求失败（${response.status}）`;
+        }
+        throw new Error(errMsg);
       }
       
       // 获取创建的现金流ID
@@ -656,10 +684,15 @@ export default function FinanceWorkbenchPage() {
     }
     
     try {
-      // 处理凭证：如果是数组，保持数组格式；如果是字符串，保持字符串格式
-      const voucherValue = paymentVoucher || request.voucher || null;
+      // 凭证分开传：发起时的凭证 -> paymentVoucher，财务上传的收款凭证 -> transferVoucher
+      const toVoucherStr = (v: string | string[] | null | undefined): string | null => {
+        if (v == null || v === "") return null;
+        if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
+        return typeof v === "string" ? v : null;
+      };
+      const paymentVoucherStr = toVoucherStr(request.voucher);
+      const transferVoucherStr = toVoucherStr(paymentVoucher);
       
-      // 创建现金流记录
       const cashFlowData = {
         date: request.date,
         summary: request.summary,
@@ -673,8 +706,9 @@ export default function FinanceWorkbenchPage() {
         businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
         relatedId: ('relatedId' in request ? request.relatedId : null) || null,
         status: "confirmed" as const,
-        voucher: voucherValue, // 优先使用上传的转账凭证
-        // 不包含 createdAt，由 API 自动处理
+        paymentVoucher: paymentVoucherStr ?? undefined,
+        transferVoucher: transferVoucherStr ?? undefined,
+        voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined,
       };
       
       // 调用 API 创建现金流
@@ -685,8 +719,14 @@ export default function FinanceWorkbenchPage() {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || '创建现金流失败');
+        let errMsg = '创建现金流失败';
+        try {
+          const error = await response.json();
+          errMsg = error.details ? `${error.error || errMsg}：${error.details}` : (error.error || errMsg);
+        } catch (_) {
+          errMsg = `请求失败（${response.status}）`;
+        }
+        throw new Error(errMsg);
       }
       
       // 获取创建的现金流ID
@@ -733,6 +773,7 @@ export default function FinanceWorkbenchPage() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 flex items-center justify-center p-6">
         <MaintenanceView
           description="数据加载失败，可能是系统维护或网络异常，请稍后再试"
+          failedSource={failedSourceText}
           onRetry={handleRetryFromMaintenance}
         />
       </div>
@@ -1882,6 +1923,7 @@ export default function FinanceWorkbenchPage() {
           accounts={Array.isArray(accounts) ? accounts : []}
           onClose={() => setActiveModal(null)}
           onSave={handleAddFlow}
+          skipAccountSelection
         />
       )}
       {activeModal === "income" && (
@@ -1889,6 +1931,7 @@ export default function FinanceWorkbenchPage() {
           accounts={Array.isArray(accounts) ? accounts : []}
           onClose={() => setActiveModal(null)}
           onSave={handleAddFlow}
+          skipAccountSelection
         />
       )}
       {activeModal === "transfer" && (

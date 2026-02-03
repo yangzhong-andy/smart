@@ -831,7 +831,9 @@ model CashFlow {
   status         CashFlowStatus @default(CONFIRMED)
   isReversal     Boolean        @default(false)
   reversedById   String? // 被冲销的记录ID
-  voucher        String? // 凭证（图片 base64 或 URL，建议存 URL）
+  voucher           String? // 旧凭证（兼容，新数据请用 paymentVoucher/transferVoucher）
+  paymentVoucher    String? // 付款凭证（发起付款时，JSON 字符串支持多图）
+  transferVoucher   String? // 转账成功凭证（财务打款后，JSON 字符串支持多图）
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

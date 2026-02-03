@@ -24,6 +24,8 @@ export type CashFlow = {
   isReversal?: boolean;
   reversedById?: string;
   voucher?: string | string[];
+  paymentVoucher?: string | string[]; // 付款凭证（发起付款时）
+  transferVoucher?: string | string[]; // 转账成功凭证（财务打款后）
   createdAt: string;
 };
 

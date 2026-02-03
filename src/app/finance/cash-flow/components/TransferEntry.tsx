@@ -138,6 +138,9 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     const today = now.slice(0, 10);
 
     // 生成两条关联记录
+    const paymentVoucherValue = form.voucher
+      ? (Array.isArray(form.voucher) ? JSON.stringify(form.voucher) : form.voucher)
+      : undefined;
     const outFlow: CashFlow = {
       id: crypto.randomUUID(),
       date: form.date,
@@ -152,6 +155,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       status: "confirmed",
       relatedId: transferId,
       voucher: form.voucher || undefined,
+      paymentVoucher: paymentVoucherValue,
       createdAt: now
     };
 
@@ -169,6 +173,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       status: "confirmed",
       relatedId: transferId,
       voucher: form.voucher || undefined,
+      paymentVoucher: paymentVoucherValue,
       createdAt: now
     };
 
@@ -513,13 +518,13 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
             />
           </label>
           <label className="space-y-1 block">
-            <span className="text-sm text-slate-300">凭证</span>
+            <span className="text-sm text-slate-300">付款凭证（发起划拨时，可选）</span>
             <ImageUploader
               value={form.voucher}
               onChange={(value) => setForm((f) => ({ ...f, voucher: typeof value === "string" ? value : value[0] || "" }))}
               multiple={false}
-              label="上传划拨凭证"
-              placeholder="点击上传凭证或直接 Ctrl + V 粘贴图片"
+              label="上传付款凭证"
+              placeholder="点击上传或 Ctrl+V 粘贴，财务打款后可在此流水行「补充凭证」上传转账凭证"
             />
           </label>
 

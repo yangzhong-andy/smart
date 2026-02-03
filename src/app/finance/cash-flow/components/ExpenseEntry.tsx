@@ -30,9 +30,13 @@ type ExpenseEntryProps = {
   accounts: BankAccount[];
   onClose: () => void;
   onSave: (flow: CashFlow, adAccountId?: string, rebateAmount?: number) => void;
+  /** 发起审核时不选账户，由财务入账时再选（隐藏关联账户，必填改为选币种） */
+  skipAccountSelection?: boolean;
 };
 
-export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntryProps) {
+const CURRENCY_OPTIONS = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD"];
+
+export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSelection = false }: ExpenseEntryProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -41,6 +45,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
     subCategory: "", // 二级分类
     amount: "",
     accountId: "",
+    currency: "CNY", // 发起审核未选账户时使用
     businessNumber: "",
     remark: "",
     adAccountId: "", // 广告账户ID（仅当分类为"广告费"时显示）
@@ -101,7 +106,11 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       return;
     }
 
-    if (!form.accountId || !form.primaryCategory) {
+    if (!form.primaryCategory) {
+      toast.error("请选择费用分类");
+      return;
+    }
+    if (!skipAccountSelection && !form.accountId) {
       toast.error("请选择账户和费用分类");
       return;
     }
@@ -115,16 +124,18 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       toast.error("金额需为大于 0 的数字");
       return;
     }
-    const account = accounts.find((a) => a.id === form.accountId);
-    if (!account) {
+    const account = skipAccountSelection ? null : accounts.find((a) => a.id === form.accountId);
+    if (!skipAccountSelection && !account) {
       toast.error("账户不存在");
       return;
     }
-    // 账户总余额 = originalBalance（已经包含了 initialCapital + 所有流水）
-    const totalBalance = account.originalBalance || 0;
-    if (totalBalance < amount) {
-      toast.error("账户余额不足");
-      return;
+    // 账户总余额校验（仅在选择账户时）
+    if (!skipAccountSelection && account) {
+      const totalBalance = account.originalBalance || 0;
+      if (totalBalance < amount) {
+        toast.error("账户余额不足");
+        return;
+      }
     }
 
     // 如果是广告充值，需要选择广告账户并计算返点
@@ -185,7 +196,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
       summary: form.summary.trim(),
       category: finalCategory,
       amount: amount,
-      currency: account.currency,
+      currency: skipAccountSelection ? form.currency : (account!.currency),
       businessNumber: finalBusinessNumber,
       relatedId: relatedId,
       remark: form.remark.trim() + (rebateAmount ? ` 广告充值返点：${rebateAmount.toFixed(2)}` : ""),
@@ -422,107 +433,102 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
                 </div>
               </label>
             )}
-            <label className="space-y-1 col-span-2">
-              <span className="text-slate-300">关联账户 <span className="text-rose-400">*</span></span>
-              <select
-                value={form.accountId}
-                onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
-                required
-              >
-                <option value="">请选择账户</option>
-                {(() => {
-                  // 按币种分组账户
-                  const groupedAccounts = accounts.reduce((acc, account) => {
-                    const currency = account.currency || "OTHER";
-                    if (!acc[currency]) {
-                      acc[currency] = [];
+            {skipAccountSelection ? (
+              <label className="space-y-1">
+                <span className="text-slate-300">币种</span>
+                <select
+                  value={form.currency}
+                  onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                >
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <div className="text-xs text-slate-500 mt-1">入账时由财务选择付款账户</div>
+              </label>
+            ) : (
+              <label className="space-y-1 col-span-2">
+                <span className="text-slate-300">关联账户 <span className="text-rose-400">*</span></span>
+                <select
+                  value={form.accountId}
+                  onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                  required
+                >
+                  <option value="">请选择账户</option>
+                  {(() => {
+                    const groupedAccounts = accounts.reduce((acc, account) => {
+                      const currency = account.currency || "OTHER";
+                      if (!acc[currency]) acc[currency] = [];
+                      acc[currency].push(account);
+                      return acc;
+                    }, {} as Record<string, typeof accounts>);
+                    const currencyOrder = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
+                    const sortedCurrencies = Object.keys(groupedAccounts).sort((a, b) => {
+                      const aIndex = currencyOrder.indexOf(a);
+                      const bIndex = currencyOrder.indexOf(b);
+                      if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+                      if (aIndex === -1) return 1;
+                      if (bIndex === -1) return -1;
+                      return aIndex - bIndex;
+                    });
+                    return sortedCurrencies.flatMap((currency) => {
+                      const currencyAccounts = groupedAccounts[currency];
+                      const currencyLabel = currency === "CNY" || currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
+                      return [
+                        <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
+                          {currencyAccounts.map((acc) => {
+                            const displayBalance = acc.originalBalance || 0;
+                            const accountTypeLabel = acc.accountCategory === "PRIMARY" ? "主账户" : acc.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
+                            let balanceText = "";
+                            if (acc.currency === "CNY" || acc.currency === "RMB") {
+                              balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
+                            } else if (acc.currency === "USD") {
+                              balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
+                            } else {
+                              balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN")}`;
+                            }
+                            return (
+                              <option key={acc.id} value={acc.id}>
+                                {acc.name} | {accountTypeLabel} | 余额: {balanceText}
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      ];
+                    });
+                  })()}
+                </select>
+                {selectedAccount && (() => {
+                  const currentBalance = selectedAccount.originalBalance || 0;
+                  const amount = Number(form.amount) || 0;
+                  const afterBalance = currentBalance - amount;
+                  const formatBalance = (balance: number) => {
+                    if (selectedAccount.currency === "CNY" || selectedAccount.currency === "RMB") {
+                      return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
+                    } else if (selectedAccount.currency === "USD") {
+                      return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
                     }
-                    acc[currency].push(account);
-                    return acc;
-                  }, {} as Record<string, typeof accounts>);
-
-                  // 币种显示顺序
-                  const currencyOrder = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
-                  const sortedCurrencies = Object.keys(groupedAccounts).sort((a, b) => {
-                    const aIndex = currencyOrder.indexOf(a);
-                    const bIndex = currencyOrder.indexOf(b);
-                    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
-                    if (aIndex === -1) return 1;
-                    if (bIndex === -1) return -1;
-                    return aIndex - bIndex;
-                  });
-
-                  return sortedCurrencies.flatMap((currency) => {
-                    const currencyAccounts = groupedAccounts[currency];
-                    const currencyLabel = currency === "CNY" || currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
-                    
-                    return [
-                      <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
-                        {currencyAccounts.map((acc) => {
-                          // 显示余额 = originalBalance（已经包含了 initialCapital + 所有流水）
-                          const displayBalance = acc.originalBalance || 0;
-                          const accountTypeLabel = acc.accountCategory === "PRIMARY" ? "主账户" : acc.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
-                          
-                          // 格式化余额
-                          let balanceText = "";
-                          if (acc.currency === "CNY" || acc.currency === "RMB") {
-                            balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
-                          } else if (acc.currency === "USD") {
-                            balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
-                          } else {
-                            balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN")}`;
-                          }
-                          
-                          return (
-                            <option key={acc.id} value={acc.id}>
-                              {acc.name} | {accountTypeLabel} | 余额: {balanceText}
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    ];
-                  });
-                })()}
-              </select>
-              {selectedAccount && (() => {
-                // 当前余额 = originalBalance（已经包含了 initialCapital + 所有流水）
-                const currentBalance = selectedAccount.originalBalance || 0;
-                const amount = Number(form.amount) || 0;
-                // 计算变动后余额（支出时减少）
-                const afterBalance = currentBalance - amount;
-                
-                // 格式化余额显示
-                const formatBalance = (balance: number) => {
-                  if (selectedAccount.currency === "CNY" || selectedAccount.currency === "RMB") {
-                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
-                  } else if (selectedAccount.currency === "USD") {
-                    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
-                  } else {
                     return `${selectedAccount.currency} ${balance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                  }
-                };
-                
-                return (
-                  <div className="text-xs text-slate-500 mt-1 space-y-1">
-                    <div>
-                      当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span>
+                  };
+                  return (
+                    <div className="text-xs text-slate-500 mt-1 space-y-1">
+                      <div>当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span></div>
+                      {amount > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span>变动后余额：</span>
+                          <span className={`font-medium ${afterBalance < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                            {formatBalance(afterBalance)}
+                          </span>
+                          {afterBalance < 0 && <span className="text-rose-400 text-xs">（余额不足）</span>}
+                        </div>
+                      )}
                     </div>
-                    {amount > 0 && (
-                      <div className="flex items-center gap-2">
-                        <span>变动后余额：</span>
-                        <span className={`font-medium ${afterBalance < 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                          {formatBalance(afterBalance)}
-                        </span>
-                        {afterBalance < 0 && (
-                          <span className="text-rose-400 text-xs">（余额不足）</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </label>
+                  );
+                })()}
+              </label>
+            )}
             <label className="space-y-1 col-span-2">
               <span className="text-slate-300">备注</span>
               <input
@@ -561,7 +567,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave }: ExpenseEntry
               variant="danger"
               size="md"
               className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600"
-              disabled={!accounts.length || isSubmitting}
+              disabled={(!skipAccountSelection && !accounts.length) || isSubmitting}
             >
               提交申请
             </InteractiveButton>

@@ -22,12 +22,11 @@ export async function GET(
       )
     }
 
-    // 查询该账户的所有已确认流水记录（不包括冲销）
+    // 查询该账户的所有已确认流水（含冲销记录，冲销金额为反向，参与余额计算）
     const cashFlows = await prisma.cashFlow.findMany({
       where: {
         accountId: id,
-        status: CashFlowStatus.CONFIRMED,
-        isReversal: false
+        status: CashFlowStatus.CONFIRMED
       },
       orderBy: {
         date: 'asc'

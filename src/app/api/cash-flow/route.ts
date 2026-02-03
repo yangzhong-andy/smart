@@ -32,27 +32,33 @@ export async function GET(request: NextRequest) {
       orderBy: { date: 'desc' }
     })
     
-    // 转换格式以匹配前端 CashFlow 类型
-    const transformed = cashFlows.map(cf => ({
-      id: cf.id,
-      uid: cf.uid || undefined,
-      date: cf.date.toISOString(),
-      summary: cf.summary,
-      category: cf.category,
-      type: cf.type === CashFlowType.INCOME ? 'income' as const : cf.type === CashFlowType.EXPENSE ? 'expense' as const : 'transfer' as const,
-      amount: Number(cf.amount),
-      accountId: cf.accountId,
-      accountName: cf.accountName,
-      currency: cf.currency,
-      remark: cf.remark,
-      relatedId: cf.relatedId || undefined,
-      businessNumber: cf.businessNumber || undefined,
-      status: cf.status === CashFlowStatus.CONFIRMED ? 'confirmed' as const : 'pending' as const,
-      isReversal: cf.isReversal,
-      reversedById: cf.reversedById || undefined,
-      voucher: cf.voucher || undefined,
-      createdAt: cf.createdAt.toISOString()
-    }))
+    // 转换格式以匹配前端 CashFlow 类型（兼容旧 voucher，映射为 paymentVoucher）
+    const transformed = cashFlows.map(cf => {
+      const paymentV = cf.paymentVoucher ?? (cf.voucher || undefined);
+      const transferV = cf.transferVoucher ?? undefined;
+      return {
+        id: cf.id,
+        uid: cf.uid || undefined,
+        date: cf.date.toISOString(),
+        summary: cf.summary,
+        category: cf.category,
+        type: cf.type === CashFlowType.INCOME ? 'income' as const : cf.type === CashFlowType.EXPENSE ? 'expense' as const : 'transfer' as const,
+        amount: Number(cf.amount),
+        accountId: cf.accountId,
+        accountName: cf.accountName,
+        currency: cf.currency,
+        remark: cf.remark,
+        relatedId: cf.relatedId || undefined,
+        businessNumber: cf.businessNumber || undefined,
+        status: cf.status === CashFlowStatus.CONFIRMED ? 'confirmed' as const : 'pending' as const,
+        isReversal: cf.isReversal,
+        reversedById: cf.reversedById || undefined,
+        voucher: cf.voucher || undefined,
+        paymentVoucher: paymentV || undefined,
+        transferVoucher: transferV || undefined,
+        createdAt: cf.createdAt.toISOString()
+      };
+    });
     
     return NextResponse.json(transformed)
   } catch (error: any) {
@@ -87,14 +93,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    // 处理 voucher 字段：如果是数组，转换为 JSON 字符串；如果是字符串，直接使用；否则为 null
-    let voucherValue: string | null = null;
-    if (body.voucher) {
-      if (Array.isArray(body.voucher)) {
-        voucherValue = JSON.stringify(body.voucher);
-      } else if (typeof body.voucher === 'string') {
-        voucherValue = body.voucher;
-      }
+    // 处理凭证字段：支持 paymentVoucher、transferVoucher，兼容旧 voucher
+    const toVoucherStr = (v: unknown): string | null => {
+      if (!v) return null;
+      if (Array.isArray(v)) return JSON.stringify(v);
+      if (typeof v === 'string') return v;
+      return null;
+    };
+    let paymentVoucherValue = toVoucherStr(body.paymentVoucher);
+    let transferVoucherValue = toVoucherStr(body.transferVoucher);
+    // 兼容：若只有 voucher，则作为 paymentVoucher
+    if (!paymentVoucherValue && body.voucher) {
+      paymentVoucherValue = toVoucherStr(body.voucher);
     }
     
     // 验证必填字段
@@ -126,7 +136,9 @@ export async function POST(request: NextRequest) {
         status: body.status === 'confirmed' ? CashFlowStatus.CONFIRMED : CashFlowStatus.PENDING,
         isReversal: body.isReversal || false,
         reversedById: body.reversedById || null,
-        voucher: voucherValue,
+        voucher: paymentVoucherValue ?? transferVoucherValue ?? null,
+        paymentVoucher: paymentVoucherValue,
+        transferVoucher: transferVoucherValue,
         // createdAt 和 updatedAt 由 Prisma 自动处理，不需要手动传入
       },
       include: {
@@ -176,6 +188,8 @@ export async function POST(request: NextRequest) {
       isReversal: cashFlow.isReversal,
       reversedById: cashFlow.reversedById || undefined,
       voucher: cashFlow.voucher || undefined,
+      paymentVoucher: cashFlow.paymentVoucher ?? cashFlow.voucher ?? undefined,
+      transferVoucher: cashFlow.transferVoucher ?? undefined,
       createdAt: cashFlow.createdAt.toISOString()
     }
     
@@ -218,13 +232,15 @@ export async function POST(request: NextRequest) {
     }
     
     if (error.code === 'P2003') {
+      const field = error.meta?.field_name as string | undefined;
+      const isAccount = field?.toLowerCase().includes('account');
       return NextResponse.json(
-        { 
+        {
           error: '创建失败：关联数据不存在',
-          details: error.meta?.field_name ? `关联的 ${error.meta.field_name} 不存在` : '关联数据不存在'
+          details: isAccount ? '所选账户不存在或已被删除，请重新选择账户' : (field ? `关联的 ${field} 不存在` : '关联数据不存在')
         },
         { status: 400 }
-      )
+      );
     }
     
     // 检查是否是必填字段缺失
@@ -238,14 +254,19 @@ export async function POST(request: NextRequest) {
       )
     }
     
+    // 默认 500：返回中文提示，便于排查
+    const detailMsg = error.message || '未知错误';
+    const hint = /Unknown arg|Unknown column|does not exist/i.test(detailMsg)
+      ? '可能是数据库表结构未同步，请在项目根目录执行：npx prisma db push'
+      : detailMsg;
     return NextResponse.json(
-      { 
-        error: 'Failed to create cash flow',
-        details: error.message || '未知错误',
+      {
+        error: '创建流水失败',
+        details: hint,
         code: error.code || 'UNKNOWN',
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
-    )
+    );
   }
 }

@@ -7,6 +7,8 @@ interface MaintenanceViewProps {
   onRetry?: () => void;
   /** 自定义描述文案 */
   description?: string;
+  /** 可选：失败接口或错误摘要，便于排查 */
+  failedSource?: string;
   className?: string;
 }
 
@@ -17,6 +19,7 @@ interface MaintenanceViewProps {
 export default function MaintenanceView({
   onRetry,
   description = "系统维护中，请稍后再试",
+  failedSource,
   className = "",
 }: MaintenanceViewProps) {
   return (
@@ -28,6 +31,11 @@ export default function MaintenanceView({
       </div>
       <h2 className="text-xl font-semibold text-slate-100 mb-2">系统维护中</h2>
       <p className="text-slate-400 mb-6 max-w-md">{description}</p>
+      {failedSource && (
+        <p className="text-slate-500 text-xs mb-4 font-mono max-w-md break-all" title="便于排查：打开控制台可查看具体报错">
+          失败接口：{failedSource}
+        </p>
+      )}
       {onRetry && (
         <button
           onClick={onRetry}

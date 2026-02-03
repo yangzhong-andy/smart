@@ -105,10 +105,10 @@ export default function BankAccountsPage() {
       }
     });
 
-    // 遍历所有流水记录，更新账户余额（在 initialCapital 基础上累加）
+    // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
     if (cashFlowData.length > 0) {
       cashFlowData.forEach((flow) => {
-        if (flow.status === "confirmed" && !flow.isReversal && flow.accountId) {
+        if (flow.status === "confirmed" && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
           if (account) {
             const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
