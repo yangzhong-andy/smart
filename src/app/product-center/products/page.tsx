@@ -85,7 +85,7 @@ export default function ProductsPage() {
   type VariantRow = { tempId: string; color: string; sku_id: string; cost_price: string; size: string; barcode: string };
   const newVariantRow = (): VariantRow => ({ tempId: crypto.randomUUID(), color: "", sku_id: "", cost_price: "", size: "", barcode: "" });
   const [formVariants, setFormVariants] = useState<VariantRow[]>(() => [newVariantRow()]);
-  const [addVariantProduct, setAddVariantProduct] = useState<Product | null>(null);
+  const [addVariantProduct, setAddVariantProduct] = useState<SpuListItem | null>(null);
   const [addVariantFormVariants, setAddVariantFormVariants] = useState<VariantRow[]>(() => [newVariantRow()]);
   const [form, setForm] = useState({
     sku_id: "",
@@ -587,8 +587,7 @@ export default function ProductsPage() {
 
   const handleAddVariants = async () => {
     if (!addVariantProduct) return;
-    // 添加变体必须带 product_id，否则后端会误建新产品
-    const spuId = (addVariantProduct as any).product_id ?? (addVariantProduct as any).productId ?? (addVariantProduct as any).id;
+    const spuId = addVariantProduct.productId;
     if (!spuId) {
       toast.error("无法识别所属产品，请刷新页面后重试");
       return;
@@ -1055,7 +1054,7 @@ export default function ProductsPage() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setAddVariantProduct({ ...spu, product_id: spu.productId } as Product);
+                          setAddVariantProduct(spu);
                           setAddVariantFormVariants([newVariantRow()]);
                         }}
                         className="flex items-center gap-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
@@ -1161,234 +1160,6 @@ export default function ProductsPage() {
           </div>
         )}
       </section>
-
-      {/* 占位：原悬停详情已移除，编辑/删除在展开表格中 */}
-      {false && (
-                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-2xl p-5 flex flex-col justify-between z-10 overflow-y-auto"
-                      onMouseEnter={() => setHoveredProductId(product.sku_id)}
-                      onMouseLeave={() => setHoveredProductId(null)}
-                    >
-                      <div className="space-y-2 text-xs">
-                        {/* 基本信息 */}
-                        <div className="pb-2 border-b border-white/10">
-                          <div className="text-xs font-semibold text-slate-300 mb-2">基本信息</div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">SKU编码：</span>
-                            <span className="text-white font-mono">{product.sku_id}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">产品名称：</span>
-                            <span className="text-white">{product.name}</span>
-                          </div>
-                          {product.category && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">分类：</span>
-                              <span className="text-white">{product.category}</span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">状态：</span>
-                            <span className="text-white">{product.status}</span>
-                          </div>
-                        </div>
-
-                        {/* 财务信息 */}
-                        <div className="pb-2 border-b border-white/10">
-                          <div className="text-xs font-semibold text-slate-300 mb-2">财务信息</div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">拿货价：</span>
-                            <span className="text-white font-medium" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                              {formatCurrency(product.cost_price, product.currency, "balance")}
-                            </span>
-                          </div>
-                          {product.target_roi && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">目标ROI：</span>
-                              <span className="text-white">{formatNumber(product.target_roi)}%</span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400">币种：</span>
-                            <span className="text-white">{product.currency}</span>
-                          </div>
-                        </div>
-
-                        {/* 物理信息 */}
-                        {(product.weight_kg || product.length || product.width || product.height) && (
-                          <div className="pb-2 border-b border-white/10">
-                            <div className="text-xs font-semibold text-slate-300 mb-2">物理信息</div>
-                            {product.weight_kg && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400">实际重量：</span>
-                                <span className="text-white">{formatNumber(product.weight_kg)}kg</span>
-                              </div>
-                            )}
-                            {(product.length || product.width || product.height) && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400">尺寸：</span>
-                                <span className="text-white">
-                                  {product.length ? `${formatNumber(product.length)}` : "-"} ×{" "}
-                                  {product.width ? `${formatNumber(product.width)}` : "-"} ×{" "}
-                                  {product.height ? `${formatNumber(product.height)}` : "-"} cm
-                                </span>
-                              </div>
-                            )}
-                            {product.length && product.width && product.height && (
-                              <>
-                                {(() => {
-                                  // 使用 Hook 计算重量（在组件外部需要手动调用计算逻辑）
-                                  const length = product.length;
-                                  const width = product.width;
-                                  const height = product.height;
-                                  const divisor = product.volumetric_divisor || 5000;
-                                  const actualWeight = product.weight_kg || 0;
-                                  
-                                  // 计算体积重
-                                  const volumetricWeight = (length && width && height && divisor)
-                                    ? (length * width * height) / divisor
-                                    : 0;
-                                  
-                                  // 计算计费重量（取最大值）
-                                  const chargeableWeight = Math.max(actualWeight, volumetricWeight);
-                                  
-                                  if (!length || !width || !height || !divisor) {
-                                    return null;
-                                  }
-                                  
-                                  return (
-                                    <>
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-slate-400">体积重：</span>
-                                        <span className="text-white text-xs">
-                                          {formatNumber(volumetricWeight)}kg
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-slate-400 text-xs">计算公式：</span>
-                                        <span className="text-slate-500 text-xs">
-                                          {formatNumber(length)} × {formatNumber(width)} × {formatNumber(height)} ÷ {divisor}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-slate-400">计费重量：</span>
-                                        <span className="text-primary-300 font-semibold">
-                                          {formatNumber(chargeableWeight)}kg
-                                        </span>
-                                      </div>
-                                    </>
-                                  );
-                                })()}
-                              </>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 供应商价格对比 */}
-                        {product.suppliers && product.suppliers.length > 0 && (
-                          <div className="pb-2 border-b border-white/10">
-                            <div className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1">
-                              <TrendingUp className="h-3 w-3" />
-                              供应商价格对比 ({product.suppliers.length}个)
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-white/10">
-                                    <th className="text-left py-1.5 px-2 text-slate-400">供应商</th>
-                                    <th className="text-right py-1.5 px-2 text-slate-400">价格</th>
-                                    <th className="text-right py-1.5 px-2 text-slate-400">MOQ</th>
-                                    <th className="text-right py-1.5 px-2 text-slate-400">交期</th>
-                                    <th className="text-center py-1.5 px-2 text-slate-400">主</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {product.suppliers
-                                    .sort((a, b) => {
-                                      // 主供应商优先，然后按价格排序
-                                      if (a.isPrimary && !b.isPrimary) return -1;
-                                      if (!a.isPrimary && b.isPrimary) return 1;
-                                      const priceA = a.price || Infinity;
-                                      const priceB = b.price || Infinity;
-                                      return priceA - priceB;
-                                    })
-                                    ?.map((supplier, idx) => {
-                                      const isLowestPrice = (product.suppliers || []).every(
-                                        (s) => !s.price || !supplier.price || s.price >= supplier.price
-                                      );
-                                      return (
-                                        <tr key={idx} className="border-b border-white/5">
-                                          <td className="py-1.5 px-2">
-                                            <span className="text-white">{supplier.name || "未命名"}</span>
-                                          </td>
-                                          <td className="py-1.5 px-2 text-right">
-                                            {supplier.price ? (
-                                              <span className={`font-medium ${isLowestPrice ? "text-emerald-300" : "text-slate-300"}`}>
-                                                {formatCurrency(supplier.price, product.currency, "balance")}
-                                              </span>
-                                            ) : (
-                                              <span className="text-slate-500">-</span>
-                                            )}
-                                          </td>
-                                          <td className="py-1.5 px-2 text-right">
-                                            <span className="text-slate-300">{supplier.moq || "-"}</span>
-                                          </td>
-                                          <td className="py-1.5 px-2 text-right">
-                                            <span className="text-slate-300">{supplier.lead_time ? `${supplier.lead_time}天` : "-"}</span>
-                                          </td>
-                                          <td className="py-1.5 px-2 text-center">
-                                            {supplier.isPrimary && (
-                                              <span className="px-1.5 py-0.5 rounded text-xs bg-primary-500/20 text-primary-300">
-                                                主
-                                              </span>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 供应信息（向后兼容，仅当没有多供应商时显示） */}
-                        {(!product.suppliers || product.suppliers.length === 0) && (product.factory_name || product.moq || product.lead_time) && (
-                          <div className="pb-2 border-b border-white/10">
-                            <div className="text-xs font-semibold text-slate-300 mb-2">供应信息</div>
-                            {product.factory_name && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400">关联工厂：</span>
-                                <span className="text-white">{product.factory_name}</span>
-                              </div>
-                            )}
-                            {product.moq && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400">最小起订量：</span>
-                                <span className="text-white">{product.moq}</span>
-                              </div>
-                            )}
-                            {product.lead_time && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-400">生产周期：</span>
-                                <span className="text-white">{product.lead_time} 天</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 其他信息 */}
-                        {product.createdAt && (
-                          <div>
-                            <div className="text-xs font-semibold text-slate-300 mb-2">其他信息</div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">创建时间：</span>
-                              <span className="text-white text-xs">{formatCreatedAt(product.createdAt)}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
       {/* 录入/编辑产品模态框 */}
       {isModalOpen && (
