@@ -363,7 +363,6 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
         atFactory: 0,
         atDomestic: 0,
         inTransit: 0,
-        platformSkuMapping: null
       }
     })
     createdVariants.push(variant)
