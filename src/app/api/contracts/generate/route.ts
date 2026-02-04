@@ -305,7 +305,7 @@ async function generateFromPurchaseOrder(purchaseOrderId: string) {
     leadTimeDays: supplierLeadTime,
     items: [
       {
-        sku: order.sku ?? undefined,
+        sku: order.sku ?? '',
         productName: order.productName ?? undefined,
         unitPrice,
         quantity: order.quantity ?? 0,
