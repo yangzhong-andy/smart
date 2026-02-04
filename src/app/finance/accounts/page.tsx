@@ -13,7 +13,7 @@ import {
 } from "@/lib/finance-store";
 import { type Store, saveStores } from "@/lib/store-store";
 import { COUNTRIES, getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
-import { type FinanceRates } from "@/lib/exchange";
+import { useExchangeRate } from "@/hooks/useExchangeRate";
 import { Wallet, CreditCard, Building2, Pencil, Trash2, List, TrendingUp, DollarSign, Coins, Search, X, SortAsc, SortDesc, Info, Download, Globe, Calculator } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -248,74 +248,15 @@ export default function BankAccountsPage() {
     fetch("/api/stores").then((r) => (r.ok ? r.json() : [])).then(setStores);
   }, []);
 
-  // 使用 SWR 获取实时汇率
-  const { data: financeRatesData, isLoading: ratesLoading, mutate: mutateRates } = useSWR<{ 
-    success: boolean; 
-    data?: FinanceRates; 
-    error?: string;
-    errorCode?: string;
-    lastUpdated?: string;
-    timestamp?: string;
-  }>(
-    '/api/finance-rates',
-    fetcher,
-    {
-      revalidateOnFocus: false, // 优化：关闭焦点刷新以减少数据库访问
-      revalidateOnReconnect: false, // 优化：关闭重连自动刷新
-      revalidateOnMount: false, // 优化：组件挂载时不自动刷新，使用缓存数据
-      keepPreviousData: true,
-      dedupingInterval: 600000, // 优化：增加到10分钟内去重
-    }
-  );
-  
-  // 提取汇率数据
+  // 使用统一汇率接口 /api/exchange-rates（与顶栏等一致）
+  const { getRate, rates, date, isLoading: ratesLoading, refresh: mutateRates } = useExchangeRate();
   const exchangeRates = useMemo(() => {
-    if (!financeRatesData) return null;
-    if (financeRatesData.success && financeRatesData.data) {
-      return financeRatesData.data;
-    }
-    return null;
-  }, [financeRatesData]);
-  
-  // 调试：打印汇率数据
-  useEffect(() => {
-    console.log('🔍 [汇率调试] SWR 状态:', {
-      isLoading: ratesLoading,
-      hasData: !!financeRatesData,
-      success: financeRatesData?.success,
-      error: financeRatesData?.error,
-      errorCode: financeRatesData?.errorCode
-    });
-    
-    if (exchangeRates) {
-      console.log('💱 [汇率调试] 实时汇率已加载:', {
-        USD: exchangeRates.USD,
-        JPY: exchangeRates.JPY,
-        THB: exchangeRates.THB,
-        lastUpdated: exchangeRates.lastUpdated
-      });
-    } else if (financeRatesData) {
-      if (!financeRatesData.success) {
-        console.error('❌ [汇率调试] 汇率加载失败:', {
-          error: financeRatesData.error,
-          errorCode: financeRatesData.errorCode
-        });
-        // 如果是环境变量未配置的错误，显示提示
-        if (financeRatesData.error?.includes('EXCHANGERATE_API_KEY') || 
-            financeRatesData.errorCode === 'MISSING_API_KEY') {
-          console.error('❌ 请在生产环境配置 EXCHANGERATE_API_KEY 环境变量');
-          console.error('   如果使用 Vercel: 在项目设置 -> Environment Variables 中添加');
-          console.error('   如果使用其他平台: 请在对应平台的环境变量配置中添加 EXCHANGERATE_API_KEY=942adb4f011e406f282a658f');
-        }
-      } else {
-        console.warn('⚠️ [汇率调试] financeRatesData.success 为 true，但 exchangeRates 为 null');
-      }
-    } else if (ratesLoading) {
-      console.log('⏳ [汇率调试] 正在加载汇率数据...');
-    } else {
-      console.warn('⚠️ [汇率调试] 没有汇率数据，也没有加载状态');
-    }
-  }, [exchangeRates, financeRatesData, ratesLoading]);
+    const USD = getRate("USD");
+    const JPY = getRate("JPY");
+    const THB = getRate("THB");
+    if (!rates || (USD === 0 && JPY === 0 && THB === 0)) return null;
+    return { USD, JPY, THB, lastUpdated: date || "" };
+  }, [rates, getRate, date]);
 
   // 使用 finance-store 的统计函数（基础数据）
   const { totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
