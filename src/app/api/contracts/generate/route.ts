@@ -275,7 +275,7 @@ async function generateFromPurchaseOrder(purchaseOrderId: string) {
     (ps as { price?: { toString?: () => string } } | undefined)?.price ??
       (variant?.costPrice != null ? variant.costPrice : 0)
   )
-  const totalAmount = order.quantity * unitPrice
+  const totalAmount = (order.quantity ?? 0) * unitPrice
   const deliveryDateSingle = new Date(orderDate)
   deliveryDateSingle.setDate(deliveryDateSingle.getDate() + supplierLeadTime)
 
@@ -308,7 +308,7 @@ async function generateFromPurchaseOrder(purchaseOrderId: string) {
         sku: order.sku,
         productName: order.productName ?? undefined,
         unitPrice,
-        quantity: order.quantity,
+        quantity: order.quantity ?? 0,
         totalAmount,
       },
     ],
