@@ -38,14 +38,22 @@ const mapToApiProduct = (p: any) => ({
   lead_time: p.suppliers && Array.isArray(p.suppliers)
     ? (p.suppliers as any[]).find((s: any) => s.isPrimary)?.lead_time || undefined
     : undefined,
-  createdAt: (p.createdAt ?? p.created_at ?? new Date()).toISOString?.() ?? p.createdAt ?? p.created_at,
-  updatedAt: (p.updatedAt ?? p.updated_at ?? new Date()).toISOString?.() ?? p.updatedAt ?? p.updated_at,
+  createdAt: toIsoString(p.createdAt ?? p.created_at),
+  updatedAt: toIsoString(p.updatedAt ?? p.updated_at),
 })
+
+function toIsoString(v: unknown): string {
+  if (v == null) return new Date().toISOString()
+  if (typeof v === 'string') return v
+  if (v instanceof Date) return v.toISOString()
+  return new Date().toISOString()
+}
 
 // 将单个 Product (含 variants) 转为前端用的扁平 SKU 列表（与 GET 全量格式一致）
 function productToFlatVariants(product: any): any[] {
   const transformed: any[] = []
-  if (product.variants.length === 0) {
+  const variants = product.variants ?? []
+  if (variants.length === 0) {
     transformed.push({
       sku_id: `temp-${product.id}`,
       name: product.name,
@@ -86,16 +94,16 @@ function productToFlatVariants(product: any): any[] {
       updatedAt: product.updatedAt.toISOString()
     })
   } else {
-    const suppliers = (product.productSuppliers || []).map((ps: any) => ({
-      id: ps.supplier.id,
-      name: ps.supplier.name,
-      price: ps.price ? Number(ps.price) : undefined,
-      moq: ps.moq || undefined,
-      lead_time: ps.leadTime || undefined,
-      isPrimary: ps.isPrimary
+    const suppliers = (product.productSuppliers ?? []).map((ps: any) => ({
+      id: ps.supplier?.id,
+      name: ps.supplier?.name ?? '',
+      price: ps.price != null ? Number(ps.price) : undefined,
+      moq: ps.moq ?? undefined,
+      lead_time: ps.leadTime ?? undefined,
+      isPrimary: ps.isPrimary ?? false
     }))
     const primarySupplier = suppliers.find((s: any) => s.isPrimary) || suppliers[0]
-    for (const variant of product.variants) {
+    for (const variant of variants) {
       transformed.push({
         sku_id: variant.skuId,
         name: product.name,
@@ -110,21 +118,21 @@ function productToFlatVariants(product: any): any[] {
         default_supplier_id: product.defaultSupplierId || undefined,
         default_supplier_name: product.defaultSupplier?.name || undefined,
         status: product.status,
-        cost_price: variant.costPrice ? Number(variant.costPrice) : 0,
-        target_roi: variant.targetRoi ? Number(variant.targetRoi) : undefined,
-        currency: variant.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
-        weight_kg: variant.weightKg ? Number(variant.weightKg) : undefined,
-        length: variant.lengthCm ? Number(variant.lengthCm) : undefined,
-        width: variant.widthCm ? Number(variant.widthCm) : undefined,
-        height: variant.heightCm ? Number(variant.heightCm) : undefined,
-        volumetric_divisor: variant.volumetricDivisor || undefined,
-        color: variant.color || undefined,
-        size: variant.size || undefined,
-        barcode: variant.barcode || undefined,
-        stock_quantity: variant.stockQuantity || 0,
-        at_factory: variant.atFactory || 0,
-        at_domestic: variant.atDomestic || 0,
-        in_transit: variant.inTransit || 0,
+        cost_price: variant.costPrice != null ? Number(variant.costPrice) : 0,
+        target_roi: variant.targetRoi != null ? Number(variant.targetRoi) : undefined,
+        currency: (variant.currency ?? 'CNY') as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
+        weight_kg: variant.weightKg != null ? Number(variant.weightKg) : undefined,
+        length: variant.lengthCm != null ? Number(variant.lengthCm) : undefined,
+        width: variant.widthCm != null ? Number(variant.widthCm) : undefined,
+        height: variant.heightCm != null ? Number(variant.heightCm) : undefined,
+        volumetric_divisor: variant.volumetricDivisor ?? undefined,
+        color: variant.color ?? undefined,
+        size: variant.size ?? undefined,
+        barcode: variant.barcode ?? undefined,
+        stock_quantity: variant.stockQuantity ?? 0,
+        at_factory: variant.atFactory ?? 0,
+        at_domestic: variant.atDomestic ?? 0,
+        in_transit: variant.inTransit ?? 0,
         suppliers: suppliers.length > 0 ? suppliers : (product.suppliers ? JSON.parse(JSON.stringify(product.suppliers)) : undefined),
         platform_sku_mapping: variant.platformSkuMapping ? JSON.parse(JSON.stringify(variant.platformSkuMapping)) : undefined,
         factory_id: primarySupplier?.id || undefined,
@@ -538,7 +546,7 @@ export async function POST(request: NextRequest) {
         atFactory: body.at_factory || 0,
         atDomestic: body.at_domestic || 0,
         inTransit: body.in_transit || 0,
-        platformSkuMapping: body.platform_sku_mapping ? JSON.parse(JSON.stringify(body.platform_sku_mapping)) : null
+        ...(body.platform_sku_mapping ? { platformSkuMapping: JSON.parse(JSON.stringify(body.platform_sku_mapping)) } : {}),
       }
     })
 
@@ -599,7 +607,7 @@ export async function POST(request: NextRequest) {
     })
 
     // 转换为前端格式
-    const primarySupplier = productWithVariant?.productSuppliers.find(ps => ps.isPrimary) || productWithVariant?.productSuppliers[0]
+    const primarySupplier = (productWithVariant?.productSuppliers ?? []).find(ps => ps.isPrimary) ?? (productWithVariant?.productSuppliers ?? [])[0]
     const v = variant
     
     return NextResponse.json({
@@ -615,34 +623,34 @@ export async function POST(request: NextRequest) {
       default_supplier_id: product.defaultSupplierId || undefined,
       default_supplier_name: productWithVariant?.defaultSupplier?.name || undefined,
       status: product.status,
-      cost_price: v.costPrice ? Number(v.costPrice) : 0,
-      target_roi: v.targetRoi ? Number(v.targetRoi) : undefined,
-      currency: v.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
-      weight_kg: v.weightKg ? Number(v.weightKg) : undefined,
-      length: v.lengthCm ? Number(v.lengthCm) : undefined,
-      width: v.widthCm ? Number(v.widthCm) : undefined,
-      height: v.heightCm ? Number(v.heightCm) : undefined,
-      volumetric_divisor: v.volumetricDivisor || undefined,
-      color: v.color || undefined,
-      size: v.size || undefined,
-      barcode: v.barcode || undefined,
-      stock_quantity: v.stockQuantity || 0,
-      at_factory: v.atFactory || 0,
-      at_domestic: v.atDomestic || 0,
-      in_transit: v.inTransit || 0,
-      suppliers: productWithVariant?.productSuppliers.map(ps => ({
+      cost_price: v.costPrice != null ? Number(v.costPrice) : 0,
+      target_roi: v.targetRoi != null ? Number(v.targetRoi) : undefined,
+      currency: (v.currency ?? 'CNY') as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
+      weight_kg: v.weightKg != null ? Number(v.weightKg) : undefined,
+      length: v.lengthCm != null ? Number(v.lengthCm) : undefined,
+      width: v.widthCm != null ? Number(v.widthCm) : undefined,
+      height: v.heightCm != null ? Number(v.heightCm) : undefined,
+      volumetric_divisor: v.volumetricDivisor ?? undefined,
+      color: v.color ?? undefined,
+      size: v.size ?? undefined,
+      barcode: v.barcode ?? undefined,
+      stock_quantity: v.stockQuantity ?? 0,
+      at_factory: v.atFactory ?? 0,
+      at_domestic: v.atDomestic ?? 0,
+      in_transit: v.inTransit ?? 0,
+      suppliers: (productWithVariant?.productSuppliers ?? []).map(ps => ({
         id: ps.supplier.id,
         name: ps.supplier.name,
-        price: ps.price ? Number(ps.price) : undefined,
-        moq: ps.moq || undefined,
-        lead_time: ps.leadTime || undefined,
+        price: ps.price != null ? Number(ps.price) : undefined,
+        moq: ps.moq ?? undefined,
+        lead_time: ps.leadTime ?? undefined,
         isPrimary: ps.isPrimary
       })),
       platform_sku_mapping: v.platformSkuMapping ? JSON.parse(JSON.stringify(v.platformSkuMapping)) : undefined,
-      factory_id: primarySupplier?.supplier.id || undefined,
-      factory_name: primarySupplier?.supplier.name || undefined,
-      moq: primarySupplier?.moq || undefined,
-      lead_time: primarySupplier?.leadTime || undefined,
+      factory_id: primarySupplier?.supplier?.id ?? undefined,
+      factory_name: primarySupplier?.supplier?.name ?? undefined,
+      moq: primarySupplier?.moq ?? undefined,
+      lead_time: primarySupplier?.leadTime ?? undefined,
       product_id: product.id,
       variant_id: v.id,
       createdAt: v.createdAt.toISOString(),

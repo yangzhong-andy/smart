@@ -205,14 +205,14 @@ export default function ProductsPage() {
     const totalCount = filteredSpuList.length;
     const onSaleCount = filteredSpuList.filter((s) => (s.status as string) === "ACTIVE").length;
     const offSaleCount = filteredSpuList.filter((s) => (s.status as string) === "INACTIVE").length;
-    const totalCost = products.reduce((sum, p) => sum + (p.cost_price || 0), 0);
+    const totalCost = products.reduce((sum, p) => sum + Number(p.cost_price ?? 0), 0);
     const avgCost = products.length > 0 ? totalCost / products.length : 0;
     
     // 按币种统计
     const costByCurrency = filteredProducts.reduce((acc, p) => {
-      const currency = p.currency || "CNY";
+      const currency = p.currency ?? "CNY";
       if (!acc[currency]) acc[currency] = 0;
-      acc[currency] += p.cost_price;
+      acc[currency] += Number(p.cost_price ?? 0);
       return acc;
     }, {} as Record<string, number>);
     
@@ -356,9 +356,9 @@ export default function ProductsPage() {
         customs_name_en: product.customs_name_en || "",
         default_supplier_id: product.default_supplier_id || "",
         status: product.status,
-        cost_price: product.cost_price.toString(),
-        target_roi: product.target_roi?.toString() || "",
-        currency: product.currency,
+        cost_price: Number(product.cost_price ?? 0).toString(),
+        target_roi: product.target_roi != null ? String(product.target_roi) : "",
+        currency: product.currency ?? "CNY",
         weight_kg: product.weight_kg?.toString() || "",
         length: product.length?.toString() || "",
         width: product.width?.toString() || "",
@@ -371,10 +371,10 @@ export default function ProductsPage() {
         factory_id: product.factory_id || "",
         moq: product.moq?.toString() || "",
         lead_time: product.lead_time?.toString() || "",
-        suppliers: product.suppliers || (product.factory_id ? [{
+        suppliers: product.suppliers ?? (product.factory_id ? [{
           id: product.factory_id,
-          name: product.factory_name || "",
-          price: product.cost_price,
+          name: product.factory_name ?? "",
+          price: Number(product.cost_price ?? 0),
           moq: product.moq,
           lead_time: product.lead_time,
           isPrimary: true
@@ -1138,7 +1138,7 @@ export default function ProductsPage() {
                                     <td className="px-2 py-1.5 text-slate-200">{(v as Product).color || "—"}</td>
                                     <td className="px-2 py-1.5 text-slate-400 font-mono">{v.sku_id}</td>
                                     <td className="px-2 py-1.5 text-right text-slate-200">
-                                      {formatCurrency((v as Product).cost_price ?? 0, (v as Product).currency ?? "CNY", "balance")}
+                                      {formatCurrency(Number((v as Product).cost_price ?? 0), (v as Product).currency ?? "CNY", "balance")}
                                     </td>
                                     <td className="px-2 py-1.5 text-right text-slate-200">{(v as Product).stock_quantity ?? 0}</td>
                                     <td className="px-2 py-1.5 flex gap-1">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 
 const mockStore: any[] = (global as any).__mockProducts || []
 ;(global as any).__mockProducts = mockStore
@@ -37,9 +38,16 @@ const mapToApiProduct = (p: any) => ({
   lead_time: p.suppliers && Array.isArray(p.suppliers)
     ? (p.suppliers as any[]).find((s: any) => s.isPrimary)?.lead_time || undefined
     : undefined,
-  createdAt: (p.createdAt ?? p.created_at ?? new Date()).toISOString?.() ?? p.createdAt ?? p.created_at,
-  updatedAt: (p.updatedAt ?? p.updated_at ?? new Date()).toISOString?.() ?? p.updatedAt ?? p.updated_at,
+  createdAt: toIsoString(p.createdAt ?? p.created_at),
+  updatedAt: toIsoString(p.updatedAt ?? p.updated_at),
 })
+
+function toIsoString(v: unknown): string {
+  if (v == null) return new Date().toISOString()
+  if (typeof v === 'string') return v
+  if (v instanceof Date) return v.toISOString()
+  return new Date().toISOString()
+}
 
 // PUT - 更新产品
 export async function PUT(
@@ -186,8 +194,8 @@ export async function PUT(
         atFactory: body.at_factory !== undefined ? body.at_factory : undefined,
         atDomestic: body.at_domestic !== undefined ? body.at_domestic : undefined,
         inTransit: body.in_transit !== undefined ? body.in_transit : undefined,
-        platformSkuMapping: body.platform_sku_mapping !== undefined 
-          ? (body.platform_sku_mapping ? JSON.parse(JSON.stringify(body.platform_sku_mapping)) : null) 
+        platformSkuMapping: body.platform_sku_mapping !== undefined
+          ? (body.platform_sku_mapping ? JSON.parse(JSON.stringify(body.platform_sku_mapping)) : Prisma.JsonNull)
           : undefined
       }
     })
@@ -242,7 +250,7 @@ export async function PUT(
     })
 
     // 转换为前端格式
-    const primarySupplier = productWithVariant?.productSuppliers.find(ps => ps.isPrimary) || productWithVariant?.productSuppliers[0]
+    const primarySupplier = (productWithVariant?.productSuppliers ?? []).find(ps => ps.isPrimary) ?? (productWithVariant?.productSuppliers ?? [])[0]
     const v = updatedVariant
     
     return NextResponse.json({
@@ -258,34 +266,34 @@ export async function PUT(
       default_supplier_id: updatedProduct.defaultSupplierId || undefined,
       default_supplier_name: productWithVariant?.defaultSupplier?.name || undefined,
       status: updatedProduct.status,
-      cost_price: v.costPrice ? Number(v.costPrice) : 0,
-      target_roi: v.targetRoi ? Number(v.targetRoi) : undefined,
-      currency: v.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
-      weight_kg: v.weightKg ? Number(v.weightKg) : undefined,
-      length: v.lengthCm ? Number(v.lengthCm) : undefined,
-      width: v.widthCm ? Number(v.widthCm) : undefined,
-      height: v.heightCm ? Number(v.heightCm) : undefined,
-      volumetric_divisor: v.volumetricDivisor || undefined,
-      color: v.color || undefined,
-      size: v.size || undefined,
-      barcode: v.barcode || undefined,
-      stock_quantity: v.stockQuantity || 0,
-      at_factory: v.atFactory || 0,
-      at_domestic: v.atDomestic || 0,
-      in_transit: v.inTransit || 0,
-      suppliers: productWithVariant?.productSuppliers.map(ps => ({
+      cost_price: v.costPrice != null ? Number(v.costPrice) : 0,
+      target_roi: v.targetRoi != null ? Number(v.targetRoi) : undefined,
+      currency: (v.currency ?? 'CNY') as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
+      weight_kg: v.weightKg != null ? Number(v.weightKg) : undefined,
+      length: v.lengthCm != null ? Number(v.lengthCm) : undefined,
+      width: v.widthCm != null ? Number(v.widthCm) : undefined,
+      height: v.heightCm != null ? Number(v.heightCm) : undefined,
+      volumetric_divisor: v.volumetricDivisor ?? undefined,
+      color: v.color ?? undefined,
+      size: v.size ?? undefined,
+      barcode: v.barcode ?? undefined,
+      stock_quantity: v.stockQuantity ?? 0,
+      at_factory: v.atFactory ?? 0,
+      at_domestic: v.atDomestic ?? 0,
+      in_transit: v.inTransit ?? 0,
+      suppliers: (productWithVariant?.productSuppliers ?? []).map(ps => ({
         id: ps.supplier.id,
         name: ps.supplier.name,
-        price: ps.price ? Number(ps.price) : undefined,
-        moq: ps.moq || undefined,
-        lead_time: ps.leadTime || undefined,
+        price: ps.price != null ? Number(ps.price) : undefined,
+        moq: ps.moq ?? undefined,
+        lead_time: ps.leadTime ?? undefined,
         isPrimary: ps.isPrimary
       })),
       platform_sku_mapping: v.platformSkuMapping ? JSON.parse(JSON.stringify(v.platformSkuMapping)) : undefined,
-      factory_id: primarySupplier?.supplier.id || undefined,
-      factory_name: primarySupplier?.supplier.name || undefined,
-      moq: primarySupplier?.moq || undefined,
-      lead_time: primarySupplier?.leadTime || undefined,
+      factory_id: primarySupplier?.supplier?.id ?? undefined,
+      factory_name: primarySupplier?.supplier?.name ?? undefined,
+      moq: primarySupplier?.moq ?? undefined,
+      lead_time: primarySupplier?.leadTime ?? undefined,
       product_id: updatedProduct.id,
       variant_id: v.id,
       createdAt: v.createdAt.toISOString(),
