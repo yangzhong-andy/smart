@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -185,7 +186,7 @@ export async function POST(request: NextRequest) {
         }
         if (toInsert.length > 0) {
           await prisma.storeOrderSettlement.createMany({
-            data: toInsert as Parameters<typeof prisma.storeOrderSettlement.createMany>[0]["data"],
+            data: toInsert as Prisma.StoreOrderSettlementCreateManyInput[],
           });
           imported += toInsert.length;
         }
