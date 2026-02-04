@@ -423,10 +423,11 @@ export default function ProductsPage() {
       }
 
       const suppliersList = form.suppliers?.filter((s) => s.id) || [];
-      let primarySupplier = suppliersList.find((s) => s.isPrimary) || suppliersList[0];
+      type SupplierOption = { id: string; name: string; price?: number; moq?: number; lead_time?: number; isPrimary?: boolean };
+      let primarySupplier: SupplierOption | undefined = suppliersList.find((s) => s.isPrimary) ?? suppliersList[0];
       if (!primarySupplier && form.factory_id) {
         const s = suppliers.find((x) => x.id === form.factory_id);
-        primarySupplier = s ? { id: s.id, name: s.name, price: Number(valid[0].cost_price), isPrimary: true as const } : undefined;
+        primarySupplier = s ? { id: s.id, name: s.name, price: Number(valid[0].cost_price), isPrimary: true } : undefined;
       }
       const suppliersData = primarySupplier ? [primarySupplier] : suppliersList;
 
