@@ -40,10 +40,45 @@ function formatMoney(n: number, currency = "USD") {
   }).format(n);
 }
 
+/** 根据 YYYY-MM 返回该月最后一天 YYYY-MM-DD */
+function lastDayOfMonth(ym: string): string {
+  if (!ym || ym.length < 7) return "";
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return `${ym}-${String(last).padStart(2, "0")}`;
+}
+
+const CURRENT_YEAR = new Date().getFullYear();
+/** 年月选项：最近 3 年 × 12 月，倒序（新在前），用于单个下拉框 */
+const MONTH_OPTIONS = (() => {
+  const list: { value: string; label: string }[] = [{ value: "", label: "全部" }];
+  for (let y = CURRENT_YEAR; y >= CURRENT_YEAR - 2; y--) {
+    for (let m = 12; m >= 1; m--) {
+      list.push({
+        value: `${y}-${String(m).padStart(2, "0")}`,
+        label: `${y}年${m}月`,
+      });
+    }
+  }
+  return list;
+})();
+
 export default function SettlementDashboardPage() {
   const [storeId, setStoreId] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  const handleMonthChange = (ym: string) => {
+    setMonthFilter(ym);
+    if (ym) {
+      setStartDate(`${ym}-01`);
+      setEndDate(lastDayOfMonth(ym));
+    } else {
+      setStartDate("");
+      setEndDate("");
+    }
+  };
 
   const params = new URLSearchParams();
   if (storeId) params.set("storeId", storeId);
@@ -91,9 +126,9 @@ export default function SettlementDashboardPage() {
               营销与店铺
             </Link>
             <span className="mx-1">/</span>
-            <span className="text-slate-300">订单结算看板</span>
+            <span className="text-slate-300">店铺订单看板</span>
           </nav>
-          <h1 className="text-2xl font-semibold text-slate-100">订单结算看板</h1>
+          <h1 className="text-2xl font-semibold text-slate-100">店铺订单看板</h1>
           <p className="mt-1 text-sm text-slate-400">
             基于导入的店铺订单结算数据：按日期、店铺与商品维度汇总
           </p>
@@ -102,7 +137,7 @@ export default function SettlementDashboardPage() {
 
       {/* 筛选 */}
       <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-2">店铺</label>
             <select
@@ -123,7 +158,10 @@ export default function SettlementDashboardPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setMonthFilter("");
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-emerald-500"
             />
           </div>
@@ -132,9 +170,24 @@ export default function SettlementDashboardPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setMonthFilter("");
+              }}
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-emerald-500"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-2">月份</label>
+            <select
+              value={monthFilter}
+              onChange={(e) => handleMonthChange(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-emerald-500"
+            >
+              {MONTH_OPTIONS.map((opt) => (
+                <option key={opt.value || "all"} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
         </div>
       </section>

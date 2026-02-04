@@ -97,8 +97,8 @@ const navItems: NavItem[] = [
     icon: Megaphone,
     children: [
       { label: "店铺管理", labelEn: "", icon: Megaphone, href: "/settings/stores" },
-      { label: "数据导入", labelEn: "Import", icon: Upload, href: "/finance/import" },
-      { label: "订单结算看板", labelEn: "Settlement", icon: BarChart3, href: "/finance/settlement-dashboard" },
+      { label: "数据导入", labelEn: "", icon: Upload, href: "/finance/import" },
+      { label: "店铺订单看板", labelEn: "", icon: BarChart3, href: "/finance/settlement-dashboard" },
       { label: "达人 BD 管理", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
       { label: "广告代理管理", labelEn: "", icon: Megaphone, href: "/advertising/agencies" }
     ]

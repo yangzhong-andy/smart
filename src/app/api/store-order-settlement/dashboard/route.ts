@@ -11,6 +11,20 @@ function parseAmount(s: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** 将 Excel 常见日期字符串统一为 YYYY-MM-DD，便于比较；无效返回 null */
+function normalizeOrderDate(s: string | null | undefined): string | null {
+  if (s == null || String(s).trim() === "") return null;
+  const t = String(s).trim().replace(/\//g, "-");
+  const parts = t.split("-").filter(Boolean);
+  if (parts.length < 3) return null;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  const ym = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return ym.length === 10 ? ym : null;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -18,20 +32,16 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get("startDate") ?? undefined;
     const endDate = searchParams.get("endDate") ?? undefined;
 
-    const where: { type: string; storeId?: string; statementDate?: { gte?: string; lte?: string } } = {
+    const where: { type: string; storeId?: string } = {
       type: "Order",
     };
     if (storeId) where.storeId = storeId;
-    if (startDate || endDate) {
-      where.statementDate = {};
-      if (startDate) where.statementDate.gte = startDate;
-      if (endDate) where.statementDate.lte = endDate;
-    }
 
     const rows = await prisma.storeOrderSettlement.findMany({
       where,
       select: {
         statementDate: true,
+        orderCreatedDate: true,
         storeId: true,
         totalSettlementAmount: true,
         netSales: true,
@@ -45,6 +55,17 @@ export async function GET(req: NextRequest) {
       take: MAX_ROWS,
     });
 
+    let filtered = rows;
+    if (startDate || endDate) {
+      filtered = rows.filter((r) => {
+        const normalized = normalizeOrderDate(r.orderCreatedDate);
+        if (!normalized) return false;
+        if (startDate && normalized < startDate) return false;
+        if (endDate && normalized > endDate) return false;
+        return true;
+      });
+    }
+
     // 汇总
     let totalSettlement = 0;
     let totalNetSales = 0;
@@ -56,7 +77,7 @@ export async function GET(req: NextRequest) {
       { productName: string; skuName: string | null; quantity: number; settlement: number; netSales: number }
     > = {};
 
-    for (const r of rows) {
+    for (const r of filtered) {
       const settlement = parseAmount(r.totalSettlementAmount);
       // 净销售：优先用 netSales，为空/0 时用 grossSales + sellerDiscount 推算（TikTok 结算单常见关系）
       let netSales = parseAmount(r.netSales);
