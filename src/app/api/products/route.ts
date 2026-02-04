@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import type { Product as PrismaProduct } from '@prisma/client'
 
 const mockStore: any[] = (global as any).__mockProducts || []
 ;(global as any).__mockProducts = mockStore
@@ -301,7 +302,7 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
 
   // 优先用 product_id 查找已有产品（添加变体时前端会传），否则用 name
   const intentAddToExisting = !!body.product_id
-  let product: { id: string } | null = null
+  let product: PrismaProduct | null = null
   if (body.product_id) {
     product = await prisma.product.findUnique({
       where: { id: String(body.product_id) }
