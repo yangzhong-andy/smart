@@ -35,6 +35,13 @@ export default function DateInput({
   const minDate = min ? parse(min, "yyyy-MM-dd", new Date()) : undefined;
   const maxDate = max ? parse(max, "yyyy-MM-dd", new Date()) : undefined;
 
+  // react-day-picker v9: disabled 只接受 Matcher，不能含 undefined；仅传入有值的限制
+  const disabledMatchers: Array<{ before: Date } | { after: Date }> = [];
+  if (minDate) disabledMatchers.push({ before: minDate });
+  if (maxDate) disabledMatchers.push({ after: maxDate });
+  const dayPickerDisabled = disabledMatchers.length > 0 ? disabledMatchers : undefined;
+
+  // 仅同步受控 value，不发起任何 API 请求
   useEffect(() => {
     setInputStr(value || "");
   }, [value]);
@@ -105,7 +112,7 @@ export default function DateInput({
             selected={selectedDate}
             onSelect={handleSelect}
             defaultMonth={selectedDate || new Date()}
-            disabled={{ before: minDate, after: maxDate }}
+            disabled={dayPickerDisabled}
             classNames={{
               root: "rdp-cn",
               month: "space-y-3",
