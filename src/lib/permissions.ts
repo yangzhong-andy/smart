@@ -14,6 +14,59 @@ export const DEPARTMENT_CODES = {
   FINANCE_CENTER: 'FINANCE_CENTER',                // 财经中心
 } as const;
 
+/**
+ * 侧栏菜单权限：按部门限制可见的一级菜单（label）
+ * 若某部门在此配置中，则只显示列出的菜单；未配置的部门或 null 表示显示全部
+ */
+export const SIDEBAR_NAV_BY_DEPARTMENT: Record<string, string[]> = {
+  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['产品中心', '供应链'],
+};
+
+/** 部门仅能访问的路径前缀（用于路由保护）。空数组表示不限制。 */
+export const ALLOWED_PATH_PREFIXES_BY_DEPARTMENT: Record<string, string[]> = {
+  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: [
+    '/product-center',
+    '/procurement',
+    '/supply-chain',
+    '/inventory',
+    '/',
+  ],
+};
+
+/** 判断该部门是否允许访问该路径（支持用 departmentName 解析部门，避免 code 为空时失效） */
+export function isPathAllowedForDepartment(
+  pathname: string,
+  departmentCode: string | null,
+  departmentName?: string | null
+): boolean {
+  const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
+  if (!effective || !ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective]) return true;
+  const prefixes = ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective];
+  if (prefixes.length === 0) return true;
+  if (pathname === '/' || pathname === '') return prefixes.includes('/');
+  return prefixes.some((p) => p !== '/' && (pathname === p || pathname.startsWith(p + '/')));
+}
+
+/**
+ * 根据部门 code 或 name 解析出用于权限判断的部门代码（兼容 name 匹配，避免 code 未填时失效）
+ */
+export function getEffectiveDepartmentCode(
+  departmentCode: string | null,
+  departmentName: string | null
+): string | null {
+  if (departmentCode && SIDEBAR_NAV_BY_DEPARTMENT[departmentCode]) return departmentCode;
+  const name = (departmentName || '').trim();
+  if (name === '全球供应链部' || name === '全球供应链部门') return DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN;
+  return departmentCode;
+}
+
+/** 获取该部门在侧栏可见的一级菜单 label 列表；返回 null 表示全部可见 */
+export function getAllowedNavLabels(departmentCode: string | null, departmentName?: string | null): string[] | null {
+  const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
+  if (!effective || !SIDEBAR_NAV_BY_DEPARTMENT[effective]) return null;
+  return SIDEBAR_NAV_BY_DEPARTMENT[effective];
+}
+
 // 敏感字段（高度敏感，需要特殊保护）
 export const SENSITIVE_FIELDS = [
   'paymentPassword',      // 支付密码

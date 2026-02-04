@@ -3,15 +3,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
-import { Package, Plus, Search, X, Eye, Clock, CheckCircle2, XCircle, AlertCircle, Download } from "lucide-react";
+import { Package, Plus, Search, X, Eye, Clock, CheckCircle2, XCircle, AlertCircle, Download, Palette } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import useSWR, { mutate as swrMutate } from "swr";
 import {
   type PurchaseOrder,
   type PurchaseOrderStatus
 } from "@/lib/purchase-orders-store";
-import { getProductsFromAPI, type Product } from "@/lib/products-store";
+import { getSpuListFromAPI, getVariantsBySpuIdFromAPI, type Product, type SpuListItem } from "@/lib/products-store";
 import type { Store } from "@/lib/store-store";
+
+// 按 SPU 分组：1 个 SPU 对应多个颜色变体 (SKU)
+type SpuOption = {
+  productId: string;
+  name: string;
+  variants: Product[];
+};
+// 已选变体行（用于提交 OrderItem）
+type SelectedItem = {
+  sku: string;
+  skuId: string;
+  skuName: string;
+  spec: string;
+  quantity: number;
+  unitPrice: number;
+};
 
 // SWR fetcher
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -47,7 +63,9 @@ export default function PurchaseOrdersNewPage() {
     dedupingInterval: 600000 // 10分钟内去重
   });
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [spuList, setSpuList] = useState<SpuListItem[]>([]);
+  const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
+  const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [initialized, setInitialized] = useState(false);
   
@@ -65,27 +83,51 @@ export default function PurchaseOrdersNewPage() {
     createdBy: "",
     platform: "TikTok" as "TikTok" | "Amazon" | "其他",
     storeId: "",
-    sku: "",
-    skuId: "",
-    quantity: "",
+    productId: "", // SPU ID（product_id）
     expectedDeliveryDate: "",
     urgency: "普通" as "普通" | "紧急" | "加急",
     notes: ""
   });
+  const [variantModalOpen, setVariantModalOpen] = useState(false);
+  const [variantQuantities, setVariantQuantities] = useState<Record<string, string>>({}); // sku_id -> quantity string
+  const [variantSearch, setVariantSearch] = useState(""); // 变体选择器内按颜色/SKU 搜索
+  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]); // 已选变体行，用于提交
 
   // 确保 orders 始终是数组
   const orders = Array.isArray(ordersData) ? ordersData : [];
 
+  const spuOptions = useMemo((): SpuOption[] => {
+    return spuList.map((s) => ({
+      productId: s.productId,
+      name: s.name,
+      variants: variantCache[s.productId] ?? [],
+    }));
+  }, [spuList, variantCache]);
+
+  const selectedSpu = useMemo(() => {
+    if (!form.productId) return null;
+    return spuOptions.find((s) => s.productId === form.productId) ?? null;
+  }, [form.productId, spuOptions]);
+
+  // 一次性只拉 SPU 列表；变体在用户选中该规格时再按需拉取并缓存，切换颜色/改数量零请求
   useEffect(() => {
     if (typeof window === "undefined") return;
-    (async () => {
-    const prods = await getProductsFromAPI();
-    setProducts(prods);
-    const storesRes = await fetch("/api/stores");
-    setStores(storesRes.ok ? await storesRes.json() : []);
+    getSpuListFromAPI().then(setSpuList);
+    fetch("/api/stores").then((res) => (res.ok ? res.json() : [])).then(setStores);
     setInitialized(true);
-    })();
   }, []);
+
+  // 当用户选中规格/型号时，按需拉取该 SPU 下全部变体并缓存（仅此一次请求）
+  useEffect(() => {
+    if (!form.productId || variantCache[form.productId]?.length) return;
+    const pid = form.productId;
+    setLoadingSpuId(pid);
+    getVariantsBySpuIdFromAPI(pid)
+      .then((variants) => {
+        setVariantCache((prev) => ({ ...prev, [pid]: variants }));
+      })
+      .finally(() => setLoadingSpuId(null));
+  }, [form.productId, variantCache]);
 
   // 统计信息
   const stats = useMemo(() => {
@@ -142,57 +184,89 @@ export default function PurchaseOrdersNewPage() {
 
   const [isCreating, setIsCreating] = useState(false);
 
-  // 创建订单
+  // 打开颜色变体弹窗：未选规格前不进入；按当前选中的 SPU 初始化各变体数量
+  const openVariantModal = () => {
+    if (!selectedSpu) {
+      toast.error("请先选择规格/型号");
+      return;
+    }
+    const next: Record<string, string> = {};
+    selectedSpu.variants.forEach((v) => {
+      next[v.sku_id] = variantQuantities[v.sku_id] ?? "";
+    });
+    setVariantQuantities(next);
+    setVariantSearch("");
+    setVariantModalOpen(true);
+  };
+
+  // 确认颜色与数量：只保留数量 > 0 的变体，写入 selectedItems（一次下单多行）
+  const confirmVariantSelection = () => {
+    if (!selectedSpu) return;
+    const items: SelectedItem[] = [];
+    selectedSpu.variants.forEach((v) => {
+      const q = Number(variantQuantities[v.sku_id]);
+      if (Number.isNaN(q) || q <= 0) return;
+      const skuName = selectedSpu.name;
+      const spec = (v as any).color || v.sku_id || "";
+      items.push({
+        sku: v.sku_id,
+        skuId: v.sku_id,
+        skuName,
+        spec,
+        quantity: q,
+        unitPrice: (v as any).cost_price ?? v.cost_price ?? 0,
+      });
+    });
+    if (items.length === 0) {
+      toast.error("请至少为一个颜色填写数量");
+      return;
+    }
+    setSelectedItems(items);
+    setVariantModalOpen(false);
+    toast.success(`已选 ${items.length} 个颜色，共 ${items.reduce((s, i) => s + i.quantity, 0)} 件`);
+  };
+
+  // 创建订单：一次性提交所有变体到 OrderItem（单次请求）
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    // 防止重复提交
     if (isCreating) {
       toast.loading("正在创建，请勿重复点击");
       return;
     }
-    
     if (!form.createdBy.trim()) {
       toast.error("请填写下单人姓名");
       return;
     }
-    
-    if (!form.sku.trim() && !form.skuId) {
-      toast.error("请选择产品");
-      return;
-    }
-    
-    const quantity = Number(form.quantity);
-    if (Number.isNaN(quantity) || quantity <= 0) {
-      toast.error("请输入有效的采购数量");
+    if (!form.productId || selectedItems.length === 0) {
+      toast.error("请选择产品并填写各颜色数量");
       return;
     }
 
-    const selectedProduct = products.find((p) => p.sku_id === form.skuId);
     const selectedStore = stores.find((s) => s.id === form.storeId);
-
     setIsCreating(true);
     try {
       const response = await fetch('/api/purchase-orders', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           createdBy: form.createdBy.trim(),
           platform: form.platform,
           storeId: form.storeId || undefined,
           storeName: selectedStore?.name,
-          sku: form.sku || selectedProduct?.sku_id || "",
-          skuId: form.skuId || undefined,
-          productName: selectedProduct?.name,
-          quantity,
           expectedDeliveryDate: form.expectedDeliveryDate || undefined,
           urgency: form.urgency,
           notes: form.notes.trim() || undefined,
           status: '待风控',
           riskControlStatus: '待评估',
-          approvalStatus: '待审批'
+          approvalStatus: '待审批',
+          items: selectedItems.map((i) => ({
+            sku: i.sku,
+            skuId: i.skuId,
+            skuName: i.skuName,
+            spec: i.spec,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+          })),
         }),
       });
 
@@ -200,23 +274,19 @@ export default function PurchaseOrdersNewPage() {
         const error = await response.json();
         throw new Error(error.error || '创建订单失败');
       }
-
-      // 刷新数据
       await mutateOrders();
       toast.success("采购订单已创建，等待风控评估");
-      
-      // 重置表单
       setForm({
         createdBy: "",
         platform: "TikTok",
         storeId: "",
-        sku: "",
-        skuId: "",
-        quantity: "",
+        productId: "",
         expectedDeliveryDate: "",
         urgency: "普通",
-        notes: ""
+        notes: "",
       });
+      setSelectedItems([]);
+      setVariantQuantities({});
       setIsCreateModalOpen(false);
     } catch (error: any) {
       console.error('Error creating purchase order:', error);
@@ -405,7 +475,11 @@ export default function PurchaseOrdersNewPage() {
                       {order.platform}
                       {order.storeName && ` · ${order.storeName}`}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">{order.sku}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">
+                      {order.items?.length
+                        ? `${order.items[0]?.skuName || order.items[0]?.sku || order.sku}${order.items.length > 1 ? ` 等${order.items.length}项` : ""}`
+                        : order.sku}
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-300 text-right">{order.quantity}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`px-2 py-1 rounded text-xs ${
@@ -508,41 +582,49 @@ export default function PurchaseOrdersNewPage() {
                   </select>
                 </label>
 
-                <label className="block space-y-1">
-                  <span className="text-sm text-slate-300">产品SKU *</span>
+                <label className="block space-y-1 col-span-2">
+                  <span className="text-sm text-slate-300">第一步：选择规格/型号 *</span>
                   <select
-                    value={form.skuId}
+                    value={form.productId}
                     onChange={(e) => {
-                      const product = products.find((p) => p.sku_id === e.target.value);
-                      setForm((f) => ({
-                        ...f,
-                        skuId: e.target.value,
-                        sku: product?.sku_id || ""
-                      }));
+                      setForm((f) => ({ ...f, productId: e.target.value }));
+                      setSelectedItems([]);
                     }}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
                     required
                   >
-                    <option value="">请选择产品</option>
-                    {products.map((product) => (
-                      <option key={product.sku_id} value={product.sku_id}>
-                        {product.sku_id} - {product.name}
+                    <option value="">请选择规格/型号（如 mz03）</option>
+                    {spuOptions.map((spu) => (
+                      <option key={spu.productId} value={spu.productId}>
+                        {spu.name}（{loadingSpuId === spu.productId ? "加载中…" : `${spu.variants.length} 个颜色`}）
                       </option>
                     ))}
                   </select>
                 </label>
 
-                <label className="block space-y-1">
-                  <span className="text-sm text-slate-300">采购数量 *</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={form.quantity}
-                    onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
-                    required
-                  />
-                </label>
+                <div className="col-span-2 flex items-center gap-3">
+                  <span className="text-sm text-slate-400">第二步：选择颜色并填数量（先选规格后再点）</span>
+                  <button
+                    type="button"
+                    onClick={openVariantModal}
+                    disabled={!form.productId || !!loadingSpuId}
+                    className="flex items-center gap-2 rounded-md border border-primary-500/50 bg-primary-500/10 px-3 py-2 text-sm font-medium text-primary-200 hover:bg-primary-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Palette className="h-4 w-4" />
+                    {selectedItems.length > 0
+                      ? `已选 ${selectedItems.length} 个颜色，共 ${selectedItems.reduce((s, i) => s + i.quantity, 0)} 件（总价 ¥${selectedItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0).toFixed(2)}）`
+                      : "选择颜色并输入各颜色采购数量"}
+                  </button>
+                  {selectedItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItems([])}
+                      className="text-xs text-slate-400 hover:text-rose-400"
+                    >
+                      清空重选
+                    </button>
+                  )}
+                </div>
 
                 <label className="block space-y-1">
                   <span className="text-sm text-slate-300">期望到货日期</span>
@@ -588,11 +670,104 @@ export default function PurchaseOrdersNewPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary" isLoading={isCreating} disabled={isCreating}>
+                <ActionButton type="submit" variant="primary" isLoading={isCreating} disabled={isCreating || selectedItems.length === 0}>
                   {isCreating ? "创建中..." : "创建订单"}
                 </ActionButton>
               </div>
             </form>
+
+            {/* 颜色变体弹窗：级联选择后在此填数量矩阵，打平为多行 OrderItem */}
+            {variantModalOpen && selectedSpu && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+                <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                    <h3 className="text-lg font-semibold text-slate-100">
+                      {selectedSpu.name} · 选择颜色与数量
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => { setVariantModalOpen(false); setVariantSearch(""); }}
+                      className="text-slate-400 hover:text-slate-200"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-3 flex-shrink-0">
+                    同规格下为各颜色直接填写采购数量，未填或为 0 不纳入订单。
+                  </p>
+                  <div className="flex items-center gap-2 mb-3 flex-shrink-0">
+                    <Search className="h-4 w-4 text-slate-500" />
+                    <input
+                      type="text"
+                      value={variantSearch}
+                      onChange={(e) => setVariantSearch(e.target.value)}
+                      placeholder="按颜色或 SKU 搜索…"
+                      className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-primary-400"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 mb-2 flex-shrink-0">数量矩阵</p>
+                  <div className="space-y-3 overflow-y-auto flex-1 min-h-0">
+                    {(() => {
+                      const kw = variantSearch.trim().toLowerCase();
+                      const list = kw
+                        ? selectedSpu.variants.filter(
+                            (v) =>
+                              ((v as any).color || "").toLowerCase().includes(kw) ||
+                              (v.sku_id || "").toLowerCase().includes(kw)
+                          )
+                        : selectedSpu.variants;
+                      return list.length > 0 ? (
+                        list.map((v) => (
+                          <div
+                            key={v.sku_id}
+                            className="flex items-center gap-4 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3 flex-shrink-0"
+                          >
+                            <span className="text-slate-200 font-medium w-24 truncate">
+                              {(v as any).color || v.sku_id}
+                            </span>
+                            <span className="text-slate-500 text-sm flex-1 truncate">{v.sku_id}</span>
+                            <span className="text-slate-400 text-sm whitespace-nowrap">
+                              ¥{Number((v as any).cost_price ?? 0).toFixed(2)}
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="0"
+                              value={variantQuantities[v.sku_id] ?? ""}
+                              onChange={(e) =>
+                                setVariantQuantities((prev) => ({ ...prev, [v.sku_id]: e.target.value }))
+                              }
+                              className="w-24 rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-right text-slate-100 outline-none focus:border-primary-400"
+                            />
+                            <span className="text-slate-500 text-sm w-8">件</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-6 text-slate-500 text-sm">
+                          {variantSearch.trim() ? "未匹配到该颜色或 SKU，请修改搜索词" : "该规格下暂无变体"}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => { setVariantModalOpen(false); setVariantSearch(""); }}
+                      className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmVariantSelection}
+                      className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-600"
+                    >
+                      确定
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -637,17 +812,30 @@ export default function PurchaseOrdersNewPage() {
                   <span className="text-slate-200 ml-2">{selectedOrder.storeName || "-"}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">SKU：</span>
-                  <span className="text-slate-200 ml-2">{selectedOrder.sku}</span>
+                  <span className="text-slate-400">产品/数量：</span>
+                  <span className="text-slate-200 ml-2">
+                    {selectedOrder.items?.length
+                      ? `${selectedOrder.items.length} 个 SKU，共 ${selectedOrder.quantity} 件`
+                      : `${selectedOrder.sku || "-"}，${selectedOrder.quantity} 件`}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-slate-400">产品名称：</span>
-                  <span className="text-slate-200 ml-2">{selectedOrder.productName || "-"}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">采购数量：</span>
-                  <span className="text-slate-200 ml-2 font-medium">{selectedOrder.quantity}</span>
-                </div>
+                {selectedOrder.items && selectedOrder.items.length > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block mb-2">物料明细：</span>
+                    <div className="rounded border border-slate-700 bg-slate-800/50 divide-y divide-slate-700 text-sm">
+                      {selectedOrder.items.map((it: any, idx: number) => (
+                        <div key={it.id || idx} className="flex justify-between px-3 py-2">
+                          <span className="text-slate-200">
+                            {(it.skuName || it.sku) + (it.spec ? ` - ${it.spec}` : "")}
+                          </span>
+                          <span className="text-slate-300">
+                            {it.quantity} 件 × ¥{Number(it.unitPrice || 0).toFixed(2)} = ¥{Number(it.totalAmount || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <span className="text-slate-400">紧急程度：</span>
                   <span className="text-slate-200 ml-2">{selectedOrder.urgency}</span>

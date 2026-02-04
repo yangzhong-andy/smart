@@ -21,10 +21,12 @@ import {
 } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
 import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
-import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory } from "lucide-react";
+import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory, FileText, Palette } from "lucide-react";
+import { useRouter } from "next/navigation";
 import ImageUploader from "@/components/ImageUploader";
+import DateInput from "@/components/DateInput";
 import InventoryDistribution from "@/components/InventoryDistribution";
-import { getProductsFromAPI, upsertProduct, type Product as ProductType } from "@/lib/products-store";
+import { getSpuListFromAPI, getVariantsBySpuIdFromAPI, getProductsFromAPI, upsertProduct, type Product as ProductType, type SpuListItem } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
 import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
 import { getCashFlowFromAPI, createCashFlow } from "@/lib/cash-flow-store";
@@ -39,7 +41,7 @@ type Supplier = {
   settleBase: "发货" | "入库";
 };
 
-// 兼容新旧产品数据结构
+// 兼容新旧产品数据结构（API 返回的每条为 SKU 变体，含 product_id 用于按原型分组）
 type Product = {
   id?: string;
   sku?: string;
@@ -53,9 +55,34 @@ type Product = {
   factory_id?: string;
   factory_name?: string;
   currency?: string;
+  product_id?: string;
+  color?: string;
 };
 
+type SpuOption = { productId: string; name: string; variants: Product[] };
+
 const PRODUCTS_KEY = "products";
+
+// 新建合同时的物料行
+type FormItemRow = {
+  tempId: string;
+  productId: string;
+  sku: string;
+  skuName: string;
+  spec: string;
+  quantity: string;
+  unitPrice: string;
+};
+
+const newFormItemRow = (): FormItemRow => ({
+  tempId: crypto.randomUUID(),
+  productId: "",
+  sku: "",
+  skuName: "",
+  spec: "",
+  quantity: "",
+  unitPrice: "",
+});
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -65,8 +92,11 @@ const currency = (n: number, curr: string = "CNY") =>
 const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 
 export default function PurchaseOrdersPage() {
+  const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [spuList, setSpuList] = useState<SpuListItem[]>([]);
+  const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({}); // productId -> 该 SPU 下全部 SKU（一次性 include 拉取后缓存）
+  const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
   const [contracts, setContracts] = useState<PurchaseContract[]>([]);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
@@ -91,14 +121,15 @@ export default function PurchaseOrdersPage() {
   });
   const [form, setForm] = useState({
     supplierId: "",
-    productId: "",
-    sku: "",
-    unitPrice: "",
-    quantity: "",
     deliveryDate: "",
     contractVoucher: "" as string | string[]
   });
-  
+  const [formItems, setFormItems] = useState<FormItemRow[]>([]);
+  const [variantModalOpen, setVariantModalOpen] = useState(false);
+  const [variantQuantities, setVariantQuantities] = useState<Record<string, string>>({});
+  const [selectedSpuContract, setSelectedSpuContract] = useState<SpuOption | null>(null);
+  const [variantSearchContract, setVariantSearchContract] = useState(""); // 变体选择器内按颜色/SKU 搜索
+
   // 搜索和筛选状态
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -143,39 +174,60 @@ export default function PurchaseOrdersPage() {
     }
   }, []);
 
-  // 根据订单信息自动填充表单
+  // 已加载的变体扁平列表（用于 formItems 解析、合同创建时 sku 等），仅来自缓存，零额外请求
+  const productsForResolve = useMemo(() => {
+    const list = Object.values(variantCache).flat();
+    return list.map((p: any) => ({
+      ...p,
+      id: p.sku_id,
+      sku: p.sku_id,
+      name: p.name,
+      cost: p.cost_price,
+      primarySupplierId: p.factory_id,
+      imageUrl: p.main_image
+    }));
+  }, [variantCache]);
+
+  // 根据订单信息自动填充表单（供应商 + 物料行）；若缓存无该 SKU 则拉一次全量并写入缓存
   useEffect(() => {
-    if (sourceOrder && products.length > 0 && suppliers.length > 0) {
-      const product = products.find((p) => p.sku_id === sourceOrder.skuId);
-      const productId = product?.sku_id || "";
-      const productSku = product?.sku_id || sourceOrder.sku || "";
-      const productName = product?.name || sourceOrder.productName || "";
-      const productCost = product?.cost_price || 0;
-      
-      // 尝试找到产品的供应商
+    if (!sourceOrder || !suppliers.length) return;
+    const product = productsForResolve.find((p) => p.sku_id === sourceOrder.skuId);
+    if (product) {
+      const productId = product.sku_id || "";
+      const productSku = product.sku_id || sourceOrder.sku || "";
+      const productName = product.name || sourceOrder.productName || "";
+      const productCost = product.cost_price || 0;
       let supplierId = "";
-      if (product?.factory_id) {
+      if (product.factory_id) {
         const supplier = suppliers.find((s) => s.id === product.factory_id);
-        if (supplier) {
-          supplierId = supplier.id;
-        }
+        if (supplier) supplierId = supplier.id;
       }
-      
-      // 如果没找到，使用第一个供应商
-      if (!supplierId && suppliers.length > 0) {
-        supplierId = suppliers[0].id;
-      }
-      
-      setForm((f) => ({
-        ...f,
-        productId,
-        supplierId,
-        sku: `${productSku} / ${productName}`,
-        unitPrice: productCost > 0 ? String(productCost) : "",
-        quantity: String(sourceOrder.quantity)
-      }));
+      if (!supplierId && suppliers.length > 0) supplierId = suppliers[0].id;
+      setForm((f) => ({ ...f, supplierId }));
+      setFormItems([
+        {
+          tempId: crypto.randomUUID(),
+          productId,
+          sku: productSku || sourceOrder.sku || "",
+          skuName: productName || sourceOrder.productName || "",
+          spec: "",
+          quantity: String(sourceOrder.quantity),
+          unitPrice: productCost > 0 ? String(productCost) : "",
+        },
+      ]);
+      return;
     }
-  }, [sourceOrder, products, suppliers]);
+    getProductsFromAPI().then((parsed) => {
+      const bySpu = new Map<string, Product[]>();
+      for (const p of parsed as Product[]) {
+        const id = (p as any).product_id || p.sku_id || p.name || "";
+        if (!id) continue;
+        if (!bySpu.has(id)) bySpu.set(id, []);
+        bySpu.get(id)!.push(p);
+      }
+      setVariantCache((prev) => ({ ...prev, ...Object.fromEntries(bySpu) }));
+    });
+  }, [sourceOrder, productsForResolve, suppliers]);
 
   // Load suppliers from API
   useEffect(() => {
@@ -195,27 +247,13 @@ export default function PurchaseOrdersPage() {
       });
   }, []);
 
-  // Load products from API
+  // 一次性只拉 SPU 列表（节省数据库访问）；变体在用户选中该 SPU 时再按需拉取并缓存
   useEffect(() => {
     if (typeof window === "undefined") return;
-    getProductsFromAPI().then((parsed) => {
-      const normalizedProducts: Product[] = parsed.map((p: any) => {
-        if (p.sku_id) {
-          return {
-            ...p,
-            id: p.sku_id,
-            sku: p.sku_id,
-            name: p.name,
-            cost: p.cost_price,
-            primarySupplierId: p.factory_id,
-            imageUrl: p.main_image
-          };
-        }
-        return p;
-      });
-      setProducts(normalizedProducts);
-    }).catch((e) => console.error("Failed to load products", e));
+    getSpuListFromAPI().then(setSpuList).catch((e) => console.error("Failed to load SPU list", e));
   }, []);
+
+  const products = productsForResolve;
 
   // Load accounts
   useEffect(() => {
@@ -248,113 +286,209 @@ export default function PurchaseOrdersPage() {
   }, []);
 
   const selectedSupplier = useMemo(() => {
-    const product = products.find((p) => (p.id || p.sku_id) === form.productId);
-    const fromProductSupplier = product?.primarySupplierId || product?.factory_id;
-    const supplierId = form.supplierId || fromProductSupplier;
+    const supplierId = form.supplierId || suppliers[0]?.id;
     return suppliers.find((s) => s.id === supplierId) || suppliers[0];
-  }, [form.supplierId, products, form.productId, suppliers]);
+  }, [form.supplierId, suppliers]);
 
-  const selectedProduct = useMemo(() => {
-    return products.find((p) => (p.id || p.sku_id) === form.productId);
-  }, [products, form.productId]);
+  const spuOptions = useMemo((): SpuOption[] => {
+    return spuList.map((s) => ({
+      productId: s.productId,
+      name: s.name,
+      variants: variantCache[s.productId] ?? [],
+    }));
+  }, [spuList, variantCache]);
 
   const totalAmount = useMemo(() => {
-    const price = form.unitPrice ? Number(form.unitPrice) : selectedProduct?.cost ?? 0;
-    const qty = Number(form.quantity);
-    if (Number.isNaN(price) || Number.isNaN(qty)) return 0;
-    return price * qty;
-  }, [form.unitPrice, form.quantity, selectedProduct]);
+    return formItems.reduce((sum, row) => {
+      const qty = Number(row.quantity) || 0;
+      const price = Number(row.unitPrice) || 0;
+      return sum + qty * price;
+    }, 0);
+  }, [formItems]);
 
   const depositPreview = useMemo(() => {
     if (!selectedSupplier) return 0;
     return (totalAmount * selectedSupplier.depositRate) / 100;
   }, [selectedSupplier, totalAmount]);
 
-  // 创建新合同（母单）
+  const openVariantModalContract = () => {
+    setSelectedSpuContract(null);
+    setVariantQuantities({});
+    setVariantSearchContract("");
+    setVariantModalOpen(true);
+  };
+
+  const onSelectSpuInModal = async (spu: SpuOption) => {
+    const cached = variantCache[spu.productId];
+    if (cached?.length) {
+      setSelectedSpuContract({ productId: spu.productId, name: spu.name, variants: cached });
+      const next: Record<string, string> = {};
+      cached.forEach((v) => {
+        next[v.sku_id!] = variantQuantities[v.sku_id!] ?? "";
+      });
+      setVariantQuantities(next);
+      return;
+    }
+    setLoadingSpuId(spu.productId);
+    try {
+      const variants = await getVariantsBySpuIdFromAPI(spu.productId);
+      setVariantCache((prev) => ({ ...prev, [spu.productId]: variants }));
+      setSelectedSpuContract({ productId: spu.productId, name: spu.name, variants });
+      const next: Record<string, string> = {};
+      variants.forEach((v) => {
+        next[v.sku_id!] = variantQuantities[v.sku_id!] ?? "";
+      });
+      setVariantQuantities(next);
+    } catch (e) {
+      toast.error("加载该规格变体失败");
+    } finally {
+      setLoadingSpuId(null);
+    }
+  };
+
+  const confirmVariantSelectionContract = () => {
+    if (!selectedSpuContract) {
+      toast.error("请先选择产品原型");
+      return;
+    }
+    const rows: FormItemRow[] = [];
+    selectedSpuContract.variants.forEach((v) => {
+      const q = Number(variantQuantities[v.sku_id!]);
+      if (Number.isNaN(q) || q <= 0) return;
+      const skuName = selectedSpuContract.name;
+      const spec = v.color || v.sku_id || "";
+      rows.push({
+        tempId: crypto.randomUUID(),
+        productId: v.sku_id || "",
+        sku: v.sku_id || "",
+        skuName,
+        spec,
+        quantity: String(q),
+        unitPrice: String((v as Product).cost_price ?? 0),
+      });
+    });
+    if (rows.length === 0) {
+      toast.error("请至少为一个颜色填写数量");
+      return;
+    }
+    setFormItems((prev) => (prev.length === 0 ? rows : [...prev, ...rows]));
+    setVariantModalOpen(false);
+    setSelectedSpuContract(null);
+    setVariantQuantities({});
+    toast.success(`已添加 ${rows.length} 个变体，共 ${rows.reduce((s, r) => s + Number(r.quantity), 0)} 件`);
+  };
+
+  // 创建新合同（母单）- 支持多行物料
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedSupplier) {
       toast.error("请先在供应商库新增供应商后再创建采购合同", { icon: "⚠️" });
       return;
     }
-    const productCost = selectedProduct?.cost ?? selectedProduct?.cost_price ?? 0;
-    const price = form.unitPrice ? Number(form.unitPrice) : productCost;
-    const qty = Number(form.quantity);
-    const skuName = selectedProduct?.name ?? form.sku.trim();
-    const skuCode = selectedProduct?.sku ?? selectedProduct?.sku_id ?? form.sku.trim();
-    if (!skuName || !skuCode) {
-      toast.error("请输入或选择 SKU", { icon: "⚠️" });
+    const validRows = formItems.filter(
+      (row) =>
+        (row.sku?.trim() || row.skuName?.trim() || products.find((p) => (p.id || p.sku_id) === row.productId)) &&
+        Number(row.quantity) > 0 &&
+        Number(row.unitPrice) >= 0
+    );
+    if (validRows.length === 0) {
+      toast.error("请至少添加一条有效物料（SKU/品名、数量、单价）", { icon: "⚠️" });
       return;
     }
-    if (Number.isNaN(price) || Number.isNaN(qty) || price <= 0 || qty <= 0) {
-      toast.error("单价与数量需为大于 0 的数字", { icon: "⚠️" });
-      return;
-    }
-    // 验证合同凭证（必填）
     if (!form.contractVoucher || (Array.isArray(form.contractVoucher) && form.contractVoucher.length === 0) || (typeof form.contractVoucher === "string" && form.contractVoucher.trim() === "")) {
       toast.error("请上传合同凭证", { icon: "⚠️" });
       return;
     }
-    const total = price * qty;
-    const depositAmount = (total * selectedSupplier.depositRate) / 100;
-    const newContract: PurchaseContract = {
-      id: crypto.randomUUID(),
+    const items = validRows.map((row) => {
+      const product = products.find((p) => (p.id || p.sku_id) === row.productId);
+      const sku = row.sku?.trim() || product?.sku || product?.sku_id || "";
+      const skuName = row.skuName?.trim() || product?.name || "";
+      const qty = Number(row.quantity) || 0;
+      const unitPrice = Number(row.unitPrice) ?? (product?.cost_price ?? 0);
+      return {
+        sku: sku || "未填",
+        skuId: product?.sku_id || product?.id || undefined,
+        skuName: skuName || undefined,
+        spec: row.spec?.trim() || undefined,
+        quantity: qty,
+        unitPrice,
+      };
+    });
+    const body = {
       contractNumber: `PC-${Date.now()}`,
       supplierId: selectedSupplier.id,
       supplierName: selectedSupplier.name,
-      sku: `${skuCode} / ${skuName}`,
-      skuId: selectedProduct?.id || selectedProduct?.sku_id,
-      unitPrice: price,
-      totalQty: qty,
-      pickedQty: 0,
-      totalAmount: total,
       depositRate: selectedSupplier.depositRate,
-      depositAmount,
-      depositPaid: 0,
       tailPeriodDays: selectedSupplier.tailPeriodDays,
       deliveryDate: form.deliveryDate || undefined,
       status: "待发货",
       contractVoucher: form.contractVoucher,
-      totalPaid: 0,
-      totalOwed: total,
-      relatedOrderId: sourceOrder?.id,
-      relatedOrderNumber: sourceOrder?.orderNumber,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      relatedOrderIds: sourceOrder ? [sourceOrder.id] : [],
+      relatedOrderNumbers: sourceOrder ? [sourceOrder.orderNumber ?? ""] : [],
+      items,
     };
     try {
-      await upsertPurchaseContract(newContract);
-    } catch (err) {
-      console.error("创建合同失败", err);
-      toast.error("创建失败，请重试");
-      return;
-    }
-    setContracts((prev) => [...prev, newContract]);
-    
-    // 如果是从采购订单创建的，自动关联订单
-    if (sourceOrder) {
-      const linked = await linkPurchaseContract(
-        sourceOrder.id,
-        newContract.id,
-        newContract.contractNumber
-      );
-      if (linked) {
+      const res = await fetch("/api/purchase-contracts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const msg = err?.details ? `${err.error || "创建失败"}: ${err.details}` : (err?.error || "创建失败");
+        throw new Error(msg);
+      }
+      const newContract = await res.json();
+      setContracts((prev) => [...prev, newContract]);
+      if (sourceOrder) {
+        await linkPurchaseContract(sourceOrder.id, newContract.id, newContract.contractNumber);
         toast.success("采购合同创建成功，已自动关联采购订单", { icon: "✅" });
       } else {
         toast.success("采购合同创建成功", { icon: "✅" });
       }
       setSourceOrder(null);
-    } else {
-      toast.success("采购合同创建成功", { icon: "✅" });
+      setForm((f) => ({ ...f, deliveryDate: "", contractVoucher: "" }));
+      setFormItems([]);
+      setIsCreateOpen(false);
+      try {
+        const genRes = await fetch("/api/contracts/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ purchaseContractId: newContract.id }),
+        });
+        if (genRes.ok) {
+          const { id } = await genRes.json();
+          router.push(`/procurement/contracts/${id}`);
+        }
+      } catch (_) {}
+    } catch (err: any) {
+      console.error("创建合同失败", err);
+      toast.error(err?.message || "创建失败，请重试");
     }
-    
-    setForm((f) => ({ ...f, sku: "", unitPrice: "", quantity: "", deliveryDate: "", contractVoucher: "" }));
-    setIsCreateOpen(false);
   };
 
   // 打开详情模态框
   const openDetailModal = (contractId: string) => {
     setDetailModal({ contractId });
+  };
+
+  // 生成合同文档并跳转预览/下载
+  const handleGenerateContract = async (contractId: string) => {
+    try {
+      const res = await fetch("/api/contracts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purchaseContractId: contractId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "生成失败");
+      }
+      const { id } = await res.json();
+      router.push(`/procurement/contracts/${id}`);
+    } catch (e: any) {
+      toast.error(e?.message || "生成合同失败");
+    }
   };
 
   // 打开发起拿货模态框
@@ -1148,6 +1282,14 @@ export default function PurchaseOrdersPage() {
                     <td className="px-4 py-2 text-right">
                       <div className="flex flex-col gap-1 items-end">
                         <button
+                          onClick={() => handleGenerateContract(contract.id)}
+                          className="flex items-center gap-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
+                          title="生成合同并预览/下载 PDF"
+                        >
+                          <FileText className="h-3 w-3" />
+                          生成合同
+                        </button>
+                        <button
                           onClick={() => openDetailModal(contract.id)}
                           className="flex items-center gap-1 rounded-md border border-slate-600/40 bg-slate-800/40 px-2 py-1 text-xs font-medium text-slate-300 hover:bg-slate-700/40"
                         >
@@ -1248,60 +1390,6 @@ export default function PurchaseOrdersPage() {
             <form onSubmit={handleCreate} className="mt-4 space-y-4 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1">
-                  <span className="text-slate-300">SKU（商品库）</span>
-                  <select
-                    value={form.productId}
-                    onChange={(e) => {
-                      const pid = e.target.value;
-                      const prod = products.find((p) => (p.id || p.sku_id) === pid);
-                      if (prod) {
-                        const productId = prod.id || prod.sku_id || "";
-                        const productSku = prod.sku || prod.sku_id || "";
-                        const productName = prod.name || "";
-                        const productCost = prod.cost ?? prod.cost_price ?? 0;
-                        const productSupplierId = prod.primarySupplierId || prod.factory_id || "";
-                        setForm((f) => ({
-                          ...f,
-                          productId: productId,
-                          supplierId: productSupplierId || f.supplierId,
-                          unitPrice: String(productCost),
-                          sku: `${productSku} / ${productName}`
-                        }));
-                      } else {
-                        setForm((f) => ({
-                          ...f,
-                          productId: "",
-                          unitPrice: f.unitPrice,
-                          sku: f.sku
-                        }));
-                      }
-                    }}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                  >
-                    <option value="">手动输入 SKU</option>
-                    {products.map((p) => {
-                      const productId = p.id || p.sku_id || "";
-                      const productSku = p.sku || p.sku_id || "";
-                      const productName = p.name || "";
-                      const productCost = p.cost ?? p.cost_price ?? 0;
-                      return (
-                        <option key={productId} value={productId}>
-                          {productSku} / {productName}（成本 ¥{productCost.toFixed(2)}）
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <span className="text-slate-300">SKU 名称（若未选商品）</span>
-                  <input
-                    value={form.sku}
-                    onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                    placeholder="未选商品时手动输入"
-                  />
-                </label>
-                <label className="space-y-1">
                   <span className="text-slate-300">供应商</span>
                   <select
                     value={form.supplierId || selectedSupplier?.id || ""}
@@ -1309,9 +1397,7 @@ export default function PurchaseOrdersPage() {
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                     required
                   >
-                    <option value="" disabled>
-                      请选择
-                    </option>
+                    <option value="" disabled>请选择</option>
                     {suppliers.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}（定金 {s.depositRate}%，账期 {s.tailPeriodDays} 天）
@@ -1320,48 +1406,113 @@ export default function PurchaseOrdersPage() {
                   </select>
                 </label>
                 <label className="space-y-1">
-                  <span className="text-slate-300">单价 (元)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={form.unitPrice || (selectedProduct ? String(selectedProduct.cost ?? selectedProduct.cost_price ?? 0) : "")}
-                    onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                    required
-                  />
-                </label>
-                <label className="space-y-1 col-span-2">
-                  <span className="text-slate-300">合同总数</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step="1"
-                    value={form.quantity}
-                    onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                    required
-                  />
-                </label>
-                <label className="space-y-1 col-span-2">
                   <span className="text-slate-300">交货日期</span>
-                  <input
-                    type="date"
+                  <DateInput
                     value={form.deliveryDate}
-                    onChange={(e) => setForm((f) => ({ ...f, deliveryDate: e.target.value }))}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                    onChange={(v) => setForm((f) => ({ ...f, deliveryDate: v }))}
                     placeholder="选择交货日期"
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   />
                   <p className="text-xs text-slate-500 mt-1">用于跟进生产进度，建议设置</p>
                 </label>
               </div>
 
+              {/* 物料明细：按产品原型选变体 */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-slate-300 font-medium">物料明细</span>
+                  <button
+                    type="button"
+                    onClick={openVariantModalContract}
+                    className="flex items-center gap-1 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
+                  >
+                    <Palette className="h-3 w-3" />
+                    按产品原型选变体
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  先选产品原型（如马扎05），再为各颜色填写数量，可一次生成多行。
+                </p>
+                <div className="rounded-lg border border-slate-800 overflow-hidden">
+                  {formItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-8 px-4 bg-slate-900/40 text-slate-400 text-sm">
+                      <Palette className="h-8 w-8 text-slate-500" />
+                      <p>暂无物料</p>
+                      <p className="text-xs">请点击上方「按产品原型选变体」添加</p>
+                    </div>
+                  ) : (
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-800/80">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left text-slate-400 w-8">#</th>
+                        <th className="px-2 py-1.5 text-left text-slate-400">品名 / 规格</th>
+                        <th className="px-2 py-1.5 text-left text-slate-400 w-24">规格备注</th>
+                        <th className="px-2 py-1.5 text-right text-slate-400 w-16">数量</th>
+                        <th className="px-2 py-1.5 text-right text-slate-400 w-20">单价(元)</th>
+                        <th className="px-2 py-1.5 text-right text-slate-400 w-20">小计</th>
+                        <th className="px-2 py-1.5 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {formItems.map((row, idx) => {
+                        const lineTotal = (Number(row.quantity) || 0) * (Number(row.unitPrice) || 0);
+                        const displayName = [row.skuName || row.sku, row.spec].filter(Boolean).join(" · ") || "—";
+                        return (
+                          <tr key={row.tempId} className="bg-slate-900/40">
+                            <td className="px-2 py-1.5 text-slate-500">{idx + 1}</td>
+                            <td className="px-2 py-1.5 text-slate-200">{displayName}</td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                value={row.spec}
+                                onChange={(e) => setFormItems((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, spec: e.target.value } : r)))}
+                                placeholder="规格备注"
+                                className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={row.quantity}
+                                onChange={(e) => setFormItems((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, quantity: e.target.value } : r)))}
+                                className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-200"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={row.unitPrice}
+                                onChange={(e) => setFormItems((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, unitPrice: e.target.value } : r)))}
+                                className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-200"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-right text-slate-200 font-mono">{currency(lineTotal)}</td>
+                            <td className="px-2 py-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setFormItems((prev) => prev.filter((r) => r.tempId !== row.tempId))}
+                                className="text-slate-400 hover:text-rose-400"
+                                title="删除行"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  )}
+                </div>
+              </div>
+
               <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-200">
                 <div className="flex flex-wrap items-center gap-4">
                   <div>预计总额：{currency(totalAmount)}</div>
-                  <div>
-                    定金比例：{selectedSupplier ? selectedSupplier.depositRate : "--"}%
-                  </div>
+                  <div>定金比例：{selectedSupplier ? selectedSupplier.depositRate : "--"}%</div>
                   <div className="text-amber-200">需付定金：{currency(depositPreview)}</div>
                 </div>
               </div>
@@ -1405,6 +1556,132 @@ export default function PurchaseOrdersPage() {
                 </button>
               </div>
             </form>
+
+            {/* 按产品原型选变体弹窗 */}
+            {variantModalOpen && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+                <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                    <h3 className="text-lg font-semibold text-slate-100">按产品原型选择变体</h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVariantModalOpen(false);
+                        setSelectedSpuContract(null);
+                        setVariantQuantities({});
+                        setVariantSearchContract("");
+                      }}
+                      className="text-slate-400 hover:text-slate-200"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-4 flex-shrink-0">
+                    先选规格/型号，再在下方为各颜色填写数量；未选规格前不显示颜色列表。
+                  </p>
+                  <div className="flex-shrink-0 mb-4">
+                    <label className="block text-sm text-slate-300 mb-2">规格 / 型号</label>
+                    <select
+                      value={selectedSpuContract?.productId ?? ""}
+                      onChange={(e) => {
+                        const spu = spuOptions.find((s) => s.productId === e.target.value);
+                        if (spu) onSelectSpuInModal(spu);
+                      }}
+                      disabled={!!loadingSpuId}
+                      className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-primary-400 disabled:opacity-60"
+                    >
+                      <option value="">请选择规格/型号（如 mz03）</option>
+                      {spuOptions.map((spu) => (
+                        <option key={spu.productId} value={spu.productId}>
+                          {spu.name}（{loadingSpuId === spu.productId ? "加载中…" : `${spu.variants.length} 个颜色`}）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {selectedSpuContract && (
+                    <>
+                      <div className="flex-shrink-0 mb-2 flex items-center gap-2">
+                        <Search className="h-4 w-4 text-slate-500" />
+                        <input
+                          type="text"
+                          value={variantSearchContract}
+                          onChange={(e) => setVariantSearchContract(e.target.value)}
+                          placeholder="按颜色或 SKU 搜索…"
+                          className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-primary-400"
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 mb-2 flex-shrink-0">数量矩阵：在同规格下为各颜色直接填写采购数量</p>
+                    </>
+                  )}
+                  <div className="space-y-3 overflow-y-auto flex-1 min-h-0">
+                    {selectedSpuContract ? (
+                      (() => {
+                        const kw = variantSearchContract.trim().toLowerCase();
+                        const list = kw
+                          ? selectedSpuContract.variants.filter(
+                              (v) =>
+                                (v.color || "").toLowerCase().includes(kw) ||
+                                (v.sku_id || "").toLowerCase().includes(kw)
+                            )
+                          : selectedSpuContract.variants;
+                        return list.length > 0 ? (
+                          list.map((v) => (
+                        <div
+                          key={v.sku_id}
+                          className="flex items-center gap-4 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3 flex-shrink-0"
+                        >
+                          <span className="text-slate-200 font-medium w-20 truncate">{v.color || v.sku_id}</span>
+                          <span className="text-slate-500 text-sm flex-1 truncate">{v.sku_id}</span>
+                          <span className="text-slate-400 text-sm whitespace-nowrap">
+                            ¥{Number((v as Product).cost_price ?? 0).toFixed(2)}
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={variantQuantities[v.sku_id!] ?? ""}
+                            onChange={(e) =>
+                              setVariantQuantities((prev) => ({ ...prev, [v.sku_id!]: e.target.value }))
+                            }
+                            className="w-24 rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-right text-slate-100 outline-none focus:border-primary-400"
+                          />
+                          <span className="text-slate-500 text-sm w-6">件</span>
+                        </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-6 text-slate-500 text-sm">
+                            {variantSearchContract.trim() ? "未匹配到该颜色或 SKU，请修改搜索词" : "该规格下暂无变体"}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="text-center py-8 text-slate-500 text-sm">请先选择规格/型号</div>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVariantModalOpen(false);
+                        setSelectedSpuContract(null);
+                        setVariantQuantities({});
+                        setVariantSearchContract("");
+                      }}
+                      className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmVariantSelectionContract}
+                      className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-600"
+                    >
+                      确定并加入明细
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

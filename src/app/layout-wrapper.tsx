@@ -7,6 +7,7 @@ import { useSWRConfig } from "swr";
 import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
+import { isPathAllowedForDepartment } from "@/lib/permissions";
 
 // 动态导入 Sidebar，禁用 SSR，避免初始化错误
 const Sidebar = dynamic(() => import("@/components/Sidebar"), {
@@ -157,7 +158,14 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 已登录，允许访问
+    // 已登录：按部门校验路径权限（如全球供应链部/全球供应链部门 仅能访问产品中心、供应链相关；支持按 code 或 name 匹配）
+    const departmentCode = (session?.user as any)?.departmentCode ?? null;
+    const departmentName = (session?.user as any)?.departmentName ?? null;
+    if ((departmentCode || departmentName) && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName)) {
+      setIsChecking(false);
+      router.replace("/product-center/products");
+      return;
+    }
     setIsChecking(false);
   }, [pathname, router, isLoginPage, session, status]);
 

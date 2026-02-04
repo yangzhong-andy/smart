@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
 
@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
+import { getAllowedNavLabels } from "@/lib/permissions";
 
 import { LucideIcon } from "lucide-react";
 
@@ -141,6 +142,15 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+
+  // 按部门权限过滤一级菜单（如全球供应链部/全球供应链部门 仅显示 产品中心、供应链；支持按 code 或 name 匹配）
+  const departmentCode = session?.user?.departmentCode ?? null;
+  const departmentName = session?.user?.departmentName ?? null;
+  const allowedLabels = getAllowedNavLabels(departmentCode, departmentName);
+  const visibleNavItems = useMemo(() => {
+    if (!allowedLabels) return navItems;
+    return navItems.filter((item) => allowedLabels.includes(item.label));
+  }, [allowedLabels]);
   
   // 客户端初始化
   useEffect(() => {
@@ -156,7 +166,7 @@ export default function Sidebar() {
       // 默认展开当前路径所在的父级菜单
       const currentPath = pathname || "";
       const expanded: string[] = [];
-      navItems.forEach((item) => {
+      visibleNavItems.forEach((item) => {
         if (item.children) {
           const hasActiveChild = item.children.some((child) => child.href === currentPath);
           if (hasActiveChild) {
@@ -168,7 +178,7 @@ export default function Sidebar() {
     } catch (e) {
       console.error("Failed to initialize sidebar:", e);
     }
-  }, [pathname]);
+  }, [pathname, visibleNavItems]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -315,7 +325,7 @@ export default function Sidebar() {
             }
           }
         `}</style>
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           if (item.children) {
             const isExpanded = expandedItems.includes(item.label);
             const hasActiveChild = isParentActive(item);

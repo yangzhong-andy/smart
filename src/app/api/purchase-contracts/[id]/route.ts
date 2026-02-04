@@ -19,6 +19,20 @@ const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
   '已取消': PurchaseContractStatus.CANCELLED
 }
 
+function parseContractVoucher(v: string | null | undefined): string | string[] | undefined {
+  if (v == null || v === '') return undefined
+  const s = String(v).trim()
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s)
+      return Array.isArray(arr) ? arr : s
+    } catch {
+      return s
+    }
+  }
+  return s
+}
+
 // GET - 获取单个采购合同
 export async function GET(
   request: NextRequest,
@@ -72,7 +86,7 @@ export async function GET(
       tailPeriodDays: contract.tailPeriodDays,
       deliveryDate: contract.deliveryDate?.toISOString() || undefined,
       status: STATUS_MAP_DB_TO_FRONT[contract.status],
-      contractVoucher: contract.contractVoucher || undefined,
+      contractVoucher: parseContractVoucher(contract.contractVoucher),
       totalPaid: Number(contract.totalPaid),
       totalOwed: Number(contract.totalOwed),
       relatedOrderIds: contract.relatedOrderIds || [],
@@ -105,7 +119,15 @@ export async function PUT(
     if (body.tailPeriodDays !== undefined) updateData.tailPeriodDays = Number(body.tailPeriodDays)
     if (body.deliveryDate !== undefined) updateData.deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : null
     if (body.status !== undefined) updateData.status = STATUS_MAP_FRONT_TO_DB[body.status] || PurchaseContractStatus.PENDING_SHIPMENT
-    if (body.contractVoucher !== undefined) updateData.contractVoucher = body.contractVoucher || null
+    if (body.contractVoucher !== undefined) {
+      const v = body.contractVoucher
+      updateData.contractVoucher =
+        v == null || v === ''
+          ? null
+          : Array.isArray(v)
+            ? JSON.stringify(v)
+            : String(v).trim() || null
+    }
     if (body.totalPaid !== undefined) updateData.totalPaid = Number(body.totalPaid)
     if (body.totalOwed !== undefined) updateData.totalOwed = Number(body.totalOwed)
     if (body.relatedOrderIds !== undefined) updateData.relatedOrderIds = body.relatedOrderIds || []
@@ -150,7 +172,7 @@ export async function PUT(
       tailPeriodDays: contract.tailPeriodDays,
       deliveryDate: contract.deliveryDate?.toISOString() || undefined,
       status: STATUS_MAP_DB_TO_FRONT[contract.status],
-      contractVoucher: contract.contractVoucher || undefined,
+      contractVoucher: parseContractVoucher(contract.contractVoucher),
       totalPaid: Number(contract.totalPaid),
       totalOwed: Number(contract.totalOwed),
       relatedOrderIds: contract.relatedOrderIds || [],

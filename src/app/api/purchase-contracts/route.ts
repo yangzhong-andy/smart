@@ -20,6 +20,21 @@ const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
   '已取消': PurchaseContractStatus.CANCELLED
 }
 
+// 合同凭证从 DB 读出时可能是 JSON 字符串（多图），解析为 string | string[] 供前端
+function parseContractVoucher(v: string | null | undefined): string | string[] | undefined {
+  if (v == null || v === '') return undefined
+  const s = String(v).trim()
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s)
+      return Array.isArray(arr) ? arr : s
+    } catch {
+      return s
+    }
+  }
+  return s
+}
+
 // GET - 获取所有采购合同
 export async function GET(request: NextRequest) {
   try {
@@ -73,7 +88,7 @@ export async function GET(request: NextRequest) {
         tailPeriodDays: contract.tailPeriodDays,
         deliveryDate: contract.deliveryDate ? contract.deliveryDate.toISOString() : undefined,
         status: STATUS_MAP_DB_TO_FRONT[contract.status] || contract.status,
-        contractVoucher: contract.contractVoucher || undefined,
+        contractVoucher: parseContractVoucher(contract.contractVoucher),
         totalPaid: Number(contract.totalPaid),
         totalOwed: Number(contract.totalOwed),
         relatedOrderIds: contract.relatedOrderIds || [],
@@ -135,66 +150,84 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!body.sku || !body.unitPrice || !body.totalQty) {
+    const itemsInput = Array.isArray(body.items) && body.items.length > 0
+      ? body.items
+      : [{ sku: body.sku, skuId: body.skuId, skuName: body.skuName, spec: body.spec, quantity: Number(body.totalQty), unitPrice: Number(body.unitPrice) }]
+
+    const firstInput = itemsInput[0]
+    if (!firstInput?.sku || firstInput.unitPrice == null || !firstInput.quantity) {
       return NextResponse.json(
-        { error: 'SKU、单价和下单数量是必填项' },
+        { error: '至少需要一条物料：SKU、单价和数量为必填项' },
         { status: 400 }
       )
     }
 
-    // 计算合同总额
-    const totalAmount = Number(body.unitPrice) * Number(body.totalQty)
+    const totalAmount = itemsInput.reduce((sum: number, it: any) => {
+      const qty = Number(it.quantity) || 0
+      const up = Number(it.unitPrice) || 0
+      return sum + qty * up
+    }, 0)
     const depositRate = Number(body.depositRate) || 0
     const depositAmount = (totalAmount * depositRate) / 100
+    const totalQty = Math.round(itemsInput.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0))
 
-    // 如果提供了 skuId，查找对应的 variantId
-    let variantId: string | null = null
-    if (body.skuId || body.variantId) {
-      const variant = await prisma.productVariant.findUnique({
-        where: { skuId: body.skuId || body.variantId }
-      })
-      if (variant) {
-        variantId = variant.id
-      }
+    // 合同凭证：数据库为 String，前端可能传 string 或 string[]，统一转为 string 存储
+    const contractVoucherStr =
+      body.contractVoucher == null
+        ? null
+        : Array.isArray(body.contractVoucher)
+          ? JSON.stringify(body.contractVoucher)
+          : String(body.contractVoucher).trim() || null
+
+    const resolveVariantId = async (skuId: string | undefined) => {
+      if (!skuId) return null
+      const variant = await prisma.productVariant.findUnique({ where: { skuId } })
+      return variant?.id ?? null
     }
 
-    // 创建合同
-    // 注意：PurchaseContract 模型中仍需要 sku, unitPrice, totalQty 字段（用于向后兼容）
-    // 这些值从第一个 item 中获取
     const contract = await prisma.purchaseContract.create({
       data: {
         contractNumber: body.contractNumber,
         supplierId: body.supplierId || null,
         supplierName: body.supplierName,
-        sku: body.sku, // 必需字段，从第一个 item 获取
-        skuId: body.skuId || null,
-        unitPrice: Number(body.unitPrice), // 必需字段
-        totalQty: Number(body.totalQty), // 必需字段
+        sku: firstInput.sku,
+        skuId: firstInput.skuId || null,
+        unitPrice: Number(firstInput.unitPrice),
+        totalQty,
         pickedQty: 0,
         finishedQty: 0,
-        totalAmount: totalAmount,
-        depositRate: depositRate,
-        depositAmount: depositAmount,
+        totalAmount,
+        depositRate,
+        depositAmount,
         depositPaid: 0,
-        tailPeriodDays: Number(body.tailPeriodDays) || 0,
+        tailPeriodDays: Math.round(Number(body.tailPeriodDays) || 0),
         deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : null,
         status: STATUS_MAP_FRONT_TO_DB[body.status] || PurchaseContractStatus.PENDING_SHIPMENT,
-        contractVoucher: body.contractVoucher || null,
+        contractVoucher: contractVoucherStr,
         totalPaid: 0,
         totalOwed: totalAmount,
         relatedOrderIds: body.relatedOrderIds || [],
         relatedOrderNumbers: body.relatedOrderNumbers || [],
-        // 创建合同项
         items: {
-          create: {
-            sku: body.sku,
-            variantId: variantId,
-            unitPrice: Number(body.unitPrice),
-            qty: Number(body.totalQty),
-            pickedQty: 0,
-            finishedQty: 0,
-            totalAmount: totalAmount
-          }
+          create: await Promise.all(itemsInput.map(async (it: any, idx: number) => {
+            const qty = Math.round(Number(it.quantity) || 0)
+            const unitPrice = Number(it.unitPrice) || 0
+            const lineTotal = qty * unitPrice
+            const variantId = await resolveVariantId(it.skuId || it.variantId)
+            const itemData: any = {
+              sku: it.sku,
+              skuName: it.skuName || null,
+              spec: it.spec || null,
+              unitPrice,
+              qty,
+              pickedQty: 0,
+              finishedQty: 0,
+              totalAmount: lineTotal,
+              sortOrder: idx
+            }
+            if (variantId) itemData.variant = { connect: { id: variantId } }
+            return itemData
+          }))
         }
       },
       include: {
@@ -210,17 +243,18 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // 转换格式
+    // 转换格式（多行时 totalQty 用合同汇总值）
     const firstItem = contract.items[0]
+    const totalQtyFromItems = contract.items.reduce((s, i) => s + i.qty, 0)
     const transformed = {
       id: contract.id,
       contractNumber: contract.contractNumber,
       supplierId: contract.supplierId || '',
       supplierName: contract.supplierName,
-      sku: body.sku,
-      skuId: body.skuId || undefined,
+      sku: firstItem ? `${firstItem.sku}${contract.items.length > 1 ? ` 等${contract.items.length}项` : ''}` : (body.sku || ''),
+      skuId: firstItem?.variantId || body.skuId || undefined,
       unitPrice: Number(firstItem?.unitPrice || body.unitPrice),
-      totalQty: Number(firstItem?.qty || body.totalQty),
+      totalQty: totalQtyFromItems,
       pickedQty: 0,
       finishedQty: 0,
       totalAmount: Number(contract.totalAmount),
@@ -230,7 +264,7 @@ export async function POST(request: NextRequest) {
       tailPeriodDays: contract.tailPeriodDays,
       deliveryDate: contract.deliveryDate ? contract.deliveryDate.toISOString() : undefined,
       status: STATUS_MAP_DB_TO_FRONT[contract.status],
-      contractVoucher: contract.contractVoucher || undefined,
+      contractVoucher: parseContractVoucher(contract.contractVoucher),
       totalPaid: 0,
       totalOwed: Number(contract.totalOwed),
       relatedOrderIds: contract.relatedOrderIds || [],
@@ -251,8 +285,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const message = error?.message || '未知错误'
     return NextResponse.json(
-      { error: '创建采购合同失败', details: error.message },
+      { error: '创建采购合同失败', details: message },
       { status: 500 }
     )
   }

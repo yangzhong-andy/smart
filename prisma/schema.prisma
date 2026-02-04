@@ -219,15 +219,16 @@ model Supplier {
   defaultProducts  Product[]          @relation("DefaultSupplier") // 作为默认供应商的产品
 }
 
-// Product (SPU - Standard Product Unit) - 产品
+// Product (SPU) - 产品原型（父表）：通用材质、规格描述，一单多变体合同用
 model Product {
   id          String        @id @default(uuid())
-  name        String // 产品名称
+  name        String // 产品名称（如：马扎05）
   category    String? // 分类
   brand       String? // 品牌
   description String? // 产品描述
   mainImage   String? // 主图
-  material    String? // 材质
+  material    String? // 材质（合同展示用）
+  specDescription String? // 规格描述（合同展示用，参考附件）
   status      ProductStatus @default(ACTIVE) // 产品状态
   suppliers   Json? // 供应商信息（JSON）
 
@@ -241,7 +242,7 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // 一对多关系：一个 Product 可以有多个 ProductVariant
+  // 子表：多个 Sku（颜色、单价、编码）
   variants ProductVariant[]
 
   // 关联关系
@@ -254,7 +255,7 @@ model Product {
   @@index([defaultSupplierId])
 }
 
-// ProductVariant (SKU - Stock Keeping Unit) - 产品变体
+// ProductVariant (Sku 子表) - 颜色变体：颜色、单价、编码
 model ProductVariant {
   id            String   @id @default(uuid())
   productId     String // 关联的 Product (SPU) ID
@@ -640,9 +641,10 @@ model PurchaseContract {
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 
-  deliveryOrders DeliveryOrder[]
-  orders         PurchaseOrder[] // 通过 contractId 关联的采购订单
-  items          PurchaseContractItem[] // 合同明细（支持多 SKU）
+  deliveryOrders      DeliveryOrder[]
+  orders              PurchaseOrder[] // 通过 contractId 关联的采购订单
+  items               PurchaseContractItem[] // 合同明细（支持多 SKU）
+  generatedContracts  GeneratedContract[]
 }
 
 model DeliveryOrder {
@@ -852,6 +854,26 @@ model CashFlow {
   @@index([createdAt])
 }
 
+// 采购订单行（多 SKU 明细）
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  sku         String
+  skuId       String?
+  skuName     String?  // 品名
+  spec        String?  // 规格
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(18, 2)
+  totalAmount Decimal  @db.Decimal(18, 2)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
 model PurchaseOrder {
   id          String  @id @default(uuid())
   orderNumber String  @unique
@@ -862,13 +884,16 @@ model PurchaseOrder {
   platform             Platform
   storeId              String?
   storeName            String?
-  sku                  String
+  // 兼容旧单：无明细时使用以下字段
+  sku                  String?
   skuId                String?
   productName          String?
-  quantity             Int
+  quantity             Int?
   expectedDeliveryDate DateTime?
   urgency              String    @default("普通")
   notes                String?
+
+  items OrderItem[] // 订单明细（多 SKU）
 
   // 风控评估
   riskControlStatus   String    @default("待评估")
@@ -901,8 +926,9 @@ model PurchaseOrder {
   updatedAt DateTime            @updatedAt
 
   // 关联关系
-  store           Store?      @relation(fields: [storeId], references: [id], onDelete: SetNull)
-  currentStepDept Department? @relation(fields: [currentStep], references: [id], onDelete: SetNull)
+  store               Store?               @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  currentStepDept     Department?          @relation(fields: [currentStep], references: [id], onDelete: SetNull)
+  generatedContracts  GeneratedContract[]
 
   @@index([currentStep])
   @@index([status])
@@ -912,6 +938,22 @@ model PurchaseOrder {
   @@index([approvalStatus])
   @@index([riskControlStatus])
   @@index([contractId])
+}
+
+// 生成的合同文档（下单即生成，用于预览/打印/PDF）
+model GeneratedContract {
+  id                  String    @id @default(uuid())
+  contractNumber      String    // 合同编号（与采购合同号或订单号关联）
+  purchaseOrderId     String?   // 关联采购订单（可选）
+  purchaseContractId  String?   // 关联采购合同（可选）
+  snapshot            Json      // 填充后的合同数据：供应商、物料、金额大写、交货日期等
+  createdAt           DateTime  @default(now())
+
+  purchaseOrder    PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId])
+  @@index([purchaseContractId])
 }
 
 // 产品-供应商关联表（多对多关系）
@@ -938,20 +980,22 @@ model ProductSupplier {
 model PurchaseContractItem {
   id          String   @id @default(uuid())
   contractId  String
-  variantId   String? // 产品变体 (SKU) ID
-  sku         String // SKU 编码（冗余字段）
+  variantId   String?  // 产品变体 (SKU) ID
+  sku         String   // SKU 编码（冗余字段）
+  skuName     String?  // 品名（合同物料明细用）
+  spec        String?  // 规格（合同物料明细用）
   unitPrice   Decimal  @db.Decimal(18, 2)
   qty         Int
   pickedQty   Int      @default(0) // 已取货数
   finishedQty Int      @default(0) // 工厂完工数
   totalAmount Decimal  @db.Decimal(18, 2)
+  sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   contract PurchaseContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
   variant  ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
-  @@unique([contractId, variantId])
   @@index([contractId])
   @@index([variantId])
 }

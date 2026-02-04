@@ -16,6 +16,7 @@ import { INCOME_CATEGORIES, formatIncomeCategoryDisplay, parseIncomeCategory } f
 import { formatMoney } from "@/lib/constants/currency";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import ImageUploader from "@/components/ImageUploader";
+import DateInput from "@/components/DateInput";
 
 export type CashFlow = {
   id: string;
@@ -1060,30 +1061,28 @@ export default function CashFlowPage() {
               
               <div className="space-y-1">
                 <label className="text-xs text-slate-400">开始日期</label>
-                <input
-                  type="date"
-                  lang="zh-CN"
+                <DateInput
                   value={filterDateFrom}
-                  onChange={(e) => {
-                    setFilterDateFrom(e.target.value);
+                  onChange={(v) => {
+                    setFilterDateFrom(v);
                     setFilterYear("");
                     setFilterMonth("");
                   }}
+                  placeholder="选择开始日期"
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                 />
               </div>
               
               <div className="space-y-1">
                 <label className="text-xs text-slate-400">结束日期</label>
-                <input
-                  type="date"
-                  lang="zh-CN"
+                <DateInput
                   value={filterDateTo}
-                  onChange={(e) => {
-                    setFilterDateTo(e.target.value);
+                  onChange={(v) => {
+                    setFilterDateTo(v);
                     setFilterYear("");
                     setFilterMonth("");
                   }}
+                  placeholder="选择结束日期"
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                 />
               </div>

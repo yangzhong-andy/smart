@@ -94,8 +94,48 @@ export function getProducts(): Product[] {
   }
 }
 
+/** SPU 列表项（用于下拉或产品卡片聚合，按需再拉变体） */
+export type SpuListItem = {
+  productId: string
+  name: string
+  variantCount: number
+  mainImage?: string
+  status?: string
+  category?: string
+}
+
 /**
- * 从 API 获取所有产品
+ * 仅拉取 SPU 列表（用于下单/合同页下拉，不拉变体）
+ */
+export async function getSpuListFromAPI(): Promise<SpuListItem[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch("/api/products?list=spu");
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch SPU list", e);
+    return [];
+  }
+}
+
+/**
+ * 按需拉取单个 SPU 下的全部 SKU 变体（Prisma include 一次拿到，前端缓存；切换颜色/改数量零请求）
+ */
+export async function getVariantsBySpuIdFromAPI(spuId: string): Promise<Product[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const res = await fetch(`/api/products?spuId=${encodeURIComponent(spuId)}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to fetch variants by SPU", e);
+    return [];
+  }
+}
+
+/**
+ * 从 API 获取所有产品（全量，兼容其他页）
  */
 export async function getProductsFromAPI(): Promise<Product[]> {
   if (typeof window === "undefined") return [];

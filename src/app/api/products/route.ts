@@ -41,20 +41,165 @@ const mapToApiProduct = (p: any) => ({
   updatedAt: (p.updatedAt ?? p.updated_at ?? new Date()).toISOString?.() ?? p.updatedAt ?? p.updated_at,
 })
 
-// GET - 获取所有产品
-export async function GET() {
+// 将单个 Product (含 variants) 转为前端用的扁平 SKU 列表（与 GET 全量格式一致）
+function productToFlatVariants(product: any): any[] {
+  const transformed: any[] = []
+  if (product.variants.length === 0) {
+    transformed.push({
+      sku_id: `temp-${product.id}`,
+      name: product.name,
+      main_image: product.mainImage || '',
+      category: product.category || undefined,
+      brand: product.brand || undefined,
+      description: product.description || undefined,
+      material: product.material || undefined,
+      spec_description: (product as any).specDescription ?? undefined,
+      customs_name_cn: product.customsNameCN || undefined,
+      customs_name_en: product.customsNameEN || undefined,
+      default_supplier_id: product.defaultSupplierId || undefined,
+      default_supplier_name: product.defaultSupplier?.name || undefined,
+      status: product.status,
+      cost_price: 0,
+      target_roi: undefined,
+      currency: 'CNY' as const,
+      weight_kg: undefined,
+      length: undefined,
+      width: undefined,
+      height: undefined,
+      volumetric_divisor: undefined,
+      color: undefined,
+      size: undefined,
+      barcode: undefined,
+      stock_quantity: 0,
+      at_factory: 0,
+      at_domestic: 0,
+      in_transit: 0,
+      suppliers: product.suppliers ? JSON.parse(JSON.stringify(product.suppliers)) : undefined,
+      platform_sku_mapping: undefined,
+      factory_id: undefined,
+      factory_name: undefined,
+      moq: undefined,
+      lead_time: undefined,
+      product_id: product.id,
+      createdAt: product.createdAt.toISOString(),
+      updatedAt: product.updatedAt.toISOString()
+    })
+  } else {
+    const suppliers = (product.productSuppliers || []).map((ps: any) => ({
+      id: ps.supplier.id,
+      name: ps.supplier.name,
+      price: ps.price ? Number(ps.price) : undefined,
+      moq: ps.moq || undefined,
+      lead_time: ps.leadTime || undefined,
+      isPrimary: ps.isPrimary
+    }))
+    const primarySupplier = suppliers.find((s: any) => s.isPrimary) || suppliers[0]
+    for (const variant of product.variants) {
+      transformed.push({
+        sku_id: variant.skuId,
+        name: product.name,
+        main_image: product.mainImage || '',
+        category: product.category || undefined,
+        brand: product.brand || undefined,
+        description: product.description || undefined,
+        material: product.material || undefined,
+        spec_description: (product as any).specDescription ?? undefined,
+        customs_name_cn: product.customsNameCN || undefined,
+        customs_name_en: product.customsNameEN || undefined,
+        default_supplier_id: product.defaultSupplierId || undefined,
+        default_supplier_name: product.defaultSupplier?.name || undefined,
+        status: product.status,
+        cost_price: variant.costPrice ? Number(variant.costPrice) : 0,
+        target_roi: variant.targetRoi ? Number(variant.targetRoi) : undefined,
+        currency: variant.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
+        weight_kg: variant.weightKg ? Number(variant.weightKg) : undefined,
+        length: variant.lengthCm ? Number(variant.lengthCm) : undefined,
+        width: variant.widthCm ? Number(variant.widthCm) : undefined,
+        height: variant.heightCm ? Number(variant.heightCm) : undefined,
+        volumetric_divisor: variant.volumetricDivisor || undefined,
+        color: variant.color || undefined,
+        size: variant.size || undefined,
+        barcode: variant.barcode || undefined,
+        stock_quantity: variant.stockQuantity || 0,
+        at_factory: variant.atFactory || 0,
+        at_domestic: variant.atDomestic || 0,
+        in_transit: variant.inTransit || 0,
+        suppliers: suppliers.length > 0 ? suppliers : (product.suppliers ? JSON.parse(JSON.stringify(product.suppliers)) : undefined),
+        platform_sku_mapping: variant.platformSkuMapping ? JSON.parse(JSON.stringify(variant.platformSkuMapping)) : undefined,
+        factory_id: primarySupplier?.id || undefined,
+        factory_name: primarySupplier?.name || undefined,
+        moq: primarySupplier?.moq || undefined,
+        lead_time: primarySupplier?.lead_time || undefined,
+        product_id: product.id,
+        variant_id: variant.id,
+        createdAt: variant.createdAt.toISOString(),
+        updatedAt: variant.updatedAt.toISOString()
+      })
+    }
+  }
+  return transformed
+}
+
+// GET - 获取产品（支持三种模式：list=spu 仅 SPU 列表 | spuId=xxx 单 SPU 全量变体 | 无参全量，兼容旧逻辑）
+export async function GET(request: NextRequest) {
   try {
     if (isMock()) {
       return NextResponse.json(mockStore.map(mapToApiProduct))
     }
 
-    // 优化：移除手动连接，Prisma 会自动管理连接池
+    const { searchParams } = new URL(request.url)
+    const listSpu = searchParams.get('list') === 'spu'
+    const spuId = searchParams.get('spuId')
 
-    // 查询所有 Product (SPU) 及其关联的 ProductVariant (SKU)
+    // 模式 1：仅拉取 SPU 列表（主图、状态、变体数，用于产品卡片聚合展示）
+    if (listSpu) {
+      const products = await prisma.product.findMany({
+        select: { id: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
+        orderBy: { createdAt: 'desc' }
+      })
+      const list = products.map((p) => ({
+        productId: p.id,
+        name: p.name,
+        mainImage: p.mainImage ?? '',
+        status: p.status,
+        category: p.category ?? undefined,
+        variantCount: p._count.variants
+      }))
+      return NextResponse.json(list)
+    }
+
+    // 模式 2：按需拉取单个 SPU 及其全部 SKU（include 一次性拿到，前端缓存）
+    if (spuId) {
+      const product = await prisma.product.findUnique({
+        where: { id: spuId },
+        include: {
+          variants: {
+            orderBy: [
+              { color: 'asc' },
+              { size: 'asc' },
+              { skuId: 'asc' }
+            ]
+          },
+          productSuppliers: { include: { supplier: true } },
+          defaultSupplier: { select: { id: true, name: true } }
+        }
+      })
+      if (!product) {
+        return NextResponse.json({ error: '产品不存在' }, { status: 404 })
+      }
+      const transformed = productToFlatVariants(product)
+      return NextResponse.json(transformed)
+    }
+
+    // 模式 3：无参，全量（兼容原有 getProductsFromAPI 等调用）
     const products = await prisma.product.findMany({
       include: {
         variants: {
-          orderBy: { createdAt: 'desc' }
+          orderBy: [
+            { color: 'asc' },
+            { size: 'asc' },
+            { skuId: 'asc' }
+          ]
         },
         productSuppliers: {
           include: {
@@ -70,112 +215,12 @@ export async function GET() {
       },
       orderBy: { createdAt: 'desc' }
     })
-    
-    console.log(`成功查询到 ${products.length} 个产品 (SPU)`)
-    
-    // 转换格式：将每个 ProductVariant 转换为前端 Product 格式
-    // 为了保持向后兼容，我们返回所有 SKU（ProductVariant）的列表
+
     const transformed: any[] = []
-    
     for (const product of products) {
-      // 如果没有 variants，创建一个默认的 variant（向后兼容）
-      if (product.variants.length === 0) {
-        transformed.push({
-          sku_id: `temp-${product.id}`, // 临时 SKU ID
-          name: product.name,
-          main_image: product.mainImage || '',
-          category: product.category || undefined,
-          brand: product.brand || undefined,
-          description: product.description || undefined,
-          material: product.material || undefined,
-          customs_name_cn: product.customsNameCN || undefined,
-          customs_name_en: product.customsNameEN || undefined,
-          default_supplier_id: product.defaultSupplierId || undefined,
-          default_supplier_name: product.defaultSupplier?.name || undefined,
-          status: product.status,
-          cost_price: 0,
-          target_roi: undefined,
-          currency: 'CNY' as const,
-          weight_kg: undefined,
-          length: undefined,
-          width: undefined,
-          height: undefined,
-          volumetric_divisor: undefined,
-          color: undefined,
-          size: undefined,
-          barcode: undefined,
-          stock_quantity: 0,
-          at_factory: 0,
-          at_domestic: 0,
-          in_transit: 0,
-          suppliers: product.suppliers ? JSON.parse(JSON.stringify(product.suppliers)) : undefined,
-          platform_sku_mapping: undefined,
-          factory_id: undefined,
-          factory_name: undefined,
-          moq: undefined,
-          lead_time: undefined,
-          product_id: product.id, // 新增：SPU ID
-          createdAt: product.createdAt.toISOString(),
-          updatedAt: product.updatedAt.toISOString()
-        })
-      } else {
-        // 为每个 variant 创建一个产品记录
-        for (const variant of product.variants) {
-          // 构建供应商信息
-          const suppliers = product.productSuppliers.map(ps => ({
-            id: ps.supplier.id,
-            name: ps.supplier.name,
-            price: ps.price ? Number(ps.price) : undefined,
-            moq: ps.moq || undefined,
-            lead_time: ps.leadTime || undefined,
-            isPrimary: ps.isPrimary
-          }))
-          
-          const primarySupplier = suppliers.find(s => s.isPrimary) || suppliers[0]
-          
-          transformed.push({
-            sku_id: variant.skuId,
-            name: product.name,
-            main_image: product.mainImage || '',
-            category: product.category || undefined,
-            brand: product.brand || undefined,
-            description: product.description || undefined,
-            material: product.material || undefined,
-            customs_name_cn: product.customsNameCN || undefined,
-            customs_name_en: product.customsNameEN || undefined,
-            default_supplier_id: product.defaultSupplierId || undefined,
-            default_supplier_name: product.defaultSupplier?.name || undefined,
-            status: product.status,
-            cost_price: variant.costPrice ? Number(variant.costPrice) : 0,
-            target_roi: variant.targetRoi ? Number(variant.targetRoi) : undefined,
-            currency: variant.currency as 'CNY' | 'USD' | 'HKD' | 'JPY' | 'GBP' | 'EUR',
-            weight_kg: variant.weightKg ? Number(variant.weightKg) : undefined,
-            length: variant.lengthCm ? Number(variant.lengthCm) : undefined,
-            width: variant.widthCm ? Number(variant.widthCm) : undefined,
-            height: variant.heightCm ? Number(variant.heightCm) : undefined,
-            volumetric_divisor: variant.volumetricDivisor || undefined,
-            color: variant.color || undefined,
-            size: variant.size || undefined,
-            barcode: variant.barcode || undefined,
-            stock_quantity: variant.stockQuantity || 0,
-            at_factory: variant.atFactory || 0,
-            at_domestic: variant.atDomestic || 0,
-            in_transit: variant.inTransit || 0,
-            suppliers: suppliers.length > 0 ? suppliers : (product.suppliers ? JSON.parse(JSON.stringify(product.suppliers)) : undefined),
-            platform_sku_mapping: variant.platformSkuMapping ? JSON.parse(JSON.stringify(variant.platformSkuMapping)) : undefined,
-            factory_id: primarySupplier?.id || undefined,
-            factory_name: primarySupplier?.name || undefined,
-            moq: primarySupplier?.moq || undefined,
-            lead_time: primarySupplier?.lead_time || undefined,
-            product_id: product.id, // 新增：SPU ID
-            variant_id: variant.id, // 新增：SKU ID
-            createdAt: variant.createdAt.toISOString(),
-            updatedAt: variant.updatedAt.toISOString()
-          })
-        }
-      }
+      transformed.push(...productToFlatVariants(product))
     }
-    
+
     return NextResponse.json(transformed)
   } catch (error: any) {
     console.error('Error fetching products:', error)
@@ -217,10 +262,176 @@ export async function GET() {
   }
 }
 
-// POST - 创建新产品
+async function createProductWithVariants(body: any, variantsInput: any[]) {
+  if (!body.name?.trim()) {
+    return NextResponse.json({ error: '产品名称必填' }, { status: 400 })
+  }
+  const skuIds = variantsInput.map((v: any) => (v.sku_id || '').trim()).filter(Boolean)
+  if (skuIds.length === 0) {
+    return NextResponse.json({ error: '至少需要一个有效的 SKU 编码' }, { status: 400 })
+  }
+  const uniqueSkuIds = [...new Set(skuIds)]
+  if (uniqueSkuIds.length !== skuIds.length) {
+    return NextResponse.json({ error: '变体 SKU 编码不能重复' }, { status: 400 })
+  }
+
+  const existing = await prisma.productVariant.findMany({
+    where: { skuId: { in: uniqueSkuIds } }
+  })
+  if (existing.length > 0) {
+    return NextResponse.json(
+      { error: `SKU 已存在：${existing.map(e => e.skuId).join(', ')}` },
+      { status: 400 }
+    )
+  }
+
+  let suppliersData = null
+  if (body.suppliers && Array.isArray(body.suppliers) && body.suppliers.length > 0) {
+    suppliersData = body.suppliers
+  } else if (body.factory_id) {
+    suppliersData = [{
+      id: body.factory_id,
+      name: body.factory_name || '',
+      price: variantsInput[0]?.cost_price ?? body.cost_price,
+      moq: body.moq,
+      lead_time: body.lead_time,
+      isPrimary: true
+    }]
+  }
+
+  // 优先用 product_id 查找已有产品（添加变体时前端会传），否则用 name
+  const intentAddToExisting = !!body.product_id
+  let product: { id: string } | null = null
+  if (body.product_id) {
+    product = await prisma.product.findUnique({
+      where: { id: String(body.product_id) }
+    })
+  }
+  if (!product && body.name?.trim()) {
+    product = await prisma.product.findFirst({
+      where: { name: body.name.trim() }
+    })
+  }
+  // 添加变体时若传了 product_id 却未找到产品，不创建新产品，直接报错
+  if (!product && intentAddToExisting) {
+    return NextResponse.json(
+      { error: '未找到对应的产品，请刷新产品列表后重试', code: 'PRODUCT_NOT_FOUND' },
+      { status: 400 }
+    )
+  }
+  if (!product) {
+    const createData: any = {
+        name: body.name.trim(),
+        category: body.category || null,
+        brand: body.brand || null,
+        description: body.description || null,
+        mainImage: body.main_image || null,
+        material: body.material || null,
+        customsNameCN: body.customs_name_cn || null,
+        customsNameEN: body.customs_name_en || null,
+        defaultSupplierId: body.default_supplier_id || null,
+        status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        suppliers: suppliersData ? JSON.parse(JSON.stringify(suppliersData)) : null
+      }
+    if ((body as any).spec_description) createData.specDescription = (body as any).spec_description
+    product = await prisma.product.create({ data: createData })
+  }
+
+  const currency = body.currency || 'CNY'
+  const createdVariants: any[] = []
+  for (let i = 0; i < variantsInput.length; i++) {
+    const v = variantsInput[i]
+    const skuId = (v.sku_id || '').trim()
+    if (!skuId) continue
+    const costPrice = Number(v.cost_price ?? v.unitPrice ?? 0)
+    const variant = await prisma.productVariant.create({
+      data: {
+        productId: product.id,
+        skuId,
+        color: v.color || null,
+        size: v.size || null,
+        weightKg: body.weight_kg ? parseFloat(String(body.weight_kg)) : null,
+        barcode: v.barcode || null,
+        costPrice: Number.isFinite(costPrice) ? costPrice : null,
+        stockQuantity: 0,
+        currency,
+        targetRoi: body.target_roi ? parseFloat(String(body.target_roi)) : null,
+        lengthCm: body.length ? parseFloat(String(body.length)) : null,
+        widthCm: body.width ? parseFloat(String(body.width)) : null,
+        heightCm: body.height ? parseFloat(String(body.height)) : null,
+        volumetricDivisor: body.volumetric_divisor ? parseInt(String(body.volumetric_divisor)) : null,
+        atFactory: 0,
+        atDomestic: 0,
+        inTransit: 0,
+        platformSkuMapping: null
+      }
+    })
+    createdVariants.push(variant)
+  }
+
+  if (suppliersData && Array.isArray(suppliersData)) {
+    for (const supplier of suppliersData) {
+      if (supplier.id) {
+        try {
+          await prisma.productSupplier.upsert({
+            where: {
+              productId_supplierId: {
+                productId: product.id,
+                supplierId: supplier.id
+              }
+            },
+            create: {
+              productId: product.id,
+              supplierId: supplier.id,
+              price: suppliersData[0]?.price ? parseFloat(String(suppliersData[0].price)) : null,
+              moq: suppliersData[0]?.moq || null,
+              leadTime: suppliersData[0]?.lead_time || null,
+              isPrimary: suppliersData[0]?.isPrimary || false
+            },
+            update: {}
+          })
+        } catch (err) {
+          // ignore
+        }
+      }
+    }
+  }
+
+  const v = createdVariants[0]
+  return NextResponse.json({
+    sku_id: v.skuId,
+    name: product.name,
+    main_image: product.mainImage || '',
+    category: product.category || undefined,
+    brand: product.brand || undefined,
+    description: product.description || undefined,
+    material: product.material || undefined,
+    customs_name_cn: product.customsNameCN || undefined,
+    customs_name_en: product.customsNameEN || undefined,
+    default_supplier_id: product.defaultSupplierId || undefined,
+    status: product.status,
+    cost_price: v.costPrice ? Number(v.costPrice) : 0,
+    currency: v.currency,
+    color: v.color || undefined,
+    size: v.size || undefined,
+    barcode: v.barcode || undefined,
+    product_id: product.id,
+    variant_id: v.id,
+    createdAt: v.createdAt.toISOString(),
+    updatedAt: v.updatedAt.toISOString()
+  }, { status: 201 })
+}
+
+// POST - 创建新产品（支持单变体或 body.variants 批量创建多变体）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    
+    // 批量创建多变体：body.variants = [{ color, sku_id, cost_price, size?, barcode? }, ...]
+    const variantsInput = Array.isArray(body.variants) && body.variants.length > 0 ? body.variants : null
+    if (variantsInput) {
+      return await createProductWithVariants(body, variantsInput)
+    }
     
     if (isMock()) {
       const exists = mockStore.find((p) => p.sku_id === body.sku_id || p.skuId === body.sku_id)

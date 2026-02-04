@@ -6,6 +6,7 @@ import type { CashFlow } from "../page";
 import { toast } from "sonner";
 import { enrichWithUID } from "@/lib/business-utils";
 import ImageUploader from "@/components/ImageUploader";
+import DateInput from "@/components/DateInput";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 
 type TransferEntryProps = {
@@ -223,13 +224,11 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1">
               <span className="text-slate-300">日期</span>
-              <input
-                type="date"
-                lang="zh-CN"
+              <DateInput
                 value={form.date}
-                onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, date: v }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                required
+                placeholder="选择日期"
               />
             </label>
             <label className="space-y-1">

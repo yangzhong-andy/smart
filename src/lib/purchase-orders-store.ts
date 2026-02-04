@@ -23,10 +23,21 @@ export type PurchaseOrder = {
   platform: "TikTok" | "Amazon" | "其他"; // 目标平台
   storeId?: string; // 目标店铺ID
   storeName?: string; // 目标店铺名称（冗余字段）
-  sku: string; // 产品SKU
+  sku: string; // 产品SKU（单行时为第一项 SKU）
   skuId?: string; // 产品SKU ID
   productName?: string; // 产品名称（冗余字段）
-  quantity: number; // 采购数量
+  quantity: number; // 采购数量（多行时为各 OrderItem 数量之和）
+  items?: Array<{
+    id?: string;
+    sku: string;
+    skuId?: string;
+    skuName?: string;
+    spec?: string;
+    quantity: number;
+    unitPrice: number;
+    totalAmount: number;
+    sortOrder?: number;
+  }>; // 订单明细（多 SKU 打平）
   expectedDeliveryDate?: string; // 期望到货日期（ISO date）
   urgency: "普通" | "紧急" | "加急"; // 紧急程度
   notes?: string; // 备注说明

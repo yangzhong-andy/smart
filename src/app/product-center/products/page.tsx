@@ -1,15 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
-import { type Product, type ProductStatus } from "@/lib/products-store";
-import { formatCurrency } from "@/lib/currency-utils";
+import { type Product, type ProductStatus, type SpuListItem, getSpuListFromAPI, getVariantsBySpuIdFromAPI, getProductsFromAPI } from "@/lib/products-store";
+import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import { PRODUCT_STATUS_LABEL } from "@/lib/enum-mapping";
-import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash } from "lucide-react";
+import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash, Palette } from "lucide-react";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { useWeightCalculation } from "@/hooks/use-weight-calculation";
+
+// 变体颜色/尺寸预设选项（下拉选择，可选「其他」后自定义）
+const VARIANT_COLOR_OPTIONS = ["红色", "蓝色", "黑色", "白色", "灰色", "黄色", "绿色", "粉色", "紫色", "橙色"];
+const VARIANT_SIZE_OPTIONS = ["S", "M", "L", "XL", "XXL", "均码"];
+const OTHER_LABEL = "其他";
+
+// 颜色名称 → 圆点展示用背景色（规格选择区颜色点）
+const COLOR_DOT_MAP: Record<string, string> = {
+  红色: "#ef4444", 蓝色: "#3b82f6", 黑色: "#1f2937", 白色: "#f3f4f6", 灰色: "#9ca3af",
+  黄色: "#eab308", 绿色: "#22c55e", 粉色: "#ec4899", 紫色: "#a855f7", 橙色: "#f97316"
+};
+const getColorDotStyle = (color: string | undefined) => {
+  if (!color?.trim()) return { backgroundColor: "#64748b", borderColor: "rgba(255,255,255,0.2)" };
+  const c = COLOR_DOT_MAP[color.trim()] ?? "#64748b";
+  return { backgroundColor: c, borderColor: "rgba(255,255,255,0.25)" };
+};
 
 // 格式化数字
 const formatNumber = (n: number) => {
@@ -47,7 +63,10 @@ async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
 }
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [spuList, setSpuList] = useState<SpuListItem[]>([]);
+  const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
+  const [expandedSpuId, setExpandedSpuId] = useState<string | null>(null);
+  const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [productsReady, setProductsReady] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -63,6 +82,11 @@ export default function ProductsPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [hoveredProductId, setHoveredProductId] = useState<string | null>(null);
   
+  type VariantRow = { tempId: string; color: string; sku_id: string; cost_price: string; size: string; barcode: string };
+  const newVariantRow = (): VariantRow => ({ tempId: crypto.randomUUID(), color: "", sku_id: "", cost_price: "", size: "", barcode: "" });
+  const [formVariants, setFormVariants] = useState<VariantRow[]>(() => [newVariantRow()]);
+  const [addVariantProduct, setAddVariantProduct] = useState<Product | null>(null);
+  const [addVariantFormVariants, setAddVariantFormVariants] = useState<VariantRow[]>(() => [newVariantRow()]);
   const [form, setForm] = useState({
     sku_id: "",
     name: "",
@@ -100,7 +124,7 @@ export default function ProductsPage() {
     }>
   });
 
-  const { data: swrProducts, error: productsError, mutate: mutateProducts } = useSWR<Product[]>('/api/products');
+  const { data: swrSpuList, error: productsError, mutate: mutateProducts } = useSWR<SpuListItem[]>('/api/products?list=spu');
 
   // 使用重量计算 Hook - 自动计算体积重和计费重量
   const weightCalculation = useWeightCalculation(
@@ -112,16 +136,14 @@ export default function ProductsPage() {
   );
 
   useEffect(() => {
-    if (swrProducts) {
-      // 确保 swrProducts 是数组
-      const productsArray = Array.isArray(swrProducts) ? swrProducts : [];
-      setProducts(productsArray);
+    if (swrSpuList) {
+      const list = Array.isArray(swrSpuList) ? swrSpuList : [];
+      setSpuList(list);
       setProductsReady(true);
-    } else if (swrProducts === undefined) {
-      // 数据还在加载中，保持 products 为空数组
-      setProducts([]);
+    } else if (swrSpuList === undefined) {
+      setSpuList([]);
     }
-  }, [swrProducts]);
+  }, [swrSpuList]);
 
   useEffect(() => {
     if (productsError) {
@@ -131,100 +153,60 @@ export default function ProductsPage() {
     }
   }, [productsError]);
 
+  const loadVariantsForSpu = useCallback(async (productId: string) => {
+    if (variantCache[productId]?.length) return;
+    setLoadingSpuId(productId);
+    try {
+      const variants = await getVariantsBySpuIdFromAPI(productId);
+      setVariantCache((prev) => ({ ...prev, [productId]: variants }));
+    } catch (e) {
+      toast.error("加载规格失败");
+    } finally {
+      setLoadingSpuId(null);
+    }
+  }, [variantCache]);
+
+  const products = useMemo(() => Object.values(variantCache).flat(), [variantCache]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     loadSuppliers().then(setSuppliers);
   }, []);
 
-  // 获取所有分类
+  // 获取所有分类（来自 SPU 列表）
   const categories = useMemo(() => {
-    // 确保 products 是数组
-    if (!Array.isArray(products)) {
-      return [];
-    }
-    const cats = products
-      .map((p) => p.category)
-      .filter((c): c is string => !!c);
+    const cats = spuList.map((s) => s.category).filter((c): c is string => !!c);
     return Array.from(new Set(cats)).sort();
-  }, [products]);
+  }, [spuList]);
 
-  // 筛选和排序后的产品列表
-  const filteredProducts = useMemo(() => {
-    // 确保 products 是数组
-    if (!Array.isArray(products)) {
-      return [];
-    }
-    let result = [...products];
-    
-    // 1. 状态筛选
+  // 筛选和排序后的 SPU 列表（一个 SPU 一张卡片）
+  const filteredSpuList = useMemo(() => {
+    let result = [...spuList];
     if (filterStatus !== "all") {
-      result = result.filter((p) => p.status === filterStatus);
+      result = result.filter((s) => (s.status as string) === filterStatus);
     }
-    
-    // 2. 分类筛选
     if (filterCategory !== "all") {
-      result = result.filter((p) => p.category === filterCategory);
+      result = result.filter((s) => s.category === filterCategory);
     }
-    
-    // 3. 工厂筛选
-    if (filterFactory !== "all") {
-      result = result.filter((p) => p.factory_id === filterFactory);
-    }
-    
-    // 4. 关键词搜索
     if (searchKeyword.trim()) {
       const keyword = searchKeyword.toLowerCase();
-      result = result.filter((p) =>
-        p.sku_id.toLowerCase().includes(keyword) ||
-        p.name.toLowerCase().includes(keyword) ||
-        (p.category && p.category.toLowerCase().includes(keyword)) ||
-        (p.factory_name && p.factory_name.toLowerCase().includes(keyword))
+      result = result.filter((s) =>
+        s.name.toLowerCase().includes(keyword) || (s.category && s.category.toLowerCase().includes(keyword))
       );
     }
-    
-    // 5. 排序
-    if (sortBy !== "none") {
-      result.sort((a, b) => {
-        let aVal: any;
-        let bVal: any;
-        
-        switch (sortBy) {
-          case "name":
-            aVal = a.name;
-            bVal = b.name;
-            break;
-          case "cost":
-            aVal = a.cost_price;
-            bVal = b.cost_price;
-            break;
-          case "created":
-            aVal = new Date(a.createdAt).getTime();
-            bVal = new Date(b.createdAt).getTime();
-            break;
-          default:
-            return 0;
-        }
-        
-        if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
-        if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
-        return 0;
-      });
-    } else {
-      // 默认按SKU排序
-      result.sort((a, b) => a.sku_id.localeCompare(b.sku_id, "zh-Hans-CN"));
-    }
-    
+    result.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh-Hans-CN"));
     return result;
-  }, [products, filterStatus, filterCategory, filterFactory, searchKeyword, sortBy, sortOrder]);
+  }, [spuList, filterStatus, filterCategory, searchKeyword]);
 
-  // 产品统计摘要
+  const filteredProducts = useMemo(() => products, [products]);
+
+  // 产品统计摘要（按 SPU 卡片数）
   const productSummary = useMemo(() => {
-    const totalCount = filteredProducts.length;
-    const onSaleCount = filteredProducts.filter((p) => p.status === "ACTIVE").length;
-    const offSaleCount = filteredProducts.filter((p) => p.status === "INACTIVE").length;
-    
-    const totalCost = filteredProducts.reduce((sum, p) => sum + p.cost_price, 0);
-    const avgCost = totalCount > 0 ? totalCost / totalCount : 0;
+    const totalCount = filteredSpuList.length;
+    const onSaleCount = filteredSpuList.filter((s) => (s.status as string) === "ACTIVE").length;
+    const offSaleCount = filteredSpuList.filter((s) => (s.status as string) === "INACTIVE").length;
+    const totalCost = products.reduce((sum, p) => sum + (p.cost_price || 0), 0);
+    const avgCost = products.length > 0 ? totalCost / products.length : 0;
     
     // 按币种统计
     const costByCurrency = filteredProducts.reduce((acc, p) => {
@@ -243,9 +225,23 @@ export default function ProductsPage() {
     };
   }, [filteredProducts]);
 
-  // 导出产品数据
-  const handleExportData = () => {
-    if (filteredProducts.length === 0) {
+  // 导出产品数据（导出时拉取全量变体）
+  const handleExportData = async () => {
+    const fullList = await getProductsFromAPI();
+    if (!fullList?.length) {
+      toast.error("没有可导出的数据");
+      return;
+    }
+    const filtered = fullList.filter((p) => {
+      if (filterStatus !== "all" && p.status !== filterStatus) return false;
+      if (filterCategory !== "all" && p.category !== filterCategory) return false;
+      if (searchKeyword.trim()) {
+        const kw = searchKeyword.toLowerCase();
+        if (!p.name?.toLowerCase().includes(kw) && !p.sku_id?.toLowerCase().includes(kw) && !p.category?.toLowerCase().includes(kw)) return false;
+      }
+      return true;
+    });
+    if (filtered.length === 0) {
       toast.error("没有可导出的数据");
       return;
     }
@@ -269,7 +265,7 @@ export default function ProductsPage() {
       "更新时间"
     ];
 
-    const rows = filteredProducts.map((p) => {
+    const rows = filtered.map((p: Product) => {
       return [
         p.sku_id || "",
         p.name || "",
@@ -307,7 +303,7 @@ export default function ProductsPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success(`已导出 ${filteredProducts.length} 条产品数据`);
+    toast.success(`已导出 ${filtered.length} 条产品数据`);
   };
 
   const resetForm = () => {
@@ -340,12 +336,14 @@ export default function ProductsPage() {
       lead_time: "",
       suppliers: []
     });
+    setFormVariants([newVariantRow()]);
     setEditingProduct(null);
   };
 
   const handleOpenModal = (product?: Product) => {
     if (product) {
       setEditingProduct(product);
+      setFormVariants([newVariantRow()]); // 编辑时不需要多行
       setForm({
         sku_id: product.sku_id,
         name: product.name,
@@ -390,28 +388,114 @@ export default function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
-    // 防止重复提交
     if (isSubmitting) {
       toast.loading("正在提交，请勿重复点击");
       return;
     }
-    
+
+    // 新建且使用多变体模式
+    if (!editingProduct && formVariants.some((r) => r.sku_id?.trim())) {
+      const valid = formVariants.filter((r) => r.sku_id?.trim());
+      if (valid.length === 0) {
+        toast.error("请至少填写一个变体的 SKU 编码");
+        return;
+      }
+      if (!form.name.trim()) {
+        toast.error("请填写产品名称");
+        return;
+      }
+      const skuIds = valid.map((r) => r.sku_id.trim());
+      if (new Set(skuIds).size !== skuIds.length) {
+        toast.error("变体 SKU 编码不能重复");
+        return;
+      }
+      const duplicate = products.filter((p) => skuIds.includes(p.sku_id!));
+      if (duplicate.length > 0) {
+        toast.error(`SKU 已存在：${duplicate.map((d) => d.sku_id).join(", ")}`);
+        return;
+      }
+      for (const r of valid) {
+        const cp = Number(r.cost_price);
+        if (Number.isNaN(cp) || cp < 0) {
+          toast.error(`变体 ${r.sku_id || r.color || "未命名"} 的单价需为有效数字`);
+          return;
+        }
+      }
+
+      const suppliersList = form.suppliers?.filter((s) => s.id) || [];
+      let primarySupplier = suppliersList.find((s) => s.isPrimary) || suppliersList[0];
+      if (!primarySupplier && form.factory_id) {
+        const s = suppliers.find((x) => x.id === form.factory_id);
+        primarySupplier = s ? { id: s.id, name: s.name, price: Number(valid[0].cost_price), isPrimary: true } : null;
+      }
+      const suppliersData = primarySupplier ? [primarySupplier] : suppliersList;
+
+      const productData: any = {
+        name: form.name.trim(),
+        main_image: form.main_image,
+        category: form.category.trim() || undefined,
+        brand: form.brand.trim() || undefined,
+        description: form.description.trim() || undefined,
+        material: form.material.trim() || undefined,
+        customs_name_cn: form.customs_name_cn.trim() || undefined,
+        customs_name_en: form.customs_name_en.trim() || undefined,
+        default_supplier_id: form.default_supplier_id.trim() || undefined,
+        status: form.status,
+        currency: form.currency,
+        weight_kg: form.weight_kg ? Number(form.weight_kg) : undefined,
+        length: form.length ? Number(form.length) : undefined,
+        width: form.width ? Number(form.width) : undefined,
+        height: form.height ? Number(form.height) : undefined,
+        volumetric_divisor: form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined,
+        factory_id: form.factory_id || undefined,
+        factory_name: suppliers.find((s) => s.id === form.factory_id)?.name,
+        moq: form.moq || undefined,
+        lead_time: form.lead_time || undefined,
+        suppliers: suppliersData,
+        variants: valid.map((r) => ({
+          sku_id: r.sku_id.trim(),
+          color: r.color.trim() || undefined,
+          cost_price: Number(r.cost_price),
+          size: r.size.trim() || undefined,
+          barcode: r.barcode.trim() || undefined,
+        })),
+      };
+
+      setIsSubmitting(true);
+      try {
+        const response = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(productData),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || "操作失败");
+        }
+        await mutateProducts?.();
+        toast.success(`已创建产品「${form.name}」及 ${valid.length} 个变体`);
+        resetForm();
+        setIsModalOpen(false);
+      } catch (err: any) {
+        toast.error(err?.message || "保存失败");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    // 单变体模式（编辑或旧式新建）
     if (!form.sku_id.trim() || !form.name.trim()) {
       toast.error("请填写 SKU 编码与产品名称");
       return;
     }
-    
     const costPrice = Number(form.cost_price);
     if (Number.isNaN(costPrice) || costPrice < 0) {
       toast.error("成本价需为数字且不小于 0");
       return;
     }
-    
-    // 检查SKU是否重复（编辑时排除自己）
-    const duplicate = products.find((p) => 
-      p.sku_id === form.sku_id.trim() && 
-      (!editingProduct || p.sku_id !== editingProduct.sku_id)
+    const duplicate = products.find((p) =>
+      p.sku_id === form.sku_id.trim() && (!editingProduct || p.sku_id !== editingProduct.sku_id)
     );
     if (duplicate) {
       toast.error("SKU 编码已存在");
@@ -465,40 +549,30 @@ export default function ProductsPage() {
       suppliers: suppliersList.length > 0 ? suppliersList : undefined,
     };
     
-    const url = editingProduct 
+    const url = editingProduct
       ? `/api/products/${encodeURIComponent(editingProduct.sku_id)}`
       : '/api/products';
     const method = editingProduct ? 'PUT' : 'POST';
 
-    const optimistic = editingProduct
-      ? products.map((p) => (p.sku_id === editingProduct.sku_id ? { ...productData } : p))
-      : [...products, productData];
-
     setIsSubmitting(true);
     try {
-      const updated = await mutateProducts?.(
-        async (prev = []) => {
-          const response = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(productData)
-          });
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.error || '操作失败');
-          }
-          const saved = await response.json();
-          return editingProduct
-            ? prev.map((p: any) => (p.sku_id === editingProduct.sku_id ? saved : p))
-            : [...prev, saved];
-        },
-        { optimisticData: optimistic, rollbackOnError: true, revalidate: false, populateCache: true }
-      );
-
-      if (updated) {
-        setProducts(updated as Product[]);
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData)
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || '操作失败');
       }
-
+      await mutateProducts?.();
+      if (editingProduct?.product_id) {
+        setVariantCache((prev) => {
+          const next = { ...prev };
+          delete next[editingProduct.product_id!];
+          return next;
+        });
+      }
       toast.success(editingProduct ? "产品已更新" : "产品已创建");
       resetForm();
       setIsModalOpen(false);
@@ -510,32 +584,98 @@ export default function ProductsPage() {
     }
   };
 
+  const handleAddVariants = async () => {
+    if (!addVariantProduct) return;
+    // 添加变体必须带 product_id，否则后端会误建新产品
+    const spuId = (addVariantProduct as any).product_id ?? (addVariantProduct as any).productId ?? (addVariantProduct as any).id;
+    if (!spuId) {
+      toast.error("无法识别所属产品，请刷新页面后重试");
+      return;
+    }
+    const valid = addVariantFormVariants.filter((r) => r.sku_id?.trim());
+    if (valid.length === 0) {
+      toast.error("请至少填写一个变体的 SKU 编码");
+      return;
+    }
+    const skuIds = valid.map((r) => r.sku_id.trim());
+    if (new Set(skuIds).size !== skuIds.length) {
+      toast.error("变体 SKU 编码不能重复");
+      return;
+    }
+    const existingSkuIds = products.map((p) => p.sku_id);
+    const duplicate = skuIds.filter((id) => existingSkuIds.includes(id));
+    if (duplicate.length > 0) {
+      toast.error(`SKU 已存在：${duplicate.join(", ")}`);
+      return;
+    }
+    for (const r of valid) {
+      const cp = Number(r.cost_price);
+      if (Number.isNaN(cp) || cp < 0) {
+        toast.error(`变体 ${r.sku_id || r.color || "未命名"} 的单价需为有效数字`);
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        name: addVariantProduct.name,
+        product_id: spuId,
+        variants: valid.map((r) => ({
+          sku_id: r.sku_id.trim(),
+          color: r.color.trim() || undefined,
+          cost_price: Number(r.cost_price),
+          size: r.size.trim() || undefined,
+          barcode: r.barcode.trim() || undefined,
+        })),
+      };
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "添加失败");
+      }
+      await mutateProducts?.();
+      setVariantCache((prev) => {
+        const next = { ...prev };
+        delete next[spuId];
+        return next;
+      });
+      toast.success(`已为「${addVariantProduct.name}」添加 ${valid.length} 个变体`);
+      setAddVariantProduct(null);
+      setAddVariantFormVariants([newVariantRow()]);
+    } catch (err: any) {
+      toast.error(err?.message || "添加变体失败");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleDelete = async (skuId: string) => {
     if (!confirm("⚠️ 确定要删除这个产品吗？\n此操作不可恢复！")) return;
-    
-    const optimistic = products.filter((p) => p.sku_id !== skuId);
 
     try {
-      const updated = await mutateProducts?.(
-        async (prev = []) => {
-          const response = await fetch(`/api/products/${encodeURIComponent(skuId)}`, {
-            method: 'DELETE'
-          });
-          
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.error || '删除失败');
-          }
-          
-          return prev.filter((p: any) => p.sku_id !== skuId);
-        },
-        { optimisticData: optimistic, rollbackOnError: true, revalidate: false, populateCache: true }
-      );
-
-      if (updated) {
-        setProducts(updated as Product[]);
+      const response = await fetch(`/api/products/${encodeURIComponent(skuId)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || '删除失败');
       }
-
+      const productId = Object.keys(variantCache).find((pid) =>
+        variantCache[pid].some((p) => p.sku_id === skuId)
+      );
+      if (productId) {
+        setVariantCache((prev) => {
+          const next = { ...prev };
+          delete next[productId];
+          return next;
+        });
+      }
+      await mutateProducts?.();
       toast.success("产品已删除");
     } catch (error: any) {
       console.error('Failed to delete product:', error);
@@ -845,7 +985,7 @@ export default function ProductsPage() {
 
       {/* 产品卡片列表 */}
       <section>
-        {filteredProducts.length === 0 ? (
+        {filteredSpuList.length === 0 ? (
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center">
             <p className="text-slate-500">暂无产品，请点击右上角"录入产品"</p>
           </div>
@@ -858,124 +998,171 @@ export default function ProductsPage() {
               gap: "24px"
             }}
           >
-            {filteredProducts.map((product) => {
-              const isHovered = hoveredProductId === product.sku_id;
-              
+            {filteredSpuList.map((spu) => {
+              const variants = variantCache[spu.productId] ?? [];
+              const isExpanded = expandedSpuId === spu.productId;
+              const isLoading = loadingSpuId === spu.productId;
+              const prices = variants.map((v) => Number((v as Product).cost_price ?? 0)).filter((n) => n > 0);
+              const priceRange: string | null =
+                prices.length === 0
+                  ? null
+                  : prices.length === 1
+                    ? formatCurrencyString(prices[0], "CNY")
+                    : `${formatCurrencyString(Math.min(...prices), "CNY")} ~ ${formatCurrencyString(Math.max(...prices), "CNY")}`;
+
               return (
                 <div
-                  key={product.sku_id}
+                  key={spu.productId}
                   className="group relative overflow-hidden rounded-2xl border p-5 transition-all"
                   style={{
                     background: "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)",
                     borderRadius: "16px",
                     border: "1px solid rgba(255, 255, 255, 0.1)"
                   }}
-                  onMouseEnter={() => setHoveredProductId(product.sku_id)}
-                  onMouseLeave={() => setHoveredProductId(null)}
                 >
-                  {/* 顶部：图片和状态 */}
-                  <div className="mb-4 relative h-48 bg-slate-800 rounded-lg overflow-hidden group/product-img">
-                    {product.main_image ? (
-                      <a
-                        href={product.main_image}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="block w-full h-full cursor-zoom-in"
-                        title="点击查看大图"
+                  {/* 聚合展示：主图、名称、状态、价格范围（点击卡片即按需加载变体并展开规格） */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className="mb-4 cursor-pointer rounded-lg outline-none focus:ring-2 focus:ring-primary-500/50"
+                    onClick={() => loadVariantsForSpu(spu.productId).then(() => setExpandedSpuId(spu.productId))}
+                    onKeyDown={(e) => e.key === "Enter" && loadVariantsForSpu(spu.productId).then(() => setExpandedSpuId(spu.productId))}
+                  >
+                    <div className="relative h-48 bg-slate-800 rounded-lg overflow-hidden">
+                      {spu.mainImage ? (
+                        <a href={spu.mainImage} target="_blank" rel="noreferrer" className="block w-full h-full" onClick={(e) => e.stopPropagation()}>
+                          <img src={spu.mainImage} alt={spu.name} className="w-full h-full object-cover" />
+                        </a>
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-600">
+                          <Package className="h-12 w-12" />
+                        </div>
+                      )}
+                      <div className="absolute top-2 right-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            spu.status === "ACTIVE" ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-700/50 text-slate-400"
+                          }`}
+                        >
+                          {PRODUCT_STATUS_LABEL[(spu.status as ProductStatus) ?? "ACTIVE"]}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="absolute top-3 right-3 flex gap-2 z-30">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAddVariantProduct({ ...spu, product_id: spu.productId } as Product);
+                          setAddVariantFormVariants([newVariantRow()]);
+                        }}
+                        className="flex items-center gap-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
+                        title="添加变体"
                       >
-                        <img
-                          src={product.main_image}
-                          alt={product.name}
-                          className="w-full h-full object-cover transition-transform group-hover/product-img:scale-[1.01]"
-                        />
-                      </a>
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-600">
-                        <Package className="h-12 w-12" />
+                        <Palette className="h-3 w-3" />
+                      </button>
+                      {variants[0] && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleOpenModal(variants[0]); }}
+                          className="flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20"
+                          title="编辑"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mb-3 mt-1">
+                      <h3 className="font-semibold text-white text-base mb-1">{spu.name}</h3>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-400">价格范围</span>
+                        <span className="text-emerald-300 font-medium text-sm" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                          {priceRange ?? (isLoading ? "加载中…" : "点击卡片加载规格")}
+                        </span>
                       </div>
-                    )}
-                    <div className="absolute top-2 right-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          product.status === "ACTIVE"
-                            ? "bg-emerald-500/20 text-emerald-300"
-                            : "bg-slate-700/50 text-slate-400"
-                        }`}
+                      {spu.category && (
+                        <p className="text-xs text-slate-400">分类：{spu.category}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 规格选择：平时 3～5 个颜色圆点，展开后表格 */}
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <p className="text-xs text-slate-400 mb-2">规格选择</p>
+                    {!variants.length && !isLoading && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); loadVariantsForSpu(spu.productId).then(() => setExpandedSpuId(spu.productId)); }}
+                        className="text-xs text-primary-400 hover:text-primary-300"
                       >
-                        {PRODUCT_STATUS_LABEL[product.status]}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 操作按钮（始终显示在右上角） */}
-                  <div className="absolute top-3 right-3 flex gap-2 z-30">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHoveredProductId(null); // 关闭悬停预览
-                        handleOpenModal(product);
-                      }}
-                      className="flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"
-                      title="编辑产品"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHoveredProductId(null); // 关闭悬停预览
-                        handleDelete(product.sku_id);
-                      }}
-                      className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs font-medium text-rose-100 hover:bg-rose-500/20 transition-colors"
-                      title="删除产品"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-
-                  {/* 中间：产品信息 */}
-                  <div className="mb-4">
-                    <h3 className="font-semibold text-white text-base mb-1">{product.name}</h3>
-                    <p className="text-xs text-slate-400 mb-3">SKU: {product.sku_id}</p>
-                    
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-slate-400">拿货价</span>
-                      <span className="text-emerald-300 font-medium text-lg" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                        {formatCurrency(product.cost_price, product.currency, "balance")}
-                      </span>
-                    </div>
-
-                    {product.category && (
-                      <div className="flex items-center justify-between text-xs mb-2">
-                        <span className="text-slate-400">分类</span>
-                        <span className="text-slate-300">{product.category}</span>
-                      </div>
+                        展开加载规格
+                      </button>
                     )}
-
-                    {product.factory_name && (
-                      <div className="flex items-center justify-between text-xs mb-2">
-                        <span className="text-slate-400">工厂</span>
-                        <span className="text-slate-300">{product.factory_name}</span>
-                      </div>
+                    {isLoading && <span className="text-xs text-slate-500">加载中…</span>}
+                    {variants.length > 0 && (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          {variants.slice(0, 5).map((v) => (
+                            <span
+                              key={v.sku_id}
+                              className="w-5 h-5 rounded-full border flex-shrink-0"
+                              style={getColorDotStyle((v as Product).color)}
+                              title={(v as Product).color || v.sku_id}
+                            />
+                          ))}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setExpandedSpuId(isExpanded ? null : spu.productId); }}
+                            className="text-xs text-primary-400 hover:text-primary-300"
+                          >
+                            {isExpanded ? "收起" : "展开"}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs border border-slate-700 rounded">
+                              <thead>
+                                <tr className="bg-slate-800/80">
+                                  <th className="px-2 py-1.5 text-left text-slate-400">颜色</th>
+                                  <th className="px-2 py-1.5 text-left text-slate-400">SKU</th>
+                                  <th className="px-2 py-1.5 text-right text-slate-400">单价</th>
+                                  <th className="px-2 py-1.5 text-right text-slate-400">库存</th>
+                                  <th className="px-2 py-1.5 w-20"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {variants.map((v) => (
+                                  <tr key={v.sku_id} className="border-t border-slate-700">
+                                    <td className="px-2 py-1.5 text-slate-200">{(v as Product).color || "—"}</td>
+                                    <td className="px-2 py-1.5 text-slate-400 font-mono">{v.sku_id}</td>
+                                    <td className="px-2 py-1.5 text-right text-slate-200">
+                                      {formatCurrency((v as Product).cost_price ?? 0, (v as Product).currency ?? "CNY", "balance")}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right text-slate-200">{(v as Product).stock_quantity ?? 0}</td>
+                                    <td className="px-2 py-1.5 flex gap-1">
+                                      <button type="button" onClick={() => handleOpenModal(v as Product)} className="text-primary-400 hover:underline">编辑</button>
+                                      <button type="button" onClick={() => handleDelete(v.sku_id)} className="text-rose-400 hover:underline">删除</button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
                     )}
-
-                    {/* 库存分布 */}
-                    <div className="mt-3 pt-3 border-t border-white/10">
-                      <div className="text-xs text-slate-400 mb-2">库存分布</div>
-                      <InventoryDistribution
-                        atFactory={product.at_factory || 0}
-                        atDomestic={product.at_domestic || 0}
-                        inTransit={product.in_transit || 0}
-                        unitPrice={product.cost_price}
-                        size="sm"
-                        showValue={false}
-                      />
-                    </div>
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
-                  {/* 详情预览（悬停时显示） */}
-                  {isHovered && (
+      {/* 占位：原悬停详情已移除，编辑/删除在展开表格中 */}
+      {false && (
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm rounded-2xl p-5 flex flex-col justify-between z-10 overflow-y-auto"
                       onMouseEnter={() => setHoveredProductId(product.sku_id)}
                       onMouseLeave={() => setHoveredProductId(null)}
@@ -1201,12 +1388,6 @@ export default function ProductsPage() {
                       </div>
                     </div>
                   )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
 
       {/* 录入/编辑产品模态框 */}
       {isModalOpen && (
@@ -1235,16 +1416,18 @@ export default function ProductsPage() {
             <form onSubmit={handleSubmit} className="space-y-4 text-sm">
               {/* 基础信息 */}
               <div className="grid grid-cols-2 gap-4">
-                <label className="space-y-1">
-                  <span className="text-slate-300">SKU 编码 <span className="text-rose-400">*</span></span>
-                  <input
-                    value={form.sku_id}
-                    onChange={(e) => setForm((f) => ({ ...f, sku_id: e.target.value }))}
-                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                    required
-                    disabled={!!editingProduct}
-                  />
-                </label>
+                {editingProduct ? (
+                  <label className="space-y-1">
+                    <span className="text-slate-300">SPU 编码 <span className="text-rose-400">*</span></span>
+                    <input
+                      value={form.sku_id}
+                      onChange={(e) => setForm((f) => ({ ...f, sku_id: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      required
+                      disabled
+                    />
+                  </label>
+                ) : null}
                 <label className="space-y-1">
                   <span className="text-slate-300">产品名称 <span className="text-rose-400">*</span></span>
                   <input
@@ -1354,49 +1537,223 @@ export default function ProductsPage() {
                 </label>
               </div>
 
-              {/* SKU 变体信息 */}
+              {/* SKU 变体信息：新建时支持多变体，编辑时为单变体 */}
               <div className="border-t border-slate-800 pt-4">
-                <h3 className="text-slate-300 font-medium mb-3">SKU 变体信息</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <label className="space-y-1">
-                    <span className="text-slate-300">颜色</span>
-                    <input
-                      value={form.color}
-                      onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                      placeholder="如：红色、蓝色等"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-300">尺寸</span>
-                    <input
-                      value={form.size}
-                      onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                      placeholder="如：S、M、L、XL等"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-300">条形码</span>
-                    <input
-                      value={form.barcode}
-                      onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                      placeholder="产品条形码"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-300">总库存数量</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={form.stock_quantity}
-                      onChange={(e) => setForm((f) => ({ ...f, stock_quantity: e.target.value }))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                      placeholder="0"
-                    />
-                  </label>
-                </div>
+                <h3 className="text-slate-300 font-medium mb-3 flex items-center gap-2">
+                  <Palette className="h-4 w-4" />
+                  {editingProduct ? "SKU 变体信息" : "变体列表（可添加多个颜色/规格）"}
+                </h3>
+                {editingProduct ? (
+                  <div className="space-y-4">
+                    <p className="text-xs text-slate-500">
+                      当前变体的规格与库存信息，用于采购与入库区分颜色/尺寸。
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      <label className="space-y-1">
+                        <span className="text-slate-300">SKU 编码</span>
+                        <input
+                          value={form.sku_id}
+                          readOnly
+                          className="w-full rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-slate-400 cursor-not-allowed"
+                          title="变体 SKU 不可修改"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-slate-300">颜色</span>
+                        <select
+                          value={VARIANT_COLOR_OPTIONS.includes(form.color) ? form.color : (form.color ? OTHER_LABEL : "")}
+                          onChange={(e) => setForm((f) => ({ ...f, color: e.target.value === OTHER_LABEL ? "" : e.target.value }))}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                        >
+                          <option value="">请选择</option>
+                          {VARIANT_COLOR_OPTIONS.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                          <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
+                        </select>
+                        {(!form.color || form.color === OTHER_LABEL || !VARIANT_COLOR_OPTIONS.includes(form.color)) && (
+                          <input
+                            value={VARIANT_COLOR_OPTIONS.includes(form.color) ? "" : form.color}
+                            onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm outline-none focus:border-primary-400"
+                            placeholder="自定义颜色"
+                          />
+                        )}
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-slate-300">尺寸</span>
+                        <select
+                          value={VARIANT_SIZE_OPTIONS.includes(form.size) ? form.size : (form.size ? OTHER_LABEL : "")}
+                          onChange={(e) => setForm((f) => ({ ...f, size: e.target.value === OTHER_LABEL ? "" : e.target.value }))}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                        >
+                          <option value="">请选择</option>
+                          {VARIANT_SIZE_OPTIONS.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                          <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
+                        </select>
+                        {(!form.size || form.size === OTHER_LABEL || !VARIANT_SIZE_OPTIONS.includes(form.size)) && (
+                          <input
+                            value={VARIANT_SIZE_OPTIONS.includes(form.size) ? "" : form.size}
+                            onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))}
+                            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm outline-none focus:border-primary-400"
+                            placeholder="自定义尺寸"
+                          />
+                        )}
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-slate-300">条形码</span>
+                        <input
+                          value={form.barcode}
+                          onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                          placeholder="产品条形码（选填）"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-slate-300">成本价（元）<span className="text-rose-400">*</span></span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.cost_price}
+                          onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                          placeholder="0.00"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-slate-300">总库存数量</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={form.stock_quantity}
+                          onChange={(e) => setForm((f) => ({ ...f, stock_quantity: e.target.value }))}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                          placeholder="0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-500">每个变体一行，填写颜色、SKU 编码、单价</p>
+                      <button
+                        type="button"
+                        onClick={() => setFormVariants((prev) => [...prev, newVariantRow()])}
+                        className="flex items-center gap-1 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
+                      >
+                        <Plus className="h-3 w-3" />
+                        添加变体
+                      </button>
+                    </div>
+                    <div className="rounded-lg border border-slate-700 overflow-hidden">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-slate-800/80">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-slate-400 w-10">#</th>
+                            <th className="px-3 py-2 text-left text-slate-400">颜色</th>
+                            <th className="px-3 py-2 text-left text-slate-400">SKU 编码 <span className="text-rose-400">*</span></th>
+                            <th className="px-3 py-2 text-left text-slate-400">单价(元) <span className="text-rose-400">*</span></th>
+                            <th className="px-3 py-2 text-left text-slate-400">尺寸</th>
+                            <th className="px-3 py-2 text-left text-slate-400">条形码</th>
+                            <th className="px-3 py-2 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {formVariants.map((row, idx) => (
+                            <tr key={row.tempId} className="bg-slate-900/40">
+                              <td className="px-3 py-2 text-slate-500">{idx + 1}</td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={VARIANT_COLOR_OPTIONS.includes(row.color) ? row.color : (row.color ? OTHER_LABEL : "")}
+                                  onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, color: e.target.value === OTHER_LABEL ? "" : e.target.value } : r)))}
+                                  className="w-full min-w-0 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 text-xs"
+                                >
+                                  <option value="">选择</option>
+                                  {VARIANT_COLOR_OPTIONS.map((c) => (
+                                    <option key={c} value={c}>{c}</option>
+                                  ))}
+                                  <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
+                                </select>
+                                {row.color && !VARIANT_COLOR_OPTIONS.includes(row.color) && (
+                                  <input
+                                    value={row.color}
+                                    onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, color: e.target.value } : r)))}
+                                    className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 text-xs"
+                                    placeholder="自定义"
+                                  />
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  value={row.sku_id}
+                                  onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, sku_id: e.target.value } : r)))}
+                                  className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200"
+                                  placeholder="如：mazha-red"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={row.cost_price}
+                                  onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, cost_price: e.target.value } : r)))}
+                                  className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-right text-slate-200"
+                                  placeholder="0"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={VARIANT_SIZE_OPTIONS.includes(row.size) ? row.size : (row.size ? OTHER_LABEL : "")}
+                                  onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, size: e.target.value === OTHER_LABEL ? "" : e.target.value } : r)))}
+                                  className="w-full min-w-0 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 text-xs"
+                                >
+                                  <option value="">选择</option>
+                                  {VARIANT_SIZE_OPTIONS.map((s) => (
+                                    <option key={s} value={s}>{s}</option>
+                                  ))}
+                                  <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
+                                </select>
+                                {row.size && !VARIANT_SIZE_OPTIONS.includes(row.size) && (
+                                  <input
+                                    value={row.size}
+                                    onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, size: e.target.value } : r)))}
+                                    className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 text-xs"
+                                    placeholder="自定义"
+                                  />
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  value={row.barcode}
+                                  onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, barcode: e.target.value } : r)))}
+                                  className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200"
+                                  placeholder="可选"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                {formVariants.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormVariants((prev) => prev.filter((r) => r.tempId !== row.tempId))}
+                                    className="text-slate-400 hover:text-rose-400"
+                                    title="删除"
+                                  >
+                                    <Trash className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 主图上传 */}
@@ -1414,7 +1771,7 @@ export default function ProductsPage() {
                 <h3 className="text-slate-300 font-medium mb-3">财务信息</h3>
                 <div className="grid grid-cols-3 gap-4">
                   <label className="space-y-1">
-                    <span className="text-slate-300">参考拿货价 <span className="text-rose-400">*</span></span>
+                    <span className="text-slate-300">参考拿货价 {editingProduct ? <span className="text-rose-400">*</span> : null}</span>
                     <input
                       type="number"
                       min={0}
@@ -1422,7 +1779,7 @@ export default function ProductsPage() {
                       value={form.cost_price}
                       onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                      required
+                      required={!!editingProduct}
                     />
                   </label>
                   <label className="space-y-1">
@@ -1812,6 +2169,165 @@ export default function ProductsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 为已有产品添加变体 */}
+      {addVariantProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">为「{addVariantProduct.name}」添加变体</h2>
+                <p className="text-xs text-slate-400 mt-1">为已有产品添加新的颜色/规格变体</p>
+              </div>
+              <button
+                onClick={() => {
+                  setAddVariantProduct(null);
+                  setAddVariantFormVariants([newVariantRow()]);
+                }}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">填写新变体信息，可一次添加多个</span>
+                <button
+                  type="button"
+                  onClick={() => setAddVariantFormVariants((prev) => [...prev, newVariantRow()])}
+                  className="flex items-center gap-1 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
+                >
+                  <Plus className="h-3 w-3" />
+                  添加变体
+                </button>
+              </div>
+              <div className="rounded-lg border border-slate-700 overflow-hidden">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-800/80">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-slate-400 w-10">#</th>
+                      <th className="px-3 py-2 text-left text-slate-400">颜色</th>
+                      <th className="px-3 py-2 text-left text-slate-400">SKU 编码 <span className="text-rose-400">*</span></th>
+                      <th className="px-3 py-2 text-left text-slate-400">单价(元) <span className="text-rose-400">*</span></th>
+                      <th className="px-3 py-2 text-left text-slate-400">尺寸</th>
+                      <th className="px-3 py-2 text-left text-slate-400">条形码</th>
+                      <th className="px-3 py-2 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {addVariantFormVariants.map((row, idx) => (
+                      <tr key={row.tempId} className="bg-slate-900/40">
+                        <td className="px-3 py-2 text-slate-500">{idx + 1}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={VARIANT_COLOR_OPTIONS.includes(row.color) ? row.color : (row.color ? OTHER_LABEL : "")}
+                            onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, color: e.target.value === OTHER_LABEL ? "" : e.target.value } : r)))}
+                            className="w-full min-w-0 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 text-xs"
+                          >
+                            <option value="">选择</option>
+                            {VARIANT_COLOR_OPTIONS.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                            <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
+                          </select>
+                          {row.color && !VARIANT_COLOR_OPTIONS.includes(row.color) && (
+                            <input
+                              value={row.color}
+                              onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, color: e.target.value } : r)))}
+                              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 text-xs"
+                              placeholder="自定义"
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.sku_id}
+                            onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, sku_id: e.target.value } : r)))}
+                            className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200"
+                            placeholder="如：mazha-red"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={row.cost_price}
+                            onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, cost_price: e.target.value } : r)))}
+                            className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-right text-slate-200"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={VARIANT_SIZE_OPTIONS.includes(row.size) ? row.size : (row.size ? OTHER_LABEL : "")}
+                            onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, size: e.target.value === OTHER_LABEL ? "" : e.target.value } : r)))}
+                            className="w-full min-w-0 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 text-xs"
+                          >
+                            <option value="">选择</option>
+                            {VARIANT_SIZE_OPTIONS.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                            <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
+                          </select>
+                          {row.size && !VARIANT_SIZE_OPTIONS.includes(row.size) && (
+                            <input
+                              value={row.size}
+                              onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, size: e.target.value } : r)))}
+                              className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 text-xs"
+                              placeholder="自定义"
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.barcode}
+                            onChange={(e) => setAddVariantFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, barcode: e.target.value } : r)))}
+                            className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200"
+                            placeholder="可选"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          {addVariantFormVariants.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setAddVariantFormVariants((prev) => prev.filter((r) => r.tempId !== row.tempId))}
+                              className="text-slate-400 hover:text-rose-400"
+                              title="删除"
+                            >
+                              <Trash className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddVariantProduct(null);
+                    setAddVariantFormVariants([newVariantRow()]);
+                  }}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddVariants}
+                  disabled={isSubmitting}
+                  className="rounded-md bg-cyan-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-cyan-600 disabled:opacity-50"
+                >
+                  {isSubmitting ? "添加中..." : "确定添加"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

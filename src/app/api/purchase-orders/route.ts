@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         store: true,
-        contract: true
+        contract: true,
+        items: { orderBy: { sortOrder: 'asc' } }
       },
       orderBy: { createdAt: 'desc' }
     })
@@ -38,8 +39,10 @@ export async function GET(request: NextRequest) {
       CANCELLED: '已取消'
     }
 
-    // 转换格式以匹配前端 PurchaseOrder 类型
-    const transformed = purchaseOrders.map(po => ({
+    // 转换格式以匹配前端 PurchaseOrder 类型（兼容单行与多行 items）
+    const transformed = purchaseOrders.map(po => {
+      const firstItem = po.items?.[0]
+      return {
       id: po.id,
       orderNumber: po.orderNumber,
       uid: po.uid || undefined,
@@ -47,10 +50,21 @@ export async function GET(request: NextRequest) {
       platform: po.platform === 'TIKTOK' ? 'TikTok' as const : po.platform === 'AMAZON' ? 'Amazon' as const : '其他' as const,
       storeId: po.storeId || undefined,
       storeName: po.storeName || undefined,
-      sku: po.sku,
-      skuId: po.skuId || undefined,
-      productName: po.productName || undefined,
-      quantity: po.quantity,
+      sku: po.sku ?? firstItem?.sku ?? '',
+      skuId: po.skuId ?? firstItem?.skuId ?? undefined,
+      productName: po.productName ?? firstItem?.skuName ?? undefined,
+      quantity: po.quantity ?? (firstItem ? Number(firstItem.quantity) : 0),
+      items: (po.items || []).map(it => ({
+        id: it.id,
+        sku: it.sku,
+        skuId: it.skuId ?? undefined,
+        skuName: it.skuName ?? undefined,
+        spec: it.spec ?? undefined,
+        quantity: it.quantity,
+        unitPrice: Number(it.unitPrice),
+        totalAmount: Number(it.totalAmount),
+        sortOrder: it.sortOrder
+      })),
       expectedDeliveryDate: po.expectedDeliveryDate?.toISOString() || undefined,
       urgency: po.urgency || '普通',
       notes: po.notes || undefined,
@@ -71,7 +85,9 @@ export async function GET(request: NextRequest) {
       status: (statusMap[po.status] || '待风控') as FrontendPurchaseOrderStatus,
       createdAt: po.createdAt.toISOString(),
       updatedAt: po.updatedAt.toISOString()
-    }))
+    }
+    })
+    )
 
     return NextResponse.json(transformed)
   } catch (error) {
@@ -111,6 +127,12 @@ export async function POST(request: NextRequest) {
       return `PO-${year}${month}${day}-${String(timestamp).slice(-6)}`;
     })()
 
+    const itemsInput = Array.isArray(body.items) && body.items.length > 0
+      ? body.items
+      : [{ sku: body.sku, skuId: body.skuId, skuName: body.productName, spec: null, quantity: Number(body.quantity), unitPrice: body.unitPrice != null ? Number(body.unitPrice) : 0 }]
+    const firstInput = itemsInput[0]
+    const totalQty = itemsInput.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0)
+
     const purchaseOrder = await prisma.purchaseOrder.create({
       data: {
         orderNumber,
@@ -119,10 +141,10 @@ export async function POST(request: NextRequest) {
         platform: body.platform === 'TikTok' ? Platform.TIKTOK : body.platform === 'Amazon' ? Platform.AMAZON : Platform.OTHER,
         storeId: body.storeId || null,
         storeName: body.storeName || null,
-        sku: body.sku,
-        skuId: body.skuId || null,
-        productName: body.productName || null,
-        quantity: Number(body.quantity),
+        sku: firstInput?.sku ?? body.sku ?? null,
+        skuId: firstInput?.skuId ?? body.skuId ?? null,
+        productName: firstInput?.skuName ?? body.productName ?? null,
+        quantity: totalQty || Number(body.quantity) || null,
         expectedDeliveryDate: body.expectedDeliveryDate ? new Date(body.expectedDeliveryDate) : null,
         urgency: body.urgency,
         notes: body.notes || null,
@@ -139,11 +161,29 @@ export async function POST(request: NextRequest) {
         pushedBy: body.pushedBy || null,
         procurementNotes: body.procurementNotes || null,
         contractId: body.contractId || body.relatedContractId || null,
-        status: statusValueMap[body.status] || PurchaseOrderStatus.PENDING_RISK
+        status: statusValueMap[body.status] || PurchaseOrderStatus.PENDING_RISK,
+        items: {
+          create: itemsInput.map((it: any, idx: number) => {
+            const qty = Number(it.quantity) || 0
+            const unitPrice = Number(it.unitPrice) || 0
+            const totalAmount = qty * unitPrice
+            return {
+              sku: it.sku || '',
+              skuId: it.skuId || null,
+              skuName: it.skuName || null,
+              spec: it.spec || null,
+              quantity: qty,
+              unitPrice,
+              totalAmount,
+              sortOrder: idx
+            }
+          })
+        }
       },
       include: {
         store: true,
-        contract: true
+        contract: true,
+        items: { orderBy: { sortOrder: 'asc' } }
       }
     })
 
@@ -160,7 +200,7 @@ export async function POST(request: NextRequest) {
       CANCELLED: '已取消'
     }
 
-    // 转换返回格式
+    const firstItem = purchaseOrder.items?.[0]
     const transformed = {
       id: purchaseOrder.id,
       orderNumber: purchaseOrder.orderNumber,
@@ -169,10 +209,21 @@ export async function POST(request: NextRequest) {
       platform: purchaseOrder.platform === 'TIKTOK' ? 'TikTok' as const : purchaseOrder.platform === 'AMAZON' ? 'Amazon' as const : '其他' as const,
       storeId: purchaseOrder.storeId || undefined,
       storeName: purchaseOrder.storeName || undefined,
-      sku: purchaseOrder.sku,
-      skuId: purchaseOrder.skuId || undefined,
-      productName: purchaseOrder.productName || undefined,
-      quantity: purchaseOrder.quantity,
+      sku: purchaseOrder.sku ?? firstItem?.sku ?? '',
+      skuId: purchaseOrder.skuId ?? firstItem?.skuId ?? undefined,
+      productName: purchaseOrder.productName ?? firstItem?.skuName ?? undefined,
+      quantity: purchaseOrder.quantity ?? (firstItem ? Number(firstItem.quantity) : 0),
+      items: (purchaseOrder.items || []).map(it => ({
+        id: it.id,
+        sku: it.sku,
+        skuId: it.skuId ?? undefined,
+        skuName: it.skuName ?? undefined,
+        spec: it.spec ?? undefined,
+        quantity: it.quantity,
+        unitPrice: Number(it.unitPrice),
+        totalAmount: Number(it.totalAmount),
+        sortOrder: it.sortOrder
+      })),
       expectedDeliveryDate: purchaseOrder.expectedDeliveryDate?.toISOString() || undefined,
       urgency: purchaseOrder.urgency || '普通',
       notes: purchaseOrder.notes || undefined,
