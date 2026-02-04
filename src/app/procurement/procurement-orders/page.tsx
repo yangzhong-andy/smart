@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { ShoppingCart, Search, Eye, Plus, Link as LinkIcon, Package, CheckSquare, Square, Layers } from "lucide-react";
@@ -11,7 +12,7 @@ import {
   linkPurchaseContractBatch,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
-import { getPurchaseContractsFromAPI, upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import { upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { getProductsFromAPI, type Product } from "@/lib/products-store";
 // 供应商数据直接从 localStorage 读取
 import Link from "next/link";
@@ -26,9 +27,15 @@ const formatDate = (dateString?: string) => {
   }
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function ProcurementOrdersPage() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
+  const { data: contracts = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
+    "/api/purchase-contracts",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
   const [products, setProducts] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -53,12 +60,9 @@ export default function ProcurementOrdersPage() {
   }, []);
 
   const loadData = async () => {
-    const [ords, conts] = await Promise.all([
-      getPurchaseOrdersFromAPI().then((os) => os.filter((o) => o.status === "已推送采购")),
-      getPurchaseContractsFromAPI()
-    ]);
+    const ords = await getPurchaseOrdersFromAPI().then((os) => os.filter((o) => o.status === "已推送采购"));
     setOrders(ords);
-    setContracts(conts);
+    mutateContracts();
     getProductsFromAPI().then(setProducts);
     try {
       const res = await fetch("/api/suppliers");

@@ -249,7 +249,7 @@ export default function BankAccountsPage() {
   }, []);
 
   // 使用统一汇率接口 /api/exchange-rates（与顶栏等一致）
-  const { getRate, rates, date, isLoading: ratesLoading, refresh: mutateRates } = useExchangeRate();
+  const { getRate, rates, date, isLoading: ratesLoading, error: ratesError, refresh: mutateRates } = useExchangeRate();
   const exchangeRates = useMemo(() => {
     const USD = getRate("USD");
     const JPY = getRate("JPY");
@@ -895,7 +895,12 @@ export default function BankAccountsPage() {
               {currency(totalAssetsRMB, "CNY")}
             </div>
             <div className="text-xs text-white/60">
-              {exchangeRates ? "使用实时汇率折算" : "所有账户按汇率折算"}
+              {exchangeRates ? "使用实时汇率折算" : (ratesError ? (
+                <span className="flex items-center gap-2 flex-wrap">
+                  <span title={ratesError.message}>{ratesError.message}</span>
+                  <button type="button" onClick={() => mutateRates()} className="text-cyan-400 hover:text-cyan-300 underline" title="重新请求汇率">重试</button>
+                </span>
+              ) : "所有账户按汇率折算")}
             </div>
           </div>
         </div>
@@ -949,7 +954,12 @@ export default function BankAccountsPage() {
                     </button>
                   </div>
                 )
-                : "USD 账户原币余额"}
+                : (ratesError ? (
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span title={ratesError.message}>{ratesError.message}</span>
+                    <button type="button" onClick={() => mutateRates()} className="text-cyan-400 hover:text-cyan-300 underline" title="重新请求汇率">重试</button>
+                  </span>
+                ) : "USD 账户原币余额")}
             </div>
           </div>
         </div>
@@ -1003,7 +1013,12 @@ export default function BankAccountsPage() {
                     </button>
                   </div>
                 )
-                : "JPY 账户原币余额"}
+                : (ratesError ? (
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span title={ratesError.message}>{ratesError.message}</span>
+                    <button type="button" onClick={() => mutateRates()} className="text-cyan-400 hover:text-cyan-300 underline" title="重新请求汇率">重试</button>
+                  </span>
+                ) : "JPY 账户原币余额")}
             </div>
           </div>
         </div>

@@ -37,52 +37,45 @@ export interface ExchangeRateResponse {
  * 使用 Next.js fetch 的 revalidate 机制，1小时自动更新一次
  */
 export async function fetchExchangeRates(): Promise<ExchangeRates | null> {
-  try {
-    const apiKey = process.env.EXCHANGERATE_API_KEY;
-    
-    if (!apiKey) {
-      console.error('EXCHANGERATE_API_KEY is not set in environment variables');
-      return null;
-    }
+  const apiKey = process.env.EXCHANGERATE_API_KEY;
 
-    const apiUrl = `https://v6.exchangerate-api.com/v6/${apiKey}/latest/CNY`;
-    
-    const response = await fetch(apiUrl, {
-      next: { revalidate: 3600 } // 1小时缓存，自动更新
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch exchange rates: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    // 检查 API 返回状态
-    if (data.result !== 'success') {
-      throw new Error(`API returned error: ${data['error-type'] || 'Unknown error'}`);
-    }
-
-    // 只提取需要的币种：USD、GBP、THB、MYR、JPY
-    const rates: ExchangeRates['rates'] = {};
-    
-    if (data.conversion_rates) {
-      if (data.conversion_rates.USD) rates.USD = data.conversion_rates.USD;
-      if (data.conversion_rates.GBP) rates.GBP = data.conversion_rates.GBP;
-      if (data.conversion_rates.THB) rates.THB = data.conversion_rates.THB;
-      if (data.conversion_rates.MYR) rates.MYR = data.conversion_rates.MYR;
-      if (data.conversion_rates.JPY) rates.JPY = data.conversion_rates.JPY;
-    }
-    
-    return {
-      base: 'CNY',
-      date: data.time_last_update_utc?.split('T')[0] || new Date().toISOString().split('T')[0],
-      rates,
-      timestamp: Date.now()
-    };
-  } catch (error) {
-    console.error('Error fetching exchange rates:', error);
+  if (!apiKey) {
+    console.error('EXCHANGERATE_API_KEY is not set in environment variables');
     return null;
   }
+
+  const apiUrl = `https://v6.exchangerate-api.com/v6/${apiKey}/latest/CNY`;
+
+  const response = await fetch(apiUrl, {
+    next: { revalidate: 3600 } // 1小时缓存，自动更新
+  });
+
+  if (!response.ok) {
+    throw new Error(`汇率源请求失败: ${response.status} ${response.statusText}（请检查 Key 是否有效、部署环境是否允许访问外网）`);
+  }
+
+  const data = await response.json();
+
+  if (data.result !== 'success') {
+    const errType = data['error-type'] || 'Unknown error';
+    throw new Error(`汇率源返回错误: ${errType}（可能是 API Key 无效或超额）`);
+  }
+
+  const rates: ExchangeRates['rates'] = {};
+  if (data.conversion_rates) {
+    if (data.conversion_rates.USD) rates.USD = data.conversion_rates.USD;
+    if (data.conversion_rates.GBP) rates.GBP = data.conversion_rates.GBP;
+    if (data.conversion_rates.THB) rates.THB = data.conversion_rates.THB;
+    if (data.conversion_rates.MYR) rates.MYR = data.conversion_rates.MYR;
+    if (data.conversion_rates.JPY) rates.JPY = data.conversion_rates.JPY;
+  }
+
+  return {
+    base: 'CNY',
+    date: data.time_last_update_utc?.split('T')[0] || new Date().toISOString().split('T')[0],
+    rates,
+    timestamp: Date.now()
+  };
 }
 
 /**

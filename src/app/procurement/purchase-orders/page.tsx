@@ -1,24 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
-import {
-  getPurchaseContractsFromAPI,
-  upsertPurchaseContract,
-  type PurchaseContract
-} from "@/lib/purchase-contracts-store";
+import { upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import {
   getPurchaseOrderById,
   linkPurchaseContract,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
-import {
-  getDeliveryOrdersFromAPI,
-  createDeliveryOrder,
-  type DeliveryOrder
-} from "@/lib/delivery-orders-store";
+import { createDeliveryOrder, type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
 import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
 import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory, FileText, Palette } from "lucide-react";
@@ -97,9 +90,20 @@ export default function PurchaseOrdersPage() {
   const [spuList, setSpuList] = useState<SpuListItem[]>([]);
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({}); // productId -> 该 SPU 下全部 SKU（一次性 include 拉取后缓存）
   const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
+  const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
+    "/api/purchase-contracts",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const contracts = contractsData;
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
+  const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[]>(
+    "/api/delivery-orders",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const deliveryOrders = deliveryOrdersData;
   const [suppliersReady, setSuppliersReady] = useState(false);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -273,18 +277,6 @@ export default function PurchaseOrdersPage() {
       .catch((e) => console.error("Failed to load accounts", e));
   }, []);
 
-  // Load contracts and delivery orders
-  useEffect(() => {
-    (async () => {
-      const [contRes, doRes] = await Promise.all([
-        getPurchaseContractsFromAPI(),
-        getDeliveryOrdersFromAPI()
-      ]);
-      setContracts(contRes);
-      setDeliveryOrders(doRes);
-    })();
-  }, []);
-
   const selectedSupplier = useMemo(() => {
     const supplierId = form.supplierId || suppliers[0]?.id;
     return suppliers.find((s) => s.id === supplierId) || suppliers[0];
@@ -439,7 +431,7 @@ export default function PurchaseOrdersPage() {
         throw new Error(msg);
       }
       const newContract = await res.json();
-      setContracts((prev) => [...prev, newContract]);
+      mutateContracts();
       if (sourceOrder) {
         await linkPurchaseContract(sourceOrder.id, newContract.id, newContract.contractNumber);
         toast.success("采购合同创建成功，已自动关联采购订单", { icon: "✅" });
@@ -540,10 +532,8 @@ export default function PurchaseOrdersPage() {
       }
     }
 
-    // 刷新合同列表
-    const { getPurchaseContractsFromAPI } = await import("@/lib/purchase-contracts-store");
-    const updated = await getPurchaseContractsFromAPI();
-    setContracts(updated);
+    mutateContracts();
+    mutateDeliveryOrders();
 
     // 如果详情页打开，刷新详情数据
     if (detailModal.contractId === deliveryModal.contractId) {
@@ -626,7 +616,7 @@ export default function PurchaseOrdersPage() {
       // 更新合同的关联信息（可以存储付款申请ID）
       contract.updatedAt = new Date().toISOString();
       upsertPurchaseContract(contract);
-      setContracts((prev) => prev.map((c) => (c.id === contract.id ? contract : c)));
+      mutateContracts();
 
       // 显示成功提示
       setPaymentModal({ contractId: null, type: null, accountId: "" });
@@ -749,8 +739,7 @@ export default function PurchaseOrdersPage() {
         const { updateContractPayment } = await import("@/lib/purchase-contracts-store");
         await upsertDeliveryOrder(updatedOrder);
         await updateContractPayment(contract.id, amount, "tail");
-        const doRes = await getDeliveryOrdersFromAPI();
-        setDeliveryOrders(doRes);
+        mutateDeliveryOrders();
       }
     }
     contract.totalPaid = (contract.totalPaid || 0) + amount;
@@ -759,7 +748,7 @@ export default function PurchaseOrdersPage() {
       contract.status = "已结清";
     }
     await upsertPurchaseContract(contract);
-    setContracts((prev) => prev.map((c) => (c.id === contract.id ? contract : c)));
+    mutateContracts();
 
     setPaymentModal({ contractId: null, type: null, accountId: "" });
     toast.success("支付成功！已自动生成收支明细并更新账户余额。", { 
@@ -850,7 +839,7 @@ export default function PurchaseOrdersPage() {
     // 更新合同的完工数量
     contract.finishedQty = contract.totalQty;
     upsertPurchaseContract(contract);
-    setContracts((prev) => prev.map((c) => (c.id === contract.id ? contract : c)));
+    mutateContracts();
     
     // 更新产品的 at_factory 库存
     if (contract.skuId) {

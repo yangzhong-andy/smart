@@ -3,10 +3,11 @@ import { ExchangeRates, getRateToCNY } from '@/lib/exchange';
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error('Failed to fetch exchange rates');
+    const message = typeof data?.error === 'string' ? data.error : '获取实时汇率失败';
+    throw new Error(message);
   }
-  const data = await res.json();
   return data.success ? data.data : null;
 };
 

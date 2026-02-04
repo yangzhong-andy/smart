@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import useSWR from "swr";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -67,25 +68,24 @@ export default function ContractPreviewPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
-  const [data, setData] = useState<{
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const fetcher = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("获取合同失败");
+    return res.json();
+  };
+  const { data, error, isLoading: loading, mutate } = useSWR<{
     id: string;
     contractNumber: string;
     snapshot: ContractSnapshot;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const printRef = useRef<HTMLDivElement>(null);
-
+  } | null>(id ? `/api/contracts/${id}` : null, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000,
+  });
   useEffect(() => {
-    if (!id) return;
-    fetch(`/api/contracts/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("获取合同失败");
-        return res.json();
-      })
-      .then(setData)
-      .catch(() => toast.error("加载合同失败"))
-      .finally(() => setLoading(false));
-  }, [id]);
+    if (error) toast.error("加载合同失败");
+  }, [error]);
 
   const items = data?.snapshot?.items ?? [];
   const groupedByPrototype = useMemo(() => {
