@@ -854,6 +854,191 @@ model CashFlow {
   @@index([createdAt])
 }
 
+// 店铺订单结算（与 docs/income_*.csv 表头一一对应，全部建字段）
+model StoreOrderSettlement {
+  id                                      String   @id @default(uuid())
+  storeId                                String?  // 所属店铺
+  statementDate                           String
+  statementId                             String
+  paymentId                               String
+  status                                  String
+  currency                                String
+  type                                    String
+  orderAdjustmentId                       String
+  skuId                                   String?
+  quantity                                Int      @default(0)
+  productName                             String   @db.Text
+  skuName                                 String?
+  orderCreatedDate                        String?
+  orderShipmentDate                       String?
+  orderDeliveryDate                       String?
+  totalSettlementAmount                    String
+  netSales                                String?
+  grossSales                              String?
+  grossSalesRefund                        String?
+  sellerDiscount                          String?
+  sellerDiscountRefund                    String?
+  shipping                                String?
+  tiktokShopShippingFee                   String?
+  fulfilledByTiktokShopShippingFee       String?
+  signatureConfirmationServiceFee         String?
+  shippingInsuranceFee                   String?
+  customerpaidShippingFee                 String?
+  customerpaidShippingFeeRefund           String?
+  tiktokShopShippingIncentive             String?
+  tiktokShopShippingIncentiveRefund       String?
+  shippingFeeSubsidy                      String?
+  returnShippingFee                       String?
+  fbtFulfillmentFee                       String?
+  customerShippingFeeOffset               String?
+  shippingFeeDiscount                     String?
+  returnShippingLabelFee                  String?
+  fbtFulfillmentFeeReimbursement          String?
+  returnShippingFeePaidByCustomers       String?
+  returnShippingFeeReimbursement          String?
+  fees                                    String?
+  transactionFee                          String?
+  referralFee                             String?
+  refundAdministrationFee                 String?
+  affiliateCommission                     String?
+  affiliatePartnerCommission              String?
+  affiliateShopAdsCommission              String?
+  tiktokShopPartnerCommission             String?
+  cofundedPromotionSellerfunded           String?
+  smartPromotionFeeTax                    String?
+  cofundedCreatorBonus                    String?
+  affiliateCommissionDeposit              String?
+  affiliateCommissionRefund               String?
+  affiliatePartnerShopAdsCommission       String?
+  campaignServiceFee                      String?
+  campaignResourceFee                     String?
+  salesTaxOnReferralFees                  String?
+  smartPromotionFee                       String?
+  adjustmentAmount                        String?
+  adjustmentReason                        String?
+  relatedOrderId                          String?
+  col60                                   String?
+  customerPayment                         String?
+  customerRefund                          String?
+  sellerCofundedVoucherDiscount            String?
+  sellerCofundedVoucherDiscountRefund      String?
+  platformDiscounts                       String?
+  platformDiscountsRefund                 String?
+  platformCofundedVoucherDiscounts         String?
+  platformCofundedVoucherDiscountsRefund   String?
+  adsReferralFeeDiscount                  String?
+  salesTaxPayment                         String?
+  salesTaxRefund                          String?
+  retailDeliveryFeePayment               String?
+  retailDeliveryFeeRefund                 String?
+  customerpaidShippingFeeBeforeDiscounts  String?
+  sellerShippingFeeDiscount               String?
+  tiktokShopShippingFeeDiscountToCustomer String?
+  modeOfTiktokShopShippingFeeDiscountToCustomer String?
+  returnShippingFeePaidByCustomers2       String?
+  estimatedChargeablePackageWeight        String?
+  chargeablePackageWeight                 String?
+  fbtChargeableGoodsWeight                String?
+  collectionMethods                       String?
+  deliveryOption                          String?
+  signatureConfirmationServiceFeeType     String?
+  col85                                   String?
+  col86                                   String?
+  col87                                   String?
+  col88                                   String?
+  col89                                   String?
+  col90                                   String?
+  col91                                   String?
+  col92                                   String?
+  col93                                   String?
+  col94                                   String?
+  col95                                   String?
+  col96                                   String?
+  col97                                   String?
+  col98                                   String?
+  col99                                   String?
+  col100                                  String?
+  col101                                  String?
+  col102                                  String?
+  col103                                  String?
+  col104                                  String?
+  col105                                  String?
+  col106                                  String?
+  col107                                  String?
+  col108                                  String?
+  col109                                  String?
+  col110                                  String?
+  col111                                  String?
+  col112                                  String?
+  col113                                  String?
+  col114                                  String?
+  col115                                  String?
+  col116                                  String?
+  col117                                  String?
+  col118                                  String?
+  col119                                  String?
+  col120                                  String?
+  col121                                  String?
+  col122                                  String?
+  col123                                  String?
+  col124                                  String?
+  col125                                  String?
+  col126                                  String?
+  col127                                  String?
+  col128                                  String?
+  col129                                  String?
+  col130                                  String?
+  col131                                  String?
+  col132                                  String?
+  col133                                  String?
+  col134                                  String?
+  col135                                  String?
+  col136                                  String?
+  col137                                  String?
+  col138                                  String?
+  col139                                  String?
+  col140                                  String?
+  col141                                  String?
+  col142                                  String?
+  col143                                  String?
+  col144                                  String?
+  col145                                  String?
+  col146                                  String?
+  col147                                  String?
+  col148                                  String?
+  col149                                  String?
+  col150                                  String?
+  col151                                  String?
+  col152                                  String?
+  col153                                  String?
+  col154                                  String?
+  col155                                  String?
+  col156                                  String?
+  col157                                  String?
+  col158                                  String?
+  col159                                  String?
+  col160                                  String?
+  col161                                  String?
+  col162                                  String?
+  col163                                  String?
+  col164                                  String?
+  col165                                  String?
+  col166                                  String?
+  col167                                  String?
+  col168                                  String?
+  col169                                  String?
+  col170                                  String?
+  col171                                  String?
+  sourceFileName                          String?
+  createdAt                               DateTime @default(now())
+
+  @@index([storeId])
+  @@index([statementDate])
+  @@index([orderAdjustmentId])
+  @@index([paymentId])
+  @@index([createdAt])
+}
+
 // 采购订单行（多 SKU 明细）
 model OrderItem {
   id          String   @id @default(uuid())
