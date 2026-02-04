@@ -250,7 +250,12 @@ async function generateFromPurchaseOrder(purchaseOrderId: string) {
   const variant =
     (order.skuId
       ? await prisma.productVariant.findFirst({
-          where: { OR: [{ id: order.skuId }, { skuId: order.sku }] },
+          where: {
+            OR: [
+              { id: order.skuId },
+              ...(order.sku != null && order.sku !== '' ? [{ skuId: order.sku }] : []),
+            ],
+          },
           include: {
             product: {
               include: {
