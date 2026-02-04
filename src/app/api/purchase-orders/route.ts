@@ -87,7 +87,6 @@ export async function GET(request: NextRequest) {
       updatedAt: po.updatedAt.toISOString()
     }
     })
-    )
 
     return NextResponse.json(transformed)
   } catch (error) {
