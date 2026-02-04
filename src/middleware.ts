@@ -1,36 +1,14 @@
-import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * 服务端先校验登录态：无会话时直接重定向到登录页，
- * 避免先渲染「正在验证身份」再跳转。
+ * 鉴权改由 LayoutWrapper 处理：middleware 里用 getToken 在登录刚完成时
+ * 可能拿不到刚写入的 cookie（Edge/时序），会导致登入成功仍被重定向回登录页，
+ * 故此处不再做登录校验，未登录时由 layout-wrapper 显示「正在跳转到登录页」并 replace 到 /login。
  */
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  if (pathname === "/login") {
-    return NextResponse.next();
-  }
-  if (pathname.startsWith("/api/auth")) {
-    return NextResponse.next();
-  }
-  if (pathname.startsWith("/_next") || pathname.includes(".")) {
-    return NextResponse.next();
-  }
-
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
-
-  if (!token) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
-  }
-
+export async function middleware(_request: NextRequest) {
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/", "/((?!login|api/auth|_next|favicon.ico|icon.svg).*)"],
+  matcher: [],
 };
