@@ -227,8 +227,8 @@ export default function SettlementDashboardPage() {
                     <Tooltip
                       contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
                       labelStyle={{ color: "#e2e8f0" }}
-                      formatter={(value: number, name: string) => [
-                        name === "结算金额" || name === "净销售" ? formatMoney(value) : value,
+                      formatter={(value, name) => [
+                        name === "结算金额" || name === "净销售" ? formatMoney(Number(value ?? 0)) : (value ?? 0),
                         name,
                       ]}
                     />
