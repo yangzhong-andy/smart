@@ -138,7 +138,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       timeoutId = setTimeout(() => {
         console.warn("Session 加载超时，重定向到登录页");
         setIsChecking(false);
-        router.push("/login");
+        router.replace("/login");
       }, 5000); // 5秒超时
       return () => {
         if (timeoutId) clearTimeout(timeoutId);
@@ -152,9 +152,9 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
 
     // 检查用户是否已登录
     if (status === "unauthenticated" || !session) {
-      // 未登录，重定向到登录页
+      // 未登录，替换为登录页（不压栈，避免登录后返回又进后台）
       setIsChecking(false);
-      router.push("/login");
+      router.replace("/login");
       return;
     }
 
@@ -191,7 +191,19 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     );
   }
 
-  // 其他页面显示侧边栏
+  // 未登录且不在登录页：只显示“跳转中”，不渲染后台界面，避免先闪出侧栏再弹登录
+  if (status === "unauthenticated" || !session) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent text-primary-500"></div>
+          <p className="mt-4 text-slate-400">正在跳转到登录页...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 已登录：其他页面显示侧边栏
   return (
     <SWRProvider>
       <RouteChangeRefresher />
