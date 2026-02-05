@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
@@ -84,19 +84,22 @@ const currency = (n: number, curr: string = "CNY") =>
 
 const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 
-// 生产进度：从下单日到交货日按天数递进（需传入 today 以使用用户本地时间，避免线上 SSR 用服务器 UTC 导致进度不准）
+// 将 ISO 或日期字符串转为用户本地日历日的午夜（避免时区导致线上进度不准）
+function toLocalDateMidnight(isoOrDateStr: string): Date {
+  const d = new Date(isoOrDateStr);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+// 生产进度：从下单日到交货日按天数递进（需传入 today 以使用用户本地时间）
 function getProductionProgress(
   createdAt: string,
   deliveryDate?: string,
   today: Date = new Date()
 ): { percent: number; label: string } | null {
   if (!deliveryDate) return null;
-  const start = new Date(createdAt);
-  const end = new Date(deliveryDate);
-  const t = new Date(today.getTime());
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
-  t.setHours(0, 0, 0, 0);
+  const start = toLocalDateMidnight(createdAt);
+  const end = toLocalDateMidnight(deliveryDate);
+  const t = toLocalDateMidnight(today.toISOString());
   const totalMs = end.getTime() - start.getTime();
   const totalDays = Math.max(0, totalMs / (24 * 60 * 60 * 1000));
   if (totalDays <= 0) return { percent: 100, label: "已到期" };
@@ -173,8 +176,8 @@ export default function PurchaseOrdersPage() {
     getExpenseRequests().then(setExpenseRequests);
   }, []);
 
-  // 生产进度使用用户本地时间，仅在客户端挂载后设置
-  useEffect(() => {
+  // 生产进度使用用户本地时间，useLayoutEffect 在首屏绘制前设置，避免线上缓存/SSR 导致进度不准
+  useLayoutEffect(() => {
     setClientNow(new Date());
   }, []);
 
