@@ -89,6 +89,7 @@ export default function ProductsPage() {
   const [addVariantProduct, setAddVariantProduct] = useState<SpuListItem | null>(null);
   const [addVariantFormVariants, setAddVariantFormVariants] = useState<VariantRow[]>(() => [newVariantRow()]);
   const [form, setForm] = useState({
+    spu_code: "",
     sku_id: "",
     name: "",
     main_image: "",
@@ -332,6 +333,7 @@ export default function ProductsPage() {
 
   const resetForm = () => {
     setForm({
+      spu_code: "",
       sku_id: "",
       name: "",
       main_image: "",
@@ -370,6 +372,7 @@ export default function ProductsPage() {
       setEditingProduct(product);
       setFormVariants([newVariantRow()]); // 编辑时不需要多行
       setForm({
+        spu_code: (product as any).spu_code ?? "",
         sku_id: product.sku_id,
         name: product.name,
         main_image: product.main_image || "",
@@ -458,6 +461,7 @@ export default function ProductsPage() {
       const suppliersData = primarySupplier ? [primarySupplier] : suppliersList;
 
       const productData: any = {
+        spu_code: form.spu_code.trim() || undefined,
         name: form.name.trim(),
         main_image: form.main_image,
         gallery_images: Array.isArray(form.gallery_images) ? form.gallery_images : [],
@@ -552,6 +556,7 @@ export default function ProductsPage() {
     
     const productData: any = {
       sku_id: form.sku_id.trim(),
+      spu_code: form.spu_code.trim() || undefined,
       name: form.name.trim(),
       main_image: form.main_image,
       gallery_images: Array.isArray(form.gallery_images) ? form.gallery_images : [],
@@ -1297,9 +1302,18 @@ export default function ProductsPage() {
             <form onSubmit={handleSubmit} className="space-y-4 text-sm">
               {/* 基础信息 */}
               <div className="grid grid-cols-2 gap-4">
+                <label className="space-y-1">
+                  <span className="text-slate-300">SPU 码</span>
+                  <input
+                    value={form.spu_code}
+                    onChange={(e) => setForm((f) => ({ ...f, spu_code: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                    placeholder="产品层级编码，如 SPU-001"
+                  />
+                </label>
                 {editingProduct ? (
                   <label className="space-y-1">
-                    <span className="text-slate-300">SPU 编码 <span className="text-rose-400">*</span></span>
+                    <span className="text-slate-300">SKU 编码 <span className="text-rose-400">*</span></span>
                     <input
                       value={form.sku_id}
                       onChange={(e) => setForm((f) => ({ ...f, sku_id: e.target.value }))}

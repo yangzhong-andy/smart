@@ -60,6 +60,7 @@ function productToFlatVariants(product: any): any[] {
   if (variants.length === 0) {
     transformed.push({
       sku_id: `temp-${product.id}`,
+      spu_code: product.spuCode ?? undefined,
       name: product.name,
       main_image: product.mainImage || '',
       gallery_images: galleryImages,
@@ -111,6 +112,7 @@ function productToFlatVariants(product: any): any[] {
     for (const variant of variants) {
       transformed.push({
         sku_id: variant.skuId,
+        spu_code: product.spuCode ?? undefined,
         name: product.name,
         main_image: product.mainImage || '',
         gallery_images: galleryImages,
@@ -170,7 +172,7 @@ export async function GET(request: NextRequest) {
     if (listSpu) {
       const [products, variantAgg] = await Promise.all([
         prisma.product.findMany({
-          select: { id: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
+          select: { id: true, spuCode: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
           orderBy: { createdAt: 'desc' }
         }),
         prisma.productVariant.aggregate({
@@ -180,6 +182,7 @@ export async function GET(request: NextRequest) {
       ])
       const list = products.map((p) => ({
         productId: p.id,
+        spuCode: (p as any).spuCode ?? undefined,
         name: p.name,
         mainImage: p.mainImage ?? '',
         status: p.status,
@@ -351,6 +354,7 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
   }
   if (!product) {
     const createData: any = {
+        spuCode: body.spu_code || null,
         name: body.name.trim(),
         category: body.category || null,
         brand: body.brand || null,
@@ -544,6 +548,7 @@ export async function POST(request: NextRequest) {
       // 创建新的 Product (SPU)
       product = await prisma.product.create({
         data: {
+          spuCode: body.spu_code || null,
           name: body.name,
           category: body.category || null,
           brand: body.brand || null,

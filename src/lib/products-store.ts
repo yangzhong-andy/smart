@@ -14,6 +14,7 @@ export type PlatformSKUMapping = {
 export type Product = {
   // 基础信息
   sku_id: string; // 主键，SKU编码
+  spu_code?: string; // SPU 码（产品层级编码）
   name: string; // 产品名称（SPU名称）
   main_image: string; // 主图（base64 或 URL）
   category?: string; // 分类
@@ -97,6 +98,7 @@ export function getProducts(): Product[] {
 /** SPU 列表项（用于下拉或产品卡片聚合，按需再拉变体） */
 export type SpuListItem = {
   productId: string
+  spuCode?: string
   name: string
   variantCount: number
   mainImage?: string

@@ -156,6 +156,7 @@ export async function PUT(
 
     const productUpdateData: any = {
       name: body.name,
+      spuCode: body.spu_code !== undefined ? (body.spu_code || null) : undefined,
       category: body.category || null,
       brand: body.brand !== undefined ? (body.brand || null) : undefined,
       description: body.description !== undefined ? (body.description || null) : undefined,
@@ -264,6 +265,7 @@ export async function PUT(
     const gallery_images = galleryImages == null ? [] : Array.isArray(galleryImages) ? [...galleryImages] : (typeof galleryImages === 'string' ? (() => { try { const a = JSON.parse(galleryImages); return Array.isArray(a) ? a : []; } catch { return []; } })() : [])
     return NextResponse.json({
       sku_id: v.skuId,
+      spu_code: (updatedProduct as any).spuCode ?? undefined,
       name: updatedProduct.name,
       main_image: updatedProduct.mainImage || '',
       gallery_images,

@@ -222,6 +222,7 @@ model Supplier {
 // Product (SPU) - 产品原型（父表）：通用材质、规格描述，一单多变体合同用
 model Product {
   id          String        @id @default(uuid())
+  spuCode     String?       // SPU 码（产品层级编码，用于区分不同 SPU）
   name        String // 产品名称（如：马扎05）
   category    String? // 分类
   brand       String? // 品牌
