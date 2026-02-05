@@ -35,6 +35,22 @@ export type PurchaseContract = {
   // 向后兼容：保留单个订单关联
   relatedOrderId?: string; // 关联的采购订单ID（已废弃，使用 relatedOrderIds）
   relatedOrderNumber?: string; // 关联的采购订单编号（已废弃，使用 relatedOrderNumbers）
+  // 合同明细（多 SKU/变体），API 返回时带上
+  items?: PurchaseContractItem[];
+};
+
+export type PurchaseContractItem = {
+  id: string;
+  variantId?: string;
+  sku: string;
+  skuName?: string;
+  spec?: string;
+  unitPrice: number;
+  qty: number;
+  pickedQty: number;
+  finishedQty: number;
+  totalAmount: number;
+  sortOrder?: number;
 };
 
 const CONTRACTS_KEY = "purchaseContracts";

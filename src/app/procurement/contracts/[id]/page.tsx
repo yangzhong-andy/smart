@@ -17,6 +17,8 @@ type ContractItem = {
   productName?: string;
   material?: string;
   specDescription?: string;
+  color?: string;
+  size?: string;
   unitPrice: number;
   quantity: number;
   totalAmount: number;
@@ -207,41 +209,44 @@ export default function ContractPreviewPage() {
             <p className="mb-4"><span className="font-semibold">交货日期：</span>{s.deliveryDate}</p>
             <p className="mb-6"><span className="font-semibold">合同日期：</span>{s.orderDate}</p>
 
-            {/* 货品信息表：产品名称、型号、颜色、单价(不含税)、数量、总价(不含税)、规格、产品尺寸信息 */}
+            {/* 货品信息表：SKU 详细信息（产品名称、物料编码、规格、颜色、材质、尺寸、单价、数量、总价） */}
             <p className="font-semibold mb-2">货品信息</p>
             <table className="w-full border-collapse border border-slate-400 text-sm mb-4">
               <thead>
                 <tr className="bg-slate-100">
+                  <th className="border border-slate-400 px-2 py-1.5 text-left">序号</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-left">产品名称</th>
-                  <th className="border border-slate-400 px-2 py-1.5 text-left">产品型号</th>
-                  <th className="border border-slate-400 px-2 py-1.5 text-left">产品颜色</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-left">物料编码/SKU</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-left">规格</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-left">颜色</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-left">材质</th>
+                  <th className="border border-slate-400 px-2 py-1.5 text-left">尺寸/备注</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-right">单价（不含税）</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-right">数量</th>
                   <th className="border border-slate-400 px-2 py-1.5 text-right">总价（不含税）</th>
-                  <th className="border border-slate-400 px-2 py-1.5 text-center">规格</th>
-                  <th className="border border-slate-400 px-2 py-1.5 text-left">产品尺寸信息</th>
                 </tr>
               </thead>
               <tbody>
                 {s.items.map((item, idx) => (
                   <tr key={idx}>
+                    <td className="border border-slate-400 px-2 py-1.5 text-center">{idx + 1}</td>
                     <td className="border border-slate-400 px-2 py-1.5">{item.skuName || item.productName || item.sku || "—"}</td>
-                    <td className="border border-slate-400 px-2 py-1.5">{item.sku}</td>
-                    <td className="border border-slate-400 px-2 py-1.5">{item.spec ? `${item.spec}（见样布颜色）` : "—"}</td>
+                    <td className="border border-slate-400 px-2 py-1.5 font-medium">{item.sku}</td>
+                    <td className="border border-slate-400 px-2 py-1.5">{item.spec || item.size || "个"}</td>
+                    <td className="border border-slate-400 px-2 py-1.5">{item.color || (item.spec ? `${item.spec}（见样布颜色）` : "—")}</td>
+                    <td className="border border-slate-400 px-2 py-1.5">{item.material || "—"}</td>
+                    <td className="border border-slate-400 px-2 py-1.5">{item.specDescription || "—"}</td>
                     <td className="border border-slate-400 px-2 py-1.5 text-right">{currency(item.unitPrice)}</td>
                     <td className="border border-slate-400 px-2 py-1.5 text-right">{item.quantity}</td>
                     <td className="border border-slate-400 px-2 py-1.5 text-right">{currency(item.totalAmount)}</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-center">个</td>
-                    <td className="border border-slate-400 px-2 py-1.5">{item.specDescription || "—"}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="bg-slate-100 font-semibold">
-                  <td className="border border-slate-400 px-2 py-1.5" colSpan={4}>总金额</td>
+                  <td className="border border-slate-400 px-2 py-1.5" colSpan={7}>总金额</td>
                   <td className="border border-slate-400 px-2 py-1.5 text-right">{items.reduce((sum, i) => sum + i.quantity, 0)}</td>
                   <td className="border border-slate-400 px-2 py-1.5 text-right">{currency(totalAmountFront)}</td>
-                  <td className="border border-slate-400 px-2 py-1.5" colSpan={2}></td>
                 </tr>
               </tfoot>
             </table>

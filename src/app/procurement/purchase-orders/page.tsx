@@ -84,6 +84,27 @@ const currency = (n: number, curr: string = "CNY") =>
 
 const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 
+// 生产进度：从下单日到交货日按天数递进
+function getProductionProgress(createdAt: string, deliveryDate?: string): { percent: number; label: string } | null {
+  if (!deliveryDate) return null;
+  const start = new Date(createdAt);
+  const end = new Date(deliveryDate);
+  const today = new Date();
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const totalMs = end.getTime() - start.getTime();
+  const totalDays = Math.max(0, totalMs / (24 * 60 * 60 * 1000));
+  if (totalDays <= 0) return { percent: 100, label: "已到期" };
+  const elapsedMs = today.getTime() - start.getTime();
+  const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
+  if (elapsedDays <= 0) return { percent: 0, label: "未开始" };
+  if (elapsedDays >= totalDays) return { percent: 100, label: "已到期" };
+  const percent = Math.round((elapsedDays / totalDays) * 100);
+  const remaining = Math.ceil(totalDays - elapsedDays);
+  return { percent, label: `剩 ${remaining} 天` };
+}
+
 export default function PurchaseOrdersPage() {
   const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -1189,6 +1210,7 @@ export default function PurchaseOrdersPage() {
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">SKU / 数量</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">合同总额</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">拿货进度</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">生产进度</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">财务状态</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-slate-400">操作</th>
               </tr>
@@ -1196,7 +1218,7 @@ export default function PurchaseOrdersPage() {
             <tbody className="divide-y divide-slate-800 bg-slate-900/40">
               {filteredContracts.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={7}>
+                    <td className="px-4 py-6 text-center text-slate-500" colSpan={8}>
                     {contracts.length === 0
                       ? "暂无采购合同，请点击右上角\"新建采购合同\""
                       : "没有符合条件的合同"}
@@ -1228,9 +1250,34 @@ export default function PurchaseOrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-2">
-                      <div className="text-slate-100">{contract.sku}</div>
-                      <div className="text-[11px] text-slate-500">单价 {currency(contract.unitPrice)}</div>
-                      <div className="text-[11px] text-slate-500">合同总数 {contract.totalQty}</div>
+                      {contract.items && contract.items.length > 0 ? (
+                        <div className="space-y-1 max-w-[220px]">
+                          <div className="text-[11px] text-slate-400 font-medium">
+                            共 {contract.items.length} 个变体 · 合同总数 {contract.totalQty}
+                          </div>
+                          <div className="max-h-24 overflow-y-auto space-y-0.5 pr-1">
+                            {contract.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="text-[11px] text-slate-300 flex justify-between gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
+                              >
+                                <span className="truncate" title={[item.sku, item.skuName].filter(Boolean).join(' / ')}>
+                                  {item.sku}
+                                </span>
+                                <span className="text-slate-500 shrink-0">
+                                  {currency(item.unitPrice)} × {item.qty}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-slate-100">{contract.sku}</div>
+                          <div className="text-[11px] text-slate-500">单价 {currency(contract.unitPrice)}</div>
+                          <div className="text-[11px] text-slate-500">合同总数 {contract.totalQty}</div>
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       <div className="text-slate-100">{currency(contract.totalAmount)}</div>
@@ -1242,20 +1289,89 @@ export default function PurchaseOrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 rounded-full bg-slate-800 h-2 overflow-hidden">
-                          <div
-                            className="h-full bg-primary-500 transition-all duration-300"
-                            style={{ width: `${progressPercent}%` }}
-                          />
+                      {contract.items && contract.items.length > 0 ? (
+                        <div className="space-y-1 max-w-[180px]">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="flex-1 rounded-full bg-slate-800 h-1.5 overflow-hidden min-w-[60px]">
+                              <div
+                                className="h-full bg-primary-500 transition-all duration-300"
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
+                            <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                              {contract.pickedQty} / {contract.totalQty}
+                            </span>
+                          </div>
+                          <div className="max-h-20 overflow-y-auto space-y-0.5">
+                            {contract.items.map((item) => {
+                              const itemRemain = item.qty - item.pickedQty;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="text-[11px] text-slate-400 flex justify-between gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
+                                >
+                                  <span className="truncate">{item.sku}</span>
+                                  <span className="text-slate-500 shrink-0">
+                                    {item.pickedQty} / {item.qty}
+                                    {itemRemain > 0 && <span className="text-amber-500/80 ml-0.5">剩{itemRemain}</span>}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {contract.status} {remainingQty > 0 && `· 剩余 ${remainingQty}`}
+                          </div>
                         </div>
-                        <span className="text-xs text-slate-300 whitespace-nowrap">
-                          {contract.pickedQty} / {contract.totalQty}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-1">
-                        {contract.status} {remainingQty > 0 && `· 剩余 ${remainingQty}`}
-                      </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 rounded-full bg-slate-800 h-2 overflow-hidden">
+                              <div
+                                className="h-full bg-primary-500 transition-all duration-300"
+                                style={{ width: `${progressPercent}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-slate-300 whitespace-nowrap">
+                              {contract.pickedQty} / {contract.totalQty}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-1">
+                            {contract.status} {remainingQty > 0 && `· 剩余 ${remainingQty}`}
+                          </div>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {(() => {
+                        const prod = getProductionProgress(contract.createdAt, contract.deliveryDate);
+                        if (!prod) {
+                          return (
+                            <div className="text-[11px] text-slate-500">未设交货日期</div>
+                          );
+                        }
+                        return (
+                          <div className="space-y-0.5 min-w-[90px]">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 rounded-full bg-slate-800 h-1.5 overflow-hidden min-w-[50px]">
+                                <div
+                                  className="h-full bg-amber-500/80 transition-all duration-300"
+                                  style={{ width: `${prod.percent}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                                {prod.percent}%
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {prod.label}
+                              {contract.deliveryDate && (
+                                <span className="ml-1">· {formatDate(contract.deliveryDate)} 交货</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-2">
                       <div className="text-slate-100">{currency(contract.totalPaid || 0)} / {currency(contract.totalAmount)}</div>
@@ -1715,14 +1831,10 @@ export default function PurchaseOrdersPage() {
               {/* 合同基本信息 */}
               <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
                 <h3 className="text-sm font-medium text-slate-100 mb-3">合同信息</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                   <div>
                     <span className="text-slate-400">供应商：</span>
                     <span className="text-slate-100 ml-2">{contractDetail.contract.supplierName}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">SKU：</span>
-                    <span className="text-slate-100 ml-2">{contractDetail.contract.sku}</span>
                   </div>
                   <div>
                     <span className="text-slate-400">合同总数：</span>
@@ -1737,13 +1849,44 @@ export default function PurchaseOrdersPage() {
                     <span className="text-slate-100 ml-2">{contractDetail.contract.finishedQty || 0}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400">单价：</span>
-                    <span className="text-slate-100 ml-2">{currency(contractDetail.contract.unitPrice)}</span>
-                  </div>
-                  <div>
                     <span className="text-slate-400">合同总额：</span>
                     <span className="text-slate-100 ml-2">{currency(contractDetail.contract.totalAmount)}</span>
                   </div>
+                </div>
+                {/* SKU / 变体明细 */}
+                <div>
+                  <span className="text-slate-400 text-sm">SKU / 变体明细：</span>
+                  {contractDetail.contract.items && contractDetail.contract.items.length > 0 ? (
+                    <div className="mt-2 rounded border border-slate-700 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-800/80">
+                          <tr>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-400">SKU / 品名</th>
+                            <th className="px-3 py-1.5 text-right text-xs font-medium text-slate-400">单价</th>
+                            <th className="px-3 py-1.5 text-right text-xs font-medium text-slate-400">数量</th>
+                            <th className="px-3 py-1.5 text-right text-xs font-medium text-slate-400">已取货</th>
+                            <th className="px-3 py-1.5 text-right text-xs font-medium text-slate-400">小计</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {contractDetail.contract.items.map((item) => (
+                            <tr key={item.id} className="bg-slate-900/40">
+                              <td className="px-3 py-1.5 text-slate-200">
+                                <span className="font-medium">{item.sku}</span>
+                                {item.skuName && <span className="text-slate-500 ml-1">/ {item.skuName}</span>}
+                              </td>
+                              <td className="px-3 py-1.5 text-right text-slate-300">{currency(item.unitPrice)}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-300">{item.qty}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-400">{item.pickedQty}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-200">{currency(item.totalAmount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <span className="text-slate-100 ml-2">{contractDetail.contract.sku}</span>
+                  )}
                 </div>
               </div>
 

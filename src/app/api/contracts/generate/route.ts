@@ -12,6 +12,8 @@ export type ContractSnapshotItem = {
   productName?: string
   material?: string
   specDescription?: string
+  color?: string
+  size?: string
   unitPrice: number
   quantity: number
   totalAmount: number
@@ -103,7 +105,8 @@ async function generateFromPurchaseContract(purchaseContractId: string) {
 
   const items: ContractSnapshotItem[] = contract.items.length
     ? contract.items.map((i) => {
-        const product = (i as any).variant?.product
+        const variant = (i as any).variant
+        const product = variant?.product
         return {
           sku: i.sku,
           skuName: (i as any).skuName ?? undefined,
@@ -111,6 +114,8 @@ async function generateFromPurchaseContract(purchaseContractId: string) {
           productName: (i as any).skuName ?? undefined,
           material: product?.material ?? undefined,
           specDescription: (product as any)?.specDescription ?? undefined,
+          color: variant?.color ?? undefined,
+          size: variant?.size ?? undefined,
           unitPrice: Number(i.unitPrice),
           quantity: i.qty,
           totalAmount: Number(i.totalAmount),

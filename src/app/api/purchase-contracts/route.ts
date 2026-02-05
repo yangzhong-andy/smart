@@ -97,9 +97,22 @@ export async function GET(request: NextRequest) {
         relatedOrderNumbers: contract.relatedOrderNumbers || [],
         createdAt: contract.createdAt.toISOString(),
         updatedAt: contract.updatedAt.toISOString(),
-        // 向后兼容字段
         relatedOrderId: contract.relatedOrderIds[0] || undefined,
-        relatedOrderNumber: contract.relatedOrderNumbers[0] || undefined
+        relatedOrderNumber: contract.relatedOrderNumbers[0] || undefined,
+        // 合同明细（多 SKU/变体），供列表与详情展示
+        items: contract.items.map((item) => ({
+          id: item.id,
+          variantId: item.variantId ?? undefined,
+          sku: item.sku,
+          skuName: item.skuName ?? undefined,
+          spec: item.spec ?? undefined,
+          unitPrice: Number(item.unitPrice),
+          qty: item.qty,
+          pickedQty: item.pickedQty,
+          finishedQty: item.finishedQty,
+          totalAmount: Number(item.totalAmount),
+          sortOrder: item.sortOrder,
+        })),
       }
     })
 
