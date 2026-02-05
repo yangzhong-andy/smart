@@ -7,7 +7,7 @@ import ImageUploader from "@/components/ImageUploader";
 import { type Product, type ProductStatus, type SpuListItem, getSpuListFromAPI, getVariantsBySpuIdFromAPI, getProductsFromAPI } from "@/lib/products-store";
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import { PRODUCT_STATUS_LABEL } from "@/lib/enum-mapping";
-import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash, Palette, ZoomIn } from "lucide-react";
+import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash, Palette, ZoomIn, ChevronLeft, ChevronRight } from "lucide-react";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { useWeightCalculation } from "@/hooks/use-weight-calculation";
 
@@ -81,7 +81,8 @@ export default function ProductsPage() {
   const [sortBy, setSortBy] = useState<"name" | "cost" | "created" | "none">("none");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [hoveredProductId, setHoveredProductId] = useState<string | null>(null);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewImages, setPreviewImages] = useState<string[]>([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
   
   type VariantRow = { tempId: string; color: string; sku_id: string; cost_price: string; size: string; barcode: string };
   const newVariantRow = (): VariantRow => ({ tempId: crypto.randomUUID(), color: "", sku_id: "", cost_price: "", size: "", barcode: "" });
@@ -1123,10 +1124,15 @@ export default function ProductsPage() {
                         {spu.mainImage && (
                           <button
                             type="button"
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              setPreviewImageUrl(spu.mainImage ?? null);
+                              const loaded = variants.length ? variants : await loadVariantsForSpu(spu.productId);
+                              const first = loaded[0] as (Product & { gallery_images?: string[] }) | undefined;
+                              const gallery = Array.isArray(first?.gallery_images) ? first.gallery_images : [];
+                              const list = [spu.mainImage!, ...gallery.filter((url) => url && url !== spu.mainImage)];
+                              setPreviewImages(list);
+                              setPreviewIndex(0);
                             }}
                             className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium bg-black/40 text-white hover:bg-black/60 border border-white/20"
                             title="查看图片"
@@ -1275,29 +1281,54 @@ export default function ProductsPage() {
         )}
       </section>
 
-      {/* 图片预览弹层：同页内展示，避免新标签页 base64/相对路径空白 */}
-      {previewImageUrl && (
+      {/* 图片预览弹层：支持多图，上一张/下一张 */}
+      {previewImages.length > 0 && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setPreviewImageUrl(null)}
+          onClick={() => setPreviewImages([])}
           role="dialog"
           aria-modal="true"
           aria-label="查看大图"
         >
           <button
             type="button"
-            onClick={() => setPreviewImageUrl(null)}
+            onClick={() => setPreviewImages([])}
             className="absolute top-4 right-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
             aria-label="关闭"
           >
             <X className="h-6 w-6" />
           </button>
+          {previewImages.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i <= 0 ? previewImages.length - 1 : i - 1)); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+                aria-label="上一张"
+              >
+                <ChevronLeft className="h-8 w-8" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i >= previewImages.length - 1 ? 0 : i + 1)); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+                aria-label="下一张"
+              >
+                <ChevronRight className="h-8 w-8" />
+              </button>
+            </>
+          )}
           <img
-            src={previewImageUrl}
-            alt="产品大图"
+            src={previewImages[previewIndex]}
+            alt={`产品大图 ${previewIndex + 1}/${previewImages.length}`}
             className="max-w-[90vw] max-h-[90vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
+          {previewImages.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 text-white/80 text-sm">
+              {previewIndex + 1} / {previewImages.length}
+            </div>
+          )}
         </div>
       )}
 
