@@ -7,19 +7,19 @@ import ImageUploader from "@/components/ImageUploader";
 import { type Product, type ProductStatus, type SpuListItem, getSpuListFromAPI, getVariantsBySpuIdFromAPI, getProductsFromAPI } from "@/lib/products-store";
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import { PRODUCT_STATUS_LABEL } from "@/lib/enum-mapping";
-import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash, Palette } from "lucide-react";
+import { Package, TrendingUp, DollarSign, Search, X, SortAsc, SortDesc, Download, Pencil, Trash2, Info, Plus, Trash, Palette, ZoomIn } from "lucide-react";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { useWeightCalculation } from "@/hooks/use-weight-calculation";
 
 // 变体颜色/尺寸预设选项（下拉选择，可选「其他」后自定义）
-const VARIANT_COLOR_OPTIONS = ["红色", "蓝色", "黑色", "白色", "灰色", "黄色", "绿色", "粉色", "紫色", "橙色"];
+const VARIANT_COLOR_OPTIONS = ["红色", "蓝色", "黑色", "白色", "灰色", "黄色", "绿色", "粉色", "紫色", "橙色", "卡其色"];
 const VARIANT_SIZE_OPTIONS = ["S", "M", "L", "XL", "XXL", "均码"];
 const OTHER_LABEL = "其他";
 
 // 颜色名称 → 圆点展示用背景色（规格选择区颜色点）
 const COLOR_DOT_MAP: Record<string, string> = {
   红色: "#ef4444", 蓝色: "#3b82f6", 黑色: "#1f2937", 白色: "#f3f4f6", 灰色: "#9ca3af",
-  黄色: "#eab308", 绿色: "#22c55e", 粉色: "#ec4899", 紫色: "#a855f7", 橙色: "#f97316"
+  黄色: "#eab308", 绿色: "#22c55e", 粉色: "#ec4899", 紫色: "#a855f7", 橙色: "#f97316", 卡其色: "#c3b091"
 };
 const getColorDotStyle = (color: string | undefined) => {
   if (!color?.trim()) return { backgroundColor: "#64748b", borderColor: "rgba(255,255,255,0.2)" };
@@ -81,6 +81,7 @@ export default function ProductsPage() {
   const [sortBy, setSortBy] = useState<"name" | "cost" | "created" | "none">("none");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [hoveredProductId, setHoveredProductId] = useState<string | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   
   type VariantRow = { tempId: string; color: string; sku_id: string; cost_price: string; size: string; barcode: string };
   const newVariantRow = (): VariantRow => ({ tempId: crypto.randomUUID(), color: "", sku_id: "", cost_price: "", size: "", barcode: "" });
@@ -91,6 +92,7 @@ export default function ProductsPage() {
     sku_id: "",
     name: "",
     main_image: "",
+    gallery_images: [] as string[],
     category: "",
     brand: "",
     description: "",
@@ -124,7 +126,7 @@ export default function ProductsPage() {
     }>
   });
 
-  const { data: swrSpuList, error: productsError, mutate: mutateProducts } = useSWR<SpuListItem[]>('/api/products?list=spu');
+  const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<{ list?: SpuListItem[]; summary?: { totalCount: number; onSaleCount: number; offSaleCount: number; avgCost: number } } | SpuListItem[]>('/api/products?list=spu');
 
   // 使用重量计算 Hook - 自动计算体积重和计费重量
   const weightCalculation = useWeightCalculation(
@@ -135,15 +137,20 @@ export default function ProductsPage() {
     form.weight_kg
   );
 
+  const apiSummary = useMemo(() => {
+    if (!swrProductsData || Array.isArray(swrProductsData)) return null;
+    return swrProductsData.summary ?? null;
+  }, [swrProductsData]);
+
   useEffect(() => {
-    if (swrSpuList) {
-      const list = Array.isArray(swrSpuList) ? swrSpuList : [];
-      setSpuList(list);
+    if (swrProductsData) {
+      const list = Array.isArray(swrProductsData) ? swrProductsData : (swrProductsData.list ?? []);
+      setSpuList(Array.isArray(list) ? list : []);
       setProductsReady(true);
-    } else if (swrSpuList === undefined) {
+    } else if (swrProductsData === undefined) {
       setSpuList([]);
     }
-  }, [swrSpuList]);
+  }, [swrProductsData]);
 
   useEffect(() => {
     if (productsError) {
@@ -153,14 +160,16 @@ export default function ProductsPage() {
     }
   }, [productsError]);
 
-  const loadVariantsForSpu = useCallback(async (productId: string) => {
-    if (variantCache[productId]?.length) return;
+  const loadVariantsForSpu = useCallback(async (productId: string): Promise<Product[]> => {
+    if (variantCache[productId]?.length) return variantCache[productId] ?? [];
     setLoadingSpuId(productId);
     try {
       const variants = await getVariantsBySpuIdFromAPI(productId);
       setVariantCache((prev) => ({ ...prev, [productId]: variants }));
+      return variants;
     } catch (e) {
       toast.error("加载规格失败");
+      return [];
     } finally {
       setLoadingSpuId(null);
     }
@@ -200,22 +209,37 @@ export default function ProductsPage() {
 
   const filteredProducts = useMemo(() => products, [products]);
 
-  // 产品统计摘要（按 SPU 卡片数）
+  // 产品统计摘要：无筛选时优先用接口返回的 summary，有筛选时用前端 filteredSpuList + products 计算
   const productSummary = useMemo(() => {
+    const noFilter = filterStatus === "all" && filterCategory === "all" && !searchKeyword.trim();
+    if (noFilter && apiSummary) {
+      const costByCurrency = filteredProducts.reduce((acc, p) => {
+        const currency = p.currency ?? "CNY";
+        if (!acc[currency]) acc[currency] = 0;
+        acc[currency] += Number(p.cost_price ?? 0);
+        return acc;
+      }, {} as Record<string, number>);
+      return {
+        totalCount: apiSummary.totalCount,
+        onSaleCount: apiSummary.onSaleCount,
+        offSaleCount: apiSummary.offSaleCount,
+        avgCost: apiSummary.avgCost,
+        costByCurrency
+      };
+    }
     const totalCount = filteredSpuList.length;
     const onSaleCount = filteredSpuList.filter((s) => (s.status as string) === "ACTIVE").length;
     const offSaleCount = filteredSpuList.filter((s) => (s.status as string) === "INACTIVE").length;
     const totalCost = products.reduce((sum, p) => sum + Number(p.cost_price ?? 0), 0);
     const avgCost = products.length > 0 ? totalCost / products.length : 0;
-    
-    // 按币种统计
+
     const costByCurrency = filteredProducts.reduce((acc, p) => {
       const currency = p.currency ?? "CNY";
       if (!acc[currency]) acc[currency] = 0;
       acc[currency] += Number(p.cost_price ?? 0);
       return acc;
     }, {} as Record<string, number>);
-    
+
     return {
       totalCount,
       onSaleCount,
@@ -223,7 +247,7 @@ export default function ProductsPage() {
       avgCost,
       costByCurrency
     };
-  }, [filteredProducts]);
+  }, [apiSummary, filterStatus, filterCategory, searchKeyword, filteredSpuList, products, filteredProducts]);
 
   // 导出产品数据（导出时拉取全量变体）
   const handleExportData = async () => {
@@ -311,6 +335,7 @@ export default function ProductsPage() {
       sku_id: "",
       name: "",
       main_image: "",
+      gallery_images: [],
       category: "",
       brand: "",
       description: "",
@@ -348,6 +373,7 @@ export default function ProductsPage() {
         sku_id: product.sku_id,
         name: product.name,
         main_image: product.main_image || "",
+        gallery_images: Array.isArray((product as any).gallery_images) ? (product as any).gallery_images : [],
         category: product.category || "",
         brand: product.brand || "",
         description: product.description || "",
@@ -434,6 +460,7 @@ export default function ProductsPage() {
       const productData: any = {
         name: form.name.trim(),
         main_image: form.main_image,
+        gallery_images: Array.isArray(form.gallery_images) ? form.gallery_images : [],
         category: form.category.trim() || undefined,
         brand: form.brand.trim() || undefined,
         description: form.description.trim() || undefined,
@@ -527,6 +554,7 @@ export default function ProductsPage() {
       sku_id: form.sku_id.trim(),
       name: form.name.trim(),
       main_image: form.main_image,
+      gallery_images: Array.isArray(form.gallery_images) ? form.gallery_images : [],
       category: form.category.trim() || undefined,
       brand: form.brand.trim() || undefined,
       description: form.description.trim() || undefined,
@@ -655,7 +683,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (skuId: string) => {
-    if (!confirm("⚠️ 确定要删除这个产品吗？\n此操作不可恢复！")) return;
+    if (!confirm("⚠️ 确定要删除这个 SKU 吗？\n此操作不可恢复！")) return;
 
     try {
       const response = await fetch(`/api/products/${encodeURIComponent(skuId)}`, {
@@ -676,10 +704,32 @@ export default function ProductsPage() {
         });
       }
       await mutateProducts?.();
-      toast.success("产品已删除");
+      toast.success("SKU 已删除");
     } catch (error: any) {
       console.error('Failed to delete product:', error);
-      toast.error(error.message || '删除产品失败');
+      toast.error(error.message || '删除失败');
+    }
+  };
+
+  /** 删除整个产品（SPU）及其全部变体 */
+  const handleDeleteSpu = async (productId: string) => {
+    if (!confirm("⚠️ 确定要删除该产品及其全部变体吗？\n此操作不可恢复！")) return;
+    try {
+      const res = await fetch(`/api/products/spu/${encodeURIComponent(productId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "删除失败");
+      }
+      setVariantCache((prev) => {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      });
+      setExpandedSpuId((id) => (id === productId ? null : id));
+      await mutateProducts?.();
+      toast.success("产品及全部变体已删除");
+    } catch (e: any) {
+      toast.error(e?.message || "删除产品失败");
     }
   };
 
@@ -1038,7 +1088,22 @@ export default function ProductsPage() {
                           <Package className="h-12 w-12" />
                         </div>
                       )}
-                      <div className="absolute top-2 right-2">
+                      <div className="absolute top-2 right-2 flex items-center gap-2">
+                        {spu.mainImage && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setPreviewImageUrl(spu.mainImage ?? null);
+                            }}
+                            className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium bg-black/40 text-white hover:bg-black/60 border border-white/20"
+                            title="查看图片"
+                          >
+                            <ZoomIn className="h-3.5 w-3.5" />
+                            查看图片
+                          </button>
+                        )}
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                             spu.status === "ACTIVE" ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-700/50 text-slate-400"
@@ -1049,7 +1114,7 @@ export default function ProductsPage() {
                       </div>
                     </div>
 
-                    <div className="absolute top-3 right-3 flex gap-2 z-30">
+                    <div className="absolute top-3 right-3 flex flex-wrap gap-2 z-30">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1062,16 +1127,34 @@ export default function ProductsPage() {
                       >
                         <Palette className="h-3 w-3" />
                       </button>
-                      {variants[0] && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleOpenModal(variants[0]); }}
-                          className="flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20"
-                          title="编辑"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const loaded = variants.length ? variants : await loadVariantsForSpu(spu.productId);
+                          if (loaded.length > 0) {
+                            handleOpenModal(loaded[0] as Product);
+                          } else {
+                            setAddVariantProduct(spu);
+                            setAddVariantFormVariants([newVariantRow()]);
+                          }
+                        }}
+                        className="flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20"
+                        title="编辑"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSpu(spu.productId);
+                        }}
+                        className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                        title="删除产品及全部变体"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                     </div>
 
                     <div className="mb-3 mt-1">
@@ -1160,6 +1243,32 @@ export default function ProductsPage() {
           </div>
         )}
       </section>
+
+      {/* 图片预览弹层：同页内展示，避免新标签页 base64/相对路径空白 */}
+      {previewImageUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewImageUrl(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="查看大图"
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewImageUrl(null)}
+            className="absolute top-4 right-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            aria-label="关闭"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <img
+            src={previewImageUrl}
+            alt="产品大图"
+            className="max-w-[90vw] max-h-[90vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
 
       {/* 录入/编辑产品模态框 */}
       {isModalOpen && (
@@ -1535,6 +1644,17 @@ export default function ProductsPage() {
                   onChange={(value) => setForm((f) => ({ ...f, main_image: value as string }))}
                   label="产品主图"
                   placeholder="点击上传或直接 Ctrl + V 粘贴图片"
+                />
+              </div>
+              {/* 产品多图（变体/详情展示用，最多 9 张） */}
+              <div>
+                <ImageUploader
+                  value={form.gallery_images}
+                  onChange={(value) => setForm((f) => ({ ...f, gallery_images: Array.isArray(value) ? value : value ? [value] : [] }))}
+                  label="产品多图"
+                  multiple
+                  maxImages={9}
+                  placeholder="点击上传或 Ctrl+V 粘贴，可传多张（用于详情/轮播）"
                 />
               </div>
 

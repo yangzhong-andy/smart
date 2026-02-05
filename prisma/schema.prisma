@@ -226,7 +226,8 @@ model Product {
   category    String? // 分类
   brand       String? // 品牌
   description String? // 产品描述
-  mainImage   String? // 主图
+  mainImage    String? // 主图
+  galleryImages Json? // 产品多图（JSON 数组，用于详情/轮播）
   material    String? // 材质（合同展示用）
   specDescription String? // 规格描述（合同展示用，参考附件）
   status      ProductStatus @default(ACTIVE) // 产品状态

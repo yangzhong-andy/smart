@@ -55,11 +55,14 @@ function toIsoString(v: unknown): string {
 function productToFlatVariants(product: any): any[] {
   const transformed: any[] = []
   const variants = product.variants ?? []
+  const raw = (product as any).galleryImages
+  const galleryImages = raw == null ? [] : Array.isArray(raw) ? [...raw] : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : []; } catch { return []; } })() : [])
   if (variants.length === 0) {
     transformed.push({
       sku_id: `temp-${product.id}`,
       name: product.name,
       main_image: product.mainImage || '',
+      gallery_images: galleryImages,
       category: product.category || undefined,
       brand: product.brand || undefined,
       description: product.description || undefined,
@@ -110,6 +113,7 @@ function productToFlatVariants(product: any): any[] {
         sku_id: variant.skuId,
         name: product.name,
         main_image: product.mainImage || '',
+        gallery_images: galleryImages,
         category: product.category || undefined,
         brand: product.brand || undefined,
         description: product.description || undefined,
@@ -162,12 +166,18 @@ export async function GET(request: NextRequest) {
     const listSpu = searchParams.get('list') === 'spu'
     const spuId = searchParams.get('spuId')
 
-    // 模式 1：仅拉取 SPU 列表（主图、状态、变体数，用于产品卡片聚合展示）
+    // 模式 1：仅拉取 SPU 列表（主图、状态、变体数）+ 统计摘要（供产品档案页统计卡片）
     if (listSpu) {
-      const products = await prisma.product.findMany({
-        select: { id: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
-        orderBy: { createdAt: 'desc' }
-      })
+      const [products, variantAgg] = await Promise.all([
+        prisma.product.findMany({
+          select: { id: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
+          orderBy: { createdAt: 'desc' }
+        }),
+        prisma.productVariant.aggregate({
+          _avg: { costPrice: true },
+          _count: { id: true }
+        })
+      ])
       const list = products.map((p) => ({
         productId: p.id,
         name: p.name,
@@ -176,7 +186,16 @@ export async function GET(request: NextRequest) {
         category: p.category ?? undefined,
         variantCount: p._count.variants
       }))
-      return NextResponse.json(list)
+      const totalCount = products.length
+      const onSaleCount = products.filter((p) => p.status === 'ACTIVE').length
+      const offSaleCount = products.filter((p) => p.status === 'INACTIVE').length
+      const avgCost = variantAgg._count.id > 0 && variantAgg._avg.costPrice != null
+        ? Number(variantAgg._avg.costPrice)
+        : 0
+      return NextResponse.json({
+        list,
+        summary: { totalCount, onSaleCount, offSaleCount, avgCost }
+      })
     }
 
     // 模式 2：按需拉取单个 SPU 及其全部 SKU（include 一次性拿到，前端缓存）
@@ -337,6 +356,7 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
         brand: body.brand || null,
         description: body.description || null,
         mainImage: body.main_image || null,
+        galleryImages: Array.isArray(body.gallery_images) && body.gallery_images.length > 0 ? JSON.parse(JSON.stringify(body.gallery_images)) : null,
         material: body.material || null,
         customsNameCN: body.customs_name_cn || null,
         customsNameEN: body.customs_name_en || null,
@@ -518,6 +538,7 @@ export async function POST(request: NextRequest) {
           brand: body.brand || null,
           description: body.description || null,
           mainImage: body.main_image || null,
+          galleryImages: Array.isArray(body.gallery_images) && body.gallery_images.length > 0 ? JSON.parse(JSON.stringify(body.gallery_images)) : null,
           material: body.material || null,
           customsNameCN: body.customs_name_cn || null,
           customsNameEN: body.customs_name_en || null,

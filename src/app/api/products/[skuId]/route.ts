@@ -154,22 +154,27 @@ export async function PUT(
       }]
     }
 
-    // 更新 Product (SPU)
+    const productUpdateData: any = {
+      name: body.name,
+      category: body.category || null,
+      brand: body.brand !== undefined ? (body.brand || null) : undefined,
+      description: body.description !== undefined ? (body.description || null) : undefined,
+      mainImage: body.main_image !== undefined ? (body.main_image || null) : undefined,
+      material: body.material !== undefined ? (body.material || null) : undefined,
+      customsNameCN: body.customs_name_cn !== undefined ? (body.customs_name_cn || null) : undefined,
+      customsNameEN: body.customs_name_en !== undefined ? (body.customs_name_en || null) : undefined,
+      defaultSupplierId: body.default_supplier_id !== undefined ? (body.default_supplier_id || null) : undefined,
+      status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      suppliers: suppliersData ? JSON.parse(JSON.stringify(suppliersData)) : undefined
+    }
+    if (body.gallery_images !== undefined) {
+      productUpdateData.galleryImages = Array.isArray(body.gallery_images) && body.gallery_images.length > 0
+        ? JSON.parse(JSON.stringify(body.gallery_images))
+        : null
+    }
     const updatedProduct = await prisma.product.update({
       where: { id: existingVariant.productId },
-      data: {
-        name: body.name,
-        category: body.category || null,
-        brand: body.brand !== undefined ? (body.brand || null) : undefined,
-        description: body.description !== undefined ? (body.description || null) : undefined,
-        mainImage: body.main_image !== undefined ? (body.main_image || null) : undefined,
-        material: body.material !== undefined ? (body.material || null) : undefined,
-        customsNameCN: body.customs_name_cn !== undefined ? (body.customs_name_cn || null) : undefined,
-        customsNameEN: body.customs_name_en !== undefined ? (body.customs_name_en || null) : undefined,
-        defaultSupplierId: body.default_supplier_id !== undefined ? (body.default_supplier_id || null) : undefined,
-        status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
-        suppliers: suppliersData ? JSON.parse(JSON.stringify(suppliersData)) : undefined
-      }
+      data: productUpdateData
     })
 
     // 更新 ProductVariant (SKU)
@@ -255,10 +260,13 @@ export async function PUT(
     const primarySupplier = (productWithVariant?.productSuppliers ?? []).find(ps => ps.isPrimary) ?? (productWithVariant?.productSuppliers ?? [])[0]
     const v = updatedVariant
     
+    const galleryImages = (updatedProduct as any).galleryImages
+    const gallery_images = galleryImages == null ? [] : Array.isArray(galleryImages) ? [...galleryImages] : (typeof galleryImages === 'string' ? (() => { try { const a = JSON.parse(galleryImages); return Array.isArray(a) ? a : []; } catch { return []; } })() : [])
     return NextResponse.json({
       sku_id: v.skuId,
       name: updatedProduct.name,
       main_image: updatedProduct.mainImage || '',
+      gallery_images,
       category: updatedProduct.category || undefined,
       brand: updatedProduct.brand || undefined,
       description: updatedProduct.description || undefined,

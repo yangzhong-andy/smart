@@ -112,7 +112,10 @@ export async function getSpuListFromAPI(): Promise<SpuListItem[]> {
   try {
     const res = await fetch("/api/products?list=spu");
     if (!res.ok) return [];
-    return await res.json();
+    const data = await res.json();
+    if (Array.isArray(data)) return data;
+    if (data?.list && Array.isArray(data.list)) return data.list;
+    return [];
   } catch (e) {
     console.error("Failed to fetch SPU list", e);
     return [];
