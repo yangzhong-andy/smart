@@ -118,13 +118,17 @@ export async function deleteDeliveryOrder(id: string): Promise<boolean> {
   return res.ok;
 }
 
+/** 按变体拿货：itemId 为合同明细 id，qty 为本次拿货数量 */
+export type DeliveryOrderItemInput = { itemId: string; qty: number };
+
 /**
  * 创建新的拿货单（子单）
- * 会自动更新母单的已取货数量
+ * 支持按变体提交：items 为各 SKU 的本次拿货数量；若不传 items 则用总 qty（兼容旧用法）
+ * 会自动更新合同明细的已取货数量
  */
 export async function createDeliveryOrder(
   contractId: string,
-  qty: number,
+  qtyOrItems: number | DeliveryOrderItemInput[],
   domesticTrackingNumber?: string,
   shippedDate?: string
 ): Promise<{ success: boolean; order?: DeliveryOrder; error?: string }> {
@@ -132,14 +136,52 @@ export async function createDeliveryOrder(
   const contract = await getPurchaseContractByIdFromAPI(contractId);
   if (!contract) return { success: false, error: "合同不存在" };
 
-  const remainingQty = contract.totalQty - contract.pickedQty;
-  if (qty > remainingQty) {
-    return { success: false, error: `本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}` };
+  let totalQty: number;
+  const items = Array.isArray(qtyOrItems) ? qtyOrItems : null;
+
+  if (items && items.length > 0) {
+    totalQty = items.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    if (totalQty <= 0) return { success: false, error: "拿货数量必须大于 0" };
+    const res = await fetch(`/api/purchase-contracts/${contractId}/update-picked`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: items.map((i) => ({ itemId: i.itemId, qty: Number(i.qty) || 0 })) })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: (err as { error?: string }).error || "更新合同已取货数失败" };
+    }
+  } else {
+    const qty = typeof qtyOrItems === "number" ? qtyOrItems : 0;
+    if (qty <= 0) return { success: false, error: "拿货数量必须大于 0" };
+    const remainingQty = contract.totalQty - contract.pickedQty;
+    if (qty > remainingQty) {
+      return { success: false, error: `本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}` };
+    }
+    totalQty = qty;
+    if (contract.items && contract.items.length > 0) {
+      const asItems: DeliveryOrderItemInput[] = contract.items.map((item, i) => ({
+        itemId: item.id,
+        qty: i === 0 ? qty : 0
+      }));
+      const res = await fetch(`/api/purchase-contracts/${contractId}/update-picked`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: asItems.map((i) => ({ itemId: i.itemId, qty: i.qty })) })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return { success: false, error: (err as { error?: string }).error || "更新合同已取货数失败" };
+      }
+    } else {
+      const { updateContractPickedQty } = await import("./purchase-contracts-store");
+      const ok = await updateContractPickedQty(contractId, totalQty);
+      if (!ok) return { success: false, error: "更新合同已取货数失败" };
+    }
   }
-  if (qty <= 0) return { success: false, error: "拿货数量必须大于 0" };
 
   const tailBase = contract.totalAmount - contract.depositAmount;
-  const tailAmount = tailBase * (qty / contract.totalQty);
+  const tailAmount = tailBase * (totalQty / contract.totalQty);
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + contract.tailPeriodDays);
 
@@ -148,7 +190,7 @@ export async function createDeliveryOrder(
     deliveryNumber: `DO-${Date.now()}`,
     contractId,
     contractNumber: contract.contractNumber,
-    qty,
+    qty: totalQty,
     domesticTrackingNumber,
     shippedDate: shippedDate || new Date().toISOString().slice(0, 10),
     status: "待发货",
@@ -160,10 +202,6 @@ export async function createDeliveryOrder(
   };
 
   await upsertDeliveryOrder(newOrder);
-
-  const { updateContractPickedQty } = await import("./purchase-contracts-store");
-  await updateContractPickedQty(contractId, qty);
-
   return { success: true, order: newOrder };
 }
 

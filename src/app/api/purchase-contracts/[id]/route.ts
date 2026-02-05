@@ -94,7 +94,20 @@ export async function GET(
       relatedOrderIds: contract.relatedOrderIds || [],
       relatedOrderNumbers: contract.relatedOrderNumbers || [],
       createdAt: contract.createdAt.toISOString(),
-      updatedAt: contract.updatedAt.toISOString()
+      updatedAt: contract.updatedAt.toISOString(),
+      items: contract.items.map((item) => ({
+        id: item.id,
+        variantId: item.variantId ?? undefined,
+        sku: item.sku,
+        skuName: item.skuName ?? undefined,
+        spec: item.spec ?? undefined,
+        unitPrice: Number(item.unitPrice),
+        qty: item.qty,
+        pickedQty: item.pickedQty,
+        finishedQty: item.finishedQty,
+        totalAmount: Number(item.totalAmount),
+        sortOrder: item.sortOrder
+      }))
     })
   } catch (error: any) {
     console.error('Error fetching purchase contract:', error)

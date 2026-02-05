@@ -95,21 +95,26 @@ function getProductionProgress(
   createdAt: string,
   deliveryDate?: string,
   today: Date = new Date()
-): { percent: number; label: string } | null {
+): { percent: number; label: string; elapsedDays: number; totalDays: number } | null {
   if (!deliveryDate) return null;
   const start = toLocalDateMidnight(createdAt);
   const end = toLocalDateMidnight(deliveryDate);
   const t = toLocalDateMidnight(today.toISOString());
   const totalMs = end.getTime() - start.getTime();
   const totalDays = Math.max(0, totalMs / (24 * 60 * 60 * 1000));
-  if (totalDays <= 0) return { percent: 100, label: "已到期" };
+  if (totalDays <= 0) return { percent: 100, label: "已到期", elapsedDays: 0, totalDays: 0 };
   const elapsedMs = t.getTime() - start.getTime();
   const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
-  if (elapsedDays <= 0) return { percent: 0, label: "未开始" };
-  if (elapsedDays >= totalDays) return { percent: 100, label: "已到期" };
+  if (elapsedDays <= 0) return { percent: 0, label: "未开始", elapsedDays: 0, totalDays: Math.round(totalDays) };
+  if (elapsedDays >= totalDays) return { percent: 100, label: "已到期", elapsedDays: Math.round(totalDays), totalDays: Math.round(totalDays) };
   const percent = Math.round((elapsedDays / totalDays) * 100);
   const remaining = Math.ceil(totalDays - elapsedDays);
-  return { percent, label: `剩 ${remaining} 天` };
+  return {
+    percent,
+    label: `剩 ${remaining} 天`,
+    elapsedDays: Math.round(elapsedDays),
+    totalDays: Math.round(totalDays),
+  };
 }
 
 export default function PurchaseOrdersPage() {
@@ -137,10 +142,16 @@ export default function PurchaseOrdersPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sourceOrder, setSourceOrder] = useState<PurchaseOrder | null>(null);
   const [detailModal, setDetailModal] = useState<{ contractId: string | null }>({ contractId: null });
-  const [deliveryModal, setDeliveryModal] = useState<{ contractId: string | null; qty: string; trackingNumber: string }>({
+  const [deliveryModal, setDeliveryModal] = useState<{
+    contractId: string | null;
+    qty: string;
+    trackingNumber: string;
+    itemQtys: Record<string, string>;
+  }>({
     contractId: null,
     qty: "",
-    trackingNumber: ""
+    trackingNumber: "",
+    itemQtys: {}
   });
   const [paymentModal, setPaymentModal] = useState<{ contractId: string | null; type: "deposit" | "tail" | null; deliveryOrderId?: string; accountId: string }>({
     contractId: null,
@@ -518,20 +529,22 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  // 打开发起拿货模态框
+  // 打开发起拿货模态框（按变体初始化本次数量）
   const openDeliveryModal = (contractId: string) => {
-    setDeliveryModal({ contractId, qty: "", trackingNumber: "" });
+    const contract = contracts.find((c) => c.id === contractId);
+    const itemQtys: Record<string, string> = {};
+    if (contract?.items?.length) {
+      contract.items.forEach((item) => {
+        itemQtys[item.id] = "";
+      });
+    }
+    setDeliveryModal({ contractId, qty: "", trackingNumber: "", itemQtys });
   };
 
-  // 处理发起拿货
+  // 处理发起拿货（支持按变体填写数量）
   const handleDelivery = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!deliveryModal.contractId) return;
-    const qty = Number(deliveryModal.qty);
-    if (Number.isNaN(qty) || qty <= 0) {
-      toast.error("本次拿货数量需大于 0", { icon: "⚠️" });
-      return;
-    }
 
     const contract = contracts.find((c) => c.id === deliveryModal.contractId);
     if (!contract) {
@@ -539,17 +552,45 @@ export default function PurchaseOrdersPage() {
       return;
     }
 
-    // 检查剩余数量
-    const remainingQty = contract.totalQty - contract.pickedQty;
-    if (qty > remainingQty) {
-      toast.error(`本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}，无法提交！`);
-      return;
+    let totalQty = 0;
+    let payload: number | { itemId: string; qty: number }[];
+
+    if (contract.items && contract.items.length > 0) {
+      const items: { itemId: string; qty: number }[] = [];
+      for (const item of contract.items) {
+        const v = Number(deliveryModal.itemQtys[item.id]);
+        if (Number.isNaN(v) || v <= 0) continue;
+        const remain = item.qty - item.pickedQty;
+        if (v > remain) {
+          toast.error(`变体 ${item.sku} 本次数量 ${v} 超过剩余 ${remain}`);
+          return;
+        }
+        items.push({ itemId: item.id, qty: v });
+        totalQty += v;
+      }
+      if (items.length === 0 || totalQty <= 0) {
+        toast.error("请至少填写一条变体的本次拿货数量且大于 0", { icon: "⚠️" });
+        return;
+      }
+      payload = items;
+    } else {
+      const qty = Number(deliveryModal.qty);
+      if (Number.isNaN(qty) || qty <= 0) {
+        toast.error("本次拿货数量需大于 0", { icon: "⚠️" });
+        return;
+      }
+      const remainingQty = contract.totalQty - contract.pickedQty;
+      if (qty > remainingQty) {
+        toast.error(`本次拿货数量 ${qty} 超过剩余数量 ${remainingQty}，无法提交！`);
+        return;
+      }
+      totalQty = qty;
+      payload = qty;
     }
 
-    // 创建子单
     const result = await createDeliveryOrder(
       deliveryModal.contractId,
-      qty,
+      payload,
       deliveryModal.trackingNumber || undefined,
       new Date().toISOString().slice(0, 10)
     );
@@ -559,27 +600,46 @@ export default function PurchaseOrdersPage() {
       return;
     }
 
-    // 自动创建待入库单
     if (result.order) {
       const inboundResult = await createPendingInboundFromDeliveryOrder(result.order.id);
       if (!inboundResult.success) {
         console.warn("创建待入库单失败:", inboundResult.error);
+      }
+      // 按供应商账期（尾款到期日所在月）自动生成/汇总月账单
+      try {
+        const billRes = await fetch("/api/monthly-bills/ensure-from-delivery", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deliveryOrderId: result.order.id }),
+        });
+        if (billRes.ok) {
+          const data = await billRes.json();
+          if (data.created || data.updated) {
+            toast.success(
+              data.created
+                ? `已根据账期生成 ${data.supplierName} ${data.month} 月账单`
+                : `已更新 ${data.supplierName} ${data.month} 月账单`,
+              { icon: "📋" }
+            );
+          }
+        }
+      } catch (e) {
+        console.warn("自动生成月账单失败:", e);
       }
     }
 
     mutateContracts();
     mutateDeliveryOrders();
 
-    // 如果详情页打开，刷新详情数据
     if (detailModal.contractId === deliveryModal.contractId) {
       setDetailRefreshKey((prev) => prev + 1);
     }
 
-    setDeliveryModal({ contractId: null, qty: "", trackingNumber: "" });
-    setSuccessModal({ 
-      open: true, 
-      type: "delivery", 
-      data: { contractNumber: contract.contractNumber, qty, orderNumber: result.order?.deliveryNumber }
+    setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
+    setSuccessModal({
+      open: true,
+      type: "delivery",
+      data: { contractNumber: contract.contractNumber, qty: totalQty, orderNumber: result.order?.deliveryNumber }
     });
   };
 
@@ -1396,6 +1456,7 @@ export default function PurchaseOrdersPage() {
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-500">
+                              {prod.totalDays > 0 ? `已过 ${prod.elapsedDays} / 共 ${prod.totalDays} 天 · ` : ""}
                               {prod.label}
                               <span className="ml-1">· {formatDate(contract.deliveryDate)} 交货</span>
                             </div>
@@ -2153,7 +2214,7 @@ export default function PurchaseOrdersPage() {
                 </p>
               </div>
               <button
-                onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "" })}
+                onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} })}
                 className="text-slate-400 hover:text-slate-200"
               >
                 ✕
@@ -2165,40 +2226,77 @@ export default function PurchaseOrdersPage() {
                 const contract = contracts.find((c) => c.id === deliveryModal.contractId);
                 if (!contract) return null;
                 const remainingQty = contract.totalQty - contract.pickedQty;
+                const hasItems = contract.items && contract.items.length > 0;
                 return (
-                  <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-300">
-                    <div>合同：{contract.contractNumber}</div>
-                    <div>剩余数量：{remainingQty}</div>
-                  </div>
+                  <>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-300">
+                      <div>合同：{contract.contractNumber}</div>
+                      <div>剩余数量：{remainingQty}</div>
+                    </div>
+                    {hasItems ? (
+                      <div className="space-y-2">
+                        <span className="text-slate-300">按变体填写本次拿货数量 <span className="text-rose-400">*</span></span>
+                        <div className="max-h-48 overflow-y-auto space-y-2 rounded-lg border border-slate-800 bg-slate-900/40 p-2">
+                          {contract.items!.map((item) => {
+                            const remain = item.qty - item.pickedQty;
+                            return (
+                              <div key={item.id} className="flex items-center gap-2 text-xs">
+                                <span className="min-w-[100px] truncate text-slate-300" title={item.sku}>
+                                  {item.sku}
+                                </span>
+                                <span className="text-slate-500 shrink-0">剩 {remain}</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={remain}
+                                  step={1}
+                                  value={deliveryModal.itemQtys[item.id] ?? ""}
+                                  onChange={(e) =>
+                                    setDeliveryModal((d) => ({
+                                      ...d,
+                                      itemQtys: { ...d.itemQtys, [item.id]: e.target.value }
+                                    }))
+                                  }
+                                  className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right outline-none focus:border-primary-400"
+                                  placeholder="0"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="space-y-1">
+                        <span className="text-slate-300">本次数量 <span className="text-rose-400">*</span></span>
+                        <input
+                          type="number"
+                          min={1}
+                          step="1"
+                          value={deliveryModal.qty}
+                          onChange={(e) => setDeliveryModal((d) => ({ ...d, qty: e.target.value }))}
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                          required
+                        />
+                      </label>
+                    )}
+                    <label className="space-y-1">
+                      <span className="text-slate-300">国内快递单号（可选）</span>
+                      <input
+                        type="text"
+                        value={deliveryModal.trackingNumber}
+                        onChange={(e) => setDeliveryModal((d) => ({ ...d, trackingNumber: e.target.value }))}
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                        placeholder="输入物流单号"
+                      />
+                    </label>
+                  </>
                 );
               })()}
-              <label className="space-y-1">
-                <span className="text-slate-300">本次数量 <span className="text-rose-400">*</span></span>
-                <input
-                  type="number"
-                  min={1}
-                  step="1"
-                  value={deliveryModal.qty}
-                  onChange={(e) => setDeliveryModal((d) => ({ ...d, qty: e.target.value }))}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                  required
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-300">国内快递单号（可选）</span>
-                <input
-                  type="text"
-                  value={deliveryModal.trackingNumber}
-                  onChange={(e) => setDeliveryModal((d) => ({ ...d, trackingNumber: e.target.value }))}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                  placeholder="输入物流单号"
-                />
-              </label>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "" })}
+                  onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} })}
                   className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
                 >
                   取消
