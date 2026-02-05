@@ -454,8 +454,19 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
 
 // POST - 创建新产品（支持单变体或 body.variants 批量创建多变体）
 export async function POST(request: NextRequest) {
+  let body: any
   try {
-    const body = await request.json()
+    body = await request.json()
+  } catch (parseError: any) {
+    console.error('Product POST body parse error:', parseError)
+    const msg = parseError?.message || String(parseError)
+    const isTooLarge = /payload|too large|body limit|413|size/i.test(msg)
+    return NextResponse.json(
+      { error: isTooLarge ? '请求体过大（图片过多或过大），请减少图片数量或使用更小的图片' : `请求数据解析失败：${msg}` },
+      { status: isTooLarge ? 413 : 400 }
+    )
+  }
+  try {
     
     // 批量创建多变体：body.variants = [{ color, sku_id, cost_price, size?, barcode? }, ...]
     const variantsInput = Array.isArray(body.variants) && body.variants.length > 0 ? body.variants : null
@@ -679,11 +690,13 @@ export async function POST(request: NextRequest) {
       createdAt: v.createdAt.toISOString(),
       updatedAt: v.updatedAt.toISOString()
     }, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating product:', error)
+    const msg = error?.message || String(error)
+    const isPayload = /payload|too large|413|body limit/i.test(msg)
     return NextResponse.json(
-      { error: 'Failed to create product' },
-      { status: 500 }
+      { error: isPayload ? '请求体过大，请减少图片数量或使用更小图片' : (msg || '创建产品失败') },
+      { status: isPayload ? 413 : 500 }
     )
   }
 }

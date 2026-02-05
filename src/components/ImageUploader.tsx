@@ -12,6 +12,7 @@ export interface ImageUploaderProps {
   required?: boolean;
   placeholder?: string;
   maxImages?: number; // 最大图片数量
+  maxSizeKB?: number; // 单张图片压缩后最大 KB，默认 500，产品表单建议 200 以减小请求体
   onError?: (error: string) => void;
 }
 
@@ -23,6 +24,7 @@ export default function ImageUploader({
   required = false,
   placeholder = "点击上传或直接 Ctrl + V 粘贴图片",
   maxImages = 5,
+  maxSizeKB = 500,
   onError
 }: ImageUploaderProps) {
   const [images, setImages] = useState<string[]>([]);
@@ -83,7 +85,7 @@ export default function ImageUploader({
             maxWidth: 1920,
             maxHeight: 1920,
             quality: 0.85,
-            maxSizeKB: 500,
+            maxSizeKB,
             outputFormat: "auto" // 自动选择最佳输出格式
           });
           compressedImages.push(compressed);

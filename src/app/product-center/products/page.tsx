@@ -1637,16 +1637,17 @@ export default function ProductsPage() {
                 )}
               </div>
 
-              {/* 主图上传 */}
+              {/* 主图上传（压缩 200KB 内以减小提交体积，避免请求体过大导致添加失败） */}
               <div>
                 <ImageUploader
                   value={form.main_image}
                   onChange={(value) => setForm((f) => ({ ...f, main_image: value as string }))}
                   label="产品主图"
                   placeholder="点击上传或直接 Ctrl + V 粘贴图片"
+                  maxSizeKB={200}
                 />
               </div>
-              {/* 产品多图（变体/详情展示用，最多 9 张） */}
+              {/* 产品多图（变体/详情展示用，最多 9 张；单张 200KB 内） */}
               <div>
                 <ImageUploader
                   value={form.gallery_images}
@@ -1654,6 +1655,7 @@ export default function ProductsPage() {
                   label="产品多图"
                   multiple
                   maxImages={9}
+                  maxSizeKB={200}
                   placeholder="点击上传或 Ctrl+V 粘贴，可传多张（用于详情/轮播）"
                 />
               </div>
