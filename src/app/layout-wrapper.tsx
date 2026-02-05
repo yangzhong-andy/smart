@@ -9,6 +9,32 @@ import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
 import { isPathAllowedForDepartment } from "@/lib/permissions";
 
+/** 路由切换时顶部细进度条，点击子菜单后立即有反馈，减轻“卡住”体感 */
+function RouteChangeProgress() {
+  const pathname = usePathname();
+  const prevPathRef = useRef<string | null>(null);
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (prevPathRef.current !== null && prevPathRef.current !== pathname) {
+      setShow(true);
+      const t = setTimeout(() => setShow(false), 800);
+      return () => clearTimeout(t);
+    }
+    prevPathRef.current = pathname;
+  }, [pathname]);
+
+  if (!show) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 h-1 z-[100] overflow-hidden bg-slate-800/50">
+      <div
+        className="h-full bg-primary-500 animate-progress-shrink"
+        style={{ boxShadow: "0 0 10px rgba(0, 229, 255, 0.5)" }}
+      />
+    </div>
+  );
+}
+
 // 动态导入 Sidebar，禁用 SSR，避免初始化错误
 const Sidebar = dynamic(() => import("@/components/Sidebar"), {
   ssr: false,
@@ -207,6 +233,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   return (
     <SWRProvider>
       <RouteChangeRefresher />
+      <RouteChangeProgress />
       <div className="flex h-full">
         {/* Sidebar */}
         <Sidebar />

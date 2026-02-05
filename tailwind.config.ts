@@ -7,6 +7,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      keyframes: {
+        "progress-shrink": {
+          "0%": { width: "0%" },
+          "100%": { width: "100%" },
+        },
+      },
+      animation: {
+        "progress-shrink": "progress-shrink 0.8s ease-out forwards",
+      },
       colors: {
         primary: {
           50: "#e0f7ff",
