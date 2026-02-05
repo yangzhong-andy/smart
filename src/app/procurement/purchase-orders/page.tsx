@@ -84,19 +84,23 @@ const currency = (n: number, curr: string = "CNY") =>
 
 const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 
-// 生产进度：从下单日到交货日按天数递进
-function getProductionProgress(createdAt: string, deliveryDate?: string): { percent: number; label: string } | null {
+// 生产进度：从下单日到交货日按天数递进（需传入 today 以使用用户本地时间，避免线上 SSR 用服务器 UTC 导致进度不准）
+function getProductionProgress(
+  createdAt: string,
+  deliveryDate?: string,
+  today: Date = new Date()
+): { percent: number; label: string } | null {
   if (!deliveryDate) return null;
   const start = new Date(createdAt);
   const end = new Date(deliveryDate);
-  const today = new Date();
+  const t = new Date(today.getTime());
   start.setHours(0, 0, 0, 0);
   end.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
+  t.setHours(0, 0, 0, 0);
   const totalMs = end.getTime() - start.getTime();
   const totalDays = Math.max(0, totalMs / (24 * 60 * 60 * 1000));
   if (totalDays <= 0) return { percent: 100, label: "已到期" };
-  const elapsedMs = today.getTime() - start.getTime();
+  const elapsedMs = t.getTime() - start.getTime();
   const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
   if (elapsedDays <= 0) return { percent: 0, label: "未开始" };
   if (elapsedDays >= totalDays) return { percent: 100, label: "已到期" };
@@ -160,11 +164,18 @@ export default function PurchaseOrdersPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [detailRefreshKey, setDetailRefreshKey] = useState(0);
+  // 生产进度需用用户本地时间计算，避免线上 SSR 用服务器 UTC 导致进度不动
+  const [clientNow, setClientNow] = useState<Date | null>(null);
 
   // 加载支出申请数据
   useEffect(() => {
     if (typeof window === "undefined") return;
     getExpenseRequests().then(setExpenseRequests);
+  }, []);
+
+  // 生产进度使用用户本地时间，仅在客户端挂载后设置
+  useEffect(() => {
+    setClientNow(new Date());
   }, []);
 
   // 检查是否有来自采购订单的参数
@@ -1344,10 +1355,28 @@ export default function PurchaseOrdersPage() {
                     </td>
                     <td className="px-4 py-2">
                       {(() => {
-                        const prod = getProductionProgress(contract.createdAt, contract.deliveryDate);
-                        if (!prod) {
+                        if (!contract.deliveryDate) {
                           return (
                             <div className="text-[11px] text-slate-500">未设交货日期</div>
+                          );
+                        }
+                        // 仅在客户端有 clientNow 时计算进度，避免 SSR 用服务器 UTC 导致线上进度不准
+                        const prod = clientNow
+                          ? getProductionProgress(contract.createdAt, contract.deliveryDate, clientNow)
+                          : null;
+                        if (!prod) {
+                          return (
+                            <div className="space-y-0.5 min-w-[90px]">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 rounded-full bg-slate-800 h-1.5 overflow-hidden min-w-[50px]">
+                                  <div className="h-full bg-slate-700 w-0" />
+                                </div>
+                                <span className="text-[11px] text-slate-500">—</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                · {formatDate(contract.deliveryDate)} 交货
+                              </div>
+                            </div>
                           );
                         }
                         return (
@@ -1365,9 +1394,7 @@ export default function PurchaseOrdersPage() {
                             </div>
                             <div className="text-[10px] text-slate-500">
                               {prod.label}
-                              {contract.deliveryDate && (
-                                <span className="ml-1">· {formatDate(contract.deliveryDate)} 交货</span>
-                              )}
+                              <span className="ml-1">· {formatDate(contract.deliveryDate)} 交货</span>
                             </div>
                           </div>
                         );
