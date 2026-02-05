@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { PurchaseContractStatus } from '@prisma/client'
 
@@ -204,12 +206,37 @@ export async function PUT(
   }
 }
 
-// DELETE - 删除采购合同
+// DELETE - 删除采购合同（仅最高管理员 SUPER_ADMIN 可操作）
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session || session.user?.role !== 'SUPER_ADMIN') {
+      return NextResponse.json(
+        { error: '权限不足，仅最高管理员可删除采购合同' },
+        { status: 403 }
+      )
+    }
+
+    const contract = await prisma.purchaseContract.findUnique({
+      where: { id: params.id },
+      include: {
+        deliveryOrders: { take: 1 },
+        generatedContracts: { take: 1 }
+      }
+    })
+    if (!contract) {
+      return NextResponse.json({ error: '采购合同不存在' }, { status: 404 })
+    }
+    if (contract.deliveryOrders.length > 0) {
+      return NextResponse.json(
+        { error: '该合同下存在拿货单，无法删除。请先删除或处理相关拿货单。' },
+        { status: 400 }
+      )
+    }
+
     await prisma.purchaseContract.delete({
       where: { id: params.id }
     })
@@ -217,6 +244,13 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error('Error deleting purchase contract:', error)
+    const code = error?.code
+    if (code === 'P2003' || (error?.message && String(error.message).includes('foreign key'))) {
+      return NextResponse.json(
+        { error: '该合同有关联数据（如拿货单），无法直接删除。请先处理关联数据。' },
+        { status: 400 }
+      )
+    }
     return NextResponse.json(
       { error: '删除采购合同失败', details: error.message },
       { status: 500 }

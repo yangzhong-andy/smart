@@ -14,7 +14,8 @@ import {
 import { createDeliveryOrder, type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
 import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
-import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory, FileText, Palette } from "lucide-react";
+import { Package, Plus, Eye, Truck, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Search, X, Download, TrendingUp, DollarSign, Coins, Factory, FileText, Palette, Trash2 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import ImageUploader from "@/components/ImageUploader";
 import DateInput from "@/components/DateInput";
@@ -119,6 +120,9 @@ function getProductionProgress(
 
 export default function PurchaseOrdersPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  // 仅最高管理员 SUPER_ADMIN 可见删除按钮、可删采购合同
+  const isSuperAdmin = Boolean(session?.user && (session.user as { role?: string }).role === "SUPER_ADMIN");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [spuList, setSpuList] = useState<SpuListItem[]>([]);
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({}); // productId -> 该 SPU 下全部 SKU（一次性 include 拉取后缓存）
@@ -508,6 +512,23 @@ export default function PurchaseOrdersPage() {
   // 打开详情模态框
   const openDetailModal = (contractId: string) => {
     setDetailModal({ contractId });
+  };
+
+  /** 删除采购合同（仅最高管理员可见并可用） */
+  const handleDeleteContract = async (contractId: string) => {
+    if (!isSuperAdmin) return;
+    if (!confirm("确定要删除该采购合同吗？\n删除后关联的拿货单等数据可能受影响，此操作不可恢复。")) return;
+    try {
+      const res = await fetch(`/api/purchase-contracts/${contractId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "删除失败");
+      }
+      await mutateContracts();
+      toast.success("采购合同已删除");
+    } catch (e: any) {
+      toast.error(e?.message || "删除采购合同失败");
+    }
   };
 
   // 生成合同文档并跳转预览/下载
@@ -1531,6 +1552,16 @@ export default function PurchaseOrdersPage() {
                             )}
                           </>
                         )}
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => handleDeleteContract(contract.id)}
+                            className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                            title="删除合同（仅最高管理员）"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            删除
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1891,12 +1922,28 @@ export default function PurchaseOrdersPage() {
                 <h2 className="text-lg font-semibold text-slate-100">合同详情</h2>
                 <p className="text-xs text-slate-400">{contractDetail.contract.contractNumber}</p>
               </div>
-              <button
-                onClick={() => setDetailModal({ contractId: null })}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm("确定要删除该采购合同吗？此操作不可恢复。")) return;
+                      await handleDeleteContract(contractDetail.contract.id);
+                      setDetailModal({ contractId: null });
+                    }}
+                    className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    删除合同
+                  </button>
+                )}
+                <button
+                  onClick={() => setDetailModal({ contractId: null })}
+                  className="text-slate-400 hover:text-slate-200"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">
