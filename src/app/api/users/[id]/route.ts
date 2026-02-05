@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 
+export const dynamic = 'force-dynamic'
+
 // PUT - 更新用户（仅管理员）
 export async function PUT(
   request: NextRequest,

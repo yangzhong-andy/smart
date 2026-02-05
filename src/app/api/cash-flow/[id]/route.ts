@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { CashFlowType, CashFlowStatus } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // PUT - 更新流水
 export async function PUT(
   request: NextRequest,

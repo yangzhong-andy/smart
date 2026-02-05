@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { amountToChineseUppercase } from '@/lib/amount-to-chinese'
 import { getCompanyInfo } from '@/lib/company'
 
+export const dynamic = 'force-dynamic'
+
 export type ContractSnapshotItem = {
   sku: string
   skuName?: string

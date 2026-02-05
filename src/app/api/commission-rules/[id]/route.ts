@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Department, CommissionRuleType, CommissionPeriod } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 获取单个佣金规则
 export async function GET(
   request: NextRequest,

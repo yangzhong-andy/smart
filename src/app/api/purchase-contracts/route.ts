@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { PurchaseContractStatus } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // 状态映射：Prisma 枚举 -> 中文状态
 const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
   PENDING_SHIPMENT: '待发货',

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 const typeMap = {
   payment_required: 'payment_required',
   approval_rejected: 'approval_rejected',

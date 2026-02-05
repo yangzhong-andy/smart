@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchExchangeRates } from '@/lib/exchange';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET - 获取汇率数据
  * 使用 Next.js revalidate 机制，每 1 小时自动更新

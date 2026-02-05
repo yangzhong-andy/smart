@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Platform } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 获取所有店铺
 export async function GET() {
   try {

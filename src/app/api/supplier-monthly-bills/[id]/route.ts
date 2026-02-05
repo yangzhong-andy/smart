@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 const typeToFront: Record<string, string> = {
   AD_AGENCY: '广告代理商',
   LOGISTICS: '物流商',

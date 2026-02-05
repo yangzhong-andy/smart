@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { PurchaseOrderStatus, Platform } from '@prisma/client'
 import type { PurchaseOrderStatus as FrontendPurchaseOrderStatus } from '@/lib/purchase-orders-store'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 获取所有采购订单
 export async function GET(request: NextRequest) {
   try {

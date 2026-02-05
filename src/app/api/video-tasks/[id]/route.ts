@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { VideoTaskStatus } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 const STATUS_MAP_DB_TO_FRONT: Record<VideoTaskStatus, string> = {
   TODO: '待办',
   IN_PROGRESS: '进行中',

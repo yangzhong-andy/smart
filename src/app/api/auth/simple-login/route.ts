@@ -6,6 +6,8 @@ import * as jwt from 'jsonwebtoken'
 const JWT_SECRET = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || 'your-secret-key-change-in-production'
 const JWT_EXPIRES_IN = '7d' // 7天
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()

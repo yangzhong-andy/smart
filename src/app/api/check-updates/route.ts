@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
+export const dynamic = 'force-dynamic'
+
 // 检查所有更新是否生效的 API
 export async function GET() {
   const checks: Record<string, boolean> = {}

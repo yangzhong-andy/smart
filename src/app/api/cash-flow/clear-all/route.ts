@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 // DELETE - 删除所有流水记录（用于测试）
 export async function DELETE(request: NextRequest) {
   try {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserFromRequest, filterFieldsByPermission, canReadField, DEPARTMENT_CODES } from '@/lib/permissions'
 
+export const dynamic = 'force-dynamic'
+
 // 测试权限系统的 API
 export async function GET(request: NextRequest) {
   try {

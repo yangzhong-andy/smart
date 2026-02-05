@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { PurchaseOrderStatus, Platform } from '@prisma/client'
 import type { PurchaseOrderStatus as FrontendPurchaseOrderStatus } from '@/lib/purchase-orders-store'
 
+export const dynamic = 'force-dynamic'
+
 const statusMap: Record<PurchaseOrderStatus, string> = {
   PENDING_RISK: '待风控',
   RISK_APPROVED: '风控通过',

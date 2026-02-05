@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { CashFlowStatus } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 查询账户余额详情
 export async function GET(
   request: NextRequest,

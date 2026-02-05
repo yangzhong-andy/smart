@@ -8,6 +8,8 @@ import {
   INVOICE_REQUIREMENT_VALUE,
 } from '@/lib/enum-mapping'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 获取所有供应商
 export async function GET() {
   try {

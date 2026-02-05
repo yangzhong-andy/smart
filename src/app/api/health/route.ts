@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 // 健康检查和数据库连接诊断
 export async function GET() {
   const diagnostics: any = {

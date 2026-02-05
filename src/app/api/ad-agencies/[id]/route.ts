@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic';
+
 const platformMap: Record<string, "FB" | "Google" | "TikTok" | "OTHER"> = {
   FB: "FB",
   Google: "Google",

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 获取所有员工
 export async function GET() {
   try {

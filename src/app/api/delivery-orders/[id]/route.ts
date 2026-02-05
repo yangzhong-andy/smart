@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { DeliveryOrderStatus } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 const STATUS_MAP_DB_TO_FRONT: Record<DeliveryOrderStatus, string> = {
   PENDING: '待发货',
   SHIPPED: '已发货',

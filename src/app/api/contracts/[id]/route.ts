@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+export const dynamic = 'force-dynamic'
+
 // GET /api/contracts/[id] - 获取已生成的合同（用于预览/打印）
 export async function GET(
   request: NextRequest,

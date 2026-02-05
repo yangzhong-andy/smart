@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { InventoryLocation, InventoryMovementType } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 // GET - 获取所有库存变动
 export async function GET(request: NextRequest) {
   try {

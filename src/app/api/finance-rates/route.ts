@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFinanceRates } from '@/lib/exchange';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET - 获取财务中心专用汇率数据
  * 返回 USD, JPY, THB 对 CNY 的汇率

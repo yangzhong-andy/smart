@@ -25,6 +25,8 @@ const DEPARTMENT_WORKBENCH_MAP: Record<string, string> = {
   'FINANCE': '/finance/workbench',
 }
 
+export const dynamic = 'force-dynamic'
+
 // 默认跳转路径（如果没有匹配的部门）
 const DEFAULT_REDIRECT = '/'
 
