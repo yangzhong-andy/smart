@@ -460,11 +460,12 @@ export default function ProductsPage() {
       }
       const suppliersData = primarySupplier ? [primarySupplier] : suppliersList;
 
+      const galleryList = Array.isArray(form.gallery_images) ? form.gallery_images : [];
       const productData: any = {
         spu_code: form.spu_code.trim() || undefined,
         name: form.name.trim(),
         main_image: form.main_image,
-        gallery_images: Array.isArray(form.gallery_images) ? form.gallery_images : [],
+        gallery_images: galleryList.slice(0, 5),
         category: form.category.trim() || undefined,
         brand: form.brand.trim() || undefined,
         description: form.description.trim() || undefined,
@@ -493,16 +494,27 @@ export default function ProductsPage() {
         })),
       };
 
+      const PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
+      const bodyStrBatch = JSON.stringify(productData);
+      if (bodyStrBatch.length > PAYLOAD_LIMIT_BYTES) {
+        const mb = (bodyStrBatch.length / 1024 / 1024).toFixed(2);
+        toast.error(`请求体约 ${mb}MB，超过线上限制（约 4.5MB）。请减少产品多图数量或使用更小图片后重试。`);
+        return;
+      }
+
       setIsSubmitting(true);
       try {
         const response = await fetch("/api/products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(productData),
+          body: bodyStrBatch,
         });
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
-          throw new Error(err.error || "操作失败");
+          const message = response.status === 413
+            ? "请求体过大（图片过多或过大），请减少多图数量或使用更小图片后重试"
+            : (err?.error || "操作失败");
+          throw new Error(message);
         }
         await mutateProducts?.();
         toast.success(`已创建产品「${form.name}」及 ${valid.length} 个变体`);
@@ -554,12 +566,13 @@ export default function ProductsPage() {
       suppliersList = [primarySupplier];
     }
     
+    const galleryList = Array.isArray(form.gallery_images) ? form.gallery_images : [];
     const productData: any = {
       sku_id: form.sku_id.trim(),
       spu_code: form.spu_code.trim() || undefined,
       name: form.name.trim(),
       main_image: form.main_image,
-      gallery_images: Array.isArray(form.gallery_images) ? form.gallery_images : [],
+      gallery_images: galleryList.slice(0, 5),
       category: form.category.trim() || undefined,
       brand: form.brand.trim() || undefined,
       description: form.description.trim() || undefined,
@@ -588,16 +601,29 @@ export default function ProductsPage() {
       : '/api/products';
     const method = editingProduct ? 'PUT' : 'POST';
 
+    // 线上环境（如 Vercel）请求体有约 4.5MB 限制，本地无此限制；提交前预估大小，超限则直接提示
+    const PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024; // 4MB，留余量给 JSON 结构
+    const bodyStr = JSON.stringify(productData);
+    if (bodyStr.length > PAYLOAD_LIMIT_BYTES) {
+      const mb = (bodyStr.length / 1024 / 1024).toFixed(2);
+      toast.error(`请求体约 ${mb}MB，超过线上限制（约 4.5MB）。请减少产品多图数量或使用更小图片后重试。`);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productData)
+        body: bodyStr
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || '操作失败');
+        const message =
+          response.status === 413
+            ? '请求体过大（图片过多或过大），请减少多图数量或使用更小图片后重试'
+            : (error?.error || '操作失败');
+        throw new Error(message);
       }
       await mutateProducts?.();
       if (editingProduct?.product_id) {
@@ -1651,26 +1677,26 @@ export default function ProductsPage() {
                 )}
               </div>
 
-              {/* 主图上传（压缩 200KB 内以减小提交体积，避免请求体过大导致添加失败） */}
+              {/* 主图上传（单张约 150KB 内，减小提交体积） */}
               <div>
                 <ImageUploader
                   value={form.main_image}
                   onChange={(value) => setForm((f) => ({ ...f, main_image: value as string }))}
                   label="产品主图"
                   placeholder="点击上传或直接 Ctrl + V 粘贴图片"
-                  maxSizeKB={200}
+                  maxSizeKB={150}
                 />
               </div>
-              {/* 产品多图（变体/详情展示用，最多 9 张；单张 200KB 内） */}
+              {/* 产品多图（单张约 100KB 内、最多 5 张，避免请求体过大导致提交失败） */}
               <div>
                 <ImageUploader
                   value={form.gallery_images}
                   onChange={(value) => setForm((f) => ({ ...f, gallery_images: Array.isArray(value) ? value : value ? [value] : [] }))}
                   label="产品多图"
                   multiple
-                  maxImages={9}
-                  maxSizeKB={200}
-                  placeholder="点击上传或 Ctrl+V 粘贴，可传多张（用于详情/轮播）"
+                  maxImages={5}
+                  maxSizeKB={100}
+                  placeholder="点击上传或 Ctrl+V 粘贴，建议不超过 5 张（用于详情/轮播）"
                 />
               </div>
 
