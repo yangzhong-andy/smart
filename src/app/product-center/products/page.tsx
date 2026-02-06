@@ -568,6 +568,85 @@ export default function ProductsPage() {
     }
     
     const galleryList = Array.isArray(form.gallery_images) ? form.gallery_images : [];
+    const origGallery = Array.isArray((editingProduct as any)?.gallery_images) ? (editingProduct as any).gallery_images : [];
+    const galleryUnchanged = galleryList.length === origGallery.length && galleryList.every((url, i) => url === origGallery[i]);
+
+    // 编辑时仅改变体字段（如单价、库存）→ 走 PATCH，请求小、保存快
+    const variantOnlyFields = {
+      cost_price: costPrice,
+      stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
+      color: form.color.trim() || undefined,
+      size: form.size.trim() || undefined,
+      barcode: form.barcode.trim() || undefined,
+      target_roi: form.target_roi ? Number(form.target_roi) : undefined,
+      currency: form.currency,
+      weight_kg: form.weight_kg ? Number(form.weight_kg) : undefined,
+      length: form.length ? Number(form.length) : undefined,
+      width: form.width ? Number(form.width) : undefined,
+      height: form.height ? Number(form.height) : undefined,
+      volumetric_divisor: form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined,
+    };
+    const onlyVariantChanged = editingProduct && (
+      form.sku_id.trim() === editingProduct.sku_id &&
+      form.name.trim() === editingProduct.name &&
+      form.main_image === (editingProduct.main_image ?? "") &&
+      galleryUnchanged &&
+      form.category.trim() === (editingProduct.category ?? "") &&
+      form.brand.trim() === (editingProduct.brand ?? "") &&
+      form.description.trim() === (editingProduct.description ?? "") &&
+      form.material.trim() === (editingProduct.material ?? "") &&
+      form.status === editingProduct.status &&
+      form.spu_code.trim() === ((editingProduct as any).spu_code ?? "") &&
+      (!suppliersList.length || (editingProduct as any).suppliers?.length === suppliersList.length)
+    );
+    if (editingProduct && onlyVariantChanged) {
+      const patchPayload: Record<string, unknown> = {};
+      if (Number(costPrice) !== Number(editingProduct.cost_price ?? 0)) patchPayload.cost_price = costPrice;
+      const formStock = form.stock_quantity ? Number(form.stock_quantity) : undefined;
+      const origStock = editingProduct.stock_quantity ?? ((editingProduct as any).at_factory ?? 0) + ((editingProduct as any).at_domestic ?? 0) + ((editingProduct as any).in_transit ?? 0);
+      if (formStock !== origStock) patchPayload.stock_quantity = formStock;
+      if ((form.color.trim() || "") !== ((editingProduct as any).color ?? "")) patchPayload.color = form.color.trim() || undefined;
+      if ((form.size.trim() || "") !== ((editingProduct as any).size ?? "")) patchPayload.size = form.size.trim() || undefined;
+      if ((form.barcode.trim() || "") !== ((editingProduct as any).barcode ?? "")) patchPayload.barcode = form.barcode.trim() || undefined;
+      if ((form.target_roi ? Number(form.target_roi) : undefined) !== (editingProduct.target_roi ?? undefined)) patchPayload.target_roi = form.target_roi ? Number(form.target_roi) : undefined;
+      if (form.currency !== (editingProduct.currency ?? "CNY")) patchPayload.currency = form.currency;
+      if ((form.weight_kg ? Number(form.weight_kg) : undefined) !== ((editingProduct as any).weight_kg ?? undefined)) patchPayload.weight_kg = form.weight_kg ? Number(form.weight_kg) : undefined;
+      if ((form.length ? Number(form.length) : undefined) !== ((editingProduct as any).length ?? undefined)) patchPayload.length = form.length ? Number(form.length) : undefined;
+      if ((form.width ? Number(form.width) : undefined) !== ((editingProduct as any).width ?? undefined)) patchPayload.width = form.width ? Number(form.width) : undefined;
+      if ((form.height ? Number(form.height) : undefined) !== ((editingProduct as any).height ?? undefined)) patchPayload.height = form.height ? Number(form.height) : undefined;
+      if ((form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined) !== ((editingProduct as any).volumetric_divisor ?? undefined)) patchPayload.volumetric_divisor = form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined;
+      if (Object.keys(patchPayload).length > 0) {
+        setIsSubmitting(true);
+        try {
+          const response = await fetch(`/api/products/${encodeURIComponent(editingProduct.sku_id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patchPayload),
+          });
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err?.error || "更新失败");
+          }
+          await mutateProducts?.();
+          if (editingProduct.product_id) {
+            setVariantCache((prev) => {
+              const next = { ...prev };
+              delete next[editingProduct.product_id!];
+              return next;
+            });
+          }
+          toast.success("产品已更新");
+          resetForm();
+          setIsModalOpen(false);
+        } catch (error: any) {
+          toast.error(error?.message || "保存产品失败");
+        } finally {
+          setIsSubmitting(false);
+        }
+        return;
+      }
+    }
+
     const productData: any = {
       sku_id: form.sku_id.trim(),
       spu_code: form.spu_code.trim() || undefined,
@@ -596,14 +675,19 @@ export default function ProductsPage() {
       stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
       suppliers: suppliersList.length > 0 ? suppliersList : undefined,
     };
-    
+    if (editingProduct && form.main_image === (editingProduct.main_image ?? "")) {
+      delete productData.main_image;
+    }
+    if (editingProduct && galleryUnchanged) {
+      delete productData.gallery_images;
+    }
+
     const url = editingProduct
       ? `/api/products/${encodeURIComponent(editingProduct.sku_id)}`
       : '/api/products';
     const method = editingProduct ? 'PUT' : 'POST';
 
-    // 线上环境（如 Vercel）请求体有约 4.5MB 限制，本地无此限制；提交前预估大小，超限则直接提示
-    const PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024; // 4MB，留余量给 JSON 结构
+    const PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
     const bodyStr = JSON.stringify(productData);
     if (bodyStr.length > PAYLOAD_LIMIT_BYTES) {
       const mb = (bodyStr.length / 1024 / 1024).toFixed(2);
@@ -1077,7 +1161,8 @@ export default function ProductsPage() {
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-              gap: "24px"
+              gap: "24px",
+              alignItems: "start"
             }}
           >
             {filteredSpuList.map((spu) => {
@@ -1092,23 +1177,37 @@ export default function ProductsPage() {
                     ? formatCurrencyString(prices[0], "CNY")
                     : `${formatCurrencyString(Math.min(...prices), "CNY")} ~ ${formatCurrencyString(Math.max(...prices), "CNY")}`;
 
+              const productId = spu.productId;
               return (
                 <div
-                  key={spu.productId}
+                  key={productId}
                   className="group relative overflow-hidden rounded-2xl border p-5 transition-all"
                   style={{
                     background: "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)",
                     borderRadius: "16px",
                     border: "1px solid rgba(255, 255, 255, 0.1)"
                   }}
+                  data-product-id={productId}
                 >
                   {/* 聚合展示：主图、名称、状态、价格范围（点击卡片即按需加载变体并展开规格） */}
                   <div
                     role="button"
                     tabIndex={0}
                     className="mb-4 cursor-pointer rounded-lg outline-none focus:ring-2 focus:ring-primary-500/50"
-                    onClick={() => loadVariantsForSpu(spu.productId).then(() => setExpandedSpuId(spu.productId))}
-                    onKeyDown={(e) => e.key === "Enter" && loadVariantsForSpu(spu.productId).then(() => setExpandedSpuId(spu.productId))}
+                    data-product-id={productId}
+                    onClick={(e) => {
+                      const id = (e.currentTarget as HTMLElement).getAttribute("data-product-id");
+                      if (!id) return;
+                      setExpandedSpuId(id);
+                      loadVariantsForSpu(id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      const id = (e.currentTarget as HTMLElement).getAttribute("data-product-id");
+                      if (!id) return;
+                      setExpandedSpuId(id);
+                      loadVariantsForSpu(id);
+                    }}
                   >
                     <div className="relative h-48 bg-slate-800 rounded-lg overflow-hidden">
                       {spu.mainImage ? (
@@ -1208,13 +1307,22 @@ export default function ProductsPage() {
                     </div>
                   </div>
 
-                  {/* 规格选择：平时 3～5 个颜色圆点，展开后表格 */}
+                  {/* 规格选择：仅当前展开的那张卡片显示，其他卡片不显示该区域、保持原样 */}
+                  {expandedSpuId === productId && (
                   <div className="mt-3 pt-3 border-t border-white/10">
                     <p className="text-xs text-slate-400 mb-2">规格选择</p>
                     {!variants.length && !isLoading && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); loadVariantsForSpu(spu.productId).then(() => setExpandedSpuId(spu.productId)); }}
+                        data-product-id={productId}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          const id = (e.currentTarget as HTMLElement).getAttribute("data-product-id");
+                          if (!id) return;
+                          setExpandedSpuId(id);
+                          loadVariantsForSpu(id);
+                        }}
                         className="text-xs text-primary-400 hover:text-primary-300"
                       >
                         展开加载规格
@@ -1234,7 +1342,12 @@ export default function ProductsPage() {
                           ))}
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); setExpandedSpuId(isExpanded ? null : spu.productId); }}
+                            data-product-id={productId}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const id = (e.currentTarget as HTMLElement).getAttribute("data-product-id");
+                              setExpandedSpuId(isExpanded ? null : (id ?? productId));
+                            }}
                             className="text-xs text-primary-400 hover:text-primary-300"
                           >
                             {isExpanded ? "收起" : "展开"}
@@ -1274,6 +1387,7 @@ export default function ProductsPage() {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               );
             })}

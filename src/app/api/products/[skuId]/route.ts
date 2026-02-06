@@ -51,7 +51,60 @@ function toIsoString(v: unknown): string {
   return new Date().toISOString()
 }
 
-// PUT - 更新产品
+// PATCH - 仅更新变体字段（单价、库存等），不碰 SPU/图片/供应商，保存更快
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { skuId: string } }
+) {
+  try {
+    const skuId = decodeURIComponent(params.skuId)
+    const body = await request.json()
+
+    const variantData: Record<string, unknown> = {}
+    if (body.cost_price !== undefined) variantData.costPrice = body.cost_price ? parseFloat(String(body.cost_price)) : null
+    if (body.stock_quantity !== undefined) variantData.stockQuantity = body.stock_quantity
+    if (body.color !== undefined) variantData.color = body.color || null
+    if (body.size !== undefined) variantData.size = body.size || null
+    if (body.barcode !== undefined) variantData.barcode = body.barcode || null
+    if (body.currency !== undefined) variantData.currency = body.currency
+    if (body.target_roi !== undefined) variantData.targetRoi = body.target_roi ? parseFloat(String(body.target_roi)) : null
+    if (body.weight_kg !== undefined) variantData.weightKg = body.weight_kg ? parseFloat(String(body.weight_kg)) : null
+    if (body.length !== undefined) variantData.lengthCm = body.length ? parseFloat(String(body.length)) : null
+    if (body.width !== undefined) variantData.widthCm = body.width ? parseFloat(String(body.width)) : null
+    if (body.height !== undefined) variantData.heightCm = body.height ? parseFloat(String(body.height)) : null
+    if (body.volumetric_divisor !== undefined) variantData.volumetricDivisor = body.volumetric_divisor ? parseInt(String(body.volumetric_divisor)) : null
+    if (body.at_factory !== undefined) variantData.atFactory = body.at_factory
+    if (body.at_domestic !== undefined) variantData.atDomestic = body.at_domestic
+    if (body.in_transit !== undefined) variantData.inTransit = body.in_transit
+
+    if (Object.keys(variantData).length === 0) {
+      return NextResponse.json({ error: 'No variant fields to update' }, { status: 400 })
+    }
+
+    const v = await prisma.productVariant.update({
+      where: { skuId },
+      data: variantData as any
+    })
+
+    return NextResponse.json({
+      sku_id: v.skuId,
+      cost_price: v.costPrice != null ? Number(v.costPrice) : 0,
+      stock_quantity: v.stockQuantity ?? 0,
+      updatedAt: v.updatedAt.toISOString()
+    })
+  } catch (error: any) {
+    if (error?.code === 'P2025') {
+      return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+    }
+    console.error('PATCH product variant error:', error)
+    return NextResponse.json(
+      { error: error?.message || 'Update failed' },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT - 更新产品（全量，含 SPU/图片/供应商）
 export async function PUT(
   request: NextRequest,
   { params }: { params: { skuId: string } }
@@ -208,14 +261,19 @@ export async function PUT(
       }
     })
 
-    // 如果提供了供应商信息，更新 ProductSupplier 关联
-    if (suppliersData && Array.isArray(suppliersData)) {
-      // 先删除所有现有的关联
+    // 仅当供应商有变化时才删除并重建关联，避免仅改价格时多轮 DB 写入
+    const existingSuppliers = (existingVariant.product as any).productSuppliers ?? []
+    const existingIds = existingSuppliers.map((ps: any) => ps.supplierId).sort().join(',')
+    const newIds = (suppliersData ?? [])
+      .filter((s: any) => s.id)
+      .map((s: any) => s.id)
+      .sort()
+      .join(',')
+    const suppliersUnchanged = existingIds === newIds && newIds !== ''
+    if (suppliersData && Array.isArray(suppliersData) && !suppliersUnchanged) {
       await prisma.productSupplier.deleteMany({
         where: { productId: updatedProduct.id }
       })
-      
-      // 重新创建关联
       for (const supplier of suppliersData) {
         if (supplier.id) {
           try {

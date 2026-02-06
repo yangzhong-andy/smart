@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { Factory, Package, TrendingUp, Calendar, AlertCircle, CheckCircle2, Clock, Play, AlertTriangle, Edit2, Save, X } from "lucide-react";
 import { PageHeader, StatCard, SearchBar, EmptyState } from "@/components/ui";
-import { getPurchaseContractsFromAPI, upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
-import { getDeliveryOrdersFromAPI } from "@/lib/delivery-orders-store";
+import { upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { getProductBySkuIdFromAPI, upsertProduct } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
 import { toast } from "sonner";
 import Link from "next/link";
+
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -31,27 +33,28 @@ const formatCurrency = (amount: number, currency: string = "CNY") => {
 type ProductionStatus = "未开始" | "生产中" | "部分完成" | "已完成" | "已取消";
 
 export default function ProductionProgressPage() {
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
-  const [deliveryOrders, setDeliveryOrders] = useState<any[]>([]);
+  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
+    "/api/purchase-contracts",
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 10000 }
+  );
+  const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<any[]>(
+    "/api/delivery-orders",
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 10000 }
+  );
+  const contracts = contractsData;
+  const deliveryOrders = deliveryOrdersData;
+
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [editingFinishedQty, setEditingFinishedQty] = useState<string>("");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    const [conts, orders] = await Promise.all([
-      getPurchaseContractsFromAPI(),
-      getDeliveryOrdersFromAPI()
-    ]);
-    setContracts(conts);
-    setDeliveryOrders(orders);
-  };
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemQty, setEditingItemQty] = useState<string>("");
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [completingContractId, setCompletingContractId] = useState<string | null>(null);
 
   // 处理更新完工数量
   const handleUpdateFinishedQty = async (contractId: string) => {
@@ -117,11 +120,10 @@ export default function ProductionProgressPage() {
       }
     }
 
-    // 刷新数据
-    loadData();
     setEditingContractId(null);
     setEditingFinishedQty("");
     toast.success(`已更新完工数量：${newFinishedQty} / ${contract.totalQty}`);
+    await mutateContracts();
   };
 
   // 开始编辑
@@ -134,6 +136,79 @@ export default function ProductionProgressPage() {
   const handleCancelEdit = () => {
     setEditingContractId(null);
     setEditingFinishedQty("");
+    setEditingItemId(null);
+    setEditingItemQty("");
+  };
+
+  // 按变体修改完工数：开始编辑
+  const handleStartEditItem = (contractId: string, itemId: string, currentQty: number) => {
+    setEditingContractId(contractId);
+    setEditingItemId(itemId);
+    setEditingItemQty(String(currentQty));
+  };
+
+  // 按变体修改完工数：保存
+  const handleSaveItemFinishedQty = async (contractId: string, itemId: string) => {
+    const qty = parseInt(editingItemQty, 10);
+    if (isNaN(qty) || qty < 0) {
+      toast.error("请输入有效的完工数量");
+      return;
+    }
+    const contract = contracts.find((c) => c.id === contractId);
+    if (!contract?.items) return;
+    const item = contract.items.find((i: { id: string }) => i.id === itemId);
+    if (!item) return;
+    const maxQty = item.qty ?? 0;
+    if (qty > maxQty) {
+      toast.error(`该变体完工数不能超过 ${maxQty}`);
+      return;
+    }
+    setSavingItemId(itemId);
+    try {
+      const res = await fetch(`/api/purchase-contracts/${contractId}/update-finished`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: [{ itemId, finishedQty: qty }] }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || "更新失败");
+      }
+      setEditingContractId(null);
+      setEditingItemId(null);
+      setEditingItemQty("");
+      toast.success("已更新该变体完工数");
+      await mutateContracts();
+    } catch (e: any) {
+      toast.error(e?.message || "更新失败，请重试");
+    } finally {
+      setSavingItemId(null);
+    }
+  };
+
+  // 提交生产完成（一键将完工数设为合同总数）
+  const handleCompleteProduction = async (contractId: string) => {
+    const contract = contracts.find((c) => c.id === contractId);
+    if (!contract) return;
+    if ((contract.finishedQty || 0) >= contract.totalQty) {
+      toast.info("该合同已全部完工");
+      return;
+    }
+    if (!confirm(`确定将「${contract.contractNumber}」标记为生产完成吗？完工数量将设为合同总数 ${contract.totalQty}。`)) return;
+    setCompletingContractId(contractId);
+    try {
+      const res = await fetch(`/api/purchase-contracts/${contractId}/complete-production`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || "提交失败");
+      }
+      toast.success("已提交生产完成");
+      await mutateContracts();
+    } catch (e: any) {
+      toast.error(e?.message || "提交失败，请重试");
+    } finally {
+      setCompletingContractId(null);
+    }
   };
 
   // 计算生产进度和交货时间跟进
@@ -511,13 +586,26 @@ export default function ProductionProgressPage() {
                                 <span className="font-semibold text-slate-300">
                                   {contract.finishedQty} / {contract.totalQty} ({contract.progress.toFixed(1)}%)
                                 </span>
-                                <button
-                                  onClick={() => handleStartEdit(contract as PurchaseContract)}
-                                  className="p-1 rounded hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 transition-colors"
-                                  title="更新完工数量"
-                                >
-                                  <Edit2 className="h-3 w-3" />
-                                </button>
+                                {(contract.finishedQty || 0) < contract.totalQty && contract.status !== "已取消" && (
+                                  <button
+                                    onClick={() => handleCompleteProduction(contract.id)}
+                                    disabled={completingContractId === contract.id}
+                                    className="px-2 py-1 rounded text-xs font-medium bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    title="提交生产完成"
+                                  >
+                                    {completingContractId === contract.id ? "提交中…" : "生产完成"}
+                                  </button>
+                                )}
+                                {(!contract.items || contract.items.length === 0) && (
+                                  <button
+                                    onClick={() => handleStartEdit(contract as PurchaseContract)}
+                                    className="px-2 py-1 rounded text-xs font-medium bg-primary-500/20 text-primary-300 hover:bg-primary-500/30 border border-primary-500/40 transition-colors flex items-center gap-1"
+                                    title="更新完工数量"
+                                  >
+                                    <Edit2 className="h-3 w-3" />
+                                    修改完工数
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
@@ -529,6 +617,86 @@ export default function ProductionProgressPage() {
                           />
                         </div>
                       </div>
+
+                      {/* 变体生产数量（多 SKU 时按变体展示） */}
+                      {contract.items && contract.items.length > 0 ? (
+                        <div className="mb-3 rounded-lg border border-slate-700/50 bg-slate-800/30 overflow-hidden">
+                          <div className="px-3 py-2 border-b border-slate-700/50 text-xs font-medium text-slate-400">
+                            变体生产数量
+                          </div>
+                          <div className="divide-y divide-slate-700/50">
+                            {contract.items.map((item: { id: string; sku: string; skuName?: string; spuName?: string; qty: number; finishedQty: number }) => {
+                              const itemFinished = item.finishedQty ?? 0;
+                              const itemTotal = item.qty ?? 0;
+                              const itemProgress = itemTotal > 0 ? (itemFinished / itemTotal) * 100 : 0;
+                              const label = [item.spuName, item.skuName || item.sku].filter(Boolean).join(" · ") || item.sku;
+                              const isEditing = editingContractId === contract.id && editingItemId === item.id;
+                              const isSaving = savingItemId === item.id;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="px-3 py-2 flex items-center justify-between gap-3 text-sm"
+                                >
+                                  <span className="text-slate-300 truncate min-w-0" title={label}>
+                                    {label}
+                                  </span>
+                                  {isEditing ? (
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={itemTotal}
+                                        value={editingItemQty}
+                                        onChange={(e) => setEditingItemQty(e.target.value)}
+                                        className="w-16 px-2 py-1 rounded border border-slate-600 bg-slate-800 text-slate-100 text-xs focus:border-primary-500 focus:outline-none"
+                                        autoFocus
+                                      />
+                                      <span className="text-slate-500 text-xs">/ {itemTotal}</span>
+                                      <button
+                                        onClick={() => handleSaveItemFinishedQty(contract.id, item.id)}
+                                        disabled={isSaving}
+                                        className="p-1 rounded hover:bg-emerald-500/20 text-emerald-400 disabled:opacity-50"
+                                        title="保存"
+                                      >
+                                        <Save className="h-3 w-3" />
+                                      </button>
+                                      <button
+                                        onClick={handleCancelEdit}
+                                        className="p-1 rounded hover:bg-slate-600 text-slate-400"
+                                        title="取消"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 shrink-0 flex items-center gap-2">
+                                      <span>
+                                        <span className={itemFinished >= itemTotal ? "text-emerald-400" : "text-amber-400/90"}>
+                                          {itemFinished}
+                                        </span>
+                                        <span className="text-slate-500"> / </span>
+                                        <span className="text-slate-300">{itemTotal}</span>
+                                        <span className="text-slate-500 text-xs ml-1">
+                                          ({itemProgress.toFixed(0)}%)
+                                        </span>
+                                      </span>
+                                      {contract.status !== "已取消" && (
+                                        <button
+                                          onClick={() => handleStartEditItem(contract.id, item.id, itemFinished)}
+                                          className="p-1 rounded hover:bg-primary-500/20 text-primary-400"
+                                          title="修改该变体完工数"
+                                        >
+                                          <Edit2 className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
 
                       {/* 详细信息 */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
@@ -549,6 +717,24 @@ export default function ProductionProgressPage() {
                           <span className="text-amber-300 font-medium ml-1">{contract.remainingQty.toLocaleString()}</span>
                         </div>
                       </div>
+
+                      {/* 提前完工时显示生产天数（从下单当天起算） */}
+                      {contract.status === "已完成" && contract.createdAt && (() => {
+                        const orderDate = new Date(contract.createdAt);
+                        orderDate.setHours(0, 0, 0, 0);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const productionDays = Math.max(0, Math.round((today.getTime() - orderDate.getTime()) / (24 * 60 * 60 * 1000)));
+                        return (
+                          <div className="mt-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+                            <div className="text-sm text-emerald-200">
+                              <span className="font-medium">生产天数：</span>
+                              <span className="font-semibold">{productionDays}</span> 天
+                              <span className="text-emerald-300/80 ml-1">（自下单日 {formatDate(contract.createdAt)} 起）</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* 交货时间跟进 */}
                       {contract.deliveryDate && (

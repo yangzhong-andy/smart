@@ -1451,12 +1451,49 @@ export default function PurchaseOrdersPage() {
                     </td>
                     <td className="px-4 py-2">
                       {(() => {
+                        const finished = contract.finishedQty ?? 0;
+                        const total = contract.totalQty;
+                        const isFullyComplete = total > 0 && finished >= total;
+
                         if (!contract.deliveryDate) {
                           return (
-                            <div className="text-[11px] text-slate-500">未设交货日期</div>
+                            <div className="space-y-0.5 min-w-[90px]">
+                              <div className="text-[11px] text-slate-500">未设交货日期</div>
+                              <div className="text-[10px] text-emerald-400/90">完工 {finished} / {total}</div>
+                            </div>
                           );
                         }
-                        // 仅在客户端有 clientNow 时计算进度，避免 SSR 用服务器 UTC 导致线上进度不准
+                        // 提前完工：完工数已满则进度条直接显示 100%，与生产进度页一致，并显示生产天数（从下单当天起算）
+                        if (isFullyComplete) {
+                          const orderDate = contract.createdAt ? new Date(contract.createdAt) : null;
+                          if (orderDate) orderDate.setHours(0, 0, 0, 0);
+                          const endDate = clientNow ? new Date(clientNow) : new Date();
+                          endDate.setHours(0, 0, 0, 0);
+                          const productionDays = orderDate
+                            ? Math.max(0, Math.round((endDate.getTime() - orderDate.getTime()) / (24 * 60 * 60 * 1000)))
+                            : null;
+                          return (
+                            <div className="space-y-0.5 min-w-[90px]">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 rounded-full bg-slate-800 h-1.5 overflow-hidden min-w-[50px]">
+                                  <div
+                                    className="h-full bg-emerald-500/90 transition-all duration-300"
+                                    style={{ width: "100%" }}
+                                  />
+                                </div>
+                                <span className="text-[11px] text-emerald-400 whitespace-nowrap">100%</span>
+                              </div>
+                              <div className="text-[10px] text-emerald-400/90">
+                                已完工 · {formatDate(contract.deliveryDate)} 交货
+                              </div>
+                              <div className="text-[10px] text-emerald-400/90">完工 {finished} / {total}</div>
+                              {productionDays != null && (
+                                <div className="text-[10px] text-slate-400">生产 {productionDays} 天</div>
+                              )}
+                            </div>
+                          );
+                        }
+                        // 仅在客户端有 clientNow 时计算时间进度，避免 SSR 用服务器 UTC 导致线上进度不准
                         const prod = clientNow
                           ? getProductionProgress(contract.createdAt, contract.deliveryDate, clientNow)
                           : null;
@@ -1472,6 +1509,7 @@ export default function PurchaseOrdersPage() {
                               <div className="text-[10px] text-slate-500">
                                 · {formatDate(contract.deliveryDate)} 交货
                               </div>
+                              <div className="text-[10px] text-emerald-400/90">完工 {finished} / {total}</div>
                             </div>
                           );
                         }
@@ -1492,6 +1530,9 @@ export default function PurchaseOrdersPage() {
                               {prod.totalDays > 0 ? `已过 ${prod.elapsedDays} / 共 ${prod.totalDays} 天 · ` : ""}
                               {prod.label}
                               <span className="ml-1">· {formatDate(contract.deliveryDate)} 交货</span>
+                            </div>
+                            <div className="text-[10px] text-emerald-400/90">
+                              完工 {finished} / {total}
                             </div>
                           </div>
                         );
