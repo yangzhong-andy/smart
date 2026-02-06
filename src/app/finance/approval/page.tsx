@@ -452,13 +452,17 @@ export default function ApprovalCenterPage() {
         mutate("pending-bills");
       });
     } else if (rejectModal.type === "expense") {
-      updateExpenseRequest(rejectModal.id, {
+      const expenseId = rejectModal.id;
+      updateExpenseRequest(expenseId, {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
       }).then(async () => {
-        // 刷新 SWR 缓存
-        mutate("expense-requests");
-        mutate("pending-expense-requests");
+        mutate("pending-expense-requests", (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          return current.filter((r: { id?: string }) => r.id !== expenseId);
+        }, false);
+        mutate("expense-requests", undefined, { revalidate: true });
+        mutate("pending-expense-requests", undefined, { revalidate: true });
         toast.success("已退回修改");
         setRejectModal({ open: false, type: null, id: null });
         setRejectReason("");
@@ -467,13 +471,17 @@ export default function ApprovalCenterPage() {
       });
       return;
     } else if (rejectModal.type === "income") {
-      updateIncomeRequest(rejectModal.id, {
+      const incomeId = rejectModal.id;
+      updateIncomeRequest(incomeId, {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
       }).then(async () => {
-        // 刷新 SWR 缓存
-        mutate("income-requests");
-        mutate("pending-income-requests");
+        mutate("pending-income-requests", (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          return current.filter((r: { id?: string }) => r.id !== incomeId);
+        }, false);
+        mutate("income-requests", undefined, { revalidate: true });
+        mutate("pending-income-requests", undefined, { revalidate: true });
         toast.success("已退回修改");
         setRejectModal({ open: false, type: null, id: null });
         setRejectReason("");
@@ -508,17 +516,22 @@ export default function ApprovalCenterPage() {
             approvedBy: "老板",
             approvedAt: new Date().toISOString()
           });
-          // 刷新 SWR 缓存
-          mutate("expense-requests");
-          mutate("pending-expense-requests");
-          // 触发自定义事件，通知财务工作台刷新
+          // 乐观更新：立即从待审批列表中移除该项，避免批准后仍显示在列表
+          mutate("pending-expense-requests", (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            return current.filter((r: { id?: string }) => r.id !== requestId);
+          }, false);
+          mutate("expense-requests", undefined, { revalidate: true });
+          mutate("pending-expense-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已批准，已推送给财务人员处理出账");
-          // 关闭确认弹窗
           setConfirmDialog(null);
+          if (selectedExpenseRequest?.id === requestId) {
+            setSelectedExpenseRequest(null);
+            setIsRequestDetailOpen(false);
+          }
         } catch (error: any) {
           toast.error(error.message || "审批失败");
-          // 即使失败也关闭弹窗
           setConfirmDialog(null);
         }
       }
@@ -543,17 +556,21 @@ export default function ApprovalCenterPage() {
             approvedBy: "老板",
             approvedAt: new Date().toISOString()
           });
-          // 刷新 SWR 缓存
-          mutate("income-requests");
-          mutate("pending-income-requests");
-          // 触发自定义事件，通知财务工作台刷新
+          mutate("pending-income-requests", (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            return current.filter((r: { id?: string }) => r.id !== requestId);
+          }, false);
+          mutate("income-requests", undefined, { revalidate: true });
+          mutate("pending-income-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已批准，已推送给财务人员处理入账");
-          // 关闭确认弹窗
           setConfirmDialog(null);
+          if (selectedIncomeRequest?.id === requestId) {
+            setSelectedIncomeRequest(null);
+            setIsRequestDetailOpen(false);
+          }
         } catch (error: any) {
           toast.error(error.message || "审批失败");
-          // 即使失败也关闭弹窗
           setConfirmDialog(null);
         }
       }
