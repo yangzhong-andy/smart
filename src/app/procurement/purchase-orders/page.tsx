@@ -1306,7 +1306,7 @@ export default function PurchaseOrdersPage() {
               <tr>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">合同编号</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">供应商</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">SKU / 数量</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">SPU / SKU · 数量</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">合同总额</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">拿货进度</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">生产进度</th>
@@ -1350,18 +1350,26 @@ export default function PurchaseOrdersPage() {
                     </td>
                     <td className="px-4 py-2">
                       {contract.items && contract.items.length > 0 ? (
-                        <div className="space-y-1 max-w-[220px]">
-                          <div className="text-[11px] text-slate-400 font-medium">
-                            共 {contract.items.length} 个变体 · 合同总数 {contract.totalQty}
-                          </div>
+                        <div className="space-y-1 max-w-[260px]">
+                          {(() => {
+                            const spuSet = new Set(contract.items.map((i) => i.spuName).filter(Boolean));
+                            const spuLabel = spuSet.size === 1 ? Array.from(spuSet)[0] : spuSet.size > 1 ? "多款" : null;
+                            return (
+                              <div className="text-[11px] text-slate-400 font-medium">
+                                {spuLabel ? <span className="text-primary-300/90">SPU: {spuLabel}</span> : null}
+                                {spuLabel ? " · " : null}
+                                共 {contract.items.length} 个变体 · 合同总数 {contract.totalQty}
+                              </div>
+                            );
+                          })()}
                           <div className="max-h-24 overflow-y-auto space-y-0.5 pr-1">
                             {contract.items.map((item) => (
                               <div
                                 key={item.id}
                                 className="text-[11px] text-slate-300 flex justify-between gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
                               >
-                                <span className="truncate" title={[item.sku, item.skuName].filter(Boolean).join(' / ')}>
-                                  {item.sku}
+                                <span className="truncate" title={[item.spuName, item.sku, item.skuName].filter(Boolean).join(' / ')}>
+                                  {item.spuName ? `${item.spuName} · ${item.sku}` : item.sku}
                                 </span>
                                 <span className="text-slate-500 shrink-0">
                                   {currency(item.unitPrice)} × {item.qty}

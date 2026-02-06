@@ -51,6 +51,10 @@ export type PurchaseContractItem = {
   finishedQty: number;
   totalAmount: number;
   sortOrder?: number;
+  /** SPU 名称（产品原型，如马扎05） */
+  spuName?: string;
+  /** SPU ID */
+  spuId?: string;
 };
 
 const CONTRACTS_KEY = "purchaseContracts";

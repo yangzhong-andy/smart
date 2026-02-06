@@ -108,7 +108,9 @@ export async function GET(
         pickedQty: item.pickedQty,
         finishedQty: item.finishedQty,
         totalAmount: Number(item.totalAmount),
-        sortOrder: item.sortOrder
+        sortOrder: item.sortOrder,
+        spuName: item.variant?.product?.name ?? undefined,
+        spuId: item.variant?.product?.id ?? undefined
       }))
     })
   } catch (error: any) {

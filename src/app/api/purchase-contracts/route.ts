@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
         updatedAt: contract.updatedAt.toISOString(),
         relatedOrderId: contract.relatedOrderIds[0] || undefined,
         relatedOrderNumber: contract.relatedOrderNumbers[0] || undefined,
-        // 合同明细（多 SKU/变体），供列表与详情展示
+        // 合同明细（多 SKU/变体），供列表与详情展示，带 SPU 信息
         items: contract.items.map((item) => ({
           id: item.id,
           variantId: item.variantId ?? undefined,
@@ -112,6 +112,8 @@ export async function GET(request: NextRequest) {
           finishedQty: item.finishedQty,
           totalAmount: Number(item.totalAmount),
           sortOrder: item.sortOrder,
+          spuName: item.variant?.product?.name ?? undefined,
+          spuId: item.variant?.product?.id ?? undefined,
         })),
       }
     })
