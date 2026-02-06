@@ -31,6 +31,21 @@ import { getAllowedNavLabels } from "@/lib/permissions";
 
 import { LucideIcon } from "lucide-react";
 
+/** 子菜单悬停时预取路由 + 可选预请求主 API（暖机），减轻点击后等待 */
+const ROUTE_PREFETCH_API: Record<string, string> = {
+  "/finance/accounts": "/api/accounts",
+  "/finance/cash-flow": "/api/cash-flow",
+  "/finance/monthly-bills": "/api/monthly-bills",
+  "/procurement/suppliers": "/api/suppliers",
+  "/procurement/purchase-orders": "/api/purchase-contracts",
+  "/procurement/delivery-orders": "/api/delivery-orders",
+  "/product-center/products": "/api/products",
+  "/settings/stores": "/api/stores",
+  "/hr/employees": "/api/employees",
+  "/inventory": "/api/stock",
+  "/logistics/channels": "/api/logistics-channels",
+};
+
 type NavItem = {
   label: string;
   labelEn: string; // 英文副标题
@@ -141,6 +156,14 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const prefetchRoute = (href: string | undefined) => {
+    if (!href || href === "#") return;
+    router.prefetch(href);
+    const api = ROUTE_PREFETCH_API[href];
+    if (api) fetch(api, { credentials: "same-origin" }).catch(() => {});
+  };
   const { data: session } = useSession();
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -434,6 +457,8 @@ export default function Sidebar() {
                                 <Link
                                   key={child.href}
                                   href={child.href || "#"}
+                                  prefetch
+                                  onMouseEnter={() => prefetchRoute(child.href)}
                                   className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 ${
                                     active
                                       ? "text-blue-400 font-medium bg-blue-500/10"
@@ -528,6 +553,8 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href || "#"}
+              prefetch
+              onMouseEnter={() => prefetchRoute(item.href)}
               className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
                 active
                   ? "text-white font-bold"
