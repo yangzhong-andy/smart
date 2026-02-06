@@ -25,7 +25,7 @@ export default function SKUMappingPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
 
-  const { data: products = [] } = useSWR<Product[]>("/api/products", fetcher, {
+  const { data: products = [], mutate: mutateProducts } = useSWR<Product[]>("/api/products", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
@@ -185,18 +185,7 @@ export default function SKUMappingPage() {
     
     try {
       if (await addPlatformSKUMapping(selectedProduct.sku_id, mapping)) {
-        const updatedProducts = products.map((p) =>
-          p.sku_id === selectedProduct.sku_id
-            ? {
-                ...p,
-                platform_sku_mapping: [
-                  ...(p.platform_sku_mapping || []).filter((m) => m.platform !== mappingForm.platform),
-                  mapping
-                ]
-              }
-            : p
-        );
-        setProducts(updatedProducts);
+        mutateProducts();
         toast.success("映射已添加");
         setMappingForm({
           platform: "TikTok",
@@ -218,17 +207,7 @@ export default function SKUMappingPage() {
 
     try {
       if (await removePlatformSKUMapping(product.sku_id, platform)) {
-        const updatedProducts = products.map((p) =>
-          p.sku_id === product.sku_id
-            ? {
-                ...p,
-                platform_sku_mapping: (p.platform_sku_mapping || []).filter(
-                  (m) => m.platform !== platform
-                )
-              }
-            : p
-        );
-        setProducts(updatedProducts);
+        mutateProducts();
         toast.success("映射已删除");
       } else {
         toast.error("删除映射失败");
