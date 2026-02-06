@@ -176,6 +176,7 @@ export default function PurchaseOrdersPage() {
   const [variantQuantities, setVariantQuantities] = useState<Record<string, string>>({});
   const [selectedSpuContract, setSelectedSpuContract] = useState<SpuOption | null>(null);
   const [variantSearchContract, setVariantSearchContract] = useState(""); // 变体选择器内按颜色/SKU 搜索
+  const [isCreateSaving, setIsCreateSaving] = useState(false); // 新建合同保存中，避免重复提交且给用户反馈
 
   // 搜索和筛选状态
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -469,6 +470,7 @@ export default function PurchaseOrdersPage() {
       relatedOrderNumbers: sourceOrder ? [sourceOrder.orderNumber ?? ""] : [],
       items,
     };
+    setIsCreateSaving(true);
     try {
       const res = await fetch("/api/purchase-contracts", {
         method: "POST",
@@ -506,6 +508,8 @@ export default function PurchaseOrdersPage() {
     } catch (err: any) {
       console.error("创建合同失败", err);
       toast.error(err?.message || "创建失败，请重试");
+    } finally {
+      setIsCreateSaving(false);
     }
   };
 
@@ -1776,10 +1780,10 @@ export default function PurchaseOrdersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
-                  disabled={!suppliers.length}
+                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px disabled:opacity-70 disabled:cursor-not-allowed"
+                  disabled={!suppliers.length || isCreateSaving}
                 >
-                  保存合同
+                  {isCreateSaving ? "保存中…" : "保存合同"}
                 </button>
               </div>
             </form>
