@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Factory, Plus, X, Save, ArrowLeft, FileText, Zap, CheckCircle } from "lucide-react";
 import { PageHeader, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
-import { getPurchaseContractsFromAPI, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import type { DeliveryOrder } from "@/lib/delivery-orders-store";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill } from "@/lib/reconciliation-store";
 import { formatCurrency } from "@/lib/currency-utils";
@@ -70,10 +71,9 @@ type OtherFee = {
   description: string;
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function SupplierBillsPage() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
@@ -98,18 +98,18 @@ export default function SupplierBillsPage() {
     onConfirm: () => void;
   } | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    Promise.all([
-      fetch("/api/suppliers").then((r) => (r.ok ? r.json() : [])),
-      getPurchaseContractsFromAPI(),
-      fetch("/api/delivery-orders").then((r) => (r.ok ? r.json() : []))
-    ]).then(([s, c, d]) => {
-      setSuppliers(Array.isArray(s) ? s : []);
-      setContracts(Array.isArray(c) ? c : []);
-      setDeliveryOrders(Array.isArray(d) ? d : []);
-    });
-  }, []);
+  const { data: suppliers = [] } = useSWR<Supplier[]>("/api/suppliers", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: contracts = [] } = useSWR<PurchaseContract[]>("/api/purchase-contracts", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>("/api/delivery-orders", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // 自动汇总账单明细
   const handleAutoCalculate = () => {

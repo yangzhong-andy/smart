@@ -1,15 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Users, Plus, Pencil, Trash2, Search, X, SortAsc, SortDesc, Download } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import useSWR from "swr";
 import {
-  getEmployees,
-  getEmployeesFromAPI,
-  saveEmployees,
   upsertEmployee,
   deleteEmployee,
   type Employee,
@@ -33,8 +30,6 @@ interface DepartmentFromAPI {
 }
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [initialized, setInitialized] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   
@@ -57,20 +52,11 @@ export default function EmployeesPage() {
     notes: ""
   });
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getEmployeesFromAPI().then((loaded) => {
-      setEmployees(loaded);
-      saveEmployees(loaded);
-      setInitialized(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!initialized) return;
-    saveEmployees(employees);
-  }, [employees, initialized]);
+  const { data: employeesData = [], mutate: mutateEmployees } = useSWR<Employee[]>("/api/employees", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const employees = employeesData;
 
   // 从 API 获取部门列表
   const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher, {
@@ -233,9 +219,7 @@ export default function EmployeesPage() {
     setIsSubmitting(true);
     try {
       await upsertEmployee(employeeData);
-      const updatedEmployees = await getEmployeesFromAPI();
-      setEmployees(updatedEmployees);
-      saveEmployees(updatedEmployees);
+      mutateEmployees();
       toast.success(editingEmployee ? "员工信息已更新" : "员工已添加");
       resetForm();
       setIsModalOpen(false);
@@ -252,8 +236,7 @@ export default function EmployeesPage() {
     try {
       const ok = await deleteEmployee(id);
       if (ok) {
-        const updated = await getEmployeesFromAPI();
-        setEmployees(updated);
+        mutateEmployees();
         toast.success("员工已删除");
       } else {
         toast.error("删除失败");

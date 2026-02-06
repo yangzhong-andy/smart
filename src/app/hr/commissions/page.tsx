@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { DollarSign, RefreshCw, Download, Search, X, CheckCircle2, XCircle, Clock } from "lucide-react";
@@ -10,50 +11,35 @@ import {
   getCommissionRecordsFromAPI,
   saveCommissionRecords,
   upsertCommissionRecord,
-  getEmployees,
   getEmployeesFromAPI,
-  getCommissionRules,
   getCommissionRulesFromAPI,
-  calculateCommission,
   type CommissionRecord,
   type Department
 } from "@/lib/hr-store";
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function CommissionsPage() {
-  const [records, setRecords] = useState<CommissionRecord[]>([]);
-  const [employees, setEmployees] = useState(getEmployees());
-  const [rules, setRules] = useState(getCommissionRules());
-  const [initialized, setInitialized] = useState(false);
-  
-  // 搜索、筛选状态
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterDepartment, setFilterDepartment] = useState<Department | "all">("all");
   const [filterStatus, setFilterStatus] = useState<CommissionRecord["status"] | "all">("all");
   const [filterPeriod, setFilterPeriod] = useState<string>("");
-  
-  // 计算提成状态
   const [calculating, setCalculating] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    Promise.all([
-      getCommissionRecordsFromAPI(),
-      getEmployeesFromAPI(),
-      getCommissionRulesFromAPI()
-    ]).then(([recordsData, employeesData, rulesData]) => {
-      setRecords(recordsData);
-      setEmployees(employeesData);
-      setRules(rulesData);
-      saveCommissionRecords(recordsData);
-      setInitialized(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!initialized) return;
-    saveCommissionRecords(records);
-  }, [records, initialized]);
+  const { data: recordsData = [], mutate: mutateRecords } = useSWR<CommissionRecord[]>(
+    "/api/commission-records",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const records = recordsData;
+  const { data: employees = [] } = useSWR<any[]>("/api/employees", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: rules = [] } = useSWR<any[]>("/api/commission-rules", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // 统计摘要
   const stats = useMemo(() => {
@@ -139,12 +125,12 @@ export default function CommissionsPage() {
       
       toast.success("提成计算完成（当前为框架版本，具体计算逻辑待完善）");
       
-      // 保存新记录
+      // 保存新记录（先写本地，再更新 SWR 缓存）
       if (newRecords.length > 0) {
         const existingRecords = getCommissionRecords();
         const updatedRecords = [...existingRecords, ...newRecords];
         saveCommissionRecords(updatedRecords);
-        setRecords(updatedRecords);
+        mutateRecords(updatedRecords, false);
       }
     } catch (error) {
       console.error("计算提成失败:", error);
@@ -154,42 +140,42 @@ export default function CommissionsPage() {
     }
   };
 
-  const handleApprove = (id: string) => {
+  const handleApprove = async (id: string) => {
     const record = records.find((r) => r.id === id);
     if (record) {
-      upsertCommissionRecord({
+      await upsertCommissionRecord({
         ...record,
         status: "approved",
         approvedBy: "当前用户", // TODO: 从用户上下文获取
         approvedAt: new Date().toISOString()
       });
-      setRecords(getCommissionRecords());
+      mutateRecords();
       toast.success("已批准");
     }
   };
 
-  const handleReject = (id: string) => {
+  const handleReject = async (id: string) => {
     const record = records.find((r) => r.id === id);
     if (record) {
-      upsertCommissionRecord({
+      await upsertCommissionRecord({
         ...record,
         status: "rejected",
         approvedBy: "当前用户",
         approvedAt: new Date().toISOString()
       });
-      setRecords(getCommissionRecords());
+      mutateRecords();
       toast.success("已拒绝");
     }
   };
 
-  const handlePay = (id: string) => {
+  const handlePay = async (id: string) => {
     const record = records.find((r) => r.id === id);
     if (record && record.status === "approved") {
-      upsertCommissionRecord({
+      await upsertCommissionRecord({
         ...record,
         status: "paid"
       });
-      setRecords(getCommissionRecords());
+      mutateRecords();
       toast.success("已标记为已发放");
     }
   };

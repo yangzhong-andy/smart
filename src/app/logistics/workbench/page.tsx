@@ -1,18 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Truck, Package, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, Plus } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import Link from "next/link";
-import {
-  getLogisticsTracking,
-  type LogisticsTracking,
-  type TrackingStatus
-} from "@/lib/logistics-store";
-import { getPendingInboundFromAPI, type PendingInbound } from "@/lib/pending-inbound-store";
-import { getDeliveryOrdersFromAPI, type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { type LogisticsTracking, type TrackingStatus } from "@/lib/logistics-store";
+import { type PendingInbound } from "@/lib/pending-inbound-store";
+import { type DeliveryOrder } from "@/lib/delivery-orders-store";
 
 const STATUS_COLORS: Record<TrackingStatus, { bg: string; text: string }> = {
   Pending: {
@@ -50,19 +47,21 @@ const formatDate = (dateString?: string) => {
   }
 };
 
-export default function LogisticsWorkbenchPage() {
-  const [tracking, setTracking] = useState<LogisticsTracking[]>([]);
-  const [pendingInbound, setPendingInbound] = useState<PendingInbound[]>([]);
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
-  const [initialized, setInitialized] = useState(false);
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setTracking(getLogisticsTracking());
-    getPendingInboundFromAPI().then(setPendingInbound);
-    getDeliveryOrdersFromAPI().then(setDeliveryOrders);
-    setInitialized(true);
-  }, []);
+export default function LogisticsWorkbenchPage() {
+  const { data: tracking = [] } = useSWR<LogisticsTracking[]>("/api/logistics-tracking", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: pendingInbound = [] } = useSWR<PendingInbound[]>("/api/pending-inbound", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
+  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>("/api/delivery-orders", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // 统计信息
   const stats = useMemo(() => {

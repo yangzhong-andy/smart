@@ -1,17 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Shield, CheckCircle2, XCircle, Search, Eye, AlertTriangle, Package } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
-import {
-  getPurchaseOrdersFromAPI,
-  performRiskControl,
-  checkInventoryForRiskControl,
-  type PurchaseOrder
-} from "@/lib/purchase-orders-store";
-import { getProductsFromAPI } from "@/lib/products-store";
+import { performRiskControl, checkInventoryForRiskControl, type PurchaseOrder } from "@/lib/purchase-orders-store";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -23,9 +18,9 @@ const formatDate = (dateString?: string) => {
   }
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function RiskControlPage() {
-  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,11 +30,19 @@ export default function RiskControlPage() {
     riskControlBy: ""
   });
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getPurchaseOrdersFromAPI().then((ords) => setOrders(ords.filter((o) => o.status === "待风控")));
-    getProductsFromAPI().then(setProducts);
-  }, []);
+  const { data: ordersData = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>(
+    "/api/purchase-orders",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const orders = useMemo(
+    () => ordersData.filter((o) => o.status === "待风控"),
+    [ordersData]
+  );
+  const { data: products = [] } = useSWR<any[]>("/api/products", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // 筛选订单
   const filteredOrders = useMemo(() => {
@@ -123,7 +126,7 @@ export default function RiskControlPage() {
     
     if (success) {
       toast.success(`风控评估${riskControlForm.result === "通过" ? "通过" : "拒绝"}`);
-      getPurchaseOrdersFromAPI().then((ords) => setOrders(ords.filter((o) => o.status === "待风控")));
+      mutateOrders();
       setIsModalOpen(false);
       setSelectedOrder(null);
       setRiskControlForm({

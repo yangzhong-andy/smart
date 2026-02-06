@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
@@ -21,19 +22,15 @@ import {
   BarChart3
 } from "lucide-react";
 import {
-  getInfluencersFromAPI,
-  saveInfluencers,
   upsertInfluencer,
   deleteInfluencer,
   confirmSample,
   updateTracking,
   calculateEstimatedOrders,
-  getInfluencerStats,
   type InfluencerBD,
   type CooperationStatus,
   type SampleStatus
 } from "@/lib/influencer-bd-store";
-import { getProductsFromAPI } from "@/lib/products-store";
 import { StatCard, ActionButton, PageHeader, SearchBar, EmptyState } from "@/components/ui";
 
 // 格式化粉丝数
@@ -59,10 +56,10 @@ const getStatusColor = (status: CooperationStatus | SampleStatus): string => {
   return colorMap[status] || "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)";
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function InfluencersPage() {
   const router = useRouter();
-  const [influencers, setInfluencers] = useState<InfluencerBD[]>([]);
-  const [influencersReady, setInfluencersReady] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSampleModalOpen, setIsSampleModalOpen] = useState(false);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
@@ -70,7 +67,17 @@ export default function InfluencersPage() {
   const [selectedInfluencer, setSelectedInfluencer] = useState<InfluencerBD | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [products, setProducts] = useState<any[]>([]);
+
+  const { data: influencersData = [], mutate: mutateInfluencers } = useSWR<InfluencerBD[]>(
+    "/api/influencers",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const influencers = influencersData;
+  const { data: products = [] } = useSWR<any[]>("/api/products", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   const [form, setForm] = useState({
     accountName: "",
@@ -95,23 +102,18 @@ export default function InfluencersPage() {
     status: "运输中" as SampleStatus
   });
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getInfluencersFromAPI().then((loaded) => {
-      setInfluencers(loaded);
-      setInfluencersReady(true);
-    });
-    getProductsFromAPI().then(setProducts);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!influencersReady) return;
-    saveInfluencers(influencers);
-  }, [influencers, influencersReady]);
-
-  // 统计数据
-  const stats = useMemo(() => getInfluencerStats(), [influencers]);
+  // 统计数据（与 store 中 getInfluencerStats 逻辑一致）
+  const stats = useMemo(
+    () => ({
+      total: influencers.length,
+      pendingSample: influencers.filter((i) => i.sampleStatus === "待寄样").length,
+      creating: influencers.filter((i) => i.cooperationStatus === "创作中").length,
+      published: influencers.filter((i) => i.cooperationStatus === "已发布").length,
+      inTransit: influencers.filter((i) => i.sampleStatus === "运输中").length,
+      received: influencers.filter((i) => i.sampleStatus === "已签收").length
+    }),
+    [influencers]
+  );
 
   // 搜索和筛选
   const filteredInfluencers = useMemo(() => {
@@ -199,7 +201,7 @@ export default function InfluencersPage() {
     };
 
     upsertInfluencer(influencerData);
-    getInfluencersFromAPI().then(setInfluencers);
+    mutateInfluencers();
     toast.success(editingInfluencer ? "达人信息已更新" : "达人已创建");
     resetForm();
     setIsModalOpen(false);
@@ -210,8 +212,7 @@ export default function InfluencersPage() {
     try {
       const ok = await deleteInfluencer(id);
       if (ok) {
-        const updated = await getInfluencersFromAPI();
-        setInfluencers(updated);
+        mutateInfluencers();
         toast.success("达人已删除");
       } else {
         toast.error("删除失败");
@@ -245,8 +246,7 @@ export default function InfluencersPage() {
       );
 
       if (result.success) {
-        getInfluencersFromAPI().then(setInfluencers);
-        getProductsFromAPI().then(setProducts);
+        mutateInfluencers();
         toast.success(result.message);
         setIsSampleModalOpen(false);
         setSelectedInfluencer(null);
@@ -275,7 +275,7 @@ export default function InfluencersPage() {
     }
 
     updateTracking(selectedInfluencer.id, trackingForm.trackingNumber, trackingForm.status);
-    getInfluencersFromAPI().then(setInfluencers);
+    mutateInfluencers();
     toast.success("物流信息已更新");
     
     if (trackingForm.status === "已签收") {

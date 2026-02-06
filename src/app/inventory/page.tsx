@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect, Fragment } from "react";
-import { getProductsFromAPI } from "@/lib/products-store";
+import { useMemo, useState, Fragment } from "react";
+import useSWR from "swr";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { Package, Search, X, Download, History, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
@@ -115,16 +115,17 @@ function InventoryHistoryRow({ product, movements }: { product: any; movements: 
   );
 }
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function InventoryPage() {
-  const [products, setProducts] = useState<any[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [expandedSkuIds, setExpandedSkuIds] = useState<Set<string>>(new Set());
   const [movementsBySku, setMovementsBySku] = useState<Record<string, InventoryMovement[]>>({});
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getProductsFromAPI().then(setProducts);
-  }, []);
+  const { data: products = [] } = useSWR<any[]>("/api/products", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   // 加载变动历史
   const loadMovements = (skuId: string) => {

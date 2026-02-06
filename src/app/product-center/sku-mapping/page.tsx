@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import {
-  getProductsFromAPI,
   type Product,
   type PlatformSKUMapping,
   addPlatformSKUMapping,
@@ -12,8 +12,9 @@ import {
 } from "@/lib/products-store";
 import { Search, X, Package, Link2, Download } from "lucide-react";
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function SKUMappingPage() {
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mappingForm, setMappingForm] = useState({
@@ -24,10 +25,10 @@ export default function SKUMappingPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getProductsFromAPI().then(setProducts);
-  }, []);
+  const { data: products = [] } = useSWR<Product[]>("/api/products", fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000
+  });
 
   const productsWithMappings = useMemo(() => {
     let result = products;

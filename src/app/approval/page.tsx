@@ -1,15 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { CheckCircle2, XCircle, Search, Eye, FileCheck } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
-import {
-  getPurchaseOrdersFromAPI,
-  approvePurchaseOrder,
-  type PurchaseOrder
-} from "@/lib/purchase-orders-store";
+import { approvePurchaseOrder, type PurchaseOrder } from "@/lib/purchase-orders-store";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -21,8 +18,9 @@ const formatDate = (dateString?: string) => {
   }
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function ApprovalPage() {
-  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,10 +30,15 @@ export default function ApprovalPage() {
     approvedBy: ""
   });
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getPurchaseOrdersFromAPI().then((ords) => setOrders(ords.filter((o) => o.status === "待审批")));
-  }, []);
+  const { data: ordersData = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>(
+    "/api/purchase-orders",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const orders = useMemo(
+    () => ordersData.filter((o) => o.status === "待审批"),
+    [ordersData]
+  );
 
   // 筛选订单
   const filteredOrders = useMemo(() => {
@@ -94,8 +97,7 @@ export default function ApprovalPage() {
 
     if (success) {
       toast.success(`审批${approvalForm.result === "通过" ? "通过" : "拒绝"}`);
-      const ords = await getPurchaseOrdersFromAPI();
-      setOrders(ords.filter((o) => o.status === "待审批"));
+      mutateOrders();
       setIsModalOpen(false);
       setSelectedOrder(null);
       setApprovalForm({

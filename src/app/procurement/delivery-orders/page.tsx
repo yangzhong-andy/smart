@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { getDeliveryOrdersFromAPI, type DeliveryOrder } from "@/lib/delivery-orders-store";
-import { getPurchaseContractsFromAPI, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
+import { type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import { Truck, Search, X, Download, Eye, Package } from "lucide-react";
@@ -34,23 +35,25 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   "已取消": { bg: "bg-rose-500/20", text: "text-rose-300" }
 };
 
+const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+
 export default function DeliveryOrdersPage() {
-  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
-  const [contracts, setContracts] = useState<PurchaseContract[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-      const [loadedOrders, loadedContracts] = await Promise.all([
-        getDeliveryOrdersFromAPI(),
-        getPurchaseContractsFromAPI()
-      ]);
-      setDeliveryOrders(loadedOrders);
-      setContracts(loadedContracts);
-    })();
-  }, []);
+  const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[]>(
+    "/api/delivery-orders",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const deliveryOrders = deliveryOrdersData;
+
+  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
+    "/api/purchase-contracts",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const contracts = contractsData;
 
   // 筛选和排序拿货单
   const filteredOrders = useMemo(() => {
