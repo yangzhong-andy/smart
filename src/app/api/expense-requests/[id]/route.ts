@@ -90,7 +90,43 @@ export async function PUT(
       where: { id: params.id },
       data: updateData
     });
-    
+
+    // 当支出申请被标记为「已支付」且为采购合同定金时，同步更新合同的财务状态
+    const isDepositPaid = body.status === 'Paid' && updated.summary && updated.summary.includes('采购合同定金');
+    if (isDepositPaid) {
+      const contractNumber = (updated.summary
+        .replace(/^采购合同定金\s*[-\－:：]\s*/i, '')
+        .trim() || updated.summary.replace('采购合同定金', '').trim());
+      const amount = Number(updated.amount);
+      if (contractNumber && Number.isFinite(amount) && amount > 0) {
+        try {
+          const contract = await prisma.purchaseContract.findUnique({
+            where: { contractNumber }
+          });
+          if (contract) {
+            const currentDepositPaid = Number(contract.depositPaid);
+            const currentTotalPaid = Number(contract.totalPaid);
+            const totalAmount = Number(contract.totalAmount);
+            const newDepositPaid = currentDepositPaid + amount;
+            const newTotalPaid = currentTotalPaid + amount;
+            const newTotalOwed = totalAmount - newTotalPaid;
+            await prisma.purchaseContract.update({
+              where: { id: contract.id },
+              data: {
+                depositPaid: newDepositPaid,
+                totalPaid: newTotalPaid,
+                totalOwed: newTotalOwed,
+                status: newTotalPaid >= totalAmount ? 'SETTLED' : contract.status,
+                updatedAt: new Date()
+              }
+            });
+          }
+        } catch (err) {
+          console.error('Sync contract payment on expense Paid:', err);
+        }
+      }
+    }
+
     return NextResponse.json({
       id: updated.id,
       status: updated.status,

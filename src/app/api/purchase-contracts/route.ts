@@ -37,11 +37,17 @@ function parseContractVoucher(v: string | null | undefined): string | string[] |
   return s
 }
 
+// 从定金支出申请摘要中解析合同编号（兼容多种分隔符）
+function parseContractNumberFromDepositSummary(summary: string): string | null {
+  if (!summary || !summary.includes('采购合同定金')) return null
+  const num = summary.replace(/^采购合同定金\s*[-\－:：]\s*/i, '').trim()
+    || summary.replace('采购合同定金', '').trim()
+  return num || null
+}
+
 // GET - 获取所有采购合同
 export async function GET(request: NextRequest) {
   try {
-    // 优化：移除手动连接重试逻辑，Prisma 会自动管理连接池和重连
-
     const contracts = await prisma.purchaseContract.findMany({
       include: {
         items: {
@@ -59,8 +65,58 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' }
     })
 
+    // 自动同步：查出已支付但合同未更新的定金，在返回前补写合同并用于本次响应
+    const paidDeposits = await prisma.expenseRequest.findMany({
+      where: { status: 'Paid', summary: { contains: '采购合同定金' } }
+    })
+    const depositByContractNumber: Record<string, number> = {}
+    for (const req of paidDeposits) {
+      const cn = parseContractNumberFromDepositSummary(req.summary)
+      if (cn && Number.isFinite(Number(req.amount))) {
+        const amt = Number(req.amount)
+        depositByContractNumber[cn] = (depositByContractNumber[cn] || 0) + amt
+      }
+    }
+
+    const contractUpdates: Array<{ id: string; depositPaid: number; totalPaid: number; totalOwed: number; status: string }> = []
+    for (const c of contracts) {
+      const currentDeposit = Number(c.depositPaid)
+      const currentTotalPaid = Number(c.totalPaid)
+      const amount = depositByContractNumber[c.contractNumber]
+      if (currentDeposit === 0 && amount != null && amount > 0) {
+        const totalAmount = Number(c.totalAmount)
+        const newTotalPaid = currentTotalPaid + amount
+        const newTotalOwed = totalAmount - newTotalPaid
+        contractUpdates.push({
+          id: c.id,
+          depositPaid: amount,
+          totalPaid: newTotalPaid,
+          totalOwed: newTotalOwed,
+          status: newTotalPaid >= totalAmount ? 'SETTLED' : c.status
+        })
+      }
+    }
+    for (const u of contractUpdates) {
+      await prisma.purchaseContract.update({
+        where: { id: u.id },
+        data: {
+          depositPaid: u.depositPaid,
+          totalPaid: u.totalPaid,
+          totalOwed: u.totalOwed,
+          status: u.status as any,
+          updatedAt: new Date()
+        }
+      })
+    }
+    const updatedById = new Map(contractUpdates.map(u => [u.id, u]))
+
     // 转换格式以匹配前端 PurchaseContract 类型
     const transformed = contracts.map(contract => {
+      const updated = updatedById.get(contract.id)
+      const depositPaid = updated ? updated.depositPaid : Number(contract.depositPaid)
+      const totalPaid = updated ? updated.totalPaid : Number(contract.totalPaid)
+      const totalOwed = updated ? updated.totalOwed : Number(contract.totalOwed)
+      const status = updated ? (updated.status === 'SETTLED' ? '已结清' : STATUS_MAP_DB_TO_FRONT[contract.status as keyof typeof STATUS_MAP_DB_TO_FRONT]) : (STATUS_MAP_DB_TO_FRONT[contract.status] || contract.status)
       // 计算总数量和已取货数（从 items 汇总）
       const totalQty = contract.items.reduce((sum, item) => sum + item.qty, 0)
       const pickedQty = contract.items.reduce((sum, item) => sum + item.pickedQty, 0)
@@ -86,13 +142,13 @@ export async function GET(request: NextRequest) {
         totalAmount: Number(contract.totalAmount),
         depositRate: Number(contract.depositRate),
         depositAmount: Number(contract.depositAmount),
-        depositPaid: Number(contract.depositPaid),
+        depositPaid,
         tailPeriodDays: contract.tailPeriodDays,
         deliveryDate: contract.deliveryDate ? contract.deliveryDate.toISOString() : undefined,
-        status: STATUS_MAP_DB_TO_FRONT[contract.status] || contract.status,
+        status,
         contractVoucher: parseContractVoucher(contract.contractVoucher),
-        totalPaid: Number(contract.totalPaid),
-        totalOwed: Number(contract.totalOwed),
+        totalPaid,
+        totalOwed,
         relatedOrderIds: contract.relatedOrderIds || [],
         relatedOrderNumbers: contract.relatedOrderNumbers || [],
         createdAt: contract.createdAt.toISOString(),

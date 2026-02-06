@@ -131,7 +131,7 @@ export default function PurchaseOrdersPage() {
   const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
     "/api/purchase-contracts",
     fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 60000 }
+    { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
   const contracts = contractsData;
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
@@ -1098,6 +1098,7 @@ export default function PurchaseOrdersPage() {
           </button>
           <button
             onClick={() => setIsCreateOpen(true)}
+            type="button"
             className="flex items-center gap-2 rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
           >
             <Plus className="h-4 w-4" />
