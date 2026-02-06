@@ -554,7 +554,6 @@ export default function Sidebar() {
               key={item.href}
               href={item.href || "#"}
               prefetch
-              onMouseEnter={() => prefetchRoute(item.href)}
               className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
                 active
                   ? "text-white font-bold"
@@ -572,6 +571,7 @@ export default function Sidebar() {
               }
               title={isCollapsed ? item.label : undefined}
               onMouseEnter={(e) => {
+                prefetchRoute(item.href);
                 if (!active) {
                   e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
                   e.currentTarget.style.transform = "translateX(2px)";
