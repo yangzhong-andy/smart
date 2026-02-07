@@ -125,6 +125,7 @@ export default function PurchaseOrdersPage() {
   const isSuperAdmin = Boolean(session?.user && (session.user as { role?: string }).role === "SUPER_ADMIN");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [spuList, setSpuList] = useState<SpuListItem[]>([]);
+  const [supplierLinkedProductIds, setSupplierLinkedProductIds] = useState<string[] | null>(null); // 当前选中供应商关联的 productId 列表，null 表示未筛选
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({}); // productId -> 该 SPU 下全部 SKU（一次性 include 拉取后缓存）
   const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
   const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
@@ -166,13 +167,30 @@ export default function PurchaseOrdersPage() {
     open: false,
     type: null
   });
+  const [deliverySubmitting, setDeliverySubmitting] = useState(false);
   const [form, setForm] = useState({
     supplierId: "",
     deliveryDate: "",
-    contractVoucher: "" as string | string[]
+    contractVoucher: "" as string | string[],
+    contractNumber: "" // 留空则保存时自动生成
   });
+  // 合同编号格式（如 SDFY-2026-），自动生成时用「格式+时间戳」；存 localStorage 记住
+  const [contractNumberFormat, setContractNumberFormat] = useState("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem("tk_erp_contract_number_format");
+    if (saved != null) setContractNumberFormat(saved);
+  }, []);
+  const setContractNumberFormatAndSave = (value: string) => {
+    setContractNumberFormat(value);
+    if (typeof window !== "undefined") localStorage.setItem("tk_erp_contract_number_format", value);
+  };
+  const generateContractNumber = () =>
+    (contractNumberFormat.trim() || "PC-") + Date.now();
   const [formItems, setFormItems] = useState<FormItemRow[]>([]);
   const [variantModalOpen, setVariantModalOpen] = useState(false);
+  const [variantModalSupplierId, setVariantModalSupplierId] = useState<string | null>(null); // 弹窗打开时锁定的供应商 ID，避免中途被清空又显示全部
+  const [variantModalProductIds, setVariantModalProductIds] = useState<string[] | null>(null); // 该供应商关联的 productId 列表，null 表示加载中
   const [variantQuantities, setVariantQuantities] = useState<Record<string, string>>({});
   const [selectedSpuContract, setSelectedSpuContract] = useState<SpuOption | null>(null);
   const [variantSearchContract, setVariantSearchContract] = useState(""); // 变体选择器内按颜色/SKU 搜索
@@ -333,13 +351,46 @@ export default function PurchaseOrdersPage() {
     return suppliers.find((s) => s.id === supplierId) || suppliers[0];
   }, [form.supplierId, suppliers]);
 
+  // 按当前选中的供应商（含下拉默认显示的那一个）拉取关联产品 ID，只显示该供应商关联商品；无供应商时显示全部
+  useEffect(() => {
+    const sid = selectedSupplier?.id ?? null;
+    if (!sid) {
+      setSupplierLinkedProductIds(null);
+      return;
+    }
+    fetch(`/api/product-suppliers?supplierId=${encodeURIComponent(sid)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { productId: string }[]) => {
+        setSupplierLinkedProductIds(list.map((x) => x.productId));
+      })
+      .catch(() => setSupplierLinkedProductIds([]));
+  }, [selectedSupplier?.id]);
+
   const spuOptions = useMemo((): SpuOption[] => {
-    return spuList.map((s) => ({
+    const list = supplierLinkedProductIds === null
+      ? spuList
+      : spuList.filter((s) => supplierLinkedProductIds.includes(s.productId));
+    return list.map((s) => ({
       productId: s.productId,
       name: s.name,
       variants: variantCache[s.productId] ?? [],
     }));
-  }, [spuList, variantCache]);
+  }, [spuList, variantCache, supplierLinkedProductIds]);
+
+  // 弹窗内使用的规格列表：打开时按当前供应商拉取并锁定，避免「先对后错」的闪动
+  const variantModalSpuOptions = useMemo((): SpuOption[] => {
+    if (!variantModalOpen) return [];
+    if (variantModalSupplierId == null) {
+      return spuList.map((s) => ({ productId: s.productId, name: s.name, variants: variantCache[s.productId] ?? [] }));
+    }
+    if (variantModalProductIds === null) return []; // 加载中，先不展示任何项
+    const list = spuList.filter((s) => variantModalProductIds.includes(s.productId));
+    return list.map((s) => ({
+      productId: s.productId,
+      name: s.name,
+      variants: variantCache[s.productId] ?? [],
+    }));
+  }, [variantModalOpen, variantModalSupplierId, variantModalProductIds, spuList, variantCache]);
 
   const totalAmount = useMemo(() => {
     return formItems.reduce((sum, row) => {
@@ -355,10 +406,23 @@ export default function PurchaseOrdersPage() {
   }, [selectedSupplier, totalAmount]);
 
   const openVariantModalContract = () => {
+    const sid = selectedSupplier?.id ?? null;
+    setVariantModalSupplierId(sid);
+    setVariantModalProductIds(null); // 加载中
     setSelectedSpuContract(null);
     setVariantQuantities({});
     setVariantSearchContract("");
     setVariantModalOpen(true);
+    if (sid) {
+      fetch(`/api/product-suppliers?supplierId=${encodeURIComponent(sid)}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list: { productId: string }[]) => {
+          setVariantModalProductIds(list.map((x) => x.productId));
+        })
+        .catch(() => setVariantModalProductIds([]));
+    } else {
+      setVariantModalProductIds([]);
+    }
   };
 
   const onSelectSpuInModal = async (spu: SpuOption) => {
@@ -416,6 +480,8 @@ export default function PurchaseOrdersPage() {
     }
     setFormItems((prev) => (prev.length === 0 ? rows : [...prev, ...rows]));
     setVariantModalOpen(false);
+    setVariantModalSupplierId(null);
+    setVariantModalProductIds(null);
     setSelectedSpuContract(null);
     setVariantQuantities({});
     toast.success(`已添加 ${rows.length} 个变体，共 ${rows.reduce((s, r) => s + Number(r.quantity), 0)} 件`);
@@ -457,8 +523,11 @@ export default function PurchaseOrdersPage() {
         unitPrice,
       };
     });
+    const finalContractNumber = (form.contractNumber && String(form.contractNumber).trim())
+      ? String(form.contractNumber).trim()
+      : generateContractNumber();
     const body = {
-      contractNumber: `PC-${Date.now()}`,
+      contractNumber: finalContractNumber,
       supplierId: selectedSupplier.id,
       supplierName: selectedSupplier.name,
       depositRate: selectedSupplier.depositRate,
@@ -491,7 +560,7 @@ export default function PurchaseOrdersPage() {
         toast.success("采购合同创建成功", { icon: "✅" });
       }
       setSourceOrder(null);
-      setForm((f) => ({ ...f, deliveryDate: "", contractVoucher: "" }));
+      setForm((f) => ({ ...f, deliveryDate: "", contractVoucher: "", contractNumber: "" }));
       setFormItems([]);
       setIsCreateOpen(false);
       try {
@@ -613,19 +682,21 @@ export default function PurchaseOrdersPage() {
       payload = qty;
     }
 
-    const result = await createDeliveryOrder(
-      deliveryModal.contractId,
-      payload,
-      deliveryModal.trackingNumber || undefined,
-      new Date().toISOString().slice(0, 10)
-    );
+    setDeliverySubmitting(true);
+    try {
+      const result = await createDeliveryOrder(
+        deliveryModal.contractId,
+        payload,
+        deliveryModal.trackingNumber || undefined,
+        new Date().toISOString().slice(0, 10)
+      );
 
-    if (!result.success) {
-      toast.error(result.error || "创建拿货单失败", { icon: "❌" });
-      return;
-    }
+      if (!result.success) {
+        toast.error(result.error || "创建拿货单失败", { icon: "❌" });
+        return;
+      }
 
-    if (result.order) {
+      if (result.order) {
       const inboundResult = await createPendingInboundFromDeliveryOrder(result.order.id);
       if (!inboundResult.success) {
         console.warn("创建待入库单失败:", inboundResult.error);
@@ -660,12 +731,15 @@ export default function PurchaseOrdersPage() {
       setDetailRefreshKey((prev) => prev + 1);
     }
 
-    setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
-    setSuccessModal({
-      open: true,
-      type: "delivery",
-      data: { contractNumber: contract.contractNumber, qty: totalQty, orderNumber: result.order?.deliveryNumber }
-    });
+      setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
+      setSuccessModal({
+        open: true,
+        type: "delivery",
+        data: { contractNumber: contract.contractNumber, qty: totalQty, orderNumber: result.order?.deliveryNumber }
+      });
+    } finally {
+      setDeliverySubmitting(false);
+    }
   };
 
   // 处理支付
@@ -1669,6 +1743,40 @@ export default function PurchaseOrdersPage() {
             )}
 
             <form onSubmit={handleCreate} className="mt-4 space-y-4 text-sm">
+              {/* 编号格式：自己设置前缀，自动生成为「格式+时间戳」 */}
+              <div className="space-y-1">
+                <span className="text-slate-300">编号格式（可选）</span>
+                <input
+                  type="text"
+                  value={contractNumberFormat}
+                  onChange={(e) => setContractNumberFormatAndSave(e.target.value)}
+                  placeholder="如 SDFY-2026-  留空则用 PC-"
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                />
+                <p className="text-xs text-slate-500">自动生成时使用「格式+时间戳」，例如 SDFY-2026-1738765432123；会记住您的设置。</p>
+              </div>
+              {/* 合同编号：可自定义，留空则保存时按上面格式自动生成 */}
+              <div className="space-y-1">
+                <span className="text-slate-300">合同编号</span>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={form.contractNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, contractNumber: e.target.value }))}
+                    placeholder="留空则按编号格式自动生成"
+                    className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, contractNumber: generateContractNumber() }))}
+                    className="shrink-0 rounded-md border border-primary-500/50 bg-primary-500/10 px-3 py-2 text-xs font-medium text-primary-200 hover:bg-primary-500/20"
+                  >
+                    自动生成
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">可手动填写编号，或点击「自动生成」按当前格式生成；不填则保存时自动生成。</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1">
                   <span className="text-slate-300">供应商</span>
@@ -1848,6 +1956,8 @@ export default function PurchaseOrdersPage() {
                       type="button"
                       onClick={() => {
                         setVariantModalOpen(false);
+                        setVariantModalSupplierId(null);
+                        setVariantModalProductIds(null);
                         setSelectedSpuContract(null);
                         setVariantQuantities({});
                         setVariantSearchContract("");
@@ -1858,21 +1968,31 @@ export default function PurchaseOrdersPage() {
                     </button>
                   </div>
                   <p className="text-xs text-slate-400 mb-4 flex-shrink-0">
-                    先选规格/型号，再在下方为各颜色填写数量；未选规格前不显示颜色列表。
+                    {variantModalSupplierId
+                      ? "仅显示当前供应商关联的产品。先选规格/型号，再在下方为各颜色填写数量。"
+                      : "先选规格/型号，再在下方为各颜色填写数量；未选规格前不显示颜色列表。"}
                   </p>
+                  {variantModalSupplierId && variantModalProductIds === null && (
+                    <p className="text-xs text-slate-500 mb-2 flex-shrink-0">正在加载该供应商关联产品…</p>
+                  )}
+                  {variantModalSupplierId && variantModalProductIds && variantModalProductIds.length === 0 && (
+                    <p className="text-xs text-amber-400 mb-2 flex-shrink-0">该供应商暂未关联产品，请在产品中心为产品关联该供应商后再选。</p>
+                  )}
                   <div className="flex-shrink-0 mb-4">
                     <label className="block text-sm text-slate-300 mb-2">规格 / 型号</label>
                     <select
                       value={selectedSpuContract?.productId ?? ""}
                       onChange={(e) => {
-                        const spu = spuOptions.find((s) => s.productId === e.target.value);
+                        const spu = variantModalSpuOptions.find((s) => s.productId === e.target.value);
                         if (spu) onSelectSpuInModal(spu);
                       }}
                       disabled={!!loadingSpuId}
                       className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-primary-400 disabled:opacity-60"
                     >
-                      <option value="">请选择规格/型号（如 mz03）</option>
-                      {spuOptions.map((spu) => (
+                      <option value="">
+                        {variantModalSupplierId && variantModalProductIds === null ? "加载中…" : "请选择规格/型号（如 mz03）"}
+                      </option>
+                      {variantModalSpuOptions.map((spu) => (
                         <option key={spu.productId} value={spu.productId}>
                           {spu.name}（{loadingSpuId === spu.productId ? "加载中…" : `${spu.variants.length} 个颜色`}）
                         </option>
@@ -1944,6 +2064,8 @@ export default function PurchaseOrdersPage() {
                       type="button"
                       onClick={() => {
                         setVariantModalOpen(false);
+                        setVariantModalSupplierId(null);
+                        setVariantModalProductIds(null);
                         setSelectedSpuContract(null);
                         setVariantQuantities({});
                         setVariantSearchContract("");
@@ -2398,15 +2520,17 @@ export default function PurchaseOrdersPage() {
                 <button
                   type="button"
                   onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} })}
-                  className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                  disabled={deliverySubmitting}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
+                  disabled={deliverySubmitting}
+                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  创建拿货单
+                  {deliverySubmitting ? "处理中..." : "创建拿货单"}
                 </button>
               </div>
             </form>

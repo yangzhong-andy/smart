@@ -249,8 +249,8 @@ export default function OutboundPage() {
         throw new Error(error.error || '创建失败');
       }
 
-      toast.success("出库单创建成功");
-      mutateOutboundOrders(); // 刷新数据
+      toast.success("操作成功！");
+      mutateOutboundOrders(undefined, { revalidate: true });
       setIsCreateModalOpen(false);
       setCreateForm({
         skuId: "",
@@ -262,7 +262,7 @@ export default function OutboundPage() {
       });
     } catch (error: any) {
       console.error("创建出库单失败:", error);
-      toast.error(error.message || "创建失败，请重试");
+      toast.error(error.message || "操作失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -330,8 +330,8 @@ export default function OutboundPage() {
         throw new Error(error.error || '创建失败');
       }
 
-      toast.success("出库批次已创建");
-      mutateOutboundOrders(); // 刷新数据
+      toast.success("操作成功！");
+      mutateOutboundOrders(undefined, { revalidate: true });
       setIsBatchModalOpen(false);
       setBatchForm({
         qty: "",
@@ -342,7 +342,7 @@ export default function OutboundPage() {
       });
     } catch (error: any) {
       console.error("创建出库批次失败:", error);
-      toast.error(error.message || "创建失败，请重试");
+      toast.error(error.message || "操作失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -627,8 +627,8 @@ export default function OutboundPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  创建出库单
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? "处理中..." : "创建出库单"}
                 </ActionButton>
               </div>
             </form>
@@ -719,8 +719,8 @@ export default function OutboundPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  确认出库
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? "处理中..." : "确认出库"}
                 </ActionButton>
               </div>
             </form>

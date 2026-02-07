@@ -126,13 +126,13 @@ export default function InventoryDashboardPage() {
       filtered = filtered.filter((item) => item.warehouseId === selectedWarehouse);
     }
 
-    // SKU 编码筛选
+    // 关键词筛选（SKU、品名）
     if (searchSku.trim()) {
       const keyword = searchSku.toLowerCase();
       filtered = filtered.filter(
         (item) =>
           item.skuId.toLowerCase().includes(keyword) ||
-          item.productName.toLowerCase().includes(keyword)
+          (item.productName && item.productName.toLowerCase().includes(keyword))
       );
     }
 
@@ -160,7 +160,7 @@ export default function InventoryDashboardPage() {
     }
 
     const headers = [
-      "SKU编码",
+      "变体SKU",
       "产品名称",
       "仓库编码",
       "仓库名称",
@@ -175,7 +175,6 @@ export default function InventoryDashboardPage() {
     ];
 
     const rows = filteredStock.map((item) => {
-      // 计算 RMB 价值
       let exchangeRate = 1;
       if (item.currency === "USD") exchangeRate = 7.2;
       else if (item.currency === "HKD") exchangeRate = 0.92;
@@ -317,7 +316,7 @@ export default function InventoryDashboardPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="搜索 SKU 编码或产品名称..."
+                placeholder="搜索变体 SKU 或产品名称..."
                 value={searchSku}
                 onChange={(e) => setSearchSku(e.target.value)}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 pl-10 pr-10 py-2 text-sm text-slate-300 placeholder-slate-500 outline-none focus:border-primary-400"
@@ -352,9 +351,12 @@ export default function InventoryDashboardPage() {
       {/* 库存明细表格 */}
       <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-slate-100">库存明细</h2>
+          <div>
+            <h2 className="text-sm font-medium text-slate-100">库存明细</h2>
+            <p className="text-xs text-slate-500 mt-0.5">每行一条：单个 SKU 在单个仓库的数量，下面表格即全部明细。</p>
+          </div>
           <span className="text-xs text-slate-400">
-            共 {filteredStock.length} 条记录
+            共 {filteredStock.length} 条
           </span>
         </div>
         {stockLoading ? (
@@ -387,13 +389,13 @@ export default function InventoryDashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-800">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">SKU编码</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 w-32">SKU</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 w-28">数量</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">产品名称</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">仓库</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">位置</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">库存数量</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">预留数量</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">可用数量</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">预留</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">可用</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">单价</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">库存总值</th>
                 </tr>
@@ -429,7 +431,10 @@ export default function InventoryDashboardPage() {
                       className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors"
                     >
                       <td className="px-4 py-3">
-                        <span className="font-mono text-slate-200">{item.skuId}</span>
+                        <span className="font-mono font-medium text-slate-200">{item.skuId}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-base font-semibold tabular-nums text-slate-100">{item.qty.toLocaleString("zh-CN")}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-100">{item.productName}</td>
                       <td className="px-4 py-3">
@@ -443,9 +448,6 @@ export default function InventoryDashboardPage() {
                         <span className={`text-xs font-medium ${locationColor[item.location] || "text-slate-400"}`}>
                           {locationMap[item.location] || item.location}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-300">
-                        {item.qty.toLocaleString("zh-CN")}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-400">
                         {item.reservedQty.toLocaleString("zh-CN")}

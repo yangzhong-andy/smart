@@ -160,6 +160,7 @@ export async function GET(request: NextRequest) {
           id: item.id,
           variantId: item.variantId ?? undefined,
           sku: item.sku,
+          variantSkuId: item.variant?.skuId ?? item.sku,
           skuName: item.skuName ?? undefined,
           spec: item.spec ?? undefined,
           unitPrice: Number(item.unitPrice),

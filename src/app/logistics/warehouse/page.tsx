@@ -6,22 +6,26 @@ import { Warehouse, Plus, Search, X, Download, Eye, Pencil, Trash2, Package, Map
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import useSWR from "swr";
 
-// 仓库类型
+// 仓库类型（国内中转-海外分发）
+const WAREHOUSE_TYPE_MAP: Record<string, string> = { DOMESTIC: "国内仓", OVERSEAS: "海外仓" };
+
 type WarehouseInfo = {
   id: string;
-  name: string; // 仓库名称
-  code?: string; // 仓库编码
-  address?: string; // 仓库地址
-  contact?: string; // 联系人
-  phone?: string; // 联系电话
-  manager?: string; // 仓库管理员
-  email?: string; // 邮箱（前端显示用，数据库中没有）
-  capacity?: number; // 容量（平方米或立方米）
-  location: "FACTORY" | "DOMESTIC" | "TRANSIT" | "OVERSEAS"; // 仓库位置类型
-  type: "国内仓" | "海外仓" | "工厂仓" | "其他"; // 仓库类型（显示用）
-  isActive: boolean; // 是否启用
-  status: "启用" | "停用"; // 状态（显示用）
-  notes?: string; // 备注
+  name: string;
+  code?: string;
+  address?: string;
+  contact?: string;
+  phone?: string;
+  manager?: string;
+  email?: string;
+  capacity?: number;
+  location: "FACTORY" | "DOMESTIC" | "TRANSIT" | "OVERSEAS";
+  type?: "DOMESTIC" | "OVERSEAS"; // 国内仓 / 海外仓（国内中转-海外分发）
+  typeLabel?: string; // 国内仓 | 海外仓 显示
+  locationLabel: "国内仓" | "海外仓" | "工厂仓" | "其他";
+  isActive: boolean;
+  status: "启用" | "停用";
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -70,19 +74,21 @@ const locationReverseMap: Record<"国内仓" | "海外仓" | "工厂仓" | "其�
 
 export default function WarehousePage() {
   // 使用 SWR 获取仓库数据
-  const { data: warehousesData = [], mutate: mutateWarehouses } = useSWR<WarehouseInfo[]>('/api/warehouses', fetcher, {
+  const { data: warehousesData = [], mutate: mutateWarehouses } = useSWR<WarehouseInfo[]>('/api/warehouses?all=1', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 600000, // 10分钟内去重
   });
   
-  // 转换数据格式（添加 type 和 status 显示字段）
+  // 转换数据格式（type 优先用 DB 的 type 字段：国内仓/海外仓）
   const warehouses = useMemo(() => {
     return warehousesData.map((w: any) => ({
       ...w,
-      type: locationMap[w.location] || "其他",
+      type: w.type === "OVERSEAS" ? "OVERSEAS" : "DOMESTIC",
+      typeLabel: WAREHOUSE_TYPE_MAP[w.type] || "国内仓",
+      locationLabel: locationMap[w.location] || "其他",
       status: w.isActive ? "启用" : "停用",
-      email: w.email || "" // 数据库中没有 email 字段
+      email: w.email || ""
     }));
   }, [warehousesData]);
 
@@ -100,7 +106,8 @@ export default function WarehousePage() {
     manager: "",
     email: "",
     capacity: "",
-    type: "国内仓" as "国内仓" | "海外仓" | "工厂仓" | "其他",
+    locationType: "国内仓" as "国内仓" | "海外仓" | "工厂仓" | "其他",
+    warehouseType: "DOMESTIC" as "DOMESTIC" | "OVERSEAS", // 国内中转 / 海外分发
     status: "启用" as "启用" | "停用",
     notes: ""
   });
@@ -118,9 +125,9 @@ export default function WarehousePage() {
   const filteredWarehouses = useMemo(() => {
     let result = [...warehouses];
 
-    // 类型筛选
+    // 类型筛选（按国内仓/海外仓/工厂仓/其他）
     if (filterType !== "all") {
-      result = result.filter((w) => w.type === filterType);
+      result = result.filter((w) => (w.typeLabel || w.locationLabel) === filterType);
     }
 
     // 状态筛选
@@ -144,7 +151,6 @@ export default function WarehousePage() {
     return result.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
   }, [warehouses, filterType, filterStatus, searchKeyword]);
 
-  // 重置表单
   const resetForm = () => {
     setForm({
       name: "",
@@ -155,14 +161,14 @@ export default function WarehousePage() {
       manager: "",
       email: "",
       capacity: "",
-      type: "国内仓",
+      locationType: "国内仓",
+      warehouseType: "DOMESTIC",
       status: "启用",
       notes: ""
     });
     setEditingWarehouse(null);
   };
 
-  // 打开创建/编辑模态框
   const handleOpenModal = (warehouse?: WarehouseInfo) => {
     if (warehouse) {
       setEditingWarehouse(warehouse);
@@ -175,7 +181,8 @@ export default function WarehousePage() {
         manager: warehouse.manager || "",
         email: warehouse.email || "",
         capacity: warehouse.capacity?.toString() || "",
-        type: warehouse.type,
+        locationType: warehouse.locationLabel || "国内仓",
+        warehouseType: warehouse.type === "OVERSEAS" ? "OVERSEAS" : "DOMESTIC",
         status: warehouse.status,
         notes: warehouse.notes || ""
       });
@@ -212,7 +219,8 @@ export default function WarehousePage() {
         contact: form.contact.trim() || undefined,
         phone: form.phone.trim() || undefined,
         manager: form.manager.trim() || undefined,
-        location: locationReverseMap[form.type],
+        location: locationReverseMap[form.locationType],
+        type: form.warehouseType,
         isActive: form.status === "启用",
         capacity: form.capacity ? Number(form.capacity) : undefined,
         notes: form.notes.trim() || undefined
@@ -231,7 +239,9 @@ export default function WarehousePage() {
           throw new Error(error.error || '更新失败');
         }
 
-        toast.success("仓库信息已更新");
+        toast.success("操作成功！");
+        setIsModalOpen(false);
+        resetForm();
       } else {
         // 创建
         const response = await fetch('/api/warehouses', {
@@ -245,12 +255,12 @@ export default function WarehousePage() {
           throw new Error(error.error || '创建失败');
         }
 
-        toast.success("仓库创建成功");
+        toast.success("操作成功！");
+        setIsModalOpen(false);
+        resetForm();
       }
 
-      mutateWarehouses(); // 刷新数据
-      setIsModalOpen(false);
-      resetForm();
+      mutateWarehouses(undefined, { revalidate: true });
     } catch (error: any) {
       console.error("保存仓库失败:", error);
       toast.error(error.message || "操作失败，请重试");
@@ -405,7 +415,7 @@ export default function WarehousePage() {
                   {warehouse.code && (
                     <p className="text-sm text-slate-400">编码：{warehouse.code}</p>
                   )}
-                  <p className="text-sm text-slate-300 mt-1">{warehouse.type}</p>
+                  <p className="text-sm text-slate-300 mt-1">{warehouse.typeLabel ?? warehouse.locationLabel}</p>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -551,17 +561,27 @@ export default function WarehousePage() {
                 </label>
 
                 <label className="block space-y-1">
-                  <span className="text-sm text-slate-300">仓库类型 *</span>
+                  <span className="text-sm text-slate-300">位置类型</span>
                   <select
-                    value={form.type}
-                    onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as WarehouseInfo["type"] }))}
+                    value={form.locationType}
+                    onChange={(e) => setForm((f) => ({ ...f, locationType: e.target.value as "国内仓" | "海外仓" | "工厂仓" | "其他" }))}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
-                    required
                   >
                     <option value="国内仓">国内仓</option>
                     <option value="海外仓">海外仓</option>
                     <option value="工厂仓">工厂仓</option>
                     <option value="其他">其他</option>
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-sm text-slate-300">国内中转 / 海外分发 *</span>
+                  <select
+                    value={form.warehouseType}
+                    onChange={(e) => setForm((f) => ({ ...f, warehouseType: e.target.value as "DOMESTIC" | "OVERSEAS" }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
+                  >
+                    <option value="DOMESTIC">国内仓（国内中转）</option>
+                    <option value="OVERSEAS">海外仓（海外分发）</option>
                   </select>
                 </label>
 

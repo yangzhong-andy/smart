@@ -67,6 +67,27 @@ enum InventoryLocation {
   OVERSEAS
 }
 
+// 仓库类型：国内中转 / 海外分发
+enum WarehouseType {
+  DOMESTIC
+  OVERSEAS
+}
+
+// 库存流水类型：入库、出库、调拨
+enum InventoryLogType {
+  IN
+  OUT
+  TRANSFER
+}
+
+// 库存流水状态：待入库、已入库、在途中、已到达
+enum InventoryLogStatus {
+  PENDING_INBOUND  // 待入库
+  INBOUNDED       // 已入库
+  IN_TRANSIT      // 在途中（发往国外途中）
+  ARRIVED         // 已到达
+}
+
 // 库存流水原因（入库/出库原因）
 enum StockLogReason {
   // 入库原因
@@ -299,6 +320,7 @@ model ProductVariant {
   contractItems  PurchaseContractItem[]
   pendingInbound PendingInbound[] // 待入库单
   outboundOrders OutboundOrder[] // 出库单
+  inventoryLogs  InventoryLog[] // 库存流水（国内中转-海外分发）
 
   @@index([productId])
   @@index([skuId])
@@ -462,6 +484,7 @@ model Warehouse {
   phone     String? // 联系电话
   manager   String? // 仓库管理员
   location  InventoryLocation // 仓库位置类型（工厂/国内/在途/海外）
+  type      WarehouseType     @default(DOMESTIC) // 国内仓(DOMESTIC) / 海外仓(OVERSEAS)
   isActive  Boolean           @default(true) // 是否启用
   capacity  Int? // 仓库容量（可选）
   notes     String? // 备注
@@ -469,14 +492,18 @@ model Warehouse {
   updatedAt DateTime          @updatedAt
 
   // 关联关系
-  stocks          Stock[] // 该仓库的库存记录
-  stockLogs       StockLog[] // 该仓库的库存流水
-  inboundBatches  InboundBatch[] // 入库批次
-  outboundOrders  OutboundOrder[] // 出库单
-  outboundBatches OutboundBatch[] // 出库批次
+  stocks               Stock[] // 该仓库的库存记录
+  stockLogs            StockLog[] // 该仓库的库存流水
+  inboundBatches       InboundBatch[] // 入库批次
+  outboundOrders       OutboundOrder[] // 出库单
+  outboundBatches      OutboundBatch[] // 出库批次
+  inventoryLogs        InventoryLog[]  @relation("InventoryLogWarehouse") // 作为主仓库的流水
+  inventoryLogsFrom    InventoryLog[]  @relation("InventoryLogFrom") // 调拨发出
+  inventoryLogsTo      InventoryLog[]  @relation("InventoryLogTo") // 调拨接收
 
   @@index([code])
   @@index([location])
+  @@index([type])
 }
 
 // 库存表（Stock）- 记录 SKU 在每个仓库的数量
@@ -546,6 +573,35 @@ model StockLog {
   @@index([warehouseId])
   @@index([reason])
   @@index([operationDate])
+}
+
+// 库存流水（国内中转-海外分发）：入库/出库/调拨，状态含在途、已到达
+model InventoryLog {
+  id               String             @id @default(uuid())
+  type             InventoryLogType    // IN-入库 / OUT-出库 / TRANSFER-调拨
+  status           InventoryLogStatus  // 待入库、已入库、在途中、已到达
+  variantId        String              // SKU (ProductVariant)
+  qty              Int                 // 数量
+  warehouseId      String?             // 入库/出库时的仓库（单仓操作）
+  fromWarehouseId  String?             // 调拨：发出仓库
+  toWarehouseId    String?             // 调拨：接收仓库
+  deliveryOrderId  String?             // 国内仓入库时关联拿货单
+  relatedOrderNo   String?             // 关联单号（冗余显示）
+  notes            String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  variant        ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse      Warehouse?     @relation("InventoryLogWarehouse", fields: [warehouseId], references: [id], onDelete: SetNull)
+  fromWarehouse  Warehouse?     @relation("InventoryLogFrom", fields: [fromWarehouseId], references: [id], onDelete: SetNull)
+  toWarehouse    Warehouse?     @relation("InventoryLogTo", fields: [toWarehouseId], references: [id], onDelete: SetNull)
+  deliveryOrder  DeliveryOrder? @relation(fields: [deliveryOrderId], references: [id], onDelete: SetNull)
+
+  @@index([variantId])
+  @@index([warehouseId])
+  @@index([deliveryOrderId])
+  @@index([type])
+  @@index([status])
 }
 
 // 保留原有的 InventoryMovement 模型以保持向后兼容
@@ -655,6 +711,8 @@ model DeliveryOrder {
   contractId             String
   contractNumber         String
   qty                    Int
+  /// 按合同明细 itemId 存储的本次拿货数量 { "itemId": qty }，用于列表展示真实拿货数量
+  itemQtys               Json?
   domesticTrackingNumber String?
   shippedDate            DateTime?
   status                 DeliveryOrderStatus
@@ -666,6 +724,7 @@ model DeliveryOrder {
 
   contract       PurchaseContract @relation(fields: [contractId], references: [id])
   pendingInbound PendingInbound? // 关联的待入库单（反向关联）
+  inventoryLogs  InventoryLog[] // 关联的库存流水（国内仓入库时关联）
 }
 
 // 待入库单

@@ -102,6 +102,8 @@ export default function InfluencersPage() {
     status: "运输中" as SampleStatus
   });
 
+  const [isSampleSubmitting, setIsSampleSubmitting] = useState(false);
+
   // 统计数据（与 store 中 getInfluencerStats 逻辑一致）
   const stats = useMemo(
     () => ({
@@ -237,14 +239,14 @@ export default function InfluencersPage() {
       toast.error("请选择产品和填写寄样单号");
       return;
     }
-
+    if (isSampleSubmitting) return;
+    setIsSampleSubmitting(true);
     try {
       const result = await confirmSample(
         selectedInfluencer.id,
         sampleForm.productSku,
         sampleForm.sampleOrderNumber
       );
-
       if (result.success) {
         mutateInfluencers();
         toast.success(result.message);
@@ -256,6 +258,8 @@ export default function InfluencersPage() {
     } catch (e) {
       console.error("寄样失败", e);
       toast.error("操作失败，请重试");
+    } finally {
+      setIsSampleSubmitting(false);
     }
   };
 
@@ -701,8 +705,8 @@ export default function InfluencersPage() {
                 <ActionButton variant="secondary" onClick={() => setIsSampleModalOpen(false)}>
                   取消
                 </ActionButton>
-                <ActionButton variant="primary" onClick={handleConfirmSample}>
-                  确认寄样
+                <ActionButton variant="primary" onClick={handleConfirmSample} isLoading={isSampleSubmitting} disabled={isSampleSubmitting}>
+                  {isSampleSubmitting ? "处理中..." : "确认寄样"}
                 </ActionButton>
               </div>
             </div>

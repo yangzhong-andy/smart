@@ -1,6 +1,6 @@
 {
   "name": "smart-erp",
-  "version": "1.0.60",
+  "version": "1.0.61",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -11,7 +11,9 @@
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:sync": "prisma generate && prisma db push"
+    "db:sync": "prisma generate && prisma db push",
+    "fix:warehouse-type": "node scripts/add-warehouse-type.js",
+    "fix:inventory-log": "node scripts/add-inventory-log-table.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

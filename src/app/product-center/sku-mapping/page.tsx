@@ -17,6 +17,7 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 export default function SKUMappingPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMappingSubmitting, setIsMappingSubmitting] = useState(false);
   const [mappingForm, setMappingForm] = useState({
     platform: "TikTok" as PlatformSKUMapping["platform"],
     platformSkuId: "",
@@ -160,38 +161,28 @@ export default function SKUMappingPage() {
 
   const handleAddMapping = async () => {
     if (!selectedProduct) return;
-    
     if (!mappingForm.platformSkuId.trim()) {
       toast.error("请填写平台 SKU ID");
       return;
     }
-    
-    // 检查是否已存在相同平台的映射
     const existingMapping = selectedProduct.platform_sku_mapping?.find(
       (m) => m.platform === mappingForm.platform
     );
-    
     if (existingMapping) {
-      if (!confirm(`该产品已存在 ${mappingForm.platform} 平台的映射，是否覆盖？`)) {
-        return;
-      }
+      if (!confirm(`该产品已存在 ${mappingForm.platform} 平台的映射，是否覆盖？`)) return;
     }
-    
     const mapping: PlatformSKUMapping = {
       platform: mappingForm.platform,
       platformSkuId: mappingForm.platformSkuId.trim(),
       platformSkuName: mappingForm.platformSkuName.trim() || undefined
     };
-    
+    if (isMappingSubmitting) return;
+    setIsMappingSubmitting(true);
     try {
       if (await addPlatformSKUMapping(selectedProduct.sku_id, mapping)) {
         mutateProducts();
         toast.success("映射已添加");
-        setMappingForm({
-          platform: "TikTok",
-          platformSkuId: "",
-          platformSkuName: ""
-        });
+        setMappingForm({ platform: "TikTok", platformSkuId: "", platformSkuName: "" });
         setIsModalOpen(false);
       } else {
         toast.error("添加映射失败");
@@ -199,6 +190,8 @@ export default function SKUMappingPage() {
     } catch (e) {
       console.error("添加映射失败", e);
       toast.error("操作失败，请重试");
+    } finally {
+      setIsMappingSubmitting(false);
     }
   };
 
@@ -531,9 +524,10 @@ export default function SKUMappingPage() {
                 <button
                   type="button"
                   onClick={handleAddMapping}
-                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
+                  disabled={isMappingSubmitting}
+                  className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  保存
+                  {isMappingSubmitting ? "处理中..." : "保存"}
                 </button>
               </div>
             </div>

@@ -44,13 +44,16 @@ export async function GET(request: NextRequest) {
       }
     })
     
-    // 转换数据格式
+    // 转换数据格式（含变体 SKU：颜色、尺寸、条形码等）
     const transformed = stocks.map(stock => ({
       id: stock.id,
       variantId: stock.variantId,
       warehouseId: stock.warehouseId,
       skuId: stock.variant.skuId,
       productName: stock.variant.product.name,
+      color: stock.variant.color ?? undefined,
+      size: stock.variant.size ?? undefined,
+      barcode: stock.variant.barcode ?? undefined,
       warehouseCode: stock.warehouse.code,
       warehouseName: stock.warehouse.name,
       location: stock.warehouse.location,

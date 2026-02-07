@@ -68,6 +68,7 @@ export default function ApprovalCenterPage() {
     id: null
   });
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title?: string;
@@ -434,66 +435,77 @@ export default function ApprovalCenterPage() {
       toast.error("请输入退回原因");
       return;
     }
-    
+    if (rejectSubmitting) return;
+    setRejectSubmitting(true);
+
     if (rejectModal.type === "bill") {
-      getMonthlyBills().then(async (allBills) => {
-        const updatedBills = allBills.map((b) =>
-          b.id === rejectModal.id
-            ? {
-                ...b,
-                status: "Draft" as BillStatus,
-                rejectionReason: rejectReason.trim()
-              }
-            : b
-        );
-        await saveMonthlyBills(updatedBills);
-        // 刷新 SWR 缓存
-        mutate("monthly-bills");
-        mutate("pending-bills");
-      });
-    } else if (rejectModal.type === "expense") {
+      getMonthlyBills()
+        .then(async (allBills) => {
+          const updatedBills = allBills.map((b) =>
+            b.id === rejectModal.id
+              ? { ...b, status: "Draft" as BillStatus, rejectionReason: rejectReason.trim() }
+              : b
+          );
+          await saveMonthlyBills(updatedBills);
+          mutate("monthly-bills");
+          mutate("pending-bills");
+          toast.success("已退回修改");
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        })
+        .catch((err: any) => {
+          toast.error(err?.message || "退回失败");
+        })
+        .finally(() => setRejectSubmitting(false));
+      return;
+    }
+    if (rejectModal.type === "expense") {
       const expenseId = rejectModal.id;
       updateExpenseRequest(expenseId, {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
-      }).then(async () => {
-        mutate("pending-expense-requests", (current: unknown) => {
-          if (!Array.isArray(current)) return current;
-          return current.filter((r: { id?: string }) => r.id !== expenseId);
-        }, false);
-        mutate("expense-requests", undefined, { revalidate: true });
-        mutate("pending-expense-requests", undefined, { revalidate: true });
-        toast.success("已退回修改");
-        setRejectModal({ open: false, type: null, id: null });
-        setRejectReason("");
-      }).catch((error: any) => {
-        toast.error(error.message || "退回失败");
-      });
+      })
+        .then(async () => {
+          mutate("pending-expense-requests", (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            return current.filter((r: { id?: string }) => r.id !== expenseId);
+          }, false);
+          mutate("expense-requests", undefined, { revalidate: true });
+          mutate("pending-expense-requests", undefined, { revalidate: true });
+          toast.success("已退回修改");
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        })
+        .catch((error: any) => {
+          toast.error(error.message || "退回失败");
+        })
+        .finally(() => setRejectSubmitting(false));
       return;
-    } else if (rejectModal.type === "income") {
+    }
+    if (rejectModal.type === "income") {
       const incomeId = rejectModal.id;
       updateIncomeRequest(incomeId, {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
-      }).then(async () => {
-        mutate("pending-income-requests", (current: unknown) => {
-          if (!Array.isArray(current)) return current;
-          return current.filter((r: { id?: string }) => r.id !== incomeId);
-        }, false);
-        mutate("income-requests", undefined, { revalidate: true });
-        mutate("pending-income-requests", undefined, { revalidate: true });
-        toast.success("已退回修改");
-        setRejectModal({ open: false, type: null, id: null });
-        setRejectReason("");
-      }).catch((error: any) => {
-        toast.error(error.message || "退回失败");
-      });
+      })
+        .then(async () => {
+          mutate("pending-income-requests", (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            return current.filter((r: { id?: string }) => r.id !== incomeId);
+          }, false);
+          mutate("income-requests", undefined, { revalidate: true });
+          mutate("pending-income-requests", undefined, { revalidate: true });
+          toast.success("已退回修改");
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        })
+        .catch((error: any) => {
+          toast.error(error.message || "退回失败");
+        })
+        .finally(() => setRejectSubmitting(false));
       return;
     }
-    
-    toast.success("已退回修改");
-    setRejectModal({ open: false, type: null, id: null });
-    setRejectReason("");
+    setRejectSubmitting(false);
   };
 
   // PaymentRequest 已合并到 ExpenseRequest，相关函数已删除
@@ -2215,9 +2227,10 @@ export default function ApprovalCenterPage() {
                 </button>
                 <button
                   onClick={handleConfirmReject}
-                  className="px-4 py-2 rounded-md bg-rose-500 text-white hover:bg-rose-600"
+                  disabled={rejectSubmitting}
+                  className="px-4 py-2 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  确认退回
+                  {rejectSubmitting ? "处理中..." : "确认退回"}
                 </button>
               </div>
             </div>

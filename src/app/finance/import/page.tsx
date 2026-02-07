@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useMemo } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { Upload, FileSpreadsheet, ChevronRight, Table, Store } from "lucide-react";
 import Link from "next/link";
@@ -36,6 +36,7 @@ function getAmountKey(row: Record<string, unknown>): string {
 }
 
 export default function FinanceImportPage() {
+  const { mutate: globalMutate } = useSWRConfig();
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -158,8 +159,9 @@ export default function FinanceImportPage() {
         return;
       }
       toast.success(data.message || `已导入 ${data.imported} 条到店铺订单表`);
+      globalMutate((key) => typeof key === "string" && key.startsWith("/api/store-order-settlement"));
     } catch (err) {
-      toast.error("导入请求失败");
+      toast.error("操作失败，请重试");
       console.error(err);
     } finally {
       setImporting(false);
@@ -281,7 +283,7 @@ export default function FinanceImportPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Table className="h-4 w-4" />
-                {importing ? "导入中…" : "导入到店铺订单表"}
+                {importing ? "处理中..." : "导入到店铺订单表"}
               </button>
             </div>
 

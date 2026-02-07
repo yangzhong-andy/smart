@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Package, Plus, Search, X, Download, Eye, CheckCircle2, Clock, AlertCircle, Warehouse, Truck } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 
 // 待入库单类型
 type PendingInbound = {
@@ -85,7 +85,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 export default function InboundPage() {
-  // 使用 SWR 获取数据
+  const { mutate: globalMutate } = useSWRConfig();
   const { data: pendingInboundData = [], mutate: mutatePendingInbound } = useSWR<PendingInbound[]>('/api/pending-inbound', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
@@ -273,8 +273,10 @@ export default function InboundPage() {
         throw new Error(error.error || '创建失败');
       }
 
-      toast.success("入库批次已创建");
-      mutatePendingInbound(); // 刷新数据
+      toast.success("入库批次已登记，库存已增加");
+      mutatePendingInbound(undefined, { revalidate: true });
+      globalMutate("/api/stock");
+      globalMutate("/api/delivery-orders");
       setIsBatchModalOpen(false);
       setBatchForm({
         warehouseId: "",
@@ -285,7 +287,7 @@ export default function InboundPage() {
       });
     } catch (error: any) {
       console.error("创建入库批次失败:", error);
-      toast.error(error.message || "创建失败，请重试");
+      toast.error(error.message || "操作失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -559,11 +561,12 @@ export default function InboundPage() {
                     setSelectedInbound(null);
                   }}
                   variant="secondary"
+                  disabled={isSubmitting}
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  确认入库
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? "处理中..." : "确认入库"}
                 </ActionButton>
               </div>
             </form>

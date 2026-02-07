@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
-import { Truck, Search, X, Download, Eye, Package } from "lucide-react";
+import { Truck, Search, X, Download, Eye, Package, PackageCheck } from "lucide-react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
@@ -37,9 +37,16 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
+type Warehouse = { id: string; code: string; name: string; location: string; isActive: boolean };
+
 export default function DeliveryOrdersPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [inboundOrder, setInboundOrder] = useState<DeliveryOrder | null>(null);
+  const [inboundReceivedQty, setInboundReceivedQty] = useState<number>(0);
+  const [inboundWarehouseId, setInboundWarehouseId] = useState<string>("");
+  const [inboundSubmitting, setInboundSubmitting] = useState(false);
+  const { mutate: globalMutate } = useSWRConfig();
 
   const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[]>(
     "/api/delivery-orders",
@@ -55,6 +62,13 @@ export default function DeliveryOrdersPage() {
   );
   const contracts = contractsData;
 
+  const { data: warehousesData = [] } = useSWR<Warehouse[]>(
+    "/api/warehouses",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const warehouses = Array.isArray(warehousesData) ? warehousesData : [];
+
   // 筛选和排序拿货单
   const filteredOrders = useMemo(() => {
     let result = [...deliveryOrders];
@@ -69,11 +83,13 @@ export default function DeliveryOrdersPage() {
       const keyword = searchKeyword.toLowerCase();
       result = result.filter((o) => {
         const contract = contracts.find((c) => c.id === o.contractId);
+        const variantSkus = contract?.items?.map((it: { variantSkuId?: string; sku?: string }) => (it.variantSkuId || it.sku || "").toLowerCase()).filter(Boolean).join(" ") ?? "";
         return (
           o.deliveryNumber.toLowerCase().includes(keyword) ||
           o.contractNumber.toLowerCase().includes(keyword) ||
           contract?.supplierName?.toLowerCase().includes(keyword) ||
-          contract?.sku?.toLowerCase().includes(keyword) ||
+          (contract?.sku ?? "").toLowerCase().includes(keyword) ||
+          variantSkus.includes(keyword) ||
           o.domesticTrackingNumber?.toLowerCase().includes(keyword)
         );
       });
@@ -106,6 +122,59 @@ export default function DeliveryOrdersPage() {
     };
   }, [deliveryOrders]);
 
+  const canInbound = (status: string) =>
+    status === "待发货" || status === "已发货" || status === "运输中";
+
+  const openInboundDialog = (order: DeliveryOrder) => {
+    setInboundOrder(order);
+    setInboundReceivedQty(order.qty);
+    setInboundWarehouseId(warehouses[0]?.id ?? "");
+  };
+
+  const closeInboundDialog = () => {
+    setInboundOrder(null);
+    setInboundReceivedQty(0);
+    setInboundWarehouseId("");
+    setInboundSubmitting(false);
+  };
+
+  const handleInboundConfirm = async () => {
+    if (!inboundOrder) return;
+    if (inboundReceivedQty < 0) {
+      toast.error("实收数量不能为负数");
+      return;
+    }
+    if (!inboundWarehouseId) {
+      toast.error("请选择入库仓库");
+      return;
+    }
+    setInboundSubmitting(true);
+    try {
+      const res = await fetch(`/api/delivery-orders/${inboundOrder.id}/inbound`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          warehouseId: inboundWarehouseId,
+          receivedQty: inboundReceivedQty
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || "操作失败，请重试");
+        setInboundSubmitting(false);
+        return;
+      }
+      toast.success("入库成功，库存已增加，拿货单已更新为已入库");
+      closeInboundDialog();
+      mutateDeliveryOrders(undefined, { revalidate: true });
+      globalMutate("/api/stock");
+    } catch (e: any) {
+      toast.error(e?.message || "操作失败，请重试");
+    } finally {
+      setInboundSubmitting(false);
+    }
+  };
+
   // 导出数据
   const handleExportData = () => {
     if (filteredOrders.length === 0) {
@@ -117,7 +186,7 @@ export default function DeliveryOrdersPage() {
       "拿货单号",
       "合同编号",
       "供应商",
-      "SKU",
+      "变体SKU",
       "数量",
       "状态",
       "尾款金额",
@@ -134,7 +203,7 @@ export default function DeliveryOrdersPage() {
         order.deliveryNumber,
         order.contractNumber,
         contract?.supplierName || "-",
-        contract?.sku || "-",
+        contract?.items?.length ? contract.items.map((it: { variantSkuId?: string; sku?: string }) => it.variantSkuId || it.sku || "").filter(Boolean).join("、") : (contract?.sku || "-"),
         String(order.qty),
         order.status,
         String(formatCurrency(order.tailAmount || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
@@ -283,7 +352,7 @@ export default function DeliveryOrdersPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="搜索拿货单号、合同编号、供应商、SKU或物流单号..."
+              placeholder="搜索拿货单号、合同编号、供应商、变体SKU或物流单号..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-10 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-400/30"
@@ -341,8 +410,8 @@ export default function DeliveryOrdersPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">拿货单号</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">合同编号</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">供应商</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">SKU</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">数量</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">变体 SKU</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">拿货数量（按变体）</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">状态</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">尾款金额</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">已付尾款</th>
@@ -386,8 +455,39 @@ export default function DeliveryOrdersPage() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-slate-300">{contract?.supplierName || "-"}</td>
-                      <td className="px-4 py-3 text-slate-300">{contract?.sku || "-"}</td>
-                      <td className="px-4 py-3 text-right text-slate-100">{order.qty.toLocaleString("zh-CN")}</td>
+                      <td className="px-4 py-3">
+                        {contract?.items?.length
+                          ? contract.items.map((it: { sku?: string; variantSkuId?: string }) => it.variantSkuId || it.sku || "").filter(Boolean).join("、")
+                          : contract?.skuId || contract?.sku || "-"}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        {contract?.items?.length ? (
+                          <div className="space-y-1">
+                            {contract.items.map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
+                              const sku = it.variantSkuId || it.sku || "";
+                              const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
+                                ? Number(order.itemQtys[it.id]) || 0
+                                : Number(it.qty) || 0;
+                              return (
+                                <div key={sku} className="flex items-center justify-between gap-3 text-xs">
+                                  <span className="font-mono text-slate-200">{sku}</span>
+                                  <span className="text-slate-100">{qty.toLocaleString("zh-CN")}</span>
+                                </div>
+                              );
+                            })}
+                            <div className="pt-1 mt-1 border-t border-slate-700/50 text-slate-500 text-xs">
+                              合计（拿货数量之和） {contract.items.reduce((sum: number, it: { id?: string; qty?: number }) => {
+                                const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
+                                  ? Number(order.itemQtys[it.id]) || 0
+                                  : Number(it.qty) || 0;
+                                return sum + qty;
+                              }, 0).toLocaleString("zh-CN")}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-100">{order.qty.toLocaleString("zh-CN")}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${colors.bg} ${colors.text}`}>
                           {order.status}
@@ -411,13 +511,25 @@ export default function DeliveryOrdersPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-400 text-xs">{formatDate(order.createdAt)}</td>
                       <td className="px-4 py-3 text-right">
-                        <Link
-                          href={`/procurement/purchase-orders`}
-                          className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"
-                        >
-                          <Eye className="h-3 w-3" />
-                          查看合同
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          {canInbound(order.status) && (
+                            <button
+                              type="button"
+                              onClick={() => openInboundDialog(order)}
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20 transition-colors"
+                            >
+                              <PackageCheck className="h-3 w-3" />
+                              入库
+                            </button>
+                          )}
+                          <Link
+                            href={`/procurement/purchase-orders`}
+                            className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"
+                          >
+                            <Eye className="h-3 w-3" />
+                            查看合同
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -427,6 +539,116 @@ export default function DeliveryOrdersPage() {
           </table>
         </div>
       </section>
+
+      {/* 入库弹窗 */}
+      {inboundOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+              <h3 className="text-lg font-semibold text-slate-100">拿货单入库</h3>
+              <button
+                type="button"
+                onClick={closeInboundDialog}
+                className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4 p-4">
+              <p className="text-sm text-slate-400">请核对变体 SKU 明细并填写实收数量与入库仓库。</p>
+              <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-slate-400">拿货单号</span>
+                  <span className="font-medium text-slate-100">{inboundOrder.deliveryNumber}</span>
+                  <span className="text-slate-400">变体 SKU</span>
+                  <span className="font-medium text-slate-100">
+                    {(() => {
+                      const c = contracts.find((ci) => ci.id === inboundOrder.contractId);
+                      if (c?.items?.length) return c.items.map((it: { variantSkuId?: string; sku?: string }) => it.variantSkuId || it.sku || "").filter(Boolean).join("、");
+                      return c?.skuId ?? c?.sku ?? "-";
+                    })()}
+                  </span>
+                  <span className="text-slate-400">拿货数量（按变体）</span>
+                  <span className="font-medium text-slate-100">
+                    {(() => {
+                      const c = contracts.find((ci) => ci.id === inboundOrder.contractId);
+                      if (c?.items?.length) {
+                        return (
+                          <div className="space-y-1">
+                            {c.items.map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
+                              const sku = it.variantSkuId || it.sku || "";
+                              const qty = inboundOrder.itemQtys && it.id && inboundOrder.itemQtys[it.id] !== undefined
+                                ? Number(inboundOrder.itemQtys[it.id]) || 0
+                                : Number(it.qty) || 0;
+                              return (
+                                <div key={sku} className="flex items-center gap-2 text-xs">
+                                  <span className="font-mono text-slate-200">{sku}</span>
+                                  <span className="text-slate-100">{qty.toLocaleString("zh-CN")}</span>
+                                </div>
+                              );
+                            })}
+                            <div className="text-slate-500 text-xs pt-0.5">
+                              合计（拿货数量之和） {c.items.reduce((s: number, it: { id?: string; qty?: number }) => {
+                                const qty = inboundOrder.itemQtys && it.id && inboundOrder.itemQtys[it.id] !== undefined
+                                  ? Number(inboundOrder.itemQtys[it.id]) || 0
+                                  : Number(it.qty) || 0;
+                                return s + qty;
+                              }, 0).toLocaleString("zh-CN")}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return inboundOrder.qty.toLocaleString("zh-CN");
+                    })()}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">实收数量</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={inboundReceivedQty}
+                  onChange={(e) => setInboundReceivedQty(Number(e.target.value) || 0)}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">入库仓库</label>
+                <select
+                  value={inboundWarehouseId}
+                  onChange={(e) => setInboundWarehouseId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}（{w.code}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-700 px-4 py-3">
+              <button
+                type="button"
+                onClick={closeInboundDialog}
+                className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleInboundConfirm}
+                disabled={inboundSubmitting}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {inboundSubmitting ? "处理中…" : "确认入库"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

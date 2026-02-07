@@ -207,28 +207,28 @@ export async function PUT(
       }]
     }
 
-    const productUpdateData: any = {
-      name: body.name,
-      spuCode: body.spu_code !== undefined ? (body.spu_code || null) : undefined,
-      category: body.category || null,
-      brand: body.brand !== undefined ? (body.brand || null) : undefined,
-      description: body.description !== undefined ? (body.description || null) : undefined,
-      mainImage: body.main_image !== undefined ? (body.main_image || null) : undefined,
-      material: body.material !== undefined ? (body.material || null) : undefined,
-      customsNameCN: body.customs_name_cn !== undefined ? (body.customs_name_cn || null) : undefined,
-      customsNameEN: body.customs_name_en !== undefined ? (body.customs_name_en || null) : undefined,
-      defaultSupplierId: body.default_supplier_id !== undefined ? (body.default_supplier_id || null) : undefined,
-      status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
-      suppliers: suppliersData ? JSON.parse(JSON.stringify(suppliersData)) : undefined
-    }
+    // 只更新 body 中存在的字段，未传的字段（如未改动的图片）不覆盖
+    const productUpdateData: any = {}
+    if (body.name !== undefined) productUpdateData.name = body.name
+    if (body.spu_code !== undefined) productUpdateData.spuCode = body.spu_code || null
+    if (body.category !== undefined) productUpdateData.category = body.category || null
+    if (body.brand !== undefined) productUpdateData.brand = body.brand || null
+    if (body.description !== undefined) productUpdateData.description = body.description || null
+    if (body.main_image !== undefined) productUpdateData.mainImage = body.main_image || null
+    if (body.material !== undefined) productUpdateData.material = body.material || null
+    if (body.customs_name_cn !== undefined) productUpdateData.customsNameCN = body.customs_name_cn || null
+    if (body.customs_name_en !== undefined) productUpdateData.customsNameEN = body.customs_name_en || null
+    if (body.default_supplier_id !== undefined) productUpdateData.defaultSupplierId = body.default_supplier_id || null
+    if (body.status !== undefined) productUpdateData.status = body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE'
     if (body.gallery_images !== undefined) {
       productUpdateData.galleryImages = Array.isArray(body.gallery_images) && body.gallery_images.length > 0
         ? JSON.parse(JSON.stringify(body.gallery_images))
         : null
     }
+    if (suppliersData !== null) productUpdateData.suppliers = JSON.parse(JSON.stringify(suppliersData))
     const updatedProduct = await prisma.product.update({
       where: { id: existingVariant.productId },
-      data: productUpdateData
+      data: Object.keys(productUpdateData).length ? productUpdateData : { updatedAt: new Date() }
     })
 
     // 更新 ProductVariant (SKU)

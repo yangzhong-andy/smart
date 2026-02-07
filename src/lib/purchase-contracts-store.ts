@@ -43,6 +43,8 @@ export type PurchaseContractItem = {
   id: string;
   variantId?: string;
   sku: string;
+  /** 变体 SKU 编码（ProductVariant.skuId），与 sku 一致或来自关联变体 */
+  variantSkuId?: string;
   skuName?: string;
   spec?: string;
   unitPrice: number;

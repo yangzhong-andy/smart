@@ -44,6 +44,7 @@ export async function GET(
       contractId: order.contractId,
       contractNumber: order.contractNumber,
       qty: order.qty,
+      itemQtys: order.itemQtys != null ? (order.itemQtys as Record<string, number>) : undefined,
       domesticTrackingNumber: order.domesticTrackingNumber || undefined,
       shippedDate: order.shippedDate?.toISOString() || undefined,
       status: STATUS_MAP_DB_TO_FRONT[order.status],
@@ -72,6 +73,7 @@ export async function PUT(
 
     const updateData: any = {}
     if (body.qty !== undefined) updateData.qty = Number(body.qty)
+    if (body.itemQtys !== undefined) updateData.itemQtys = body.itemQtys
     if (body.domesticTrackingNumber !== undefined) updateData.domesticTrackingNumber = body.domesticTrackingNumber || null
     if (body.shippedDate !== undefined) updateData.shippedDate = body.shippedDate ? new Date(body.shippedDate) : null
     if (body.status !== undefined) updateData.status = STATUS_MAP_FRONT_TO_DB[body.status] || DeliveryOrderStatus.PENDING
@@ -90,6 +92,7 @@ export async function PUT(
       contractId: order.contractId,
       contractNumber: order.contractNumber,
       qty: order.qty,
+      itemQtys: order.itemQtys != null ? (order.itemQtys as Record<string, number>) : undefined,
       domesticTrackingNumber: order.domesticTrackingNumber || undefined,
       shippedDate: order.shippedDate?.toISOString() || undefined,
       status: STATUS_MAP_DB_TO_FRONT[order.status],

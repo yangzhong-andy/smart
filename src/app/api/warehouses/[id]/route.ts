@@ -41,20 +41,24 @@ export async function PUT(
     const { id } = params
     const body = await request.json()
     
+    const updateData: Record<string, unknown> = {
+      code: body.code,
+      name: body.name,
+      address: body.address,
+      contact: body.contact,
+      phone: body.phone,
+      manager: body.manager,
+      location: body.location,
+      isActive: body.isActive !== undefined ? body.isActive : true,
+      capacity: body.capacity,
+      notes: body.notes
+    }
+    if (body.type !== undefined) {
+      updateData.type = body.type === 'OVERSEAS' ? 'OVERSEAS' : 'DOMESTIC'
+    }
     const warehouse = await prisma.warehouse.update({
       where: { id },
-      data: {
-        code: body.code,
-        name: body.name,
-        address: body.address,
-        contact: body.contact,
-        phone: body.phone,
-        manager: body.manager,
-        location: body.location,
-        isActive: body.isActive !== undefined ? body.isActive : true,
-        capacity: body.capacity,
-        notes: body.notes
-      }
+      data: updateData as any
     })
     
     return NextResponse.json(warehouse)

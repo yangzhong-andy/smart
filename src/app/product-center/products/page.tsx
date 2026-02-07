@@ -647,7 +647,9 @@ export default function ProductsPage() {
       }
     }
 
-    const productData: any = {
+    // 新建：全量提交；编辑：只回传有变更的字段，图片未改动则不回传，避免重复上传大图
+    const orig = editingProduct as any;
+    const productData: any = editingProduct ? {} : {
       sku_id: form.sku_id.trim(),
       spu_code: form.spu_code.trim() || undefined,
       name: form.name.trim(),
@@ -675,11 +677,43 @@ export default function ProductsPage() {
       stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
       suppliers: suppliersList.length > 0 ? suppliersList : undefined,
     };
-    if (editingProduct && form.main_image === (editingProduct.main_image ?? "")) {
-      delete productData.main_image;
-    }
-    if (editingProduct && galleryUnchanged) {
-      delete productData.gallery_images;
+    if (editingProduct) {
+      if (form.sku_id.trim() !== (orig.sku_id ?? "")) productData.sku_id = form.sku_id.trim();
+      if ((form.spu_code.trim() || "") !== (orig.spu_code ?? "")) productData.spu_code = form.spu_code.trim() || undefined;
+      if (form.name.trim() !== (orig.name ?? "")) productData.name = form.name.trim();
+      if (form.main_image !== (orig.main_image ?? "")) productData.main_image = form.main_image;
+      if (!galleryUnchanged) productData.gallery_images = galleryList.slice(0, 5);
+      if ((form.category.trim() || "") !== (orig.category ?? "")) productData.category = form.category.trim() || undefined;
+      if ((form.brand.trim() || "") !== (orig.brand ?? "")) productData.brand = form.brand.trim() || undefined;
+      if ((form.description.trim() || "") !== (orig.description ?? "")) productData.description = form.description.trim() || undefined;
+      if ((form.material.trim() || "") !== (orig.material ?? "")) productData.material = form.material.trim() || undefined;
+      if ((form.customs_name_cn.trim() || "") !== (orig.customs_name_cn ?? "")) productData.customs_name_cn = form.customs_name_cn.trim() || undefined;
+      if ((form.customs_name_en.trim() || "") !== (orig.customs_name_en ?? "")) productData.customs_name_en = form.customs_name_en.trim() || undefined;
+      if ((form.default_supplier_id.trim() || "") !== (orig.default_supplier_id ?? "")) productData.default_supplier_id = form.default_supplier_id.trim() || undefined;
+      if (form.status !== (orig.status ?? "ACTIVE")) productData.status = form.status;
+      if (Number(costPrice) !== Number(orig.cost_price ?? 0)) productData.cost_price = costPrice;
+      if ((form.target_roi ? Number(form.target_roi) : undefined) !== (orig.target_roi ?? undefined)) productData.target_roi = form.target_roi ? Number(form.target_roi) : undefined;
+      if (form.currency !== (orig.currency ?? "CNY")) productData.currency = form.currency;
+      if ((form.weight_kg ? Number(form.weight_kg) : undefined) !== (orig.weight_kg ?? undefined)) productData.weight_kg = form.weight_kg ? Number(form.weight_kg) : undefined;
+      if ((form.length ? Number(form.length) : undefined) !== (orig.length ?? undefined)) productData.length = form.length ? Number(form.length) : undefined;
+      if ((form.width ? Number(form.width) : undefined) !== (orig.width ?? undefined)) productData.width = form.width ? Number(form.width) : undefined;
+      if ((form.height ? Number(form.height) : undefined) !== (orig.height ?? undefined)) productData.height = form.height ? Number(form.height) : undefined;
+      if ((form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined) !== (orig.volumetric_divisor ?? undefined)) productData.volumetric_divisor = form.volumetric_divisor ? Number(form.volumetric_divisor) : undefined;
+      if ((form.color.trim() || "") !== (orig.color ?? "")) productData.color = form.color.trim() || undefined;
+      if ((form.size.trim() || "") !== (orig.size ?? "")) productData.size = form.size.trim() || undefined;
+      if ((form.barcode.trim() || "") !== (orig.barcode ?? "")) productData.barcode = form.barcode.trim() || undefined;
+      const formStock = form.stock_quantity ? Number(form.stock_quantity) : undefined;
+      const origStock = orig.stock_quantity ?? (orig.at_factory ?? 0) + (orig.at_domestic ?? 0) + (orig.in_transit ?? 0);
+      if (formStock !== origStock) productData.stock_quantity = formStock;
+      const existingIds = (orig.suppliers ?? []).map((s: any) => s.id).sort().join(",");
+      const newIds = suppliersList.map((s) => s.id).sort().join(",");
+      if (existingIds !== newIds || (suppliersList.length > 0 && (orig.suppliers ?? []).length === 0)) {
+        productData.suppliers = suppliersList.length > 0 ? suppliersList : undefined;
+      }
+      if (Object.keys(productData).length === 0) {
+        toast.info("无变更，未提交");
+        return;
+      }
     }
 
     const url = editingProduct

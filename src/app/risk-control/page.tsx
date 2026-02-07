@@ -24,6 +24,7 @@ export default function RiskControlPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [riskControlForm, setRiskControlForm] = useState({
     result: "通过" as "通过" | "拒绝",
     notes: "",
@@ -109,33 +110,34 @@ export default function RiskControlPage() {
   // 提交风控评估
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
     if (!selectedOrder) return;
-    
     if (!riskControlForm.riskControlBy.trim()) {
       toast.error("请填写评估人姓名");
       return;
     }
-    
-    const success = await performRiskControl(
-      selectedOrder.id,
-      riskControlForm.result,
-      riskControlForm.notes,
-      riskControlForm.riskControlBy.trim()
-    );
-    
-    if (success) {
-      toast.success(`风控评估${riskControlForm.result === "通过" ? "通过" : "拒绝"}`);
-      mutateOrders();
-      setIsModalOpen(false);
-      setSelectedOrder(null);
-      setRiskControlForm({
-        result: "通过",
-        notes: "",
-        riskControlBy: ""
-      });
-    } else {
-      toast.error("评估失败，请重试");
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const success = await performRiskControl(
+        selectedOrder.id,
+        riskControlForm.result,
+        riskControlForm.notes,
+        riskControlForm.riskControlBy.trim()
+      );
+      if (success) {
+        toast.success(`风控评估${riskControlForm.result === "通过" ? "通过" : "拒绝"}`);
+        mutateOrders();
+        setIsModalOpen(false);
+        setSelectedOrder(null);
+        setRiskControlForm({ result: "通过", notes: "", riskControlBy: "" });
+      } else {
+        toast.error("评估失败，请重试");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -384,8 +386,8 @@ export default function RiskControlPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  提交评估
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? "处理中..." : "提交评估"}
                 </ActionButton>
               </div>
             </form>

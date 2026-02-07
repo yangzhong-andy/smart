@@ -11,6 +11,8 @@ export type DeliveryOrder = {
   contractId: string; // 关联的母单（合同）ID
   contractNumber: string; // 合同编号（冗余字段）
   qty: number; // 本次拿货数量
+  /** 按合同明细 itemId 存储的本次拿货数量，用于列表展示真实拿货数量 */
+  itemQtys?: Record<string, number>;
   domesticTrackingNumber?: string; // 国内物流单号
   shippedDate?: string; // 发货日期（ISO date）
   status: DeliveryOrderStatus; // 子单状态
@@ -185,12 +187,18 @@ export async function createDeliveryOrder(
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + contract.tailPeriodDays);
 
+  const itemQtysRecord: Record<string, number> | undefined =
+    items && items.length > 0
+      ? Object.fromEntries(items.map((i) => [i.itemId, Number(i.qty) || 0]))
+      : undefined;
+
   const newOrder: DeliveryOrder = {
     id: crypto.randomUUID(),
     deliveryNumber: `DO-${Date.now()}`,
     contractId,
     contractNumber: contract.contractNumber,
     qty: totalQty,
+    itemQtys: itemQtysRecord,
     domesticTrackingNumber,
     shippedDate: shippedDate || new Date().toISOString().slice(0, 10),
     status: "待发货",

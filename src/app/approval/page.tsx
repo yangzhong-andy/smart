@@ -24,6 +24,7 @@ export default function ApprovalPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [approvalForm, setApprovalForm] = useState({
     result: "通过" as "通过" | "拒绝",
     notes: "",
@@ -80,33 +81,34 @@ export default function ApprovalPage() {
   // 提交审批
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    
     if (!selectedOrder) return;
-    
     if (!approvalForm.approvedBy.trim()) {
       toast.error("请填写审批人姓名");
       return;
     }
-    
-    const success = await approvePurchaseOrder(
-      selectedOrder.id,
-      approvalForm.result,
-      approvalForm.notes,
-      approvalForm.approvedBy.trim()
-    );
-
-    if (success) {
-      toast.success(`审批${approvalForm.result === "通过" ? "通过" : "拒绝"}`);
-      mutateOrders();
-      setIsModalOpen(false);
-      setSelectedOrder(null);
-      setApprovalForm({
-        result: "通过",
-        notes: "",
-        approvedBy: ""
-      });
-    } else {
-      toast.error("审批失败，请重试");
+    if (isSubmitting) {
+      toast.error("正在提交，请勿重复点击");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const success = await approvePurchaseOrder(
+        selectedOrder.id,
+        approvalForm.result,
+        approvalForm.notes,
+        approvalForm.approvedBy.trim()
+      );
+      if (success) {
+        toast.success(`审批${approvalForm.result === "通过" ? "通过" : "拒绝"}`);
+        mutateOrders();
+        setIsModalOpen(false);
+        setSelectedOrder(null);
+        setApprovalForm({ result: "通过", notes: "", approvedBy: "" });
+      } else {
+        toast.error("审批失败，请重试");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -311,8 +313,8 @@ export default function ApprovalPage() {
                 >
                   取消
                 </ActionButton>
-                <ActionButton type="submit" variant="primary">
-                  提交审批
+                <ActionButton type="submit" variant="primary" isLoading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? "处理中..." : "提交审批"}
                 </ActionButton>
               </div>
             </form>
