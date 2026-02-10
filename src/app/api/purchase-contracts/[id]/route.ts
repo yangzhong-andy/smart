@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 // 状态映射
 const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
+  PENDING_APPROVAL: '待审批',
   PENDING_SHIPMENT: '待发货',
   PARTIAL_SHIPMENT: '部分发货',
   SHIPPED: '发货完成',
@@ -16,6 +17,7 @@ const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
 }
 
 const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
+  '待审批': PurchaseContractStatus.PENDING_APPROVAL,
   '待发货': PurchaseContractStatus.PENDING_SHIPMENT,
   '部分发货': PurchaseContractStatus.PARTIAL_SHIPMENT,
   '发货完成': PurchaseContractStatus.SHIPPED,
@@ -95,6 +97,9 @@ export async function GET(
       totalOwed: Number(contract.totalOwed),
       relatedOrderIds: contract.relatedOrderIds || [],
       relatedOrderNumbers: contract.relatedOrderNumbers || [],
+      approvedBy: contract.approvedBy ?? undefined,
+      approvedAt: contract.approvedAt?.toISOString() ?? undefined,
+      approvalNotes: contract.approvalNotes ?? undefined,
       createdAt: contract.createdAt.toISOString(),
       updatedAt: contract.updatedAt.toISOString(),
       items: contract.items.map((item) => ({
@@ -137,7 +142,7 @@ export async function PUT(
     if (body.depositPaid !== undefined) updateData.depositPaid = Number(body.depositPaid)
     if (body.tailPeriodDays !== undefined) updateData.tailPeriodDays = Number(body.tailPeriodDays)
     if (body.deliveryDate !== undefined) updateData.deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : null
-    if (body.status !== undefined) updateData.status = STATUS_MAP_FRONT_TO_DB[body.status] || PurchaseContractStatus.PENDING_SHIPMENT
+    if (body.status !== undefined) updateData.status = STATUS_MAP_FRONT_TO_DB[body.status] ?? PurchaseContractStatus.PENDING_SHIPMENT
     if (body.contractVoucher !== undefined) {
       const v = body.contractVoucher
       updateData.contractVoucher =

@@ -127,6 +127,7 @@ enum PurchaseOrderStatus {
 }
 
 enum PurchaseContractStatus {
+  PENDING_APPROVAL  // 待审批（新建后需主管审批）
   PENDING_SHIPMENT
   PARTIAL_SHIPMENT
   SHIPPED
@@ -696,6 +697,9 @@ model PurchaseContract {
   totalOwed           Decimal                @default(0) @db.Decimal(18, 2)
   relatedOrderIds     String[]
   relatedOrderNumbers String[]
+  approvedBy          String?   // 审批人（主管）
+  approvedAt          DateTime? // 审批时间
+  approvalNotes       String?   // 审批备注
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
 
@@ -169,6 +169,7 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 按部门权限过滤一级菜单（如全球供应链部/全球供应链部门 仅显示 产品中心、供应链；支持按 code 或 name 匹配）
   const departmentCode = session?.user?.departmentCode ?? null;
@@ -362,8 +363,20 @@ export default function Sidebar() {
               <div key={item.label}>
                 <div
                   className="relative"
-                  onMouseEnter={() => isCollapsed && setHoveredItem(item.label)}
-                  onMouseLeave={() => isCollapsed && setHoveredItem(null)}
+                  onMouseEnter={() => {
+                    if (isCollapsed) {
+                      if (hoverLeaveTimerRef.current) {
+                        clearTimeout(hoverLeaveTimerRef.current);
+                        hoverLeaveTimerRef.current = null;
+                      }
+                      setHoveredItem(item.label);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (isCollapsed) {
+                      hoverLeaveTimerRef.current = setTimeout(() => setHoveredItem(null), 180);
+                    }
+                  }}
                 >
                   <button
                     onClick={() => toggleExpand(item.label)}
@@ -459,7 +472,13 @@ export default function Sidebar() {
                                   href={child.href || "#"}
                                   prefetch
                                   onMouseEnter={() => prefetchRoute(child.href)}
-                                  className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 ${
+                                  onClick={(e) => {
+                                    if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                                      e.preventDefault();
+                                      router.push(child.href);
+                                    }
+                                  }}
+                                  className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
                                     active
                                       ? "text-blue-400 font-medium bg-blue-500/10"
                                       : "text-gray-400 hover:text-white hover:bg-white/5"
@@ -506,9 +525,17 @@ export default function Sidebar() {
                     )}
                   </AnimatePresence>
                 )}
-                {/* 窄版模式的悬停弹出菜单 */}
+                {/* 窄版模式的悬停弹出菜单：移入时取消关闭定时器，避免移过去时菜单消失点不到 */}
                 {isCollapsed && hoveredItem === item.label && (
-                  <div className="absolute left-16 ml-2 top-0 w-48 rounded-lg border border-slate-800/80 bg-[#0B0E14] shadow-2xl z-50 py-2 backdrop-blur-sm">
+                  <div
+                    className="absolute left-16 ml-2 top-0 w-48 rounded-lg border border-slate-800/80 bg-[#0B0E14] shadow-2xl z-50 py-2 backdrop-blur-sm"
+                    onMouseEnter={() => {
+                      if (hoverLeaveTimerRef.current) {
+                        clearTimeout(hoverLeaveTimerRef.current);
+                        hoverLeaveTimerRef.current = null;
+                      }
+                    }}
+                  >
                     <div className="text-xs text-slate-400 px-3 py-1.5 mb-1 border-b border-slate-800/50">
                       {item.label}
                     </div>
@@ -519,7 +546,13 @@ export default function Sidebar() {
                         <Link
                           key={child.href}
                           href={child.href || "#"}
-                          className={`block px-3 py-2 text-sm transition-all duration-200 ${
+                          onClick={(e) => {
+                            if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                              e.preventDefault();
+                              router.push(child.href);
+                            }
+                          }}
+                          className={`block px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
                             active
                               ? "text-white font-semibold"
                               : "text-slate-400 hover:text-white"

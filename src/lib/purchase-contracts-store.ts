@@ -3,7 +3,7 @@
  * 支持分批拿货业务模式
  */
 
-export type PurchaseContractStatus = "待发货" | "部分发货" | "发货完成" | "已结清" | "已取消";
+export type PurchaseContractStatus = "待审批" | "待发货" | "部分发货" | "发货完成" | "已结清" | "已取消";
 
 export type PurchaseContract = {
   id: string; // 合同ID
@@ -24,6 +24,9 @@ export type PurchaseContract = {
   deliveryDate?: string; // 交货日期（ISO date，用于跟进生产进度）
   status: PurchaseContractStatus; // 合同状态
   contractVoucher?: string | string[]; // 合同凭证（支持多图，Base64或URL）
+  approvedBy?: string; // 审批人（主管）
+  approvedAt?: string; // 审批时间（ISO）
+  approvalNotes?: string; // 审批备注
   createdAt: string; // 创建时间
   updatedAt: string; // 更新时间
   // 财务相关
@@ -159,6 +162,31 @@ export async function getPurchaseContractByIdFromAPI(id: string): Promise<Purcha
     return await res.json();
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * 主管审批采购合同：通过 -> 待发货，拒绝 -> 已取消
+ */
+export async function approvePurchaseContract(
+  contractId: string,
+  result: "通过" | "拒绝",
+  notes: string,
+  approvedBy: string
+): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/purchase-contracts/${contractId}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        result,
+        approvedBy: approvedBy.trim(),
+        notes: notes.trim() || undefined
+      })
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

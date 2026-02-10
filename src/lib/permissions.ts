@@ -19,17 +19,18 @@ export const DEPARTMENT_CODES = {
  * 若某部门在此配置中，则只显示列出的菜单；未配置的部门或 null 表示显示全部
  */
 export const SIDEBAR_NAV_BY_DEPARTMENT: Record<string, string[]> = {
-  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['产品中心', '供应链'],
+  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['控制台', '产品中心', '供应链'],
 };
 
 /** 部门仅能访问的路径前缀（用于路由保护）。空数组表示不限制。 */
 export const ALLOWED_PATH_PREFIXES_BY_DEPARTMENT: Record<string, string[]> = {
   [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: [
+    '/',
+    '/approval',
     '/product-center',
     '/procurement',
     '/supply-chain',
     '/inventory',
-    '/',
   ],
 };
 

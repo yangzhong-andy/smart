@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 // 状态映射：Prisma 枚举 -> 中文状态
 const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
+  PENDING_APPROVAL: '待审批',
   PENDING_SHIPMENT: '待发货',
   PARTIAL_SHIPMENT: '部分发货',
   SHIPPED: '发货完成',
@@ -15,6 +16,7 @@ const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
 
 // 状态映射：中文状态 -> Prisma 枚举
 const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
+  '待审批': PurchaseContractStatus.PENDING_APPROVAL,
   '待发货': PurchaseContractStatus.PENDING_SHIPMENT,
   '部分发货': PurchaseContractStatus.PARTIAL_SHIPMENT,
   '发货完成': PurchaseContractStatus.SHIPPED,
@@ -151,6 +153,9 @@ export async function GET(request: NextRequest) {
         totalOwed,
         relatedOrderIds: contract.relatedOrderIds || [],
         relatedOrderNumbers: contract.relatedOrderNumbers || [],
+        approvedBy: contract.approvedBy ?? undefined,
+        approvedAt: contract.approvedAt?.toISOString() ?? undefined,
+        approvalNotes: contract.approvalNotes ?? undefined,
         createdAt: contract.createdAt.toISOString(),
         updatedAt: contract.updatedAt.toISOString(),
         relatedOrderId: contract.relatedOrderIds[0] || undefined,
@@ -259,6 +264,12 @@ export async function POST(request: NextRequest) {
       return variant?.id ?? null
     }
 
+    // 新建合同默认「待审批」；若 Prisma 客户端未含 PENDING_APPROVAL 则用字符串兜底
+    const createStatus: PurchaseContractStatus =
+      STATUS_MAP_FRONT_TO_DB[body.status] ??
+      PurchaseContractStatus.PENDING_APPROVAL ??
+      ('PENDING_APPROVAL' as PurchaseContractStatus)
+
     const contract = await prisma.purchaseContract.create({
       data: {
         contractNumber: body.contractNumber,
@@ -276,7 +287,7 @@ export async function POST(request: NextRequest) {
         depositPaid: 0,
         tailPeriodDays: Math.round(Number(body.tailPeriodDays) || 0),
         deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : null,
-        status: STATUS_MAP_FRONT_TO_DB[body.status] || PurchaseContractStatus.PENDING_SHIPMENT,
+        status: createStatus,
         contractVoucher: contractVoucherStr,
         totalPaid: 0,
         totalOwed: totalAmount,

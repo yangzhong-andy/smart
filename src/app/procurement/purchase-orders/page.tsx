@@ -533,7 +533,7 @@ export default function PurchaseOrdersPage() {
       depositRate: selectedSupplier.depositRate,
       tailPeriodDays: selectedSupplier.tailPeriodDays,
       deliveryDate: form.deliveryDate || undefined,
-      status: "待发货",
+      status: "待审批",
       contractVoucher: form.contractVoucher,
       relatedOrderIds: sourceOrder ? [sourceOrder.id] : [],
       relatedOrderNumbers: sourceOrder ? [sourceOrder.orderNumber ?? ""] : [],
@@ -555,9 +555,9 @@ export default function PurchaseOrdersPage() {
       mutateContracts();
       if (sourceOrder) {
         await linkPurchaseContract(sourceOrder.id, newContract.id, newContract.contractNumber);
-        toast.success("采购合同创建成功，已自动关联采购订单", { icon: "✅" });
+        toast.success("采购合同已提交，待主管审批；已自动关联采购订单", { icon: "✅" });
       } else {
-        toast.success("采购合同创建成功", { icon: "✅" });
+        toast.success("采购合同已提交，待主管审批", { icon: "✅" });
       }
       setSourceOrder(null);
       setForm((f) => ({ ...f, deliveryDate: "", contractVoucher: "", contractNumber: "" }));
@@ -1311,6 +1311,16 @@ export default function PurchaseOrdersPage() {
                 全部
               </button>
               <button
+                onClick={() => setFilterStatus("待审批")}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  filterStatus === "待审批"
+                    ? "bg-primary-500 text-white"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                待审批
+              </button>
+              <button
                 onClick={() => setFilterStatus("待发货")}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                   filterStatus === "待发货"
@@ -1641,7 +1651,7 @@ export default function PurchaseOrdersPage() {
                           <Eye className="h-3 w-3" />
                           详情
                         </button>
-                        {remainingQty > 0 && (
+                        {remainingQty > 0 && contract.status !== "待审批" && (
                           <button
                             onClick={() => openDeliveryModal(contract.id)}
                             className="flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20"
