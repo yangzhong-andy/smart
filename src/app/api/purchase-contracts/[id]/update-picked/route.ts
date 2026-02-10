@@ -5,6 +5,7 @@ import { PurchaseContractStatus } from '@prisma/client'
 export const dynamic = 'force-dynamic'
 
 const STATUS_MAP: Record<PurchaseContractStatus, string> = {
+  PENDING_APPROVAL: '待审批',
   PENDING_SHIPMENT: '待发货',
   PARTIAL_SHIPMENT: '部分发货',
   SHIPPED: '发货完成',
