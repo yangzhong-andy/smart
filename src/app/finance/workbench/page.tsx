@@ -763,11 +763,15 @@ export default function FinanceWorkbenchPage() {
         paymentFlowId: cashFlowResult.id
       });
       
-      // 刷新数据
-      const updated = await getIncomeRequestsByStatus("Approved");
-      mutate("approved-income-requests");
-      mutate('/api/cash-flow');
-      mutate('/api/accounts');
+      // 乐观更新：从「已审批」列表中移除本条，入账后不再停留
+      mutate(
+        "approved-income-requests",
+        (current: IncomeRequest[] | undefined) =>
+          Array.isArray(current) ? current.filter((r) => r.id !== requestId) : current,
+        { revalidate: true }
+      );
+      mutate("cash-flow");
+      mutate("bank-accounts");
       
       toast.success("收入已成功入账");
       setIncomeAccountModal({ open: false, requestId: null });
@@ -1113,6 +1117,7 @@ export default function FinanceWorkbenchPage() {
                 <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-300 font-medium">
                   {approvedIncomeRequests.length}
                 </span>
+                <span className="text-xs text-slate-500 ml-1">（选择账户入账后将从本列表移除）</span>
               </div>
             </div>
             <div className="space-y-3">
