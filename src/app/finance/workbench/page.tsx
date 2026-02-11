@@ -33,6 +33,7 @@ import {
   updateIncomeRequest,
   type IncomeRequest 
 } from "@/lib/expense-income-request-store";
+import type { Store } from "@/lib/store-store";
 import ExpenseEntry from "../cash-flow/components/ExpenseEntry";
 import IncomeEntry from "../cash-flow/components/IncomeEntry";
 import TransferEntry from "../cash-flow/components/TransferEntry";
@@ -229,6 +230,10 @@ export default function FinanceWorkbenchPage() {
     fetcher,
     { ...swrOptions, dedupingInterval: 300000 }
   );
+  const { data: storesData } = useSWR<Store[]>("/api/stores", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 300000,
+  });
 
   // 使用 SWR 获取实时汇率（与账户中心保持一致）
   const { data: financeRatesData, error: financeRatesError } = useSWR<{
@@ -368,6 +373,22 @@ export default function FinanceWorkbenchPage() {
     
     return updatedAccounts;
   }, [accountsData, cashFlowData]);
+
+  const stores: Store[] = Array.isArray(storesData) ? (storesData as Store[]) : [];
+
+  // 打开收入入账弹窗时：若申请关联了回款店铺，自动带出该店铺的收款账户
+  useEffect(() => {
+    if (!incomeAccountModal.open || !incomeAccountModal.requestId) return;
+    const request = selectedIncomeRequest || approvedIncomeRequests.find((r) => r.id === incomeAccountModal.requestId);
+    if (!request) return;
+    setSelectedAccountId("");
+    if (request.storeId && stores.length > 0) {
+      const store = stores.find((s) => s.id === request.storeId);
+      if (store?.accountId && Array.isArray(accounts) && accounts.some((a) => a.id === store.accountId)) {
+        setSelectedAccountId(store.accountId);
+      }
+    }
+  }, [incomeAccountModal.open, incomeAccountModal.requestId, selectedIncomeRequest, approvedIncomeRequests, stores, accounts]);
 
   // 加载现金流数据
   useEffect(() => {
@@ -1472,11 +1493,17 @@ export default function FinanceWorkbenchPage() {
                 <div>金额：{formatCurrency(request.amount, request.currency)}</div>
                 <div>分类：{request.category}</div>
                 <div>币种：{request.currency}</div>
+                {request.storeName && (
+                  <div className="text-emerald-400/90">回款店铺：{request.storeName}</div>
+                )}
               </div>
             </div>
             <label className="block mb-4">
               <span className="text-sm text-slate-300 mb-2 block">
                 选择账户
+                {request.storeId && stores.find((s) => s.id === request.storeId)?.accountId === selectedAccountId && (
+                  <span className="ml-2 text-xs text-emerald-400">（已按回款店铺预选）</span>
+                )}
                 <span className="ml-2 text-xs text-slate-500">
                   ({matchingAccounts.length} 个可用)
                 </span>

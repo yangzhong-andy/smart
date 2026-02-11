@@ -10,7 +10,9 @@ const nextConfig = {
   },
   // 放宽请求体大小，避免带多图添加产品时 413 / 请求体过大
   experimental: {
-    serverActionsBodySizeLimit: '10mb',
+    serverActions: {
+      bodySizeLimit: '20mb',
+    },
   },
 };
 

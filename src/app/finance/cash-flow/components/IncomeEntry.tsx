@@ -66,14 +66,25 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
     return form.primaryCategory; // 只有一级分类
   }, [form.primaryCategory, form.subCategory]);
 
+  // 是否为「店铺回款」：需在提交时选择回款店铺
+  const isStorePayment = finalCategory === "回款/店铺回款";
+
   // 根据选择的店铺自动带出币种和关联账户
   const selectedStore = useMemo(() => {
     return stores.find((s) => s.id === form.storeId);
   }, [stores, form.storeId]);
 
-  // 根据店铺自动匹配虚拟子账号
+  // 店铺回款时：选择店铺后同步币种
   useEffect(() => {
-    if (selectedStore) {
+    if (skipAccountSelection && isStorePayment && selectedStore) {
+      const storeCurrency = selectedStore.currency === "RMB" ? "CNY" : selectedStore.currency;
+      setForm((f) => (f.currency === storeCurrency ? f : { ...f, currency: storeCurrency }));
+    }
+  }, [skipAccountSelection, isStorePayment, selectedStore?.id, selectedStore?.currency]);
+
+  // 根据店铺自动匹配虚拟子账号（非“仅申请”模式）
+  useEffect(() => {
+    if (selectedStore && !skipAccountSelection) {
       // 优先查找绑定该店铺的虚拟子账号
       const virtualAccount = accounts.find(
         (acc) => acc.accountCategory === "VIRTUAL" && acc.storeId === selectedStore.id
@@ -91,7 +102,7 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
         }));
       }
     }
-  }, [selectedStore, accounts]);
+  }, [selectedStore, accounts, skipAccountSelection]);
 
   const selectedAccount = accounts.find((a) => a.id === form.accountId);
 
@@ -112,6 +123,10 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
       return;
     }
 
+    if (skipAccountSelection && isStorePayment && !form.storeId) {
+      toast.error("店铺回款请选择回款店铺");
+      return;
+    }
     if (!skipAccountSelection && !form.accountId) {
       toast.error("请选择收款账户");
       return;
@@ -151,8 +166,8 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
       category: finalCategory,
       amount: amount,
       currency: skipAccountSelection ? form.currency : (account!.currency),
-      storeId: skipAccountSelection ? undefined : (form.storeId || undefined),
-      storeName: skipAccountSelection ? undefined : (selectedStore?.name || undefined),
+      storeId: skipAccountSelection ? (form.storeId || undefined) : (form.storeId || undefined),
+      storeName: skipAccountSelection ? (selectedStore?.name || undefined) : (selectedStore?.name || undefined),
       remark: remarkText,
       voucher: form.voucher ? (Array.isArray(form.voucher) ? form.voucher : [form.voucher]) : undefined,
       status: "Pending_Approval", // 待审批
@@ -256,19 +271,45 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
               </label>
             )}
             {skipAccountSelection ? (
-              <label className="space-y-1">
-                <span className="text-slate-300">币种</span>
-                <select
-                  value={form.currency}
-                  onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
-                >
-                  {CURRENCY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <div className="text-xs text-slate-500 mt-1">入账时由财务选择收款账户</div>
-              </label>
+              <>
+                {isStorePayment && (
+                  <label className="space-y-1 col-span-2">
+                    <span className="text-slate-300">回款店铺 <span className="text-rose-400">*</span></span>
+                    <select
+                      value={form.storeId}
+                      onChange={(e) => setForm((f) => ({ ...f, storeId: e.target.value }))}
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      required
+                    >
+                      <option value="">请选择回款店铺</option>
+                      {stores.map((store) => (
+                        <option key={store.id} value={store.id}>
+                          {store.name} ({store.platform}) - {store.currency}
+                        </option>
+                      ))}
+                    </select>
+                    {stores.length === 0 && (
+                      <div className="text-xs text-amber-400 mt-1">暂无店铺，请先前往「设置 - 店铺管理」创建店铺</div>
+                    )}
+                    <div className="text-xs text-slate-500 mt-1">入账时将自动带出该店铺关联的收款账户</div>
+                  </label>
+                )}
+                <label className="space-y-1">
+                  <span className="text-slate-300">币种</span>
+                  <select
+                    value={form.currency}
+                    onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                  >
+                    {CURRENCY_OPTIONS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  {!isStorePayment && (
+                    <div className="text-xs text-slate-500 mt-1">入账时由财务选择收款账户</div>
+                  )}
+                </label>
+              </>
             ) : (
               <>
                 <label className="space-y-1 col-span-2">
