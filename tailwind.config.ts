@@ -12,9 +12,35 @@ const config: Config = {
           "0%": { width: "0%" },
           "100%": { width: "100%" },
         },
+        "gradient-drift": {
+          "0%, 100%": { opacity: "0.3", transform: "translate(0, 0) scale(1)" },
+          "50%": { opacity: "0.5", transform: "translate(10%, 10%) scale(1.05)" },
+        },
+        "float": {
+          "0%, 100%": { transform: "translateY(0) translateX(0)" },
+          "33%": { transform: "translateY(-8px) translateX(4px)" },
+          "66%": { transform: "translateY(4px) translateX(-4px)" },
+        },
+        "card-in": {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "shimmer": {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
+        "glow-pulse": {
+          "0%, 100%": { boxShadow: "0 0 20px rgba(34, 211, 238, 0.15)" },
+          "50%": { boxShadow: "0 0 32px rgba(34, 211, 238, 0.25)" },
+        },
       },
       animation: {
         "progress-shrink": "progress-shrink 0.8s ease-out forwards",
+        "gradient-drift": "gradient-drift 8s ease-in-out infinite",
+        "float": "float 6s ease-in-out infinite",
+        "card-in": "card-in 0.5s ease-out forwards",
+        "shimmer": "shimmer 2.5s linear infinite",
+        "glow-pulse": "glow-pulse 2s ease-in-out infinite",
       },
       colors: {
         primary: {

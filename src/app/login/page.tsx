@@ -92,18 +92,20 @@ export default function LoginPage() {
         zIndex: 9999
       }}
     >
-      {/* 深空背景层 - 光晕效果 */}
+      {/* 深空背景层 - 动态光晕 */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* 左上角深靛蓝光晕 */}
-        <div 
-          className="absolute -top-40 -left-40 w-96 h-96 rounded-full blur-[160px] opacity-30"
-          style={{ backgroundColor: '#1e1b4b' }}
+        <div
+          className="absolute -top-40 -left-40 w-96 h-96 rounded-full blur-[160px] animate-gradient-drift"
+          style={{ backgroundColor: "#1e1b4b" }}
         />
-        {/* 右下角暗紫光晕 */}
-        <div 
-          className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full blur-[160px] opacity-20"
-          style={{ backgroundColor: '#2e1065' }}
+        <div
+          className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full blur-[160px] opacity-20 animate-gradient-drift"
+          style={{ backgroundColor: "#2e1065", animationDelay: "-4s" }}
         />
+        {/* 浮动光点 */}
+        <div className="absolute top-1/4 left-1/3 w-2 h-2 rounded-full bg-cyan-400/40 animate-float" style={{ animationDelay: "0s" }} />
+        <div className="absolute top-1/2 right-1/4 w-1.5 h-1.5 rounded-full bg-slate-400/30 animate-float" style={{ animationDelay: "-2s" }} />
+        <div className="absolute bottom-1/3 left-1/4 w-1 h-1 rounded-full bg-cyan-300/30 animate-float" style={{ animationDelay: "-4s" }} />
       </div>
 
       {/* 科技纹理 - 网格线 */}
@@ -119,8 +121,8 @@ export default function LoginPage() {
       />
 
       <div className="w-full max-w-md relative z-10 pointer-events-auto">
-        {/* 极致磨砂卡片 */}
-        <div className="relative rounded-2xl bg-slate-900/40 backdrop-blur-3xl p-8 shadow-2xl border border-white/10 overflow-hidden pointer-events-auto">
+        {/* 极致磨砂卡片 - 入场动画 + 呼吸光晕 */}
+        <div className="relative rounded-2xl bg-slate-900/40 backdrop-blur-3xl p-8 shadow-2xl border border-white/10 overflow-hidden pointer-events-auto animate-card-in animate-glow-pulse">
           {/* 顶部和左侧高光 */}
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
           <div className="absolute top-0 left-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent" />
@@ -147,7 +149,7 @@ export default function LoginPage() {
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-700/50 bg-black/30 text-slate-100 placeholder-slate-500 outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200"
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-700/50 bg-black/30 text-slate-100 placeholder-slate-500 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/30 transition-all duration-300"
                   placeholder="请输入邮箱地址"
                   required
                   disabled={loading}
@@ -167,7 +169,7 @@ export default function LoginPage() {
                   type="password"
                   value={form.password}
                   onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-700/50 bg-black/30 text-slate-100 placeholder-slate-500 outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-200"
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-700/50 bg-black/30 text-slate-100 placeholder-slate-500 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/30 transition-all duration-300"
                   placeholder="请输入密码"
                   required
                   disabled={loading}
@@ -180,12 +182,11 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               onClick={(e) => {
-                console.log('Button clicked, loading:', loading);
                 if (!loading) {
-                  console.log('Form will submit');
+                  console.log("Form will submit");
                 }
               }}
-              className="w-full py-3 px-4 rounded-lg bg-cyan-600 text-white font-semibold hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 flex items-center justify-center gap-2 relative z-50"
+              className="w-full py-3 px-4 rounded-lg bg-cyan-600 text-white font-semibold hover:bg-cyan-500 hover:scale-[1.02] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-300 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40 flex items-center justify-center gap-2 relative z-50"
             >
               {loading ? (
                 <>
@@ -197,19 +198,9 @@ export default function LoginPage() {
               )}
             </button>
 
-            {/* 底部提示 */}
-            <div className="mt-6 space-y-2">
-              <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3">
-                <p className="text-xs font-medium text-cyan-300 mb-2">默认管理员账号：</p>
-                <div className="space-y-1 text-xs text-cyan-200/80">
-                  <div>邮箱：admin@yourcompany.com</div>
-                  <div>密码：admin123456</div>
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 text-center">
-                如有问题，请联系系统管理员
-              </p>
-            </div>
+            <p className="mt-6 text-xs text-slate-500 text-center">
+              如有问题，请联系系统管理员
+            </p>
           </form>
 
           {/* 跨境标识 */}

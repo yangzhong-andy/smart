@@ -138,7 +138,10 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
+  const [showLoginLink, setShowLoginLink] = useState(false);
   const isLoginPage = pathname === "/login";
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loginLinkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 为登录页面添加特殊标识的 useEffect（必须在顶层）
   useEffect(() => {
@@ -157,34 +160,39 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 设置超时，防止无限加载
-    let timeoutId: NodeJS.Timeout | null = null;
-    
     if (status === "loading") {
-      timeoutId = setTimeout(() => {
-        console.warn("Session 加载超时，重定向到登录页");
-        setIsChecking(false);
-        router.replace("/login");
-      }, 5000); // 5秒超时
-      return () => {
-        if (timeoutId) clearTimeout(timeoutId);
-      };
+      if (!loadingTimeoutRef.current) {
+        // 超时后使用整页跳转，避免 SPA 路由不生效
+        loadingTimeoutRef.current = setTimeout(() => {
+          console.warn("Session 加载超时（3s），重定向到登录页");
+          loadingTimeoutRef.current = null;
+          window.location.href = "/login";
+        }, 3000);
+      }
+      if (!loginLinkTimeoutRef.current) {
+        loginLinkTimeoutRef.current = setTimeout(() => setShowLoginLink(true), 2000);
+      }
+      return () => {};
     }
 
-    // 清除超时（如果存在）
-    if (timeoutId) {
-      clearTimeout(timeoutId);
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
     }
+    if (loginLinkTimeoutRef.current) {
+      clearTimeout(loginLinkTimeoutRef.current);
+      loginLinkTimeoutRef.current = null;
+    }
+    setShowLoginLink(false);
 
     // 检查用户是否已登录
     if (status === "unauthenticated" || !session) {
-      // 未登录，替换为登录页（不压栈，避免登录后返回又进后台）
       setIsChecking(false);
       router.replace("/login");
       return;
     }
 
-    // 已登录：按部门校验路径权限（如全球供应链部/全球供应链部门 仅能访问产品中心、供应链相关；支持按 code 或 name 匹配）
+    // 已登录：按部门校验路径权限
     const departmentCode = (session?.user as any)?.departmentCode ?? null;
     const departmentName = (session?.user as any)?.departmentName ?? null;
     if ((departmentCode || departmentName) && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName)) {
@@ -195,13 +203,38 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     setIsChecking(false);
   }, [pathname, router, isLoginPage, session, status]);
 
-  // 正在检查认证状态时显示加载中
+  useEffect(() => {
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+      if (loginLinkTimeoutRef.current) {
+        clearTimeout(loginLinkTimeoutRef.current);
+        loginLinkTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   if (isChecking && !isLoginPage) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent text-primary-500"></div>
           <p className="mt-4 text-slate-400">正在验证身份...</p>
+          <p className="mt-2 text-xs text-slate-500">若长时间无响应，将自动跳转登录页</p>
+          {showLoginLink && (
+            <a
+              href="/login"
+              onClick={(e) => {
+                e.preventDefault();
+                window.location.href = "/login";
+              }}
+              className="mt-6 inline-block px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium transition-colors"
+            >
+              前往登录
+            </a>
+          )}
         </div>
       </div>
     );
