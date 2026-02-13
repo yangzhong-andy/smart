@@ -7,11 +7,20 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const adAccountId = searchParams.get("adAccountId");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
     const where = adAccountId ? { adAccountId } : {};
-    const list = await prisma.adConsumption.findMany({
-      where,
-      orderBy: { date: "desc" },
-    });
+
+    const [list, total] = await prisma.$transaction([
+      prisma.adConsumption.findMany({
+        where,
+        orderBy: { date: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.adConsumption.count({ where }),
+    ]);
+
     const serialized = list.map((c) => ({
       ...c,
       amount: Number(c.amount),
@@ -24,7 +33,16 @@ export async function GET(request: NextRequest) {
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     }));
-    return NextResponse.json(serialized);
+
+    return NextResponse.json({
+      data: serialized,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    });
   } catch (error: any) {
     console.error("GET ad-consumptions error:", error);
     return NextResponse.json(
