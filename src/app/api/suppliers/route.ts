@@ -37,16 +37,13 @@ export async function GET(request: NextRequest) {
 
     const where: any = {}
     if (category) where.category = category
-    if (country) where.country = country
-
     const [suppliers, total] = await prisma.$transaction([
       prisma.supplier.findMany({
         where,
         select: {
-          id: true, name: true, code: true, category: true,
-          country: true, contact: true, phone: true, email: true,
-          address: true, paymentTerms: true, currency: true,
-          status: true, createdAt: true, updatedAt: true,
+          id: true, name: true, category: true,
+          contact: true, phone: true, address: true,
+          createdAt: true, updatedAt: true,
         },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
@@ -59,16 +56,16 @@ export async function GET(request: NextRequest) {
       data: suppliers.map(s => ({
         id: s.id,
         name: s.name,
-        code: s.code,
-        category: s.category,
-        country: s.country || undefined,
-        contact: s.contact || undefined,
-        phone: s.phone || undefined,
-        email: s.email || undefined,
-        address: s.address || undefined,
-        paymentTerms: s.paymentTerms || undefined,
-        currency: s.currency || undefined,
-        status: s.status,
+        code: undefined,
+        category: s.category ?? undefined,
+        country: undefined,
+        contact: s.contact,
+        phone: s.phone,
+        email: undefined,
+        address: s.address ?? undefined,
+        paymentTerms: undefined,
+        currency: undefined,
+        status: undefined,
         createdAt: s.createdAt.toISOString(),
         updatedAt: s.updatedAt.toISOString(),
       })),
@@ -98,16 +95,13 @@ export async function POST(request: NextRequest) {
     const supplier = await prisma.supplier.create({
       data: {
         name: body.name,
-        code: body.code || null,
-        category: body.category,
-        country: body.country || null,
-        contact: body.contact || null,
-        phone: body.phone || null,
-        email: body.email || null,
-        address: body.address || null,
-        paymentTerms: body.paymentTerms || null,
-        currency: body.currency || null,
-        status: body.status || 'ACTIVE',
+        contact: body.contact ?? '',
+        phone: body.phone ?? '',
+        depositRate: body.depositRate ?? 0,
+        tailPeriodDays: body.tailPeriodDays ?? 0,
+        settleBase: (body.settleBase ?? 'SHIPMENT') as any,
+        category: body.category ?? null,
+        address: body.address ?? null,
       }
     })
 

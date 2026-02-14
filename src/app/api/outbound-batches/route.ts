@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       prisma.outboundBatch.findMany({
         where,
         select: {
-          id: true, outboundId: true, batchNumber: true,
+          id: true, outboundOrderId: true, batchNumber: true,
           warehouseId: true, warehouseName: true, qty: true,
           shippedDate: true, destination: true, trackingNumber: true,
           notes: true, createdAt: true,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const response = {
       data: batches.map(b => ({
         id: b.id,
-        outboundId: b.outboundOrderId,
+        outboundId: b.outboundOrderId, // API 兼容
         batchNumber: b.batchNumber,
         warehouseId: b.warehouseId,
         warehouseName: b.warehouseName,
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const batch = await prisma.outboundBatch.create({
       data: {
-        outboundId: body.outboundOrderId,
+        outboundOrderId: body.outboundOrderId ?? body.outboundId,
         batchNumber: body.batchNumber,
         warehouseId: body.warehouseId,
         warehouseName: body.warehouseName,

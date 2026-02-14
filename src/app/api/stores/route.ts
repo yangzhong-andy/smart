@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
         select: {
           id: true, name: true, platform: true, country: true,
           currency: true, accountId: true, accountName: true,
-          vatNumber: true, taxId: true, createdAt: true, updatedAt: true,
+          vatNumber: true, taxId: true, createdAt: true,
         },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         vatNumber: s.vatNumber || undefined,
         taxId: s.taxId || undefined,
         createdAt: s.createdAt.toISOString(),
-        updatedAt: s.updatedAt.toISOString(),
+        updatedAt: s.createdAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

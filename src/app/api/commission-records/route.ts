@@ -37,17 +37,18 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (employeeId) where.employeeId = employeeId;
-    if (month) where.month = month;
+    if (month) where.periodLabel = month;
 
     const [records, total] = await prisma.$transaction([
       prisma.commissionRecord.findMany({
         where,
         select: {
-          id: true, employeeId: true, employeeName: true, ruleId: true, ruleName: true,
-          month: true, commissionType: true, amount: true, currency: true,
-          status: true, notes: true, createdAt: true, updatedAt: true,
+          id: true, employeeId: true, ruleId: true, periodLabel: true,
+          amount: true, currency: true, details: true, generatedAt: true,
+          employee: { select: { name: true } },
+          rule: { select: { name: true, type: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { generatedAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -58,17 +59,17 @@ export async function GET(request: NextRequest) {
       data: records.map(r => ({
         id: r.id,
         employeeId: r.employeeId,
-        employeeName: r.employeeName,
+        employeeName: r.employee?.name,
         ruleId: r.ruleId || undefined,
-        ruleName: r.ruleName || undefined,
-        month: r.month,
-        commissionType: r.commissionType,
+        ruleName: r.rule?.name,
+        month: r.periodLabel,
+        commissionType: r.rule?.type,
         amount: Number(r.amount),
         currency: r.currency,
-        status: r.status,
-        notes: r.notes || undefined,
-        createdAt: r.createdAt.toISOString(),
-        updatedAt: r.updatedAt.toISOString(),
+        status: "CONFIRMED",
+        notes: (r.details as any)?.notes ?? undefined,
+        createdAt: r.generatedAt.toISOString(),
+        updatedAt: r.generatedAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
@@ -92,15 +93,11 @@ export async function POST(request: NextRequest) {
     const record = await prisma.commissionRecord.create({
       data: {
         employeeId: body.employeeId,
-        employeeName: body.employeeName,
-        ruleId: body.ruleId || null,
-        ruleName: body.ruleName || null,
-        month: body.month,
-        commissionType: body.commissionType,
+        ruleId: body.ruleId,
+        periodLabel: body.month ?? body.periodLabel ?? "",
         amount: body.amount,
         currency: body.currency || "CNY",
-        status: body.status || "PENDING",
-        notes: body.notes || null,
+        details: body.notes != null ? { notes: body.notes } : undefined,
       },
     });
 
@@ -109,9 +106,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: record.id,
-      employeeName: record.employeeName,
       amount: Number(record.amount),
-      createdAt: record.createdAt.toISOString(),
+      createdAt: record.generatedAt.toISOString(),
     });
   } catch (error: any) {
     console.error("POST commission-records error:", error);

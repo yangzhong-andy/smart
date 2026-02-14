@@ -143,19 +143,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少必填字段' }, { status: 400 });
     }
 
+    const diff = Number(systemAmount) - Number(supplierBillAmount);
+    const rebate = Number(rebateAmount ?? 0);
+    const net = netAmount != null ? Number(netAmount) : Number(supplierBillAmount) - rebate;
     const bill = await prisma.supplierMonthlyBill.create({
       data: {
-        supplierProfileId,
+        profile: { connect: { id: supplierProfileId } },
         supplierName,
         supplierType: TYPE_MAP_FRONT_TO_DB[supplierType] ?? supplierType,
         month,
         billDate: new Date(billDate),
         supplierBillAmount,
         systemAmount,
+        difference: diff,
         currency,
-        rebateAmount: rebateAmount ?? 0,
+        rebateAmount: rebate,
         rebateRate: rebateRate ?? null,
-        netAmount: netAmount ?? (supplierBillAmount - (rebateAmount ?? 0)),
+        netAmount: net,
         notes: notes ?? null,
         status: 'Draft',
         createdBy: body.createdBy || '系统',

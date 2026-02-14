@@ -104,6 +104,8 @@ export async function POST(request: NextRequest) {
         adAccountId: body.accountId,
         accountName: body.accountName,
         date: new Date(body.date),
+        month: body.month || new Date(body.date).toISOString().slice(0, 7),
+        account: { connect: { id: body.accountId } },
         amount: body.amount,
         currency: body.currency || "USD",
         isSettled: body.isSettled || false,

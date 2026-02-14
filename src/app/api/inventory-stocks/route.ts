@@ -39,17 +39,16 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (variantId) where.variantId = variantId;
-    if (warehouseId) where.warehouseId = warehouseId;
+    if (warehouseId) where.storeId = warehouseId;
     if (location) where.location = location;
 
     const [stocks, total] = await prisma.$transaction([
       prisma.inventoryStock.findMany({
         where,
         select: {
-          id: true, variantId: true, warehouseId: true, warehouseName: true,
-          location: true, availableQty: true, lockedQty: true, totalQty: true,
+          id: true, variantId: true, storeId: true, location: true, qty: true,
           updatedAt: true,
-          variant: { select: { id: true, sku: true, product: { select: { name: true } } } },
+          variant: { select: { id: true, skuId: true, product: { select: { name: true } } } },
         },
         orderBy: { updatedAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -62,14 +61,14 @@ export async function GET(request: NextRequest) {
       data: stocks.map(s => ({
         id: s.id,
         variantId: s.variantId,
-        sku: s.variant?.sku,
+        sku: s.variant?.skuId,
         productName: s.variant?.product?.name,
-        warehouseId: s.warehouseId,
-        warehouseName: s.warehouseName,
+        warehouseId: s.storeId ?? undefined,
+        warehouseName: undefined,
         location: s.location,
-        availableQty: s.availableQty,
-        lockedQty: s.lockedQty,
-        totalQty: s.totalQty,
+        availableQty: s.qty,
+        lockedQty: 0,
+        totalQty: s.qty,
         updatedAt: s.updatedAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }

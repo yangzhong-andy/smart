@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, poId: true, status: true, statusDate: true,
-          notes: true, createdAt: true, updatedAt: true,
+          notes: true, createdAt: true,
         },
         orderBy: { statusDate: 'desc' },
         skip: (page - 1) * pageSize,
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         statusDate: t.statusDate.toISOString().split('T')[0],
         notes: t.notes || undefined,
         createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString(),
+        updatedAt: t.createdAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

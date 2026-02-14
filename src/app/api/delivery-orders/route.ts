@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         contractId: body.contractId || null,
         contractNumber: body.contractNumber,
         qty: body.qty,
-        itemQtys: body.itemQtys ? JSON.stringify(body.itemQtys) : null,
+        itemQtys: body.itemQtys ?? undefined,
         domesticTrackingNumber: body.domesticTrackingNumber || null,
         shippedDate: body.shippedDate ? new Date(body.shippedDate) : null,
         status: body.status || 'PENDING',

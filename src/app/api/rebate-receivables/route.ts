@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
-          month: true, rebateAmount: true, currency: true, status: true,
+          rechargeDate: true, rebateAmount: true, currency: true, status: true,
           notes: true, createdAt: true, updatedAt: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -59,13 +59,13 @@ export async function GET(request: NextRequest) {
         id: r.id,
         agencyId: r.agencyId,
         agencyName: r.agencyName,
-        accountId: r.accountId || undefined,
-        accountName: r.accountName || undefined,
-        month: r.month,
+        accountId: r.adAccountId,
+        accountName: r.accountName ?? undefined,
+        month: r.rechargeDate.toISOString().slice(0, 7),
         rebateAmount: Number(r.rebateAmount),
         currency: r.currency,
         status: r.status,
-        notes: r.notes || undefined,
+        notes: r.notes ?? undefined,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       })),
@@ -88,17 +88,25 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const rechargeDate = body.month
+      ? new Date(body.month + "-01")
+      : body.rechargeDate
+        ? new Date(body.rechargeDate)
+        : new Date();
     const receivable = await prisma.rebateReceivable.create({
       data: {
+        rechargeId: body.rechargeId ?? `manual-${Date.now()}`,
+        rechargeDate,
         agencyId: body.agencyId,
         agencyName: body.agencyName,
-        adAccountId: body.accountId || null,
-        accountName: body.accountName || null,
-        month: body.month,
+        adAccountId: body.accountId ?? "",
+        accountName: body.accountName ?? "",
+        platform: body.platform ?? "manual",
         rebateAmount: body.rebateAmount,
         currency: body.currency || "USD",
-        status: body.status || "PENDING",
-        notes: body.notes || null,
+        currentBalance: body.currentBalance ?? body.rebateAmount,
+        status: body.status || "待核销",
+        notes: body.notes ?? null,
       },
     });
 

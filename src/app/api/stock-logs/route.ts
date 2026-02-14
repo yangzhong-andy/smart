@@ -37,16 +37,16 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (variantId) where.variantId = variantId;
-    if (type) where.type = type;
+    if (type) where.movementType = type;
 
     const [logs, total] = await prisma.$transaction([
       prisma.stockLog.findMany({
         where,
         select: {
-          id: true, variantId: true, type: true, qty: true,
-          balance: true, relatedOrderId: true, relatedOrderType: true,
+          id: true, variantId: true, movementType: true, qty: true, qtyAfter: true,
+          relatedOrderId: true, relatedOrderType: true,
           notes: true, operator: true, createdAt: true,
-          variant: { select: { id: true, sku: true, product: { select: { name: true } } } },
+          variant: { select: { id: true, skuId: true, product: { select: { name: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -59,15 +59,15 @@ export async function GET(request: NextRequest) {
       data: logs.map(l => ({
         id: l.id,
         variantId: l.variantId,
-        sku: l.variant?.sku,
+        sku: l.variant?.skuId,
         productName: l.variant?.product?.name,
-        type: l.type,
+        type: l.movementType,
         qty: l.qty,
-        balance: Number(l.balance),
-        relatedOrderId: l.relatedOrderId || undefined,
-        relatedOrderType: l.relatedOrderType || undefined,
-        notes: l.notes || undefined,
-        operator: l.operator || undefined,
+        balance: l.qtyAfter,
+        relatedOrderId: l.relatedOrderId ?? undefined,
+        relatedOrderType: l.relatedOrderType ?? undefined,
+        notes: l.notes ?? undefined,
+        operator: l.operator ?? undefined,
         createdAt: l.createdAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
@@ -89,16 +89,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const qty = Number(body.qty) || 0;
+    const qtyBefore = body.qtyBefore != null ? Number(body.qtyBefore) : (body.balance != null ? Number(body.balance) - qty : 0);
+    const qtyAfter = body.qtyAfter != null ? Number(body.qtyAfter) : (body.balance != null ? Number(body.balance) : qtyBefore + qty);
     const log = await prisma.stockLog.create({
       data: {
         variantId: body.variantId,
-        type: body.type,
-        qty: body.qty,
-        balance: body.balance ?? 0,
-        relatedOrderId: body.relatedOrderId || null,
-        relatedOrderType: body.relatedOrderType || null,
-        notes: body.notes || null,
-        operator: body.operator || null,
+        warehouseId: body.warehouseId ?? "",
+        reason: (body.reason ?? "OTHER") as any,
+        movementType: (body.type ?? body.movementType ?? "OTHER") as any,
+        qty,
+        qtyBefore,
+        qtyAfter,
+        operationDate: body.operationDate ? new Date(body.operationDate) : new Date(),
+        relatedOrderId: body.relatedOrderId ?? null,
+        relatedOrderType: body.relatedOrderType ?? null,
+        notes: body.notes ?? null,
+        operator: body.operator ?? null,
       },
     });
 
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       id: log.id,
       variantId: log.variantId,
-      type: log.type,
+      type: log.movementType,
       createdAt: log.createdAt.toISOString(),
     });
   } catch (error: any) {

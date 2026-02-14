@@ -43,21 +43,21 @@ export async function GET(request: NextRequest) {
     if (accountId) where.accountId = accountId;
     if (type) where.type = type;
     if (startDate || endDate) {
-      where.flowDate = {};
-      if (startDate) where.flowDate.gte = new Date(startDate);
-      if (endDate) where.flowDate.lte = new Date(endDate);
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate);
+      if (endDate) where.date.lte = new Date(endDate);
     }
 
     const [flows, total] = await prisma.$transaction([
       prisma.cashFlow.findMany({
         where,
         select: {
-          id: true, uid: true, accountId: true, type: true, flowDate: true,
-          amount: true, currency: true, balance: true, relatedOrderId: true,
-          relatedOrderType: true, description: true, notes: true,
+          id: true, uid: true, accountId: true, accountName: true, type: true, date: true,
+          amount: true, currency: true, relatedId: true, businessNumber: true,
+          summary: true, category: true, remark: true, status: true,
           createdAt: true, updatedAt: true,
         },
-        orderBy: { flowDate: 'desc' },
+        orderBy: { date: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -69,15 +69,17 @@ export async function GET(request: NextRequest) {
         id: f.id,
         uid: f.uid || undefined,
         accountId: f.accountId,
+        accountName: f.accountName,
         type: f.type,
-        flowDate: f.flowDate.toISOString().split('T')[0],
+        date: f.date.toISOString().split('T')[0],
         amount: Number(f.amount),
         currency: f.currency,
-        balance: Number(f.balance),
-        relatedOrderId: f.relatedOrderId || undefined,
-        relatedOrderType: f.relatedOrderType || undefined,
-        description: f.description || undefined,
-        notes: f.notes || undefined,
+        relatedOrderId: f.relatedId || undefined,
+        businessNumber: f.businessNumber || undefined,
+        description: f.summary,
+        category: f.category,
+        flowStatus: f.status,
+        notes: f.remark || undefined,
         createdAt: f.createdAt.toISOString(),
         updatedAt: f.updatedAt.toISOString(),
       })),
@@ -104,15 +106,16 @@ export async function POST(request: NextRequest) {
       data: {
         uid: body.uid || null,
         accountId: body.accountId,
+        accountName: body.accountName ?? "",
         type: body.type,
-        flowDate: new Date(body.flowDate),
+        date: new Date(body.date),
+        summary: body.description ?? body.summary ?? "",
+        category: body.category ?? "",
         amount: body.amount,
         currency: body.currency || "CNY",
-        balance: body.balance ?? 0,
-        relatedOrderId: body.relatedOrderId || null,
-        relatedOrderType: body.relatedOrderType || null,
-        description: body.description || null,
-        notes: body.notes || null,
+        remark: body.notes ?? body.remark ?? "",
+        relatedId: body.relatedOrderId ?? body.relatedId ?? null,
+        businessNumber: body.businessNumber ?? null,
       },
     });
 

@@ -45,11 +45,10 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, supplierId: true, productId: true,
-          isPrimary: true, moq: true, leadTime: true,
-          unitPrice: true, currency: true, notes: true,
+          isPrimary: true, moq: true, leadTime: true, price: true,
           createdAt: true, updatedAt: true,
           supplier: { select: { id: true, name: true } },
-          product: { select: { id: true, name: true, sku: true } },
+          product: { select: { id: true, name: true, spuCode: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -65,13 +64,13 @@ export async function GET(request: NextRequest) {
         supplierName: ps.supplier?.name,
         productId: ps.productId,
         productName: ps.product?.name,
-        productSku: ps.product?.sku,
+        productSku: ps.product?.spuCode ?? undefined,
         isPrimary: ps.isPrimary || false,
-        moq: ps.moq || undefined,
-        leadTime: ps.leadTime || undefined,
-        unitPrice: ps.unitPrice ? Number(ps.unitPrice) : undefined,
-        currency: ps.currency || undefined,
-        notes: ps.notes || undefined,
+        moq: ps.moq ?? undefined,
+        leadTime: ps.leadTime ?? undefined,
+        unitPrice: ps.price != null ? Number(ps.price) : undefined,
+        currency: undefined,
+        notes: undefined,
         createdAt: ps.createdAt.toISOString(),
         updatedAt: ps.updatedAt.toISOString(),
       })),
@@ -97,7 +96,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { supplierId, productId, isPrimary, moq, leadTime, unitPrice, currency, notes } = body;
+    const { supplierId, productId, isPrimary, moq, leadTime, unitPrice } = body;
 
     if (!supplierId || !productId) {
       return NextResponse.json({ error: 'supplierId and productId are required' }, { status: 400 });
@@ -110,9 +109,7 @@ export async function POST(request: NextRequest) {
         isPrimary: isPrimary ?? false,
         moq: moq ?? null,
         leadTime: leadTime ?? null,
-        unitPrice: unitPrice ?? null,
-        currency: currency || null,
-        notes: notes || null,
+        price: unitPrice ?? null,
       }
     });
 

@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
           amount: true, currency: true, paymentDate: true,
           paymentAccountId: true, paymentAccountName: true,
           paymentMethod: true, paymentFlowId: true, paymentVoucher: true,
-          paidBy: true, paidAt: true, notes: true, createdAt: true,
+          paidBy: true, paidAt: true, notes: true,
         },
         orderBy: { paidAt: 'desc' },
         skip: (page - 1) * pageSize,

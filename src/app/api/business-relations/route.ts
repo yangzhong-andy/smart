@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         sourceUID: String(sourceUID),
         targetUID: String(targetUID),
         relationType: String(relationType),
-        metadata: metadata ? JSON.stringify(metadata) : null,
+        metadata: metadata ? JSON.stringify(metadata) : undefined,
       }
     });
 
