@@ -110,9 +110,9 @@ export default function SupplierBillsPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? []);
-  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
-  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
+  const suppliers = (Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? [])) as Supplier[];
+  const contracts = (Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? [])) as PurchaseContract[];
+  const deliveryOrders = (Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? [])) as DeliveryOrder[];
 
   // 自动汇总账单明细
   const handleAutoCalculate = () => {
