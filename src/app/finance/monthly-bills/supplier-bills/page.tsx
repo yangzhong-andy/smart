@@ -47,19 +47,21 @@ const formatDate = (dateString?: string) => {
   }
 };
 
+type DeliveryOrderLineItem = {
+  orderId: string;
+  deliveryNumber: string;
+  qty: number;
+  tailAmount: number;
+  totalAmount?: number;
+  shippedDate?: string;
+};
+
 type SupplierBillDetail = {
   contractId: string;
   contractNumber: string;
   hasDeposit: boolean; // 是否有预付款
   depositAmount: number; // 合同定金金额
-  deliveryOrders: Array<{
-    orderId: string;
-    deliveryNumber: string;
-    qty: number;
-    tailAmount: number; // 尾款金额（未付）
-    totalAmount?: number; // 拿货单总金额（无预付款时使用）
-    shippedDate?: string;
-  }>;
+  deliveryOrders: DeliveryOrderLineItem[];
   totalTailAmount: number; // 尾款合计
   totalBillAmount: number; // 账单金额（有预付款=尾款，无预付款=全部金额）
 };
@@ -110,9 +112,9 @@ export default function SupplierBillsPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? []);
-  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
-  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
+  const suppliers = (Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? [])) as Supplier[];
+  const contracts = (Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? [])) as PurchaseContract[];
+  const deliveryOrders = (Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? [])) as DeliveryOrder[];
 
   // 自动汇总账单明细
   const handleAutoCalculate = () => {
@@ -413,9 +415,9 @@ export default function SupplierBillsPage() {
 
           // 创建账单明细说明
           const detailsText = details
-            .map((detail) => {
+            .map((detail: SupplierBillDetail) => {
               const ordersText = detail.deliveryOrders
-                .map((o) => `${o.deliveryNumber}(${o.qty}件,尾款${formatCurrency(o.tailAmount, "CNY")})`)
+                .map((o: DeliveryOrderLineItem) => `${o.deliveryNumber}(${o.qty}件,尾款${formatCurrency(o.tailAmount, "CNY")})`)
                 .join("、");
               return `${detail.contractNumber}: ${ordersText}`;
             })
@@ -491,8 +493,8 @@ export default function SupplierBillsPage() {
     try {
       // 收集所有拿货单ID
       const deliveryOrderIds: string[] = [];
-      billDetails.forEach((detail) => {
-        detail.deliveryOrders.forEach((order) => {
+      billDetails.forEach((detail: SupplierBillDetail) => {
+        detail.deliveryOrders.forEach((order: DeliveryOrderLineItem) => {
           deliveryOrderIds.push(order.orderId);
         });
       });
@@ -503,9 +505,9 @@ export default function SupplierBillsPage() {
 
       // 创建账单明细说明
       const detailsText = billDetails
-        .map((detail) => {
+        .map((detail: SupplierBillDetail) => {
           const ordersText = detail.deliveryOrders
-            .map((o) => `${o.deliveryNumber}(${o.qty}件,尾款${formatCurrency(o.tailAmount, currency)})`)
+            .map((o: DeliveryOrderLineItem) => `${o.deliveryNumber}(${o.qty}件,尾款${formatCurrency(o.tailAmount, currency)})`)
             .join("、");
           return `${detail.contractNumber}: ${ordersText}`;
         })
@@ -514,7 +516,7 @@ export default function SupplierBillsPage() {
       const otherFeesText =
         otherFees.length > 0
           ? "\n其他费用:\n" +
-            otherFees.map((f) => `${f.type}: ${formatCurrency(f.amount, currency)} (${f.description})`).join("\n")
+            otherFees.map((f: OtherFee) => `${f.type}: ${formatCurrency(f.amount, currency)} (${f.description})`).join("\n")
           : "";
 
       const notes = `供应商月账单明细:\n${detailsText}${otherFeesText}`;
@@ -712,8 +714,8 @@ export default function SupplierBillsPage() {
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
           <h2 className="text-lg font-semibold text-slate-100 mb-4">账单明细</h2>
           <div className="space-y-4">
-            {billDetails.map((detail) => {
-              const contract = contracts.find((c: PurchaseContract) => c.id === detail.contractId);
+            {billDetails.map((detail: SupplierBillDetail) => {
+              const contract = contracts.find((c) => c.id === detail.contractId);
               return (
                 <div
                   key={detail.contractId}
@@ -755,7 +757,7 @@ export default function SupplierBillsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    {detail.deliveryOrders.map((order) => (
+                    {detail.deliveryOrders.map((order: DeliveryOrderLineItem) => (
                       <div
                         key={order.orderId}
                         className="flex items-center justify-between text-sm bg-slate-800/40 rounded p-2"
@@ -799,7 +801,7 @@ export default function SupplierBillsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {otherFees.map((fee) => (
+            {otherFees.map((fee: OtherFee) => (
               <div
                 key={fee.id}
                 className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3"
