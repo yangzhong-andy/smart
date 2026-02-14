@@ -136,7 +136,7 @@ export default function SupplierBillsPage() {
       .toISOString()
       .slice(0, 10);
 
-    const supplierDeliveryOrders = deliveryOrders.filter((order) => {
+    const supplierDeliveryOrders = deliveryOrders.filter((order: DeliveryOrder) => {
       // 检查拿货单是否属于该供应商的合同
       const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
       if (!contract) return false;
@@ -150,7 +150,7 @@ export default function SupplierBillsPage() {
     // 按合同分组汇总
     const detailsMap = new Map<string, SupplierBillDetail>();
 
-    supplierDeliveryOrders.forEach((order) => {
+    supplierDeliveryOrders.forEach((order: DeliveryOrder) => {
       const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
       if (!contract) return;
 
@@ -342,7 +342,7 @@ export default function SupplierBillsPage() {
           const supplierContracts = contracts.filter((c: PurchaseContract) => c.supplierId === supplier.id);
 
           // 获取该供应商的所有拿货单（按月份筛选）
-          const supplierDeliveryOrders = deliveryOrders.filter((order) => {
+          const supplierDeliveryOrders = deliveryOrders.filter((order: DeliveryOrder) => {
             const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
             if (!contract) return false;
             // 按拿货时间筛选：优先使用发货日期，如果没有则使用创建时间
@@ -364,7 +364,7 @@ export default function SupplierBillsPage() {
           // 按合同分组汇总
           const detailsMap = new Map<string, SupplierBillDetail>();
 
-          supplierDeliveryOrders.forEach((order) => {
+          supplierDeliveryOrders.forEach((order: DeliveryOrder) => {
             const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
             if (!contract) return;
 
