@@ -109,11 +109,11 @@ export default function InfluencersPage() {
   const stats = useMemo(
     () => ({
       total: influencers.length,
-      pendingSample: influencers.filter((i) => i.sampleStatus === "待寄样").length,
-      creating: influencers.filter((i) => i.cooperationStatus === "创作中").length,
-      published: influencers.filter((i) => i.cooperationStatus === "已发布").length,
-      inTransit: influencers.filter((i) => i.sampleStatus === "运输中").length,
-      received: influencers.filter((i) => i.sampleStatus === "已签收").length
+      pendingSample: influencers.filter((i: InfluencerBD) => i.sampleStatus === "待寄样").length,
+      creating: influencers.filter((i: InfluencerBD) => i.cooperationStatus === "创作中").length,
+      published: influencers.filter((i: InfluencerBD) => i.cooperationStatus === "已发布").length,
+      inTransit: influencers.filter((i: InfluencerBD) => i.sampleStatus === "运输中").length,
+      received: influencers.filter((i: InfluencerBD) => i.sampleStatus === "已签收").length
     }),
     [influencers]
   );
@@ -126,7 +126,7 @@ export default function InfluencersPage() {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
-        (i) =>
+        (i: InfluencerBD) =>
           i.accountName.toLowerCase().includes(query) ||
           i.contactInfo.toLowerCase().includes(query) ||
           i.category.toLowerCase().includes(query) ||
@@ -136,7 +136,7 @@ export default function InfluencersPage() {
 
     // 状态筛选
     if (filterStatus !== "all") {
-      filtered = filtered.filter((i) => i.cooperationStatus === filterStatus);
+      filtered = filtered.filter((i: InfluencerBD) => i.cooperationStatus === filterStatus);
     }
 
     return filtered;
