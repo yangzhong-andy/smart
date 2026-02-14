@@ -1,17 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
 
-const statusFromFront: Record<string, 'PURCHASING' | 'PRODUCING' | 'SHIPPED' | 'PARTIAL_ARRIVAL' | 'ARRIVED' | 'COMPLETED'> = {
-  采购中: 'PURCHASING',
-  生产中: 'PRODUCING',
-  已发货: 'SHIPPED',
-  部分到货: 'PARTIAL_ARRIVAL',
-  已到货: 'ARRIVED',
-  已完成: 'COMPLETED'
+// 缓存配置
+const CACHE_TTL = 180; // 3分钟
+const CACHE_KEY_PREFIX = 'order-tracking';
+
+const STATUS_MAP_FRONT_TO_DB: Record<string, any> = {
+  '采购中': 'PURCHASING',
+  '生产中': 'PRODUCING',
+  '已发货': 'SHIPPED',
+  '部分到货': 'PARTIAL_ARRIVAL',
+  '已到货': 'ARRIVED',
+  '已完成': 'COMPLETED'
 };
-const statusToFront: Record<string, string> = {
+const STATUS_MAP_DB_TO_FRONT: Record<string, string> = {
   PURCHASING: '采购中',
   PRODUCING: '生产中',
   SHIPPED: '已发货',
@@ -20,71 +25,100 @@ const statusToFront: Record<string, string> = {
   COMPLETED: '已完成'
 };
 
-function toTracking(row: any) {
-  return {
-    id: row.id,
-    poId: row.poId,
-    status: statusToFront[row.status] ?? row.status,
-    statusDate: row.statusDate.toISOString().split('T')[0],
-    notes: row.notes ?? undefined,
-    createdAt: row.createdAt.toISOString()
-  };
-}
-
-// GET - 获取订单追踪（支持 poId 筛选）
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const poId = searchParams.get('poId');
+    const poId = searchParams.get("poId");
+    const status = searchParams.get("status");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
 
-    const where = poId ? { poId } : {};
-
-    const list = await prisma.orderTracking.findMany({
-      where,
-      orderBy: { statusDate: 'desc' }
-    });
-
-    return NextResponse.json(list.map(toTracking));
-  } catch (error: any) {
-    console.error('Error fetching order tracking:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch order tracking', details: error.message },
-      { status: 500 }
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      poId || 'all',
+      status || 'all',
+      String(page),
+      String(pageSize)
     );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !poId && !status) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Order tracking cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+    }
+
+    const where: any = {};
+    if (poId) where.poId = poId;
+    if (status) where.status = STATUS_MAP_FRONT_TO_DB[status] || status;
+
+    const [list, total] = await prisma.$transaction([
+      prisma.orderTracking.findMany({
+        where,
+        select: {
+          id: true, poId: true, status: true, statusDate: true,
+          notes: true, createdAt: true, updatedAt: true,
+        },
+        orderBy: { statusDate: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.orderTracking.count({ where }),
+    ]);
+
+    const response = {
+      data: list.map(t => ({
+        id: t.id,
+        poId: t.poId,
+        status: STATUS_MAP_DB_TO_FRONT[t.status] || t.status,
+        statusDate: t.statusDate.toISOString().split('T')[0],
+        notes: t.notes || undefined,
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !poId && !status) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
+  } catch (error: any) {
+    console.error("GET order-tracking error:", error);
+    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }
 
-// POST - 创建订单追踪
+// POST - 创建（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { poId, status, statusDate, notes } = body;
-
-    if (!poId || !status) {
-      return NextResponse.json(
-        { error: 'poId, status 不能为空' },
-        { status: 400 }
-      );
-    }
-
-    const prismaStatus = statusFromFront[status] ?? (status as any);
-    const date = statusDate ? new Date(statusDate) : new Date();
-
-    const row = await prisma.orderTracking.create({
+    const tracking = await prisma.orderTracking.create({
       data: {
-        poId: String(poId),
-        status: prismaStatus,
-        statusDate: date,
-        notes: notes ? String(notes) : null
-      }
+        poId: body.poId,
+        status: STATUS_MAP_FRONT_TO_DB[body.status] || body.status,
+        statusDate: new Date(body.statusDate),
+        notes: body.notes || null,
+      },
     });
 
-    return NextResponse.json(toTracking(row), { status: 201 });
+    // 清除订单追踪缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({
+      id: tracking.id,
+      poId: tracking.poId,
+      status: STATUS_MAP_DB_TO_FRONT[tracking.status] || tracking.status,
+      createdAt: tracking.createdAt.toISOString(),
+    });
   } catch (error: any) {
-    console.error('Error creating order tracking:', error);
-    return NextResponse.json(
-      { error: 'Failed to create order tracking', details: error.message },
-      { status: 500 }
-    );
+    console.error("POST order-tracking error:", error);
+    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
   }
 }

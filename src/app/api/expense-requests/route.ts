@@ -1,116 +1,133 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
 
-// GET - 获取所有支出申请
+// 缓存配置
+const CACHE_TTL = 180; // 3分钟
+const CACHE_KEY_PREFIX = 'expense-requests';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    
-    const where: any = {};
-    if (status) {
-      where.status = status;
-    }
-    
-    const requests = await prisma.expenseRequest.findMany({
-      where,
-      orderBy: { createdAt: 'desc' }
-    });
-    
-    // 转换格式以匹配前端类型
-    const transformed = requests.map(req => ({
-      id: req.id,
-      uid: req.uid || undefined,
-      date: req.date.toISOString().slice(0, 10),
-      summary: req.summary,
-      category: req.category,
-      amount: Number(req.amount),
-      currency: req.currency,
-      businessNumber: req.businessNumber || undefined,
-      relatedId: req.relatedId || undefined,
-      remark: req.remark || undefined,
-      voucher: req.voucher ? (req.voucher.startsWith('[') ? JSON.parse(req.voucher) : req.voucher) : undefined,
-      storeId: req.storeId || undefined,
-      storeName: req.storeName || undefined,
-      country: req.country || undefined,
-      departmentId: req.departmentId || undefined,
-      departmentName: req.departmentName || undefined,
-      status: req.status as any,
-      createdBy: req.createdBy,
-      createdAt: req.createdAt.toISOString(),
-      submittedAt: req.submittedAt?.toISOString(),
-      approvedBy: req.approvedBy || undefined,
-      approvedAt: req.approvedAt?.toISOString(),
-      rejectionReason: req.rejectionReason || undefined,
-      financeAccountId: req.financeAccountId || undefined,
-      financeAccountName: req.financeAccountName || undefined,
-      paidBy: req.paidBy || undefined,
-      paidAt: req.paidAt?.toISOString(),
-      paymentFlowId: req.paymentFlowId || undefined,
-      paymentVoucher: req.paymentVoucher ? (req.paymentVoucher.startsWith('[') ? JSON.parse(req.paymentVoucher) : req.paymentVoucher) : undefined,
-      adAccountId: req.adAccountId || undefined,
-      rebateAmount: req.rebateAmount ? Number(req.rebateAmount) : undefined
-    }));
-    
-    return NextResponse.json(transformed);
-  } catch (error: any) {
-    console.error('Error fetching expense requests:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch expense requests', details: error.message },
-      { status: 500 }
+    const status = searchParams.get("status");
+    const storeId = searchParams.get("storeId");
+    const departmentId = searchParams.get("departmentId");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      status || 'all',
+      storeId || 'all',
+      departmentId || 'all',
+      String(page),
+      String(pageSize)
     );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !status && !storeId && !departmentId) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Expense requests cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+    }
+
+    const where: any = {};
+    if (status) where.status = status;
+    if (storeId) where.storeId = storeId;
+    if (departmentId) where.departmentId = departmentId;
+
+    const [requests, total] = await prisma.$transaction([
+      prisma.expenseRequest.findMany({
+        where,
+        select: {
+          id: true, uid: true, summary: true, category: true, amount: true,
+          currency: true, storeId: true, storeName: true, country: true,
+          status: true, createdBy: true, createdAt: true, submittedAt: true,
+          approvedBy: true, approvedAt: true, rejectionReason: true,
+          paidBy: true, paidAt: true, financeAccountId: true, financeAccountName: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.expenseRequest.count({ where }),
+    ]);
+
+    const response = {
+      data: requests.map(r => ({
+        id: r.id,
+        uid: r.uid || undefined,
+        summary: r.summary,
+        category: r.category,
+        amount: Number(r.amount),
+        currency: r.currency,
+        storeId: r.storeId || undefined,
+        storeName: r.storeName || undefined,
+        country: r.country || undefined,
+        status: r.status,
+        createdBy: r.createdBy,
+        createdAt: r.createdAt.toISOString(),
+        submittedAt: r.submittedAt?.toISOString(),
+        approvedBy: r.approvedBy || undefined,
+        approvedAt: r.approvedAt?.toISOString(),
+        rejectionReason: r.rejectionReason || undefined,
+        paidBy: r.paidBy || undefined,
+        paidAt: r.paidAt?.toISOString(),
+        financeAccountId: r.financeAccountId || undefined,
+        financeAccountName: r.financeAccountName || undefined,
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !status && !storeId && !departmentId) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
+  } catch (error: any) {
+    console.error("GET expense-requests error:", error);
+    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }
 
-// POST - 创建支出申请
+// POST - 创建（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
     const expenseRequest = await prisma.expenseRequest.create({
       data: {
         uid: body.uid || null,
-        date: new Date(body.date),
         summary: body.summary,
         category: body.category,
         amount: body.amount,
-        currency: body.currency || 'CNY',
-        businessNumber: body.businessNumber || null,
-        relatedId: body.relatedId || null,
-        remark: body.remark || null,
-        voucher: body.voucher ? (Array.isArray(body.voucher) ? JSON.stringify(body.voucher) : body.voucher) : null,
+        currency: body.currency || "CNY",
         storeId: body.storeId || null,
         storeName: body.storeName || null,
         country: body.country || null,
-        departmentId: body.departmentId || null,
-        departmentName: body.departmentName || null,
-        status: body.status || 'Pending_Approval',
+        status: body.status || "Pending_Approval",
         createdBy: body.createdBy || '系统',
         submittedAt: body.submittedAt ? new Date(body.submittedAt) : new Date(),
-        adAccountId: body.adAccountId || null,
-        rebateAmount: body.rebateAmount || null
-      }
+      },
     });
-    
+
+    // 清除支出申请缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
     return NextResponse.json({
       id: expenseRequest.id,
-      uid: expenseRequest.uid || undefined,
-      date: expenseRequest.date.toISOString().slice(0, 10),
       summary: expenseRequest.summary,
-      category: expenseRequest.category,
       amount: Number(expenseRequest.amount),
-      currency: expenseRequest.currency,
-      status: expenseRequest.status,
-      createdBy: expenseRequest.createdBy,
-      createdAt: expenseRequest.createdAt.toISOString()
+      createdAt: expenseRequest.createdAt.toISOString(),
     });
   } catch (error: any) {
-    console.error('Error creating expense request:', error);
-    return NextResponse.json(
-      { error: 'Failed to create expense request', details: error.message },
-      { status: 500 }
-    );
+    console.error("POST expense-requests error:", error);
+    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
   }
 }

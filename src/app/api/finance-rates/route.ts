@@ -1,77 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFinanceRates } from '@/lib/exchange';
+import { getCache, setCache, generateCacheKey } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * GET - 获取财务中心专用汇率数据
- * 返回 USD, JPY, THB 对 CNY 的汇率
- * 使用 Next.js revalidate 机制，每 1 小时自动更新
- */
+// 缓存配置
+const CACHE_TTL = 1800; // 30分钟
+const CACHE_KEY_PREFIX = 'finance-rates';
+
 export async function GET(request: NextRequest) {
-  const startTime = Date.now();
-  console.log('📡 [Finance Rates API] 收到请求');
-  
   try {
+    const { searchParams } = new URL(request.url);
+    const noCache = searchParams.get("noCache") === "true";
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(CACHE_KEY_PREFIX, 'latest');
+
     // 检查环境变量
     const apiKey = process.env.EXCHANGERATE_API_KEY;
-    
-    console.log(`🔑 [Finance Rates API] API Key 检查: ${apiKey ? '已配置' : '未配置'}`);
-    
     if (!apiKey) {
-      console.error('❌ [Finance Rates API] EXCHANGERATE_API_KEY 环境变量未配置');
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'EXCHANGERATE_API_KEY environment variable is not set. Please configure it in your deployment platform (Vercel/Netlify/etc).',
-          errorCode: 'MISSING_API_KEY',
-          timestamp: new Date().toISOString()
+        {
+          success: false,
+          error: 'EXCHANGERATE_API_KEY 未配置',
         },
         { status: 500 }
       );
     }
-    
-    console.log('🔄 [Finance Rates API] 开始调用 getFinanceRates()');
+
+    // 尝试从缓存获取
+    if (!noCache) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Finance rates cache HIT: ${cacheKey}`);
+        cached.cached = true;
+        return NextResponse.json(cached);
+      }
+    }
+
+    // 获取最新汇率
     const rates = await getFinanceRates();
-    
     if (!rates) {
-      console.error('❌ [Finance Rates API] getFinanceRates() 返回 null');
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Failed to fetch finance rates. Please check EXCHANGERATE_API_KEY in environment variables.',
-          errorCode: 'FETCH_FAILED',
-          timestamp: new Date().toISOString()
-        },
+        { success: false, error: '获取汇率数据失败' },
         { status: 500 }
       );
     }
-    
-    const duration = Date.now() - startTime;
-    console.log(`✅ [Finance Rates API] 成功返回数据，耗时: ${duration}ms`);
-    console.log(`   USD: ${rates.USD}, JPY: ${rates.JPY}, THB: ${rates.THB}`);
-    
-    return NextResponse.json({
+
+    const response = {
       success: true,
       data: rates,
       lastUpdated: rates.lastUpdated,
-      timestamp: new Date().toISOString()
-    });
+      timestamp: new Date().toISOString(),
+      cached: false
+    };
+
+    // 设置缓存
+    await setCache(cacheKey, response, CACHE_TTL);
+
+    return NextResponse.json(response);
   } catch (error: any) {
-    const duration = Date.now() - startTime;
-    console.error(`❌ [Finance Rates API] 错误 (耗时: ${duration}ms):`, error);
-    console.error('   错误堆栈:', error.stack);
+    console.error('Error in finance rates API:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error',
-        errorCode: 'INTERNAL_ERROR',
-        timestamp: new Date().toISOString()
-      },
+      { success: false, error: error.message || 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-// 设置重新验证时间为 1 小时（3600 秒）
+// 设置重新验证时间为 1 小时（作为缓存降级）
 export const revalidate = 3600;

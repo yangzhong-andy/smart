@@ -1,113 +1,88 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { InventoryLocation } from '@prisma/client'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
 
-// GET - 获取所有库存
+// 缓存配置
+const CACHE_TTL = 120; // 2分钟（库存高频）
+const CACHE_KEY_PREFIX = 'inventory-stocks';
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const variantId = searchParams.get('variantId') || searchParams.get('productId') // 向后兼容
-    const storeId = searchParams.get('storeId')
-    const location = searchParams.get('location')
+    const { searchParams } = new URL(request.url);
+    const variantId = searchParams.get("variantId");
+    const warehouseId = searchParams.get("warehouseId");
+    const location = searchParams.get("location");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
 
-    const where: any = {}
-    if (variantId) where.variantId = variantId
-    if (storeId) where.storeId = storeId
-    if (location) where.location = location as InventoryLocation
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      variantId || 'all',
+      warehouseId || 'all',
+      location || 'all',
+      String(page),
+      String(pageSize)
+    );
 
-    const stocks = await prisma.inventoryStock.findMany({
-      where,
-      include: {
-        variant: {
-          include: {
-            product: true
-          }
-        },
-        store: true
-      },
-      orderBy: { updatedAt: 'desc' }
-    })
-
-    const transformed = stocks.map(s => ({
-      id: s.id,
-      variantId: s.variantId,
-      productId: s.variant.productId, // 向后兼容
-      storeId: s.storeId || undefined,
-      location: s.location,
-      qty: s.qty,
-      updatedAt: s.updatedAt.toISOString(),
-      createdAt: s.createdAt.toISOString()
-    }))
-
-    return NextResponse.json(transformed)
-  } catch (error) {
-    console.error('Error fetching inventory stocks:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch inventory stocks' },
-      { status: 500 }
-    )
-  }
-}
-
-// POST - 创建或更新库存
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-
-    // 使用 variantId（向后兼容 productId）
-    const variantId = body.variantId || body.productId
-    if (!variantId) {
-      return NextResponse.json(
-        { error: 'variantId is required' },
-        { status: 400 }
-      )
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !variantId && !warehouseId && !location) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Inventory stocks cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
     }
 
-    // 使用 upsert 创建或更新库存
-    const stock = await prisma.inventoryStock.upsert({
-      where: {
-        variantId_location_storeId: {
-          variantId: variantId,
-          location: body.location as InventoryLocation,
-          storeId: body.storeId || null
-        }
-      },
-      update: {
-        qty: Number(body.qty)
-      },
-      create: {
-        variantId: variantId,
-        storeId: body.storeId || null,
-        location: body.location as InventoryLocation,
-        qty: Number(body.qty)
-      },
-      include: {
-        variant: {
-          include: {
-            product: true
-          }
-        },
-        store: true
-      }
-    })
+    const where: any = {};
+    if (variantId) where.variantId = variantId;
+    if (warehouseId) where.warehouseId = warehouseId;
+    if (location) where.location = location;
 
-    return NextResponse.json({
-      id: stock.id,
-      variantId: stock.variantId,
-      productId: stock.variant.productId, // 向后兼容
-      storeId: stock.storeId || undefined,
-      location: stock.location,
-      qty: stock.qty,
-      updatedAt: stock.updatedAt.toISOString(),
-      createdAt: stock.createdAt.toISOString()
-    }, { status: 201 })
-  } catch (error) {
-    console.error('Error creating/updating inventory stock:', error)
-    return NextResponse.json(
-      { error: 'Failed to create/update inventory stock' },
-      { status: 500 }
-    )
+    const [stocks, total] = await prisma.$transaction([
+      prisma.inventoryStock.findMany({
+        where,
+        select: {
+          id: true, variantId: true, warehouseId: true, warehouseName: true,
+          location: true, availableQty: true, lockedQty: true, totalQty: true,
+          updatedAt: true,
+          variant: { select: { id: true, sku: true, product: { select: { name: true } } } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.inventoryStock.count({ where }),
+    ]);
+
+    const response = {
+      data: stocks.map(s => ({
+        id: s.id,
+        variantId: s.variantId,
+        sku: s.variant?.sku,
+        productName: s.variant?.product?.name,
+        warehouseId: s.warehouseId,
+        warehouseName: s.warehouseName,
+        location: s.location,
+        availableQty: s.availableQty,
+        lockedQty: s.lockedQty,
+        totalQty: s.totalQty,
+        updatedAt: s.updatedAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !variantId && !warehouseId && !location) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
+  } catch (error: any) {
+    console.error("GET inventory-stocks error:", error);
+    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }

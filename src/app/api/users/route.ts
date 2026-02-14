@@ -2,29 +2,43 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
-import * as bcrypt from 'bcryptjs'
 
 export const dynamic = 'force-dynamic'
 
 // GET - 获取所有用户（仅管理员）
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     
-    // 检查权限：只有管理员可以查看所有用户
     if (!session || session.user.role !== 'SUPER_ADMIN') {
-      return NextResponse.json(
-        { error: '权限不足' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: '权限不足' }, { status: 403 })
     }
 
-    const users = await prisma.user.findMany({
-      include: {
-        department: true
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+    const { searchParams } = new URL(request.url)
+    const role = searchParams.get('role')
+    const departmentId = searchParams.get('departmentId')
+    const page = parseInt(searchParams.get('page') || '1')
+    const pageSize = parseInt(searchParams.get('pageSize') || '20')
+
+    const where: any = {}
+    if (role) where.role = role
+    if (departmentId) where.departmentId = departmentId
+
+    const [users, total] = await prisma.$transaction([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true, email: true, name: true, role: true,
+          departmentId: true, isActive: true, lastLoginAt: true,
+          createdAt: true, updatedAt: true,
+          department: { select: { id: true, name: true, code: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.user.count({ where }),
+    ])
 
     const transformed = users.map(u => ({
       id: u.id,
@@ -40,108 +54,12 @@ export async function GET() {
       updatedAt: u.updatedAt.toISOString()
     }))
 
-    return NextResponse.json(transformed)
+    return NextResponse.json({
+      data: transformed,
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    })
   } catch (error) {
     console.error('Error fetching users:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch users' },
-      { status: 500 }
-    )
-  }
-}
-
-// POST - 创建新用户（仅管理员）
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions)
-    
-    // 检查权限：只有管理员可以创建用户
-    if (!session || session.user.role !== 'SUPER_ADMIN') {
-      return NextResponse.json(
-        { error: '权限不足' },
-        { status: 403 }
-      )
-    }
-
-    const body = await request.json()
-    const { email, password, name, role, departmentId } = body
-
-    // 验证必填字段
-    if (!email || !password || !name) {
-      return NextResponse.json(
-        { error: '邮箱、密码和姓名不能为空' },
-        { status: 400 }
-      )
-    }
-
-    // 检查邮箱是否已存在
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() }
-    })
-
-    if (existingUser) {
-      return NextResponse.json(
-        { error: '该邮箱已被使用' },
-        { status: 400 }
-      )
-    }
-
-    // 验证部门是否存在（如果提供了 departmentId）
-    if (departmentId) {
-      const department = await prisma.department.findUnique({
-        where: { id: departmentId }
-      })
-      if (!department) {
-        return NextResponse.json(
-          { error: '部门不存在' },
-          { status: 400 }
-        )
-      }
-    }
-
-    // 哈希密码
-    const hashedPassword = await bcrypt.hash(password, 10)
-
-    // 创建用户（role 为必填，未传时用默认值 USER）
-    const user = await prisma.user.create({
-      data: {
-        email: email.trim().toLowerCase(),
-        password: hashedPassword,
-        name: name.trim(),
-        role: (role && String(role).trim()) ? String(role).trim() : 'USER',
-        departmentId: (departmentId && String(departmentId).trim()) ? departmentId : null,
-        isActive: true
-      },
-      include: {
-        department: true
-      }
-    })
-
-    return NextResponse.json({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      departmentId: user.departmentId,
-      departmentName: user.department?.name || null,
-      departmentCode: user.department?.code || null,
-      isActive: user.isActive,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString()
-    }, { status: 201 })
-  } catch (error: any) {
-    console.error('Error creating user:', error)
-    // 将 Prisma 等底层错误转为用户可读提示
-    const message = error?.message || ''
-    const userMessage =
-      message.includes('Unique constraint') || message.includes('unique')
-        ? '该邮箱已被使用'
-        : message.includes('Invalid') && message.includes('role')
-          ? '请选择有效角色或留空使用默认'
-          : 'Failed to create user'
-    return NextResponse.json(
-      { error: userMessage, details: error.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchExchangeRates } from '@/lib/exchange';
+import { getCache, setCache, generateCacheKey } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * GET - 获取汇率数据
- * 使用 Next.js revalidate 机制，每 1 小时自动更新
- * 以人民币（CNY）为基准，返回 USD、GBP、THB、MYR 的汇率
- */
+// 缓存配置
+const CACHE_TTL = 1800; // 30分钟（汇率变动不频繁）
+const CACHE_KEY_PREFIX = 'exchange-rates';
+
 export async function GET(request: NextRequest) {
   const apiKey = process.env.EXCHANGERATE_API_KEY;
   if (!apiKey) {
@@ -21,6 +21,23 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const { searchParams } = new URL(request.url);
+    const noCache = searchParams.get("noCache") === "true";
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(CACHE_KEY_PREFIX, 'latest');
+
+    // 尝试从缓存获取
+    if (!noCache) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Exchange rates cache HIT: ${cacheKey}`);
+        cached.cached = true; // 标记为缓存数据
+        return NextResponse.json(cached);
+      }
+    }
+
+    // 获取最新汇率
     const rates = await fetchExchangeRates();
     if (!rates) {
       return NextResponse.json(
@@ -28,11 +45,18 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-    return NextResponse.json({
+
+    const response = {
       success: true,
       data: rates,
-      lastUpdated: new Date(rates.timestamp).toISOString()
-    });
+      lastUpdated: new Date(rates.timestamp).toISOString(),
+      cached: false
+    };
+
+    // 设置缓存
+    await setCache(cacheKey, response, CACHE_TTL);
+
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error('Error in exchange rates API:', error);
     return NextResponse.json(
@@ -45,5 +69,5 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// 设置重新验证时间为 1 小时（3600 秒）
+// 设置重新验证时间为 1 小时（作为缓存降级）
 export const revalidate = 3600;

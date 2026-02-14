@@ -1,99 +1,135 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Platform } from '@prisma/client'
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
-// GET - 获取所有店铺
-export async function GET() {
-  try {
-    const stores = await prisma.store.findMany({
-      orderBy: { createdAt: 'desc' }
-    })
+const PLATFORM_MAP_DB_TO_FRONT: Record<Platform, string> = {
+  [Platform.TIKTOK]: 'TikTok',
+  [Platform.AMAZON]: 'Amazon',
+  [Platform.INSTAGRAM]: 'Instagram',
+  [Platform.YOUTUBE]: 'YouTube',
+  [Platform.OTHER]: '其他'
+};
 
-    // 转换平台格式：数据库枚举转前端字符串
-    const platformToFrontend: Record<Platform, string> = {
-      [Platform.TIKTOK]: 'TikTok',
-      [Platform.AMAZON]: 'Amazon',
-      [Platform.INSTAGRAM]: 'Instagram',
-      [Platform.YOUTUBE]: 'YouTube',
-      [Platform.OTHER]: '其他'
+// 缓存配置
+const CACHE_TTL = 300; // 5分钟
+const CACHE_KEY_PREFIX = 'stores';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const platform = searchParams.get('platform');
+    const country = searchParams.get('country');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '50');
+    const noCache = searchParams.get('noCache') === 'true';
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      platform || 'all',
+      country || 'all',
+      String(page),
+      String(pageSize)
+    );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        return NextResponse.json(cached);
+      }
+    }
+
+    const where: any = {};
+    if (platform) where.platform = platform as Platform;
+
+    const [stores, total] = await prisma.$transaction([
+      prisma.store.findMany({
+        where,
+        select: {
+          id: true, name: true, platform: true, country: true,
+          currency: true, accountId: true, accountName: true,
+          vatNumber: true, taxId: true, createdAt: true, updatedAt: true,
+        },
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.store.count({ where }),
+    ]);
+
+    const response = {
+      data: stores.map(s => ({
+        id: s.id,
+        name: s.name,
+        platform: PLATFORM_MAP_DB_TO_FRONT[s.platform] as 'TikTok' | 'Amazon' | 'Instagram' | 'YouTube' | '其他',
+        country: s.country || undefined,
+        currency: s.currency || undefined,
+        accountId: s.accountId || undefined,
+        accountName: s.accountName || undefined,
+        vatNumber: s.vatNumber || undefined,
+        taxId: s.taxId || undefined,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 
-    const transformed = stores.map(s => ({
-      id: s.id,
-      name: s.name,
-      platform: platformToFrontend[s.platform] as 'TikTok' | 'Amazon' | '其他',
-      country: s.country,
-      currency: s.currency,
-      accountId: s.accountId,
-      accountName: s.accountName,
-      vatNumber: s.vatNumber || undefined,
-      taxId: s.taxId || undefined,
-      createdAt: s.createdAt.toISOString()
-    }))
+    // 设置缓存（仅第一页）
+    if (!noCache && page === 1) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
 
-    return NextResponse.json(transformed, { status: 200 })
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error fetching stores:', error)
-    // 返回空数组而不是错误对象，避免前端崩溃
-    return NextResponse.json([], { status: 200 })
+    return NextResponse.json({ error: 'Failed to fetch stores' }, { status: 500 })
   }
 }
 
-// POST - 创建新店铺
+// POST - 创建新店铺（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // 转换平台格式：前端使用 "TikTok", "Amazon" 等，数据库使用 Platform 枚举
-    const platformToEnum: Record<string, Platform> = {
+    const PLATFORM_MAP_FRONT_TO_DB: Record<string, Platform> = {
       'TikTok': Platform.TIKTOK,
       'Amazon': Platform.AMAZON,
       'Instagram': Platform.INSTAGRAM,
       'YouTube': Platform.YOUTUBE,
       '其他': Platform.OTHER
     };
-    
+
     const store = await prisma.store.create({
       data: {
         name: body.name,
-        platform: platformToEnum[body.platform] || Platform.OTHER,
+        platform: PLATFORM_MAP_FRONT_TO_DB[body.platform] || Platform.OTHER,
         country: body.country,
-        currency: body.currency,
+        currency: body.currency || 'USD',
         accountId: body.accountId || null,
         accountName: body.accountName || null,
         vatNumber: body.vatNumber || null,
-        taxId: body.taxId || null
+        taxId: body.taxId || null,
       }
-    })
+    });
 
-    // 转换平台格式：数据库枚举转前端字符串
-    const platformToFrontend: Record<Platform, string> = {
-      [Platform.TIKTOK]: 'TikTok',
-      [Platform.AMAZON]: 'Amazon',
-      [Platform.INSTAGRAM]: 'Instagram',
-      [Platform.YOUTUBE]: 'YouTube',
-      [Platform.OTHER]: '其他'
-    };
+    // 清除店铺相关缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
 
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: platformToFrontend[store.platform] as 'TikTok' | 'Amazon' | '其他',
-      country: store.country,
-      currency: store.currency,
-      accountId: store.accountId,
-      accountName: store.accountName,
-      vatNumber: store.vatNumber || undefined,
-      taxId: store.taxId || undefined,
+      platform: PLATFORM_MAP_DB_TO_FRONT[store.platform],
       createdAt: store.createdAt.toISOString()
-    }, { status: 201 })
+    });
   } catch (error) {
-    console.error('Error creating store:', error)
+    console.error('Error creating store:', error);
     return NextResponse.json(
       { error: 'Failed to create store' },
       { status: 500 }
-    )
+    );
   }
 }

@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-const typeFromFront: Record<string, 'AD_AGENCY' | 'LOGISTICS' | 'VENDOR'> = {
-  广告代理商: 'AD_AGENCY',
-  物流商: 'LOGISTICS',
-  供货商: 'VENDOR'
+const TYPE_MAP_FRONT_TO_DB: Record<string, 'AD_AGENCY' | 'LOGISTICS' | 'VENDOR'> = {
+  '广告代理商': 'AD_AGENCY',
+  '物流商': 'LOGISTICS',
+  '供货商': 'VENDOR'
 };
-const typeToFront: Record<string, string> = {
-  AD_AGENCY: '广告代理商',
-  LOGISTICS: '物流商',
-  VENDOR: '供货商'
+const TYPE_MAP_DB_TO_FRONT: Record<string, string> = {
+  'AD_AGENCY': '广告代理商',
+  'LOGISTICS': '物流商',
+  'VENDOR': '供货商'
 };
+
+// 缓存配置
+const CACHE_TTL = 300; // 5分钟
+const CACHE_KEY_PREFIX = 'supplier-monthly-bills';
 
 function toBill(row: any) {
   return {
@@ -20,7 +25,7 @@ function toBill(row: any) {
     uid: row.uid ?? undefined,
     supplierProfileId: row.supplierProfileId,
     supplierName: row.supplierName,
-    supplierType: typeToFront[row.supplierType] ?? row.supplierType,
+    supplierType: TYPE_MAP_DB_TO_FRONT[row.supplierType] ?? row.supplierType,
     month: row.month,
     billNumber: row.billNumber ?? undefined,
     billDate: row.billDate.toISOString().split('T')[0],
@@ -51,26 +56,74 @@ function toBill(row: any) {
   };
 }
 
-// GET - 获取供应商月度账单（支持 supplierProfileId、month、status 筛选）
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const supplierProfileId = searchParams.get('supplierProfileId');
     const month = searchParams.get('month');
     const status = searchParams.get('status');
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      supplierProfileId || 'all',
+      month || 'all',
+      status || 'all',
+      String(page),
+      String(pageSize)
+    );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Supplier monthly bills cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+    }
 
     const validStatuses = ['Draft', 'Pending_Approval', 'Approved', 'Paid', 'Rejected'] as const;
-    const where: { supplierProfileId?: string; month?: string; status?: typeof validStatuses[number] } = {};
+    const where: any = {};
     if (supplierProfileId) where.supplierProfileId = supplierProfileId;
     if (month) where.month = month;
-    if (status && validStatuses.includes(status as typeof validStatuses[number])) where.status = status as typeof validStatuses[number];
+    if (status && validStatuses.includes(status as typeof validStatuses[number])) where.status = status;
 
-    const list = await prisma.supplierMonthlyBill.findMany({
-      where,
-      orderBy: [{ month: 'desc' }, { createdAt: 'desc' }]
-    });
+    const [list, total] = await prisma.$transaction([
+      prisma.supplierMonthlyBill.findMany({
+        where,
+        select: {
+          id: true, uid: true, supplierProfileId: true, supplierName: true,
+          supplierType: true, month: true, billNumber: true, billDate: true,
+          supplierBillAmount: true, systemAmount: true, difference: true,
+          currency: true, rebateAmount: true, rebateRate: true, netAmount: true,
+          relatedFlowIds: true, uploadedBillFile: true, status: true,
+          createdBy: true, createdAt: true, submittedAt: true,
+          approvedBy: true, approvedAt: true, rejectionReason: true,
+          paidBy: true, paidAt: true, paymentAccountId: true,
+          paymentAccountName: true, paymentMethod: true, paymentFlowId: true,
+          paymentVoucher: true, notes: true,
+        },
+        orderBy: [{ month: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.supplierMonthlyBill.count({ where }),
+    ]);
 
-    return NextResponse.json(list.map(toBill));
+    const response = {
+      data: list.map(toBill),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页）
+    if (!noCache && page === 1) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error('Error fetching supplier monthly bills:', error);
     return NextResponse.json(
@@ -80,89 +133,40 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - 创建供应商月度账单
+// POST - 创建账单（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      uid,
-      supplierProfileId,
-      supplierName,
-      supplierType,
-      month,
-      billNumber,
-      billDate,
-      supplierBillAmount,
-      systemAmount,
-      difference,
-      currency,
-      rebateAmount,
-      rebateRate,
-      netAmount,
-      relatedFlowIds,
-      uploadedBillFile,
-      status,
-      createdBy,
-      submittedAt,
-      approvedBy,
-      approvedAt,
-      rejectionReason,
-      paidBy,
-      paidAt,
-      paymentAccountId,
-      paymentAccountName,
-      paymentMethod,
-      paymentFlowId,
-      paymentVoucher,
-      notes
-    } = body;
+    const { supplierProfileId, supplierName, supplierType, month, billDate, supplierBillAmount, systemAmount, currency, rebateAmount, rebateRate, netAmount, notes } = body;
 
-    if (!supplierProfileId || !supplierName || !supplierType || !month || billDate == null || supplierBillAmount == null || systemAmount == null || difference == null || !currency || rebateAmount == null || netAmount == null || !status || !createdBy) {
-      return NextResponse.json(
-        { error: 'supplierProfileId, supplierName, supplierType, month, billDate, supplierBillAmount, systemAmount, difference, currency, rebateAmount, netAmount, status, createdBy 不能为空' },
-        { status: 400 }
-      );
+    if (!supplierProfileId || !supplierName || !supplierType || !month || billDate == null || supplierBillAmount == null || systemAmount == null || currency == null) {
+      return NextResponse.json({ error: '缺少必填字段' }, { status: 400 });
     }
 
-    const prismaType = typeFromFront[supplierType] ?? (supplierType === 'AD_AGENCY' || supplierType === 'LOGISTICS' || supplierType === 'VENDOR' ? supplierType : 'VENDOR');
-    const billDateObj = typeof billDate === 'string' ? new Date(billDate) : new Date();
-
-    const row = await prisma.supplierMonthlyBill.create({
+    const bill = await prisma.supplierMonthlyBill.create({
       data: {
-        uid: uid ?? null,
         supplierProfileId,
-        supplierName: String(supplierName).trim(),
-        supplierType: prismaType,
-        month: String(month),
-        billNumber: billNumber ? String(billNumber) : null,
-        billDate: billDateObj,
-        supplierBillAmount: Number(supplierBillAmount),
-        systemAmount: Number(systemAmount),
-        difference: Number(difference),
-        currency: String(currency),
-        rebateAmount: Number(rebateAmount),
-        rebateRate: rebateRate != null ? Number(rebateRate) : null,
-        netAmount: Number(netAmount),
-        relatedFlowIds: Array.isArray(relatedFlowIds) ? relatedFlowIds : [],
-        uploadedBillFile: uploadedBillFile ?? null,
-        status: status as 'Draft' | 'Pending_Approval' | 'Approved' | 'Paid' | 'Rejected',
-        createdBy: String(createdBy),
-        submittedAt: submittedAt ? new Date(submittedAt) : null,
-        approvedBy: approvedBy ?? null,
-        approvedAt: approvedAt ? new Date(approvedAt) : null,
-        rejectionReason: rejectionReason ?? null,
-        paidBy: paidBy ?? null,
-        paidAt: paidAt ? new Date(paidAt) : null,
-        paymentAccountId: paymentAccountId ?? null,
-        paymentAccountName: paymentAccountName ?? null,
-        paymentMethod: paymentMethod ?? null,
-        paymentFlowId: paymentFlowId ?? null,
-        paymentVoucher: paymentVoucher ?? null,
-        notes: notes ?? null
+        supplierName,
+        supplierType: TYPE_MAP_FRONT_TO_DB[supplierType] ?? supplierType,
+        month,
+        billDate: new Date(billDate),
+        supplierBillAmount,
+        systemAmount,
+        currency,
+        rebateAmount: rebateAmount ?? 0,
+        rebateRate: rebateRate ?? null,
+        netAmount: netAmount ?? (supplierBillAmount - (rebateAmount ?? 0)),
+        notes: notes ?? null,
+        status: 'Draft',
+        createdBy: body.createdBy || '系统',
+        relatedFlowIds: [],
       }
     });
 
-    return NextResponse.json(toBill(row), { status: 201 });
+    // 清除供应商月度账单缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json(toBill(bill));
   } catch (error: any) {
     console.error('Error creating supplier monthly bill:', error);
     return NextResponse.json(

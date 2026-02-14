@@ -1,137 +1,125 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { SettleBase, InvoiceRequirement } from '@prisma/client'
-import {
-  SETTLE_BASE_LABEL,
-  SETTLE_BASE_VALUE,
-  INVOICE_REQUIREMENT_LABEL,
-  INVOICE_REQUIREMENT_VALUE,
-} from '@/lib/enum-mapping'
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
-// GET - 获取所有供应商
-export async function GET() {
+// 缓存配置
+const CACHE_TTL = 600; // 10分钟
+const CACHE_KEY_PREFIX = 'suppliers';
+
+export async function GET(request: NextRequest) {
   try {
-    // 优化：移除手动连接，Prisma 会自动管理连接池
+    const { searchParams } = new URL(request.url)
+    const category = searchParams.get("category")
+    const country = searchParams.get("country")
+    const page = parseInt(searchParams.get("page") || "1")
+    const pageSize = parseInt(searchParams.get("pageSize") || "20")
+    const noCache = searchParams.get("noCache") === "true"
 
-    const suppliers = await prisma.supplier.findMany({
-      orderBy: { name: 'asc' }
-    })
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      category || 'all',
+      country || 'all',
+      String(page),
+      String(pageSize)
+    );
 
-    // 转换格式，将 Decimal 字段转换为数字
-    const transformed = suppliers.map(s => ({
-      id: s.id,
-      name: s.name,
-      contact: s.contact,
-      phone: s.phone,
-      depositRate: Number(s.depositRate), // 转换为数字
-      tailPeriodDays: s.tailPeriodDays,
-      settleBase: s.settleBase,
-      level: s.level || undefined,
-      category: s.category || undefined,
-      address: s.address || undefined,
-      bankAccount: s.bankAccount || undefined,
-      bankName: s.bankName || undefined,
-      taxId: s.taxId || undefined,
-      invoiceRequirement: s.invoiceRequirement || undefined,
-      invoicePoint: s.invoicePoint ? Number(s.invoicePoint) : undefined, // 转换为数字
-      defaultLeadTime: s.defaultLeadTime || undefined,
-      moq: s.moq || undefined,
-      factoryImages: s.factoryImages ? JSON.parse(JSON.stringify(s.factoryImages)) : undefined,
-      createdAt: s.createdAt.toISOString(),
-      updatedAt: s.updatedAt.toISOString()
-    }))
-
-    return NextResponse.json(transformed)
-  } catch (error: any) {
-    console.error('Error fetching suppliers:', error)
-    
-    // 检查是否是数据库连接错误
-    if (error.message?.includes('TLS connection') || 
-        error.message?.includes('connection') ||
-        error.message?.includes('ECONNREFUSED') ||
-        error.code === 'P1001' ||
-        !process.env.DATABASE_URL) {
-      return NextResponse.json(
-        { 
-          error: '数据库连接失败',
-          details: process.env.NODE_ENV === 'production' 
-            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置'
-            : '请检查 .env.local 中的 DATABASE_URL 配置'
-        },
-        { status: 503 }
-      )
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Suppliers cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
     }
-    
+
+    const where: any = {}
+    if (category) where.category = category
+    if (country) where.country = country
+
+    const [suppliers, total] = await prisma.$transaction([
+      prisma.supplier.findMany({
+        where,
+        select: {
+          id: true, name: true, code: true, category: true,
+          country: true, contact: true, phone: true, email: true,
+          address: true, paymentTerms: true, currency: true,
+          status: true, createdAt: true, updatedAt: true,
+        },
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.supplier.count({ where }),
+    ])
+
+    const response = {
+      data: suppliers.map(s => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        category: s.category,
+        country: s.country || undefined,
+        contact: s.contact || undefined,
+        phone: s.phone || undefined,
+        email: s.email || undefined,
+        address: s.address || undefined,
+        paymentTerms: s.paymentTerms || undefined,
+        currency: s.currency || undefined,
+        status: s.status,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页）
+    if (!noCache && page === 1) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response)
+  } catch (error) {
+    console.error('Error fetching suppliers:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch suppliers', details: error.message },
+      { error: 'Failed to fetch suppliers' },
       { status: 500 }
     )
   }
 }
 
-// POST - 创建新供应商
+// POST - 创建新供应商（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const settleBaseValue =
-      (SETTLE_BASE_VALUE[body.settleBase] as SettleBase | undefined) ||
-      (Object.values(SettleBase).includes(body.settleBase) ? (body.settleBase as SettleBase) : SettleBase.SHIPMENT)
-    const invoiceReqValue =
-      body.invoiceRequirement
-        ? (INVOICE_REQUIREMENT_VALUE[body.invoiceRequirement] as InvoiceRequirement | undefined) ||
-          (Object.values(InvoiceRequirement).includes(body.invoiceRequirement) ? (body.invoiceRequirement as InvoiceRequirement) : null)
-        : null
-
     const supplier = await prisma.supplier.create({
       data: {
         name: body.name,
-        contact: body.contact,
-        phone: body.phone,
-        depositRate: body.depositRate,
-        tailPeriodDays: body.tailPeriodDays,
-        settleBase: settleBaseValue,
-        level: body.level ? (body.level as "S" | "A" | "B" | "C") : null,
-        category: body.category || null,
+        code: body.code || null,
+        category: body.category,
+        country: body.country || null,
+        contact: body.contact || null,
+        phone: body.phone || null,
+        email: body.email || null,
         address: body.address || null,
-        bankAccount: body.bankAccount || null,
-        bankName: body.bankName || null,
-        taxId: body.taxId || null,
-        invoiceRequirement: invoiceReqValue,
-        invoicePoint: body.invoicePoint || null,
-        defaultLeadTime: body.defaultLeadTime || null,
-        moq: body.moq || null,
-        factoryImages: body.factoryImages ? JSON.parse(JSON.stringify(body.factoryImages)) : null,
+        paymentTerms: body.paymentTerms || null,
+        currency: body.currency || null,
+        status: body.status || 'ACTIVE',
       }
     })
-    
-    // 转换格式，将 Decimal 字段转换为数字
-    const transformed = {
+
+    // 清除供应商相关缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({
       id: supplier.id,
       name: supplier.name,
-      contact: supplier.contact,
-      phone: supplier.phone,
-      depositRate: Number(supplier.depositRate), // 转换为数字
-      tailPeriodDays: supplier.tailPeriodDays,
-      settleBase: supplier.settleBase,
-      level: supplier.level || undefined,
-      category: supplier.category || undefined,
-      address: supplier.address || undefined,
-      bankAccount: supplier.bankAccount || undefined,
-      bankName: supplier.bankName || undefined,
-      taxId: supplier.taxId || undefined,
-      invoiceRequirement: supplier.invoiceRequirement || undefined,
-      invoicePoint: supplier.invoicePoint ? Number(supplier.invoicePoint) : undefined, // 转换为数字
-      defaultLeadTime: supplier.defaultLeadTime || undefined,
-      moq: supplier.moq || undefined,
-      factoryImages: supplier.factoryImages ? JSON.parse(JSON.stringify(supplier.factoryImages)) : undefined,
-      createdAt: supplier.createdAt.toISOString(),
-      updatedAt: supplier.updatedAt.toISOString()
-    }
-    
-    return NextResponse.json(transformed, { status: 201 })
+      category: supplier.category,
+      createdAt: supplier.createdAt.toISOString()
+    })
   } catch (error) {
     console.error('Error creating supplier:', error)
     return NextResponse.json(

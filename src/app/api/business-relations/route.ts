@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,23 +15,54 @@ function toRelation(row: any) {
   };
 }
 
-// GET - 获取关联（支持 sourceUID、targetUID 筛选）
+// 缓存配置
+const CACHE_TTL = 300; // 5分钟
+const CACHE_KEY_PREFIX = 'business-relations';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const sourceUID = searchParams.get('sourceUID');
     const targetUID = searchParams.get('targetUID');
+    const noCache = searchParams.get("noCache") === "true";
 
-    const where: { sourceUID?: string; targetUID?: string } = {};
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      sourceUID || 'all',
+      targetUID || 'all'
+    );
+
+    // 尝试从缓存获取
+    if (!noCache && !sourceUID && !targetUID) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Business relations cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+    }
+
+    const where: any = {};
     if (sourceUID) where.sourceUID = sourceUID;
     if (targetUID) where.targetUID = targetUID;
 
     const list = await prisma.businessRelation.findMany({
       where: Object.keys(where).length ? where : undefined,
+      select: {
+        id: true, sourceUID: true, targetUID: true,
+        relationType: true, metadata: true, createdAt: true,
+      },
       orderBy: { createdAt: 'desc' }
     });
 
-    return NextResponse.json(list.map(toRelation));
+    const response = list.map(toRelation);
+
+    // 设置缓存（仅在无筛选条件时）
+    if (!noCache && !sourceUID && !targetUID) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error('Error fetching business relations:', error);
     return NextResponse.json(
@@ -40,7 +72,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - 创建（若 sourceUID+targetUID+relationType 已存在则忽略）
+// POST - 创建（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -53,30 +85,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 检查是否已存在
     const existing = await prisma.businessRelation.findUnique({
       where: {
         sourceUID_targetUID_relationType: {
           sourceUID: String(sourceUID),
           targetUID: String(targetUID),
-          relationType: String(relationType)
+          relationType: String(relationType),
         }
       }
     });
 
     if (existing) {
-      return NextResponse.json(toRelation(existing), { status: 200 });
+      return NextResponse.json({ message: '关系已存在', id: existing.id });
     }
 
-    const row = await prisma.businessRelation.create({
+    const relation = await prisma.businessRelation.create({
       data: {
         sourceUID: String(sourceUID),
         targetUID: String(targetUID),
         relationType: String(relationType),
-        metadata: metadata && typeof metadata === 'object' ? metadata : null
+        metadata: metadata ? JSON.stringify(metadata) : null,
       }
     });
 
-    return NextResponse.json(toRelation(row), { status: 201 });
+    // 清除业务关系缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json(toRelation(relation));
   } catch (error: any) {
     console.error('Error creating business relation:', error);
     return NextResponse.json(

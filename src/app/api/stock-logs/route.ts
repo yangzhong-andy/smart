@@ -1,140 +1,118 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
 
-function toStockLog(row: any) {
-  return {
-    id: row.id,
-    variantId: row.variantId,
-    warehouseId: row.warehouseId,
-    reason: row.reason,
-    movementType: row.movementType,
-    qty: row.qty,
-    qtyBefore: row.qtyBefore,
-    qtyAfter: row.qtyAfter,
-    unitCost: row.unitCost != null ? Number(row.unitCost) : undefined,
-    totalCost: row.totalCost != null ? Number(row.totalCost) : undefined,
-    currency: row.currency ?? undefined,
-    operator: row.operator ?? undefined,
-    operationDate: row.operationDate.toISOString().split('T')[0],
-    relatedOrderId: row.relatedOrderId ?? undefined,
-    relatedOrderType: row.relatedOrderType ?? undefined,
-    relatedOrderNumber: row.relatedOrderNumber ?? undefined,
-    notes: row.notes ?? undefined,
-    createdAt: row.createdAt.toISOString(),
-  };
-}
+// 缓存配置
+const CACHE_TTL = 180; // 3分钟
+const CACHE_KEY_PREFIX = 'stock-logs';
 
-// GET - 获取库存流水（支持 variantId、warehouseId、reason、operationDate 筛选）
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const variantId = searchParams.get('variantId');
-    const warehouseId = searchParams.get('warehouseId');
-    const reason = searchParams.get('reason');
-    const operationDateFrom = searchParams.get('operationDateFrom');
-    const operationDateTo = searchParams.get('operationDateTo');
+    const variantId = searchParams.get("variantId");
+    const type = searchParams.get("type");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
 
-    const where: Record<string, unknown> = {};
-    if (variantId) where.variantId = variantId;
-    if (warehouseId) where.warehouseId = warehouseId;
-    if (reason) where.reason = reason;
-    if (operationDateFrom || operationDateTo) {
-      where.operationDate = {};
-      if (operationDateFrom) (where.operationDate as Record<string, Date>).gte = new Date(operationDateFrom);
-      if (operationDateTo) (where.operationDate as Record<string, Date>).lte = new Date(operationDateTo);
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      variantId || 'all',
+      type || 'all',
+      String(page),
+      String(pageSize)
+    );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !variantId && !type) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Stock logs cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
     }
 
-    const list = await prisma.stockLog.findMany({
-      where,
-      include: {
-        variant: { include: { product: true } },
-        warehouse: true,
-      },
-      orderBy: { operationDate: 'desc' },
-    });
+    const where: any = {};
+    if (variantId) where.variantId = variantId;
+    if (type) where.type = type;
 
-    const transformed = list.map((row) => ({
-      ...toStockLog(row),
-      variant: row.variant,
-      warehouse: row.warehouse,
-    }));
+    const [logs, total] = await prisma.$transaction([
+      prisma.stockLog.findMany({
+        where,
+        select: {
+          id: true, variantId: true, type: true, qty: true,
+          balance: true, relatedOrderId: true, relatedOrderType: true,
+          notes: true, operator: true, createdAt: true,
+          variant: { select: { id: true, sku: true, product: { select: { name: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.stockLog.count({ where }),
+    ]);
 
-    return NextResponse.json(transformed);
+    const response = {
+      data: logs.map(l => ({
+        id: l.id,
+        variantId: l.variantId,
+        sku: l.variant?.sku,
+        productName: l.variant?.product?.name,
+        type: l.type,
+        qty: l.qty,
+        balance: Number(l.balance),
+        relatedOrderId: l.relatedOrderId || undefined,
+        relatedOrderType: l.relatedOrderType || undefined,
+        notes: l.notes || undefined,
+        operator: l.operator || undefined,
+        createdAt: l.createdAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !variantId && !type) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
-    console.error('Error fetching stock logs:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch stock logs', details: error.message },
-      { status: 500 }
-    );
+    console.error("GET stock-logs error:", error);
+    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }
 
-// POST - 创建库存流水
+// POST - 创建（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      variantId,
-      warehouseId,
-      reason,
-      movementType,
-      qty,
-      qtyBefore,
-      qtyAfter,
-      unitCost,
-      totalCost,
-      currency,
-      operator,
-      operationDate,
-      relatedOrderId,
-      relatedOrderType,
-      relatedOrderNumber,
-      notes,
-    } = body;
-
-    if (!variantId || !warehouseId || !reason || !movementType || qty == null || qtyBefore == null || qtyAfter == null || !operationDate) {
-      return NextResponse.json(
-        { error: 'variantId, warehouseId, reason, movementType, qty, qtyBefore, qtyAfter, operationDate 不能为空' },
-        { status: 400 }
-      );
-    }
-
-    const row = await prisma.stockLog.create({
+    const log = await prisma.stockLog.create({
       data: {
-        variantId: String(variantId),
-        warehouseId: String(warehouseId),
-        reason: reason as any,
-        movementType: movementType as any,
-        qty: Number(qty),
-        qtyBefore: Number(qtyBefore),
-        qtyAfter: Number(qtyAfter),
-        unitCost: unitCost != null ? Number(unitCost) : null,
-        totalCost: totalCost != null ? Number(totalCost) : null,
-        currency: currency ?? null,
-        operator: operator ? String(operator) : null,
-        operationDate: new Date(operationDate),
-        relatedOrderId: relatedOrderId ?? null,
-        relatedOrderType: relatedOrderType ?? null,
-        relatedOrderNumber: relatedOrderNumber ?? null,
-        notes: notes ? String(notes) : null,
-      },
-      include: {
-        variant: { include: { product: true } },
-        warehouse: true,
+        variantId: body.variantId,
+        type: body.type,
+        qty: body.qty,
+        balance: body.balance ?? 0,
+        relatedOrderId: body.relatedOrderId || null,
+        relatedOrderType: body.relatedOrderType || null,
+        notes: body.notes || null,
+        operator: body.operator || null,
       },
     });
 
-    return NextResponse.json(
-      { ...toStockLog(row), variant: row.variant, warehouse: row.warehouse },
-      { status: 201 }
-    );
+    // 清除库存日志缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({
+      id: log.id,
+      variantId: log.variantId,
+      type: log.type,
+      createdAt: log.createdAt.toISOString(),
+    });
   } catch (error: any) {
-    console.error('Error creating stock log:', error);
-    return NextResponse.json(
-      { error: 'Failed to create stock log', details: error.message },
-      { status: 500 }
-    );
+    console.error("POST stock-logs error:", error);
+    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
   }
 }

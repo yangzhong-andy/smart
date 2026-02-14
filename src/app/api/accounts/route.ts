@@ -1,51 +1,101 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { AccountType, AccountCategory } from '@prisma/client'
+import { AccountType } from '@prisma/client'
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
-// GET - 获取所有账户
-export async function GET() {
-  try {
-    // 优化：移除手动连接，Prisma 会自动管理连接池
+// 缓存配置
+const CACHE_TTL = 600; // 10分钟
+const CACHE_KEY_PREFIX = 'accounts';
 
-    const accounts = await prisma.bankAccount.findMany({
-      include: {
-        parent: true,
-        store: true,
-        _count: {
-          select: { children: true, cashFlows: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+// GET - 获取所有账户
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const accountType = searchParams.get('type')
+    const storeId = searchParams.get('storeId')
+    const page = parseInt(searchParams.get("page") || "1")
+    const pageSize = parseInt(searchParams.get("pageSize") || "20")
+    const noCache = searchParams.get("noCache") === "true"
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      accountType || 'all',
+      storeId || 'all',
+      String(page),
+      String(pageSize)
+    )
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1) {
+      const cached = await getCache<any>(cacheKey)
+      if (cached) {
+        console.log(`✅ Accounts cache HIT: ${cacheKey}`)
+        return NextResponse.json(cached)
+      }
+    }
+
+    const where: any = {}
+    if (accountType) where.accountType = accountType as AccountType
+    if (storeId) where.storeId = storeId
+
+    const [accounts, total] = await prisma.$transaction([
+      prisma.bankAccount.findMany({
+        where,
+        select: {
+          id: true, name: true, accountNumber: true, accountType: true,
+          accountCategory: true, accountPurpose: true, currency: true, country: true,
+          originalBalance: true, initialCapital: true, exchangeRate: true, rmbBalance: true,
+          parentId: true, storeId: true, companyEntity: true, owner: true,
+          notes: true, platformAccount: true, platformPassword: true, platformUrl: true,
+          createdAt: true, updatedAt: true,
+          _count: { select: { children: true, cashFlows: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.bankAccount.count({ where }),
+    ])
     
-    // 转换格式以匹配前端 BankAccount 类型
-    const transformed = accounts.map(acc => ({
-      id: acc.id,
-      name: acc.name,
-      accountNumber: acc.accountNumber,
-      accountType: acc.accountType === 'CORPORATE' ? '对公' as const : acc.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
-      accountCategory: acc.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
-      accountPurpose: acc.accountPurpose,
-      currency: (acc.currency === 'RMB' ? 'CNY' : acc.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
-      country: acc.country,
-      originalBalance: Number(acc.originalBalance),
-      initialCapital: acc.initialCapital ? Number(acc.initialCapital) : undefined,
-      exchangeRate: Number(acc.exchangeRate),
-      rmbBalance: Number(acc.rmbBalance),
-      parentId: acc.parentId || undefined,
-      storeId: acc.storeId || undefined,
-      companyEntity: acc.companyEntity || undefined,
-      owner: acc.owner || undefined,
-      notes: acc.notes,
-      platformAccount: acc.platformAccount || undefined,
-      platformPassword: acc.platformPassword || undefined,
-      platformUrl: acc.platformUrl || undefined,
-      createdAt: acc.createdAt.toISOString()
-    }))
-    
-    return NextResponse.json(transformed)
+    const response = {
+      data: accounts.map(acc => ({
+        id: acc.id,
+        name: acc.name,
+        accountNumber: acc.accountNumber,
+        accountType: acc.accountType === 'CORPORATE' ? '对公' as const : acc.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
+        accountCategory: acc.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
+        accountPurpose: acc.accountPurpose,
+        currency: (acc.currency === 'RMB' ? 'CNY' : acc.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
+        country: acc.country,
+        originalBalance: Number(acc.originalBalance),
+        initialCapital: acc.initialCapital ? Number(acc.initialCapital) : undefined,
+        exchangeRate: Number(acc.exchangeRate),
+        rmbBalance: Number(acc.rmbBalance),
+        parentId: acc.parentId || undefined,
+        storeId: acc.storeId || undefined,
+        companyEntity: acc.companyEntity || undefined,
+        owner: acc.owner || undefined,
+        notes: acc.notes,
+        platformAccount: acc.platformAccount || undefined,
+        platformPassword: acc.platformPassword || undefined,
+        platformUrl: acc.platformUrl || undefined,
+        createdAt: acc.createdAt.toISOString(),
+        updatedAt: acc.updatedAt.toISOString(),
+        childCount: acc._count.children,
+        cashFlowCount: acc._count.cashFlows,
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    }
+
+    // 设置缓存（仅第一页）
+    if (!noCache && page === 1) {
+      await setCache(cacheKey, response, CACHE_TTL)
+    }
+
+    return NextResponse.json(response)
   } catch (error: any) {
     console.error('Error fetching accounts:', error)
     
@@ -57,104 +107,62 @@ export async function GET() {
         !process.env.DATABASE_URL) {
       return NextResponse.json(
         { 
-          error: '数据库连接失败',
-          details: process.env.NODE_ENV === 'production' 
-            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置'
-            : '请检查 .env.local 中的 DATABASE_URL 配置'
+          error: '数据库连接失败，请检查网络或数据库状态',
+          code: 'DATABASE_CONNECTION_ERROR'
         },
         { status: 503 }
       )
     }
     
     return NextResponse.json(
-      { error: 'Failed to fetch accounts', details: error.message },
+      { error: error.message || '获取账户列表失败' },
       { status: 500 }
     )
   }
 }
 
-// POST - 创建新账户
+// POST - 创建账户（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    // 构建创建数据对象
-    const createData: any = {
-      name: body.name,
-      accountNumber: body.accountNumber,
-      accountType: body.accountType === '对公' ? AccountType.CORPORATE : body.accountType === '对私' ? AccountType.PERSONAL : AccountType.PLATFORM,
-      accountCategory: body.accountCategory === 'PRIMARY' ? AccountCategory.PRIMARY : AccountCategory.VIRTUAL,
-      accountPurpose: body.accountPurpose,
-      currency: (body.currency === 'RMB' ? 'CNY' : body.currency) || 'CNY',
-      country: body.country || 'CN',
-      originalBalance: Number(body.originalBalance) || 0,
-      initialCapital: body.initialCapital !== undefined ? Number(body.initialCapital) : (Number(body.originalBalance) || 0),
-      exchangeRate: Number(body.exchangeRate) || 1,
-      rmbBalance: Number(body.rmbBalance) || 0,
-      companyEntity: body.companyEntity || null,
-      owner: body.owner || null,
-      notes: body.notes || '',
-      platformAccount: body.platformAccount || null,
-      platformPassword: body.platformPassword || null,
-      platformUrl: body.platformUrl || null,
-    }
-
-    // 处理 parentId 关系
-    if (body.parentId) {
-      createData.parent = {
-        connect: { id: body.parentId }
-      }
-    }
-
-    // 处理 storeId 关系
-    if (body.storeId) {
-      createData.store = {
-        connect: { id: body.storeId }
-      }
-    }
-
     const account = await prisma.bankAccount.create({
-      data: createData
+      data: {
+        name: body.name,
+        accountNumber: body.accountNumber,
+        accountType: body.accountType as AccountType,
+        accountCategory: body.accountCategory || 'PRIMARY',
+        accountPurpose: body.accountPurpose || null,
+        currency: body.currency || 'CNY',
+        country: body.country,
+        originalBalance: body.originalBalance ?? 0,
+        initialCapital: body.initialCapital ?? null,
+        exchangeRate: body.exchangeRate ?? 1,
+        rmbBalance: body.rmbBalance ?? 0,
+        parentId: body.parentId ?? null,
+        storeId: body.storeId ?? null,
+        companyEntity: body.companyEntity ?? null,
+        owner: body.owner ?? null,
+        notes: body.notes ?? null,
+        platformAccount: body.platformAccount ?? null,
+        platformPassword: body.platformPassword ?? null,
+        platformUrl: body.platformUrl ?? null,
+      }
     })
-    
-    // 转换返回格式
-    const transformed = {
+
+    // 清除账户相关缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
+
+    return NextResponse.json({
       id: account.id,
       name: account.name,
-      accountNumber: account.accountNumber,
-      accountType: account.accountType === 'CORPORATE' ? '对公' as const : account.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
-      accountCategory: account.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
-      accountPurpose: account.accountPurpose,
-      currency: (account.currency === 'RMB' ? 'CNY' : account.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
-      country: account.country,
-      originalBalance: Number(account.originalBalance),
-      initialCapital: account.initialCapital ? Number(account.initialCapital) : undefined,
-      exchangeRate: Number(account.exchangeRate),
-      rmbBalance: Number(account.rmbBalance),
-      parentId: account.parentId || undefined,
-      storeId: account.storeId || undefined,
-      companyEntity: account.companyEntity || undefined,
-      owner: account.owner || undefined,
-      notes: account.notes,
-      platformAccount: account.platformAccount || undefined,
-      platformPassword: account.platformPassword || undefined,
-      platformUrl: account.platformUrl || undefined,
+      accountType: account.accountType,
       createdAt: account.createdAt.toISOString()
-    }
-    
-    return NextResponse.json(transformed, { status: 201 })
+    })
   } catch (error: any) {
     console.error('Error creating account:', error)
-    // 返回更详细的错误信息
-    const errorMessage = error?.message || 'Failed to create account'
-    const errorCode = error?.code || 'UNKNOWN_ERROR'
-    
     return NextResponse.json(
-      { 
-        error: errorMessage,
-        code: errorCode,
-        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
-      },
+      { error: error.message || '创建账户失败' },
       { status: 500 }
     )
   }

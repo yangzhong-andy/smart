@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
+
+// 缓存配置
+const CACHE_TTL = 600; // 10分钟
+const CACHE_KEY_PREFIX = 'product-suppliers';
 
 // GET - 获取供应商关联的产品
 export async function GET(request: NextRequest) {
@@ -9,256 +14,121 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const supplierId = searchParams.get('supplierId');
     const productId = searchParams.get('productId');
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
 
-    if (supplierId) {
-      // 查询供应商的所有关联产品
-      const productSuppliers = await prisma.productSupplier.findMany({
-        where: { supplierId },
-        include: {
-          product: true,
-          supplier: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      supplierId || 'all',
+      productId || 'all',
+      String(page),
+      String(pageSize)
+    );
 
-      return NextResponse.json(productSuppliers);
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !supplierId && !productId) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Product suppliers cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
     }
 
-    if (productId) {
-      // 查询产品的所有关联供应商
-      const productSuppliers = await prisma.productSupplier.findMany({
-        where: { productId },
-        include: {
-          product: true,
-          supplier: true,
+    const where: any = {};
+    if (supplierId) where.supplierId = supplierId;
+    if (productId) where.productId = productId;
+
+    const [productSuppliers, total] = await prisma.$transaction([
+      prisma.productSupplier.findMany({
+        where,
+        select: {
+          id: true, supplierId: true, productId: true,
+          isPrimary: true, moq: true, leadTime: true,
+          unitPrice: true, currency: true, notes: true,
+          createdAt: true, updatedAt: true,
+          supplier: { select: { id: true, name: true } },
+          product: { select: { id: true, name: true, sku: true } },
         },
         orderBy: { createdAt: 'desc' },
-      });
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.productSupplier.count({ where }),
+    ]);
 
-      return NextResponse.json(productSuppliers);
+    const response = {
+      data: productSuppliers.map(ps => ({
+        id: ps.id,
+        supplierId: ps.supplierId,
+        supplierName: ps.supplier?.name,
+        productId: ps.productId,
+        productName: ps.product?.name,
+        productSku: ps.product?.sku,
+        isPrimary: ps.isPrimary || false,
+        moq: ps.moq || undefined,
+        leadTime: ps.leadTime || undefined,
+        unitPrice: ps.unitPrice ? Number(ps.unitPrice) : undefined,
+        currency: ps.currency || undefined,
+        notes: ps.notes || undefined,
+        createdAt: ps.createdAt.toISOString(),
+        updatedAt: ps.updatedAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !supplierId && !productId) {
+      await setCache(cacheKey, response, CACHE_TTL);
     }
 
-    // 如果没有参数，返回所有关联
-    const all = await prisma.productSupplier.findMany({
-      include: {
-        product: true,
-        supplier: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return NextResponse.json(all);
+    return NextResponse.json(response);
   } catch (error) {
-    console.error('Error fetching product-suppliers:', error);
+    console.error('Error fetching product suppliers:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch product-suppliers' },
+      { error: 'Failed to fetch product suppliers' },
       { status: 500 }
     );
   }
 }
 
-// POST - 创建供应商-产品关联
+// POST - 创建关联（清除缓存）
 export async function POST(request: NextRequest) {
   try {
-    // 尝试连接数据库，如果失败则重试
-    let retries = 3;
-    let lastError: any;
-    
-    while (retries > 0) {
-      try {
-        await prisma.$connect();
-        break; // 连接成功，退出重试循环
-      } catch (error: any) {
-        lastError = error;
-        retries--;
-        
-        // 如果是连接错误，等待后重试（给数据库唤醒时间）
-        if (error.message?.includes('TLS connection') || error.message?.includes('connection')) {
-          if (retries > 0) {
-            console.log(`数据库连接失败，${2 - retries + 1}/3 次重试...`);
-            await new Promise(resolve => setTimeout(resolve, 2000)); // 等待 2 秒
-            continue;
-          }
-        } else {
-          // 其他错误直接抛出
-          throw error;
-        }
-      }
-    }
-    
-    // 如果所有重试都失败
-    if (retries === 0 && lastError) {
-      throw lastError;
-    }
-
     const body = await request.json();
-    const { productId, supplierId, price, moq, leadTime, isPrimary } = body;
+    const { supplierId, productId, isPrimary, moq, leadTime, unitPrice, currency, notes } = body;
 
-    console.log('创建产品供应商关联 - 接收到的数据:', { productId, supplierId, isPrimary, price, moq, leadTime });
-
-    if (!productId || !supplierId) {
-      return NextResponse.json(
-        { error: 'productId and supplierId are required', details: `productId: ${productId}, supplierId: ${supplierId}` },
-        { status: 400 }
-      );
+    if (!supplierId || !productId) {
+      return NextResponse.json({ error: 'supplierId and productId are required' }, { status: 400 });
     }
 
-    // 验证产品是否存在
-    let actualProductId = productId;
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-    });
-
-    if (!product) {
-      console.log(`通过 id "${productId}" 未找到产品，尝试通过 skuId 查找...`);
-      // 如果通过 id 找不到，尝试通过 skuId 查找 ProductVariant，然后获取关联的 Product
-      const variant = await prisma.productVariant.findUnique({
-        where: { skuId: productId },
-        include: { product: true }
-      });
-      
-      if (!variant || !variant.product) {
-        console.error(`产品不存在: id/skuId "${productId}"`);
-        return NextResponse.json(
-          { error: 'Product not found', details: `Product with id/skuId "${productId}" does not exist` },
-          { status: 404 }
-        );
-      }
-      
-      // 使用找到的产品的 id
-      actualProductId = variant.product.id;
-      console.log(`通过 skuId 找到产品，实际 productId: ${actualProductId}`);
-    } else {
-      console.log(`找到产品: ${product.id}`);
-    }
-
-    // 验证供应商是否存在
-    const supplier = await prisma.supplier.findUnique({
-      where: { id: supplierId },
-    });
-
-    if (!supplier) {
-      console.error(`供应商不存在: id "${supplierId}"`);
-      return NextResponse.json(
-        { error: 'Supplier not found', details: `Supplier with id "${supplierId}" does not exist` },
-        { status: 404 }
-      );
-    }
-    
-    console.log(`找到供应商: ${supplier.id} (${supplier.name})`);
-
-    // 检查是否已存在关联
-    console.log(`检查是否已存在关联: productId=${actualProductId}, supplierId=${supplierId}`);
-    const existing = await prisma.productSupplier.findUnique({
-      where: {
-        productId_supplierId: {
-          productId: actualProductId,
-          supplierId,
-        },
-      },
-    });
-
-    if (existing) {
-      console.log('关联已存在');
-      return NextResponse.json(
-        { error: 'Product-supplier relationship already exists', details: '该产品已关联到此供应商' },
-        { status: 409 }
-      );
-    }
-
-    // 如果设置为主供应商，先取消该产品的其他主供应商
-    if (isPrimary) {
-      console.log('设置为主供应商，取消其他主供应商...');
-      await prisma.productSupplier.updateMany({
-        where: {
-          productId: actualProductId,
-          isPrimary: true,
-        },
-        data: {
-          isPrimary: false,
-        },
-      });
-    }
-
-    console.log('创建产品供应商关联...');
-    const productSupplier = await prisma.productSupplier.create({
+    const ps = await prisma.productSupplier.create({
       data: {
-        productId: actualProductId,
         supplierId,
-        price: price ? Number(price) : null,
-        moq: moq ? Number(moq) : null,
-        leadTime: leadTime ? Number(leadTime) : null,
-        isPrimary: isPrimary || false,
-      },
-      include: {
-        product: true,
-        supplier: true,
-      },
+        productId,
+        isPrimary: isPrimary ?? false,
+        moq: moq ?? null,
+        leadTime: leadTime ?? null,
+        unitPrice: unitPrice ?? null,
+        currency: currency || null,
+        notes: notes || null,
+      }
     });
 
-    console.log('产品供应商关联创建成功:', productSupplier.id);
-    return NextResponse.json(productSupplier, { status: 201 });
-  } catch (error: any) {
-    console.error('❌ Error creating product-supplier:', error);
-    console.error('错误详情:', {
-      code: error.code,
-      message: error.message,
-      meta: error.meta,
-      stack: error.stack?.substring(0, 500), // 只显示前500字符
+    // 清除产品供应商缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({
+      id: ps.id,
+      supplierId: ps.supplierId,
+      productId: ps.productId,
+      createdAt: ps.createdAt.toISOString()
     });
-    
-    // 检查是否是数据库连接错误
-    if (error.message?.includes('TLS connection') || error.message?.includes('connection')) {
-      return NextResponse.json(
-        { 
-          error: '数据库连接失败，请检查 Neon 数据库是否已唤醒',
-          details: 'Neon 数据库可能已暂停，请访问 https://console.neon.tech 唤醒数据库'
-        },
-        { status: 503 }
-      );
-    }
-    
-    // 检查是否是表不存在错误
-    if (error.message?.includes('does not exist') || error.message?.includes('relation') || error.code === 'P2021' || error.code === 'P2010') {
-      return NextResponse.json(
-        { 
-          error: '数据库表不存在',
-          details: 'ProductSupplier 表可能尚未创建，请运行 migration: npx prisma migrate dev'
-        },
-        { status: 500 }
-      );
-    }
-    
-    // 检查是否是外键约束错误
-    if (error.code === 'P2003') {
-      const fieldName = error.meta?.field_name || '未知字段';
-      return NextResponse.json(
-        { 
-          error: '关联失败，产品或供应商不存在',
-          details: `外键约束失败: ${fieldName}。请检查产品 ID 和供应商 ID 是否正确`
-        },
-        { status: 400 }
-      );
-    }
-    
-    // 检查是否是唯一约束错误
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { 
-          error: '该产品已关联到此供应商',
-          details: '请勿重复关联'
-        },
-        { status: 409 }
-      );
-    }
-    
+  } catch (error: any) {
+    console.error('Error creating product supplier:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to create product-supplier',
-        details: error.message || '未知错误',
-        code: error.code,
-        meta: error.meta
-      },
+      { error: 'Failed to create product supplier', details: error.message },
       { status: 500 }
     );
   }

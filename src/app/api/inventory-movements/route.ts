@@ -1,130 +1,102 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { InventoryLocation, InventoryMovementType } from '@prisma/client'
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
+
+// 缓存配置
+const CACHE_TTL = 120; // 2分钟（库存变动频繁）
+const CACHE_KEY_PREFIX = 'inventory-movements';
 
 // GET - 获取所有库存变动
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const variantId = searchParams.get('variantId') || searchParams.get('productId') // 向后兼容
+    const variantId = searchParams.get('variantId') || searchParams.get('productId')
     const location = searchParams.get('location')
     const movementType = searchParams.get('movementType')
+    const page = parseInt(searchParams.get("page") || "1")
+    const pageSize = parseInt(searchParams.get("pageSize") || "20")
+    const noCache = searchParams.get("noCache") === "true"
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      variantId || 'all',
+      location || 'all',
+      movementType || 'all',
+      String(page),
+      String(pageSize)
+    )
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !variantId) {
+      const cached = await getCache<any>(cacheKey)
+      if (cached) {
+        console.log(`✅ Inventory movements cache HIT: ${cacheKey}`)
+        return NextResponse.json(cached)
+      }
+    }
 
     const where: any = {}
     if (variantId) where.variantId = variantId
     if (location) where.location = location as InventoryLocation
     if (movementType) where.movementType = movementType as InventoryMovementType
 
-    const movements = await prisma.inventoryMovement.findMany({
-      where,
-      include: {
-        variant: {
-          include: {
-            product: true
-          }
-        }
-      },
-      orderBy: { operationDate: 'desc' }
-    })
+    const [movements, total] = await prisma.$transaction([
+      prisma.inventoryMovement.findMany({
+        where,
+        select: {
+          id: true, variantId: true, location: true, movementType: true,
+          qty: true, qtyBefore: true, qtyAfter: true,
+          unitCost: true, totalCost: true, currency: true,
+          relatedOrderId: true, relatedOrderType: true, relatedOrderNumber: true,
+          operator: true, operationDate: true, notes: true, createdAt: true,
+          variant: { select: { id: true, productId: true, skuId: true, product: { select: { id: true, name: true } } } },
+        },
+        orderBy: { operationDate: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.inventoryMovement.count({ where }),
+    ])
 
-    const transformed = movements.map(m => ({
-      id: m.id,
-      variantId: m.variantId,
-      productId: m.variant.productId, // 向后兼容
-      location: m.location,
-      movementType: m.movementType,
-      qty: m.qty,
-      qtyBefore: m.qtyBefore,
-      qtyAfter: m.qtyAfter,
-      unitCost: m.unitCost ? Number(m.unitCost) : undefined,
-      totalCost: m.totalCost ? Number(m.totalCost) : undefined,
-      currency: m.currency || undefined,
-      relatedOrderId: m.relatedOrderId || undefined,
-      relatedOrderType: m.relatedOrderType || undefined,
-      relatedOrderNumber: m.relatedOrderNumber || undefined,
-      operator: m.operator || undefined,
-      operationDate: m.operationDate.toISOString(),
-      notes: m.notes || undefined,
-      createdAt: m.createdAt.toISOString()
-    }))
+    const response = {
+      data: movements.map(m => ({
+        id: m.id,
+        variantId: m.variantId,
+        productId: m.variant?.productId,
+        skuId: m.variant?.skuId,
+        location: m.location,
+        movementType: m.movementType,
+        qty: m.qty,
+        qtyBefore: m.qtyBefore,
+        qtyAfter: m.qtyAfter,
+        unitCost: m.unitCost ? Number(m.unitCost) : undefined,
+        totalCost: m.totalCost ? Number(m.totalCost) : undefined,
+        currency: m.currency || undefined,
+        relatedOrderId: m.relatedOrderId || undefined,
+        relatedOrderType: m.relatedOrderType || undefined,
+        relatedOrderNumber: m.relatedOrderNumber || undefined,
+        operator: m.operator || undefined,
+        operationDate: m.operationDate.toISOString(),
+        notes: m.notes || undefined,
+        createdAt: m.createdAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    }
 
-    return NextResponse.json(transformed)
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !variantId) {
+      await setCache(cacheKey, response, CACHE_TTL)
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Error fetching inventory movements:', error)
     return NextResponse.json(
       { error: 'Failed to fetch inventory movements' },
-      { status: 500 }
-    )
-  }
-}
-
-// POST - 创建新库存变动
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-
-    // 使用 variantId（向后兼容 productId）
-    const variantId = body.variantId || body.productId
-    if (!variantId) {
-      return NextResponse.json(
-        { error: 'variantId is required' },
-        { status: 400 }
-      )
-    }
-
-    const movement = await prisma.inventoryMovement.create({
-      data: {
-        variantId: variantId,
-        location: body.location as InventoryLocation,
-        movementType: body.movementType as InventoryMovementType,
-        qty: Number(body.qty),
-        qtyBefore: Number(body.qtyBefore),
-        qtyAfter: Number(body.qtyAfter),
-        unitCost: body.unitCost ? Number(body.unitCost) : null,
-        totalCost: body.totalCost ? Number(body.totalCost) : null,
-        currency: body.currency || null,
-        relatedOrderId: body.relatedOrderId || null,
-        relatedOrderType: body.relatedOrderType || null,
-        relatedOrderNumber: body.relatedOrderNumber || null,
-        operator: body.operator || null,
-        operationDate: new Date(body.operationDate),
-        notes: body.notes || null
-      },
-      include: {
-        variant: {
-          include: {
-            product: true
-          }
-        }
-      }
-    })
-
-    return NextResponse.json({
-      id: movement.id,
-      variantId: movement.variantId,
-      productId: movement.variant.productId, // 向后兼容
-      location: movement.location,
-      movementType: movement.movementType,
-      qty: movement.qty,
-      qtyBefore: movement.qtyBefore,
-      qtyAfter: movement.qtyAfter,
-      unitCost: movement.unitCost ? Number(movement.unitCost) : undefined,
-      totalCost: movement.totalCost ? Number(movement.totalCost) : undefined,
-      currency: movement.currency || undefined,
-      relatedOrderId: movement.relatedOrderId || undefined,
-      relatedOrderType: movement.relatedOrderType || undefined,
-      relatedOrderNumber: movement.relatedOrderNumber || undefined,
-      operator: movement.operator || undefined,
-      operationDate: movement.operationDate.toISOString(),
-      notes: movement.notes || undefined,
-      createdAt: movement.createdAt.toISOString()
-    }, { status: 201 })
-  } catch (error) {
-    console.error('Error creating inventory movement:', error)
-    return NextResponse.json(
-      { error: 'Failed to create inventory movement' },
       { status: 500 }
     )
   }

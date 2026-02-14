@@ -1,81 +1,118 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
+
+// 缓存配置
+const CACHE_TTL = 300; // 5分钟
+const CACHE_KEY_PREFIX = 'rebate-receivables';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const agencyId = searchParams.get("agencyId");
-    const adAccountId = searchParams.get("adAccountId");
     const status = searchParams.get("status");
-    const rechargeId = searchParams.get("rechargeId");
-    const where: Record<string, string> = {};
-    if (agencyId) where.agencyId = agencyId;
-    if (adAccountId) where.adAccountId = adAccountId;
-    if (status) where.status = status;
-    if (rechargeId) where.rechargeId = rechargeId;
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
 
-    const list = await prisma.rebateReceivable.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-    });
-    const serialized = list.map((r) => ({
-      ...r,
-      rebateAmount: Number(r.rebateAmount),
-      currentBalance: Number(r.currentBalance),
-      rechargeDate: r.rechargeDate.toISOString().slice(0, 10),
-      writeoffRecords: (r.writeoffRecords as object[]) || [],
-      adjustments: (r.adjustments as object[]) || [],
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-    }));
-    return NextResponse.json(serialized);
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      agencyId || 'all',
+      status || 'all',
+      String(page),
+      String(pageSize)
+    );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !agencyId && !status) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        console.log(`✅ Rebate receivables cache HIT: ${cacheKey}`);
+        return NextResponse.json(cached);
+      }
+    }
+
+    const where: any = {};
+    if (agencyId) where.agencyId = agencyId;
+    if (status) where.status = status;
+
+    const [receivables, total] = await prisma.$transaction([
+      prisma.rebateReceivable.findMany({
+        where,
+        select: {
+          id: true, agencyId: true, agencyName: true, accountId: true, accountName: true,
+          month: true, rebateAmount: true, currency: true, status: true,
+          notes: true, createdAt: true, updatedAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.rebateReceivable.count({ where }),
+    ]);
+
+    const response = {
+      data: receivables.map(r => ({
+        id: r.id,
+        agencyId: r.agencyId,
+        agencyName: r.agencyName,
+        accountId: r.accountId || undefined,
+        accountName: r.accountName || undefined,
+        month: r.month,
+        rebateAmount: Number(r.rebateAmount),
+        currency: r.currency,
+        status: r.status,
+        notes: r.notes || undefined,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !agencyId && !status) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error("GET rebate-receivables error:", error);
-    return NextResponse.json(
-      { error: error.message || "获取失败" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }
 
+// POST - 创建（清除缓存）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const receivable = await prisma.rebateReceivable.create({
       data: {
-        rechargeId: body.rechargeId,
-        rechargeDate: new Date(body.rechargeDate),
         agencyId: body.agencyId,
         agencyName: body.agencyName,
-        adAccountId: body.adAccountId,
-        accountName: body.accountName,
-        platform: body.platform ?? "OTHER",
+        accountId: body.accountId || null,
+        accountName: body.accountName || null,
+        month: body.month,
         rebateAmount: body.rebateAmount,
-        currency: body.currency ?? "USD",
-        currentBalance: body.currentBalance ?? body.rebateAmount,
-        status: body.status ?? "待核销",
-        writeoffRecords: body.writeoffRecords ?? [],
-        adjustments: body.adjustments ?? [],
-        notes: body.notes,
+        currency: body.currency || "USD",
+        status: body.status || "PENDING",
+        notes: body.notes || null,
       },
     });
+
+    // 清除返点应收缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
     return NextResponse.json({
-      ...receivable,
+      id: receivable.id,
+      agencyName: receivable.agencyName,
       rebateAmount: Number(receivable.rebateAmount),
-      currentBalance: Number(receivable.currentBalance),
-      rechargeDate: receivable.rechargeDate.toISOString().slice(0, 10),
-      writeoffRecords: (receivable.writeoffRecords as object[]) || [],
-      adjustments: (receivable.adjustments as object[]) || [],
       createdAt: receivable.createdAt.toISOString(),
-      updatedAt: receivable.updatedAt.toISOString(),
     });
   } catch (error: any) {
     console.error("POST rebate-receivables error:", error);
-    return NextResponse.json(
-      { error: error.message || "创建失败" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
   }
 }
