@@ -43,9 +43,9 @@ export async function GET(request: NextRequest) {
     if (agencyId) where.agencyId = agencyId;
     if (accountId) where.adAccountId = accountId;
     if (startDate || endDate) {
-      where.consumptionDate = {};
-      if (startDate) where.consumptionDate.gte = new Date(startDate);
-      if (endDate) where.consumptionDate.lte = new Date(endDate);
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate);
+      if (endDate) where.date.lte = new Date(endDate);
     }
 
     const [consumptions, total] = await prisma.$transaction([
@@ -53,10 +53,10 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
-          consumptionDate: true, amount: true, currency: true, status: true,
+          date: true, amount: true, currency: true, status: true,
           notes: true, createdAt: true, updatedAt: true,
         },
-        orderBy: { consumptionDate: 'desc' },
+        orderBy: { date: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
         agencyName: c.agencyName,
         accountId: c.adAccountId,
         accountName: c.accountName,
-        consumptionDate: c.consumptionDate.toISOString().split('T')[0],
+        consumptionDate: c.date.toISOString().split('T')[0],
         amount: Number(c.amount),
         currency: c.currency,
         status: c.status,
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         agencyName: body.agencyName,
         adAccountId: body.accountId,
         accountName: body.accountName,
-        consumptionDate: new Date(body.consumptionDate),
+        date: new Date(body.date),
         amount: body.amount,
         currency: body.currency || "USD",
         status: body.status || "PENDING",
