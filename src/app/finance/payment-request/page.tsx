@@ -43,20 +43,17 @@ export default function PaymentRequestPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 使用 SWR 加载数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
-  const { data: requestsData = [] } = useSWR<PaymentRequest[]>('/api/payment-requests', fetcher, {
+  const { data: requestsDataRaw } = useSWR<any>('/api/payment-requests?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
-    dedupingInterval: 60000 // 优化：增加到60秒内去重
+    revalidateOnReconnect: false,
+    dedupingInterval: 60000
   });
-  
-  const { data: storesData = [] } = useSWR<Store[]>('/api/stores', fetcher);
-  
-  const { data: accountsData = [] } = useSWR<BankAccount[]>('/api/accounts', fetcher);
+  const { data: storesDataRaw } = useSWR<any>('/api/stores?page=1&pageSize=500', fetcher);
+  const { data: accountsDataRaw } = useSWR<any>('/api/accounts?page=1&pageSize=500', fetcher);
 
-  // 确保数据是数组
-  const requests: PaymentRequest[] = Array.isArray(requestsData) ? requestsData : [];
-  const stores: Store[] = Array.isArray(storesData) ? storesData : [];
-  const accounts: BankAccount[] = Array.isArray(accountsData) ? accountsData : [];
+  const requests: PaymentRequest[] = Array.isArray(requestsDataRaw) ? requestsDataRaw : (requestsDataRaw?.data ?? []);
+  const stores: Store[] = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
+  const accounts: BankAccount[] = Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? []);
 
   const filteredRequests = useMemo(() => {
     if (filterStatus === "All") return requests;

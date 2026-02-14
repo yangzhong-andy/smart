@@ -9,16 +9,18 @@ import Link from "next/link";
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function SupplyChainDashboard() {
-  const { data: purchaseOrders = [], isLoading: ordersLoading, mutate: mutateOrders } = useSWR('/api/purchase-orders?status=PENDING_RISK', fetcher, {
+  const { data: purchaseOrdersRaw, isLoading: ordersLoading, mutate: mutateOrders } = useSWR('/api/purchase-orders?status=PENDING_RISK&page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: suppliers = [], isLoading: suppliersLoading } = useSWR('/api/suppliers', fetcher, {
+  const { data: suppliersRaw, isLoading: suppliersLoading } = useSWR('/api/suppliers?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
+  const purchaseOrders = Array.isArray(purchaseOrdersRaw) ? purchaseOrdersRaw : (purchaseOrdersRaw?.data ?? []);
+  const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? []);
 
   // 统计信息
   const stats = {

@@ -45,10 +45,12 @@ export async function getPendingInboundFromAPI(deliveryOrderId?: string, status?
     if (deliveryOrderId) params.set("deliveryOrderId", deliveryOrderId);
     if (status) params.set("status", status);
     const url = params.toString() ? `/api/pending-inbound?${params}` : "/api/pending-inbound";
-    const res = await fetch(url);
+    const fullUrl = url + (url.includes("?") ? "&" : "?") + "page=1&pageSize=500";
+    const res = await fetch(fullUrl);
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) ? data.map((i: any) => ({ ...i, batches: i.batches || [] })) : [];
+    const list = Array.isArray(data) ? data : (data?.data ?? []);
+    return list.map((i: any) => ({ ...i, batches: i.batches || [] }));
   } catch (e) {
     console.error("Failed to fetch pending inbound", e);
     return [];

@@ -31,11 +31,12 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
 export default function ProcurementOrdersPage() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const { data: contracts = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
-    "/api/purchase-contracts",
+  const { data: contractsRaw, mutate: mutateContracts } = useSWR<any>(
+    "/api/purchase-contracts?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
+  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
   const [products, setProducts] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -65,8 +66,11 @@ export default function ProcurementOrdersPage() {
     mutateContracts();
     getProductsFromAPI().then(setProducts);
     try {
-      const res = await fetch("/api/suppliers");
-      if (res.ok) setSuppliers(await res.json());
+      const res = await fetch("/api/suppliers?page=1&pageSize=500");
+      if (res.ok) {
+        const json = await res.json();
+        setSuppliers(Array.isArray(json) ? json : (json?.data ?? []));
+      }
     } catch (e) {
       console.error("Failed to load suppliers", e);
     }

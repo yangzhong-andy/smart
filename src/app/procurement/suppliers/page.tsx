@@ -44,26 +44,28 @@ export default function SuppliersPage() {
   const [mounted, setMounted] = useState(false);
   
   // 使用 SWR 加载供应商数据
-  const { data: suppliers = [], error: suppliersError, isLoading: suppliersLoading, mutate: mutateSuppliers } = useSWR<Supplier[]>('/api/suppliers', fetcher, {
+  const { data: suppliersRaw, error: suppliersError, isLoading: suppliersLoading, mutate: mutateSuppliers } = useSWR<any>('/api/suppliers?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
     onError: (error) => {
       console.error('Failed to load suppliers:', error);
       toast.error('加载供应商数据失败，请检查网络连接');
     }
   });
+  const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? []);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const { data: productsData = [] } = useSWR<Product[]>('/api/products', fetcher, {
+  const { data: productsDataRaw } = useSWR<any>('/api/products?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 600000
   });
-  const products = Array.isArray(productsData) ? productsData : [];
+  const productsData = Array.isArray(productsDataRaw) ? productsDataRaw : (productsDataRaw?.data ?? productsDataRaw?.list ?? []);
+  const products = productsData;
   const initialized = !suppliersLoading;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);

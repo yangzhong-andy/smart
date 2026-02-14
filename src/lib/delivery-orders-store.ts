@@ -41,10 +41,12 @@ export function getDeliveryOrders(): DeliveryOrder[] {
 export async function getDeliveryOrdersFromAPI(contractId?: string): Promise<DeliveryOrder[]> {
   if (typeof window === "undefined") return [];
   try {
-    const url = contractId ? `/api/delivery-orders?contractId=${encodeURIComponent(contractId)}` : "/api/delivery-orders";
+    const base = contractId ? `/api/delivery-orders?contractId=${encodeURIComponent(contractId)}` : "/api/delivery-orders";
+    const url = base + (base.includes("?") ? "&" : "?") + "page=1&pageSize=500";
     const res = await fetch(url);
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch delivery orders", e);
     return [];

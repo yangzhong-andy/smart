@@ -30,11 +30,13 @@ export default function ProfitPage() {
     if (typeof window === "undefined") return;
     (async () => {
     const [accRes, storesRes] = await Promise.all([
-      fetch("/api/accounts"),
-      fetch("/api/stores"),
+      fetch("/api/accounts?page=1&pageSize=500"),
+      fetch("/api/stores?page=1&pageSize=500"),
     ]);
-    setAccounts(accRes.ok ? await accRes.json() : []);
-    setStores(storesRes.ok ? await storesRes.json() : []);
+    const accJson = accRes.ok ? await accRes.json() : [];
+    const storesJson = storesRes.ok ? await storesRes.json() : [];
+    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
+    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
     const flowList = await getCashFlowFromAPI();
     setCashFlow(flowList as CashFlowWithDefaults[]);
     })();

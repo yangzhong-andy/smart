@@ -79,10 +79,12 @@ export async function getInventoryMovementsFromAPI(params?: {
     if (params?.variantId) query.set("variantId", params.variantId);
     if (params?.location) query.set("location", params.location);
     if (params?.movementType) query.set("movementType", params.movementType);
-    const url = query.toString() ? `/api/inventory-movements?${query}` : "/api/inventory-movements";
+    const base = query.toString() ? `/api/inventory-movements?${query}` : "/api/inventory-movements";
+    const url = base + (base.includes("?") ? "&" : "?") + "page=1&pageSize=5000";
     const res = await fetch(url);
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch inventory movements", e);
     return [];

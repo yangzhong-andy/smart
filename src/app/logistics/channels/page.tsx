@@ -41,13 +41,14 @@ const formatDate = (dateString: string): string => {
 };
 
 export default function LogisticsChannelsPage() {
-  // 使用 SWR 获取渠道数据
-  const { data: channels = [], mutate: mutateChannels } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher, {
+  // 使用 SWR 获取渠道数据（兼容分页结构 { data, pagination }）
+  const { data: channelsRaw, mutate: mutateChannels } = useSWR<any>('/api/logistics-channels?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
+  const channels = Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw?.data ?? []);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<LogisticsChannel | null>(null);
   const [searchQuery, setSearchQuery] = useState("");

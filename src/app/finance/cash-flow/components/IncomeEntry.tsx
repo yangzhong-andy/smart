@@ -41,16 +41,14 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
     voucher: "" // 凭证
   });
 
-  // 使用 SWR 从 API 加载店铺数据
-  const { data: storesData } = useSWR<Store[]>('/api/stores', fetcher, {
+  // 使用 SWR 从 API 加载店铺数据（兼容分页结构 { data, pagination }）
+  const { data: storesDataRaw } = useSWR<any>('/api/stores?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 300000 // 5分钟内去重
+    dedupingInterval: 300000,
   });
-
-  // 确保 stores 始终是数组
-  const stores = Array.isArray(storesData) ? storesData : [];
+  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
   
   // 获取当前一级分类下的二级分类选项
   const availableSubCategories = useMemo(() => {

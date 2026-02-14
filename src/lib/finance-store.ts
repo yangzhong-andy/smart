@@ -60,9 +60,10 @@ export function getAccounts(): BankAccount[] {
 
 /** 从 API 获取账户 */
 export async function getAccountsFromAPI(): Promise<BankAccount[]> {
-  const res = await fetch("/api/accounts");
+  const res = await fetch("/api/accounts?page=1&pageSize=500");
   if (!res.ok) throw new Error("Failed to fetch accounts");
-  return res.json();
+  const json = await res.json();
+  return Array.isArray(json) ? json : (json?.data ?? []);
 }
 
 /**
@@ -71,7 +72,8 @@ export async function getAccountsFromAPI(): Promise<BankAccount[]> {
 export async function saveAccounts(accounts: BankAccount[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const existing: BankAccount[] = await fetch("/api/accounts").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/accounts?page=1&pageSize=500").then((r) => (r.ok ? r.json() : []));
+    const existing: BankAccount[] = Array.isArray(raw) ? raw : (raw?.data ?? []);
     const existingIds = new Set(existing.map((a) => a.id));
     const newIds = new Set(accounts.map((a) => a.id));
     for (const e of existing) {

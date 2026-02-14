@@ -111,9 +111,10 @@ export function getPurchaseOrders(): PurchaseOrder[] {
 export async function getPurchaseOrdersFromAPI(): Promise<PurchaseOrder[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/purchase-orders");
+    const res = await fetch("/api/purchase-orders?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch purchase orders", e);
     return [];

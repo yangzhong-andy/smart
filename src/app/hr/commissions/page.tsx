@@ -26,20 +26,22 @@ export default function CommissionsPage() {
   const [filterPeriod, setFilterPeriod] = useState<string>("");
   const [calculating, setCalculating] = useState(false);
 
-  const { data: recordsData = [], mutate: mutateRecords } = useSWR<CommissionRecord[]>(
-    "/api/commission-records",
+  const { data: recordsDataRaw, mutate: mutateRecords } = useSWR<any>(
+    "/api/commission-records?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const records = recordsData;
-  const { data: employees = [] } = useSWR<any[]>("/api/employees", fetcher, {
+  const records = Array.isArray(recordsDataRaw) ? recordsDataRaw : (recordsDataRaw?.data ?? []);
+  const { data: employeesRaw } = useSWR<any>("/api/employees?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const { data: rules = [] } = useSWR<any[]>("/api/commission-rules", fetcher, {
+  const { data: rulesRaw } = useSWR<any>("/api/commission-rules?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const employees = Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? []);
+  const rules = Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw?.data ?? []);
 
   // 统计摘要
   const stats = useMemo(() => {

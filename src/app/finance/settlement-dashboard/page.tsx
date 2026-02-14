@@ -90,8 +90,8 @@ export default function SettlementDashboardPage() {
     revalidateOnFocus: false,
   });
 
-  const { data: storesData } = useSWR<StoreItem[] | unknown>("/api/stores", fetcher);
-  const stores = Array.isArray(storesData) ? storesData : [];
+  const { data: storesDataRaw } = useSWR<any>("/api/stores?page=1&pageSize=500", fetcher);
+  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
 
   const storeNameMap = useMemo(() => {
     const m: Record<string, string> = { _unknown_: "未关联店铺" };

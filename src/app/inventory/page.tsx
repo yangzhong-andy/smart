@@ -122,10 +122,11 @@ export default function InventoryPage() {
   const [expandedSkuIds, setExpandedSkuIds] = useState<Set<string>>(new Set());
   const [movementsBySku, setMovementsBySku] = useState<Record<string, InventoryMovement[]>>({});
 
-  const { data: products = [] } = useSWR<any[]>("/api/products", fetcher, {
+  const { data: productsRaw } = useSWR<any>("/api/products?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
 
   // 加载变动历史
   const loadMovements = (skuId: string) => {

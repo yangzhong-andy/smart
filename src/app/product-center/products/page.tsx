@@ -49,12 +49,11 @@ const calculateChargeableWeight = (actualWeight: number, volumetricWeight: numbe
 async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/suppliers");
+    const res = await fetch("/api/suppliers?page=1&pageSize=500");
     if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data.map((s: any) => ({ id: s.id, name: s.name }));
-      }
+      const json = await res.json();
+      const data = Array.isArray(json) ? json : (json?.data ?? []);
+      if (data.length > 0) return data.map((s: any) => ({ id: s.id, name: s.name }));
     }
   } catch (e) {
     console.error("Failed to load suppliers", e);
@@ -128,7 +127,7 @@ export default function ProductsPage() {
     }>
   });
 
-  const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<{ list?: SpuListItem[]; summary?: { totalCount: number; onSaleCount: number; offSaleCount: number; avgCost: number } } | SpuListItem[]>('/api/products?list=spu');
+  const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<any>('/api/products?list=spu&page=1&pageSize=500');
 
   // 使用重量计算 Hook - 自动计算体积重和计费重量
   const weightCalculation = useWeightCalculation(
@@ -146,7 +145,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (swrProductsData) {
-      const list = Array.isArray(swrProductsData) ? swrProductsData : (swrProductsData.list ?? []);
+      const list = Array.isArray(swrProductsData) ? swrProductsData : (swrProductsData.list ?? swrProductsData.data ?? []);
       setSpuList(Array.isArray(list) ? list : []);
       setProductsReady(true);
     } else if (swrProductsData === undefined) {

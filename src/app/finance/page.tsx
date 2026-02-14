@@ -71,8 +71,10 @@ export default function FinanceDashboardPage() {
       getCashFlowFromAPI(),
       getLegacyPurchaseOrdersFromAPI()
     ]);
-    setAccounts(accRes.ok ? await accRes.json() : []);
-    setStores(storesRes.ok ? await storesRes.json() : []);
+    const accJson = accRes.ok ? await accRes.json() : [];
+    const storesJson = storesRes.ok ? await storesRes.json() : [];
+    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
+    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
     setProducts(productsRes.ok ? await productsRes.json() : []);
     setCashFlow(flowList);
     setPurchaseOrders(legacyPOs);

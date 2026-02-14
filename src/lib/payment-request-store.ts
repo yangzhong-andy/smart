@@ -55,12 +55,12 @@ export type PaymentRequest = {
  */
 export async function getPaymentRequests(): Promise<PaymentRequest[]> {
   try {
-    const response = await fetch("/api/payment-requests");
+    const response = await fetch("/api/payment-requests?page=1&pageSize=500");
     if (!response.ok) {
       throw new Error("Failed to fetch payment requests");
     }
-    const requests = await response.json();
-    // 转换日期字段为字符串
+    const json = await response.json();
+    const requests = Array.isArray(json) ? json : (json?.data ?? []);
     return requests.map((req: any) => ({
       ...req,
       createdAt: req.createdAt ? new Date(req.createdAt).toISOString() : req.createdAt,
@@ -104,12 +104,12 @@ export async function getPaymentRequestById(id: string): Promise<PaymentRequest 
  */
 export async function getPaymentRequestsByStatus(status: BillStatus): Promise<PaymentRequest[]> {
   try {
-    const response = await fetch(`/api/payment-requests?status=${status}`);
+    const response = await fetch(`/api/payment-requests?status=${status}&page=1&pageSize=500`);
     if (!response.ok) {
       throw new Error("Failed to fetch payment requests");
     }
-    const requests = await response.json();
-    // 转换日期字段为字符串
+    const json = await response.json();
+    const requests = Array.isArray(json) ? json : (json?.data ?? []);
     return requests.map((req: any) => ({
       ...req,
       createdAt: req.createdAt ? new Date(req.createdAt).toISOString() : req.createdAt,

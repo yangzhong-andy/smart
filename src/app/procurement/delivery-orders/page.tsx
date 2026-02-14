@@ -48,26 +48,24 @@ export default function DeliveryOrdersPage() {
   const [inboundSubmitting, setInboundSubmitting] = useState(false);
   const { mutate: globalMutate } = useSWRConfig();
 
-  const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[]>(
-    "/api/delivery-orders",
+  const { data: deliveryOrdersDataRaw, mutate: mutateDeliveryOrders } = useSWR<any>(
+    "/api/delivery-orders?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const deliveryOrders = deliveryOrdersData;
-
-  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
-    "/api/purchase-contracts",
+  const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
+    "/api/purchase-contracts?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const contracts = contractsData;
-
-  const { data: warehousesData = [] } = useSWR<Warehouse[]>(
-    "/api/warehouses",
+  const { data: warehousesDataRaw } = useSWR<any>(
+    "/api/warehouses?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const warehouses = Array.isArray(warehousesData) ? warehousesData : [];
+  const deliveryOrders = Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? []);
+  const contracts = Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? []);
+  const warehouses = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? []);
 
   // 筛选和排序拿货单
   const filteredOrders = useMemo(() => {

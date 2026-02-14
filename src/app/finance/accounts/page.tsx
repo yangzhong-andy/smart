@@ -59,29 +59,33 @@ const fetcher = (url: string) => fetch(url).then(res => res.json());
 export default function BankAccountsPage() {
   const router = useRouter();
   
-  // 使用 SWR 加载账户数据
-  const { data: accountsData = [], isLoading: accountsLoading, mutate: mutateAccounts } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
+  // 使用 SWR 加载账户数据（分页接口返回 { data, pagination }，需取 data；pageSize 拉取全部）
+  const { data: accountsData, isLoading: accountsLoading, mutate: mutateAccounts } = useSWR<BankAccount[] | { data: BankAccount[]; pagination: unknown }>('/api/accounts?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false, // 优化：关闭重连自动刷新
     keepPreviousData: true,
     dedupingInterval: 600000 // 10分钟内去重
   });
   
-  // 使用 SWR 加载流水数据（用于计算余额）
-  const { data: cashFlowData = [] } = useSWR<any[]>('/api/cash-flow', fetcher, {
+  // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }；pageSize 拉取全部用于算余额）
+  const { data: cashFlowData } = useSWR<any[] | { data: any[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false, // 优化：关闭重连自动刷新
     keepPreviousData: true,
     dedupingInterval: 600000 // 10分钟内去重
   });
   
+  // 兼容 API 返回 { data, pagination } 或直接数组
+  const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
+  const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+
   // 基于 API 数据和流水重新计算余额
   const accounts = useMemo(() => {
-    if (!accountsData.length) return [];
-    
+    if (!accountsListRaw.length) return [];
+
     // 重置所有账户的余额，从 initialCapital 开始重新计算（从流水记录重新计算）
-    let updatedAccounts = accountsData.map((acc) => {
-      const hasChildren = accountsData.some((a) => a.parentId === acc.id);
+    let updatedAccounts = accountsListRaw.map((acc) => {
+      const hasChildren = accountsListRaw.some((a) => a.parentId === acc.id);
       if (acc.accountCategory === "PRIMARY" && hasChildren) {
         // 主账户有子账户，余额应该从子账户汇总，先重置为0
         return {
@@ -106,9 +110,10 @@ export default function BankAccountsPage() {
     });
 
     // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
-    if (cashFlowData.length > 0) {
-      cashFlowData.forEach((flow) => {
-        if (flow.status === "confirmed" && flow.accountId) {
+    if (cashFlowListRaw.length > 0) {
+      cashFlowListRaw.forEach((flow) => {
+        const status = (flow as any).flowStatus ?? flow.status;
+        if (status === "confirmed" && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
           if (account) {
             const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
@@ -150,9 +155,10 @@ export default function BankAccountsPage() {
     });
     
     return updatedAccounts;
-  }, [accountsData, cashFlowData]);
+  }, [accountsListRaw, cashFlowListRaw]);
   
   const [stores, setStores] = useState<Store[]>([]);
+  const storesList = Array.isArray(stores) ? stores : [];
   const accountsReady = !accountsLoading;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
@@ -163,8 +169,8 @@ export default function BankAccountsPage() {
   
   // 从 SWR 数据中筛选出选中账户的流水，并分类
   const accountFlows = useMemo(() => {
-    if (!selectedAccountForFlow || !cashFlowData.length) return { normal: [], transfers: [] };
-    const allFlows = cashFlowData
+    if (!selectedAccountForFlow || !cashFlowListRaw.length) return { normal: [], transfers: [] };
+    const allFlows = cashFlowListRaw
       .filter((flow) => flow.accountId === selectedAccountForFlow.id)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
@@ -173,7 +179,7 @@ export default function BankAccountsPage() {
     const transfers = allFlows.filter((flow) => flow.category === "内部划拨");
     
     return { normal, transfers };
-  }, [selectedAccountForFlow, cashFlowData]);
+  }, [selectedAccountForFlow, cashFlowListRaw]);
   
   // 新增状态：搜索、排序、快速筛选
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -207,7 +213,7 @@ export default function BankAccountsPage() {
   // 当选择店铺时，自动同步国家
   useEffect(() => {
     if (form.storeId) {
-      const selectedStore = stores.find((s) => s.id === form.storeId);
+      const selectedStore = storesList.find((s) => s.id === form.storeId);
       if (selectedStore) {
         setForm((f) => ({
           ...f,
@@ -245,7 +251,9 @@ export default function BankAccountsPage() {
   // 加载店铺数据（API）
   useEffect(() => {
     if (typeof window === "undefined") return;
-    fetch("/api/stores").then((r) => (r.ok ? r.json() : [])).then(setStores);
+    fetch("/api/stores")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((json) => setStores(Array.isArray(json) ? json : (json?.data ?? [])));
   }, []);
 
   // 使用统一汇率接口 /api/exchange-rates（与顶栏等一致）
@@ -440,8 +448,7 @@ export default function BankAccountsPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 确保 cashFlowData 是数组
-    const flows = Array.isArray(cashFlowData) ? cashFlowData : [];
+    const flows = cashFlowListRaw;
 
     flattenedAccountsBase.forEach((acc) => {
       const trend: Array<{ date: string; balance: number }> = [];
@@ -479,7 +486,7 @@ export default function BankAccountsPage() {
     });
 
     return result;
-  }, [flattenedAccounts, cashFlowData]);
+  }, [flattenedAccounts, cashFlowListRaw]);
 
   // 获取账户图标
   const getAccountIcon = (account: BankAccount) => {
@@ -782,7 +789,7 @@ export default function BankAccountsPage() {
     ];
 
     const rows = flattenedAccounts.map((acc) => {
-      const associatedStore = acc.storeId ? stores.find((s) => s.id === acc.storeId) : null;
+      const associatedStore = acc.storeId ? storesList.find((s) => s.id === acc.storeId) : null;
       const parentAccount = acc.parentId ? accounts.find((a) => a.id === acc.parentId) : null;
       const accountCountry = COUNTRIES.find((c) => c.code === (acc.country || "CN"));
       
@@ -1261,7 +1268,7 @@ export default function BankAccountsPage() {
               // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
               const displayBalance = acc.originalBalance || 0;
               const purposeLabel = acc.accountPurpose;
-              const associatedStore = acc.storeId ? stores.find((s) => s.id === acc.storeId) : null;
+              const associatedStore = acc.storeId ? storesList.find((s) => s.id === acc.storeId) : null;
               const accountCountry = COUNTRIES.find((c) => c.code === (acc.country || "CN"));
               const isHovered = hoveredAccountId === acc.id;
               
@@ -1906,7 +1913,7 @@ export default function BankAccountsPage() {
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                     >
                       <option value="">不关联店铺（可选）</option>
-                      {stores.map((store) => {
+                      {storesList.map((store) => {
                         const country = getCountryByCode(store.country);
                         return (
                           <option key={store.id} value={store.id}>
@@ -1920,7 +1927,7 @@ export default function BankAccountsPage() {
                         已关联店铺，国家/币种已自动同步并锁定
                       </div>
                     )}
-                    {stores.length === 0 && (
+                    {storesList.length === 0 && (
                       <div className="text-xs text-amber-400 mt-1">
                         暂无店铺，请先前往"系统设置 - 店铺管理"创建店铺
                       </div>
@@ -1936,7 +1943,7 @@ export default function BankAccountsPage() {
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                     >
                       <option value="">不关联店铺</option>
-                      {stores.map((store) => {
+                      {storesList.map((store) => {
                         const country = getCountryByCode(store.country);
                         return (
                           <option key={store.id} value={store.id}>
@@ -1957,7 +1964,7 @@ export default function BankAccountsPage() {
                   <input
                     type="text"
                     value={form.storeId ? (() => {
-                      const selectedStore = stores.find((s) => s.id === form.storeId);
+                      const selectedStore = storesList.find((s) => s.id === form.storeId);
                       if (selectedStore) {
                         const country = getCountryByCode(selectedStore.country);
                         return country ? `${country.name} (${country.code})` : selectedStore.country;

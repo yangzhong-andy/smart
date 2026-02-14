@@ -78,23 +78,25 @@ const formatDate = (d: string) => {
 };
 
 export default function TransferPage() {
-  // 使用 SWR 加载流水数据
-  const { data: cashFlowData = [] } = useSWR<CashFlow[]>('/api/cash-flow', fetcher, {
+  // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }）
+  const { data: cashFlowData } = useSWR<CashFlow[] | { data: CashFlow[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000 // 10分钟内去重
+    dedupingInterval: 600000
   });
-  
-  // 使用 SWR 加载账户数据
-  const { data: accountsData = [] } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
+
+  const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+
+  // 使用 SWR 加载账户数据（分页接口返回 { data, pagination }）
+  const { data: accountsData } = useSWR<BankAccount[] | { data: BankAccount[]; pagination: unknown }>('/api/accounts?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000 // 10分钟内去重
+    dedupingInterval: 600000
   });
-  
-  const accounts = accountsData || [];
+
+  const accounts = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
   const [activeModal, setActiveModal] = useState<"transfer" | null>(null);
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
@@ -105,11 +107,11 @@ export default function TransferPage() {
 
   // 将两条流水记录合并为一条划拨记录
   const transfers = useMemo(() => {
-    if (!Array.isArray(cashFlowData)) return [];
-    
-    // 筛选出内部划拨的记录
-    const transferFlows = cashFlowData.filter(
-      (flow) => flow.category === "内部划拨" && flow.relatedId && flow.status === "confirmed" && !flow.isReversal
+    if (!cashFlowListRaw.length) return [];
+
+    const status = (f: any) => f.status ?? f.flowStatus;
+    const transferFlows = cashFlowListRaw.filter(
+      (flow) => flow.category === "内部划拨" && flow.relatedId && status(flow) === "confirmed" && !flow.isReversal
     );
     
     // 按 relatedId 分组
@@ -169,7 +171,7 @@ export default function TransferPage() {
       const dateB = new Date(b.date).getTime();
       return dateB - dateA;
     });
-  }, [cashFlowData]);
+  }, [cashFlowListRaw]);
 
   // 筛选后的划拨记录
   const filteredTransfers = useMemo(() => {
@@ -634,8 +636,8 @@ export default function TransferPage() {
               }
               
               // 使用 SWR 的 mutate 刷新数据
-              swrMutate('/api/cash-flow');
-              swrMutate('/api/accounts');
+              swrMutate('/api/cash-flow?page=1&pageSize=5000');
+              swrMutate('/api/accounts?page=1&pageSize=500');
               
               toast.success("划拨记录创建成功");
             } catch (error: any) {

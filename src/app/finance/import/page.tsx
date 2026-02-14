@@ -45,8 +45,8 @@ export default function FinanceImportPage() {
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: storesData } = useSWR<StoreItem[] | unknown>("/api/stores", fetcher);
-  const stores = Array.isArray(storesData) ? storesData : [];
+  const { data: storesDataRaw } = useSWR<any>("/api/stores?page=1&pageSize=500", fetcher);
+  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
 
   const orderDetailsSheet = useMemo(() => {
     if (!result?.sheets?.length) return null;

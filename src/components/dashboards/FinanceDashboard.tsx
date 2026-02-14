@@ -10,11 +10,12 @@ import { getExpenseRequestsByStatus, getIncomeRequestsByStatus } from "@/lib/exp
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function FinanceDashboard() {
-  const { data: accounts = [] } = useSWR('/api/accounts', fetcher, {
+  const { data: accountsRaw } = useSWR('/api/accounts?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
+  const accounts = Array.isArray(accountsRaw) ? accountsRaw : (accountsRaw?.data ?? []);
   
   // 从 localStorage 获取审批请求
   const [expenseRequests, setExpenseRequests] = useState<any[]>([]);

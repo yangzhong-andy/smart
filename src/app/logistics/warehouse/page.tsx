@@ -74,12 +74,13 @@ const locationReverseMap: Record<"国内仓" | "海外仓" | "工厂仓" | "其�
 
 export default function WarehousePage() {
   // 使用 SWR 获取仓库数据
-  const { data: warehousesData = [], mutate: mutateWarehouses } = useSWR<WarehouseInfo[]>('/api/warehouses?all=1', fetcher, {
+  const { data: warehousesDataRaw, mutate: mutateWarehouses } = useSWR<any>('/api/warehouses?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
+  const warehousesData = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? []);
+
   // 转换数据格式（type 优先用 DB 的 type 字段：国内仓/海外仓）
   const warehouses = useMemo(() => {
     return warehousesData.map((w: any) => ({

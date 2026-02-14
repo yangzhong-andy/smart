@@ -77,13 +77,14 @@ export default function AdBillsPage() {
     onConfirm: () => void;
   } | null>(null);
 
+  const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     (async () => {
       const [a, c, r] = await Promise.all([
-        fetch("/api/ad-agencies").then((res) => (res.ok ? res.json() : [])),
-        fetch("/api/ad-consumptions").then((res) => (res.ok ? res.json() : [])),
-        fetch("/api/ad-recharges").then((res) => (res.ok ? res.json() : [])),
+        fetch("/api/ad-agencies?page=1&pageSize=500").then((res) => (res.ok ? res.json() : {})).then(toList),
+        fetch("/api/ad-consumptions?page=1&pageSize=5000").then((res) => (res.ok ? res.json() : {})).then(toList),
+        fetch("/api/ad-recharges?page=1&pageSize=5000").then((res) => (res.ok ? res.json() : {})).then(toList),
       ]);
       setAgencies(a);
       setConsumptions(c);

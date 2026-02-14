@@ -31,19 +31,21 @@ export default function RiskControlPage() {
     riskControlBy: ""
   });
 
-  const { data: ordersData = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>(
-    "/api/purchase-orders",
+  const { data: ordersDataRaw, mutate: mutateOrders } = useSWR<any>(
+    "/api/purchase-orders?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
+  const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
   const orders = useMemo(
-    () => ordersData.filter((o) => o.status === "待风控"),
+    () => ordersData.filter((o: PurchaseOrder) => o.status === "待风控"),
     [ordersData]
   );
-  const { data: products = [] } = useSWR<any[]>("/api/products", fetcher, {
+  const { data: productsRaw } = useSWR<any>("/api/products?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
 
   // 筛选订单
   const filteredOrders = useMemo(() => {

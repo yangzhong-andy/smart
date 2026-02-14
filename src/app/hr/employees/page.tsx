@@ -52,22 +52,24 @@ export default function EmployeesPage() {
     notes: ""
   });
 
-  const { data: employeesData = [], mutate: mutateEmployees } = useSWR<Employee[]>("/api/employees", fetcher, {
+  const { data: employeesDataRaw, mutate: mutateEmployees } = useSWR<any>("/api/employees?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const employeesData = Array.isArray(employeesDataRaw) ? employeesDataRaw : (employeesDataRaw?.data ?? []);
   const employees = employeesData;
 
   // 从 API 获取部门列表
-  const { data: departmentsData = [] } = useSWR<DepartmentFromAPI[]>('/api/departments', fetcher, {
+  const { data: departmentsDataRaw } = useSWR<any>('/api/departments?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
+  const departmentsData = Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? []);
+
   // 将 API 返回的部门数据转换为页面需要的格式
   const departments = useMemo(() => {
-    return departmentsData.map(dept => dept.name);
+    return departmentsData.map((dept: DepartmentFromAPI) => dept.name);
   }, [departmentsData]);
 
   // 统计摘要

@@ -33,18 +33,18 @@ const formatCurrency = (amount: number, currency: string = "CNY") => {
 type ProductionStatus = "未开始" | "生产中" | "部分完成" | "已完成" | "已取消";
 
 export default function ProductionProgressPage() {
-  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
-    "/api/purchase-contracts",
+  const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
+    "/api/purchase-contracts?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
-  const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<any[]>(
-    "/api/delivery-orders",
+  const { data: deliveryOrdersDataRaw, mutate: mutateDeliveryOrders } = useSWR<any>(
+    "/api/delivery-orders?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
-  const contracts = contractsData;
-  const deliveryOrders = deliveryOrdersData;
+  const contracts = Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? []);
+  const deliveryOrders = Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? []);
 
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");

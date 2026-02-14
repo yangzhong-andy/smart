@@ -112,11 +112,12 @@ export type SpuListItem = {
 export async function getSpuListFromAPI(): Promise<SpuListItem[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/products?list=spu");
+    const res = await fetch("/api/products?list=spu&page=1&pageSize=500");
     if (!res.ok) return [];
     const data = await res.json();
     if (Array.isArray(data)) return data;
     if (data?.list && Array.isArray(data.list)) return data.list;
+    if (data?.data && Array.isArray(data.data)) return data.data;
     return [];
   } catch (e) {
     console.error("Failed to fetch SPU list", e);
@@ -145,9 +146,10 @@ export async function getVariantsBySpuIdFromAPI(spuId: string): Promise<Product[
 export async function getProductsFromAPI(): Promise<Product[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/products");
+    const res = await fetch("/api/products?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? json?.list ?? []);
   } catch (e) {
     console.error("Failed to fetch products from API", e);
     return [];

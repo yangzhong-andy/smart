@@ -50,18 +50,22 @@ const formatDate = (dateString?: string) => {
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
 export default function LogisticsWorkbenchPage() {
-  const { data: tracking = [] } = useSWR<LogisticsTracking[]>("/api/logistics-tracking", fetcher, {
+  const { data: trackingRaw } = useSWR<any>("/api/logistics-tracking?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const { data: pendingInbound = [] } = useSWR<PendingInbound[]>("/api/pending-inbound", fetcher, {
+  const { data: pendingInboundRaw } = useSWR<any>("/api/pending-inbound?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>("/api/delivery-orders", fetcher, {
+  const { data: deliveryOrdersRaw } = useSWR<any>("/api/delivery-orders?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+
+  const tracking = Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? []);
+  const pendingInbound = Array.isArray(pendingInboundRaw) ? pendingInboundRaw : (pendingInboundRaw?.data ?? []);
+  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
 
   // 统计信息
   const stats = useMemo(() => {

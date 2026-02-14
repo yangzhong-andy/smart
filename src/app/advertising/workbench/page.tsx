@@ -76,12 +76,12 @@ export default function AdAgencyWorkbenchPage() {
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
 
-  // 确保数据是数组并指定类型
-  const agencies: Agency[] = Array.isArray(agenciesData) ? (agenciesData as Agency[]) : [];
-  const adAccounts: AdAccount[] = Array.isArray(adAccountsData) ? (adAccountsData as AdAccount[]) : [];
-  const consumptions: AdConsumption[] = Array.isArray(consumptionsData) ? (consumptionsData as AdConsumption[]) : [];
-  const recharges: AdRecharge[] = Array.isArray(rechargesData) ? (rechargesData as AdRecharge[]) : [];
-  const monthlyBills: MonthlyBill[] = Array.isArray(monthlyBillsData) ? (monthlyBillsData as MonthlyBill[]) : [];
+  const toList = (raw: any, def: any[] = []) => Array.isArray(raw) ? raw : (raw?.data ?? def);
+  const agencies: Agency[] = toList(agenciesData, []) as Agency[];
+  const adAccounts: AdAccount[] = toList(adAccountsData, []) as AdAccount[];
+  const consumptions: AdConsumption[] = toList(consumptionsData, []) as AdConsumption[];
+  const recharges: AdRecharge[] = toList(rechargesData, []) as AdRecharge[];
+  const monthlyBills: MonthlyBill[] = toList(monthlyBillsData, []) as MonthlyBill[];
 
   useEffect(() => {
     if (typeof window === "undefined") return;

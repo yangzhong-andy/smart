@@ -68,16 +68,17 @@ export default function InfluencersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const { data: influencersData = [], mutate: mutateInfluencers } = useSWR<InfluencerBD[]>(
-    "/api/influencers",
+  const { data: influencersDataRaw, mutate: mutateInfluencers } = useSWR<any>(
+    "/api/influencers?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const influencers = influencersData;
-  const { data: products = [] } = useSWR<any[]>("/api/products", fetcher, {
+  const influencers = Array.isArray(influencersDataRaw) ? influencersDataRaw : (influencersDataRaw?.data ?? []);
+  const { data: productsRaw } = useSWR<any>("/api/products?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
 
   const [form, setForm] = useState({
     accountName: "",

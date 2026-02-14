@@ -98,18 +98,21 @@ export default function SupplierBillsPage() {
     onConfirm: () => void;
   } | null>(null);
 
-  const { data: suppliers = [] } = useSWR<Supplier[]>("/api/suppliers", fetcher, {
+  const { data: suppliersRaw } = useSWR<any>("/api/suppliers?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const { data: contracts = [] } = useSWR<PurchaseContract[]>("/api/purchase-contracts", fetcher, {
+  const { data: contractsRaw } = useSWR<any>("/api/purchase-contracts?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>("/api/delivery-orders", fetcher, {
+  const { data: deliveryOrdersRaw } = useSWR<any>("/api/delivery-orders?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? []);
+  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
+  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
 
   // 自动汇总账单明细
   const handleAutoCalculate = () => {

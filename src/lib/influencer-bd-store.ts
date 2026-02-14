@@ -67,9 +67,10 @@ export function getInfluencers(): InfluencerBD[] {
 export async function getInfluencersFromAPI(): Promise<InfluencerBD[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/influencers");
+    const res = await fetch("/api/influencers?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch influencers", e);
     return [];

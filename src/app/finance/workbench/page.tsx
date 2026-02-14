@@ -162,18 +162,20 @@ export default function FinanceWorkbenchPage() {
       case "monthly-bills":
         return await getMonthlyBills();
       case "bank-accounts": {
-        const response = await fetch("/api/accounts");
+        const response = await fetch("/api/accounts?page=1&pageSize=500");
         if (!response.ok) {
           throw new Error(`API 错误: ${response.status}`);
         }
-        return await response.json();
+        const json = await response.json();
+        return Array.isArray(json) ? json : (json?.data ?? []);
       }
       case "cash-flow": {
-        const cashFlowResponse = await fetch("/api/cash-flow");
+        const cashFlowResponse = await fetch("/api/cash-flow?page=1&pageSize=5000");
         if (!cashFlowResponse.ok) {
           throw new Error(`API 错误: ${cashFlowResponse.status}`);
         }
-        return await cashFlowResponse.json();
+        const json = await cashFlowResponse.json();
+        return Array.isArray(json) ? json : (json?.data ?? []);
       }
       case "pending-bills":
         return await getBillsByStatus("Pending_Approval");
@@ -230,7 +232,7 @@ export default function FinanceWorkbenchPage() {
     fetcher,
     { ...swrOptions, dedupingInterval: 300000 }
   );
-  const { data: storesData } = useSWR<Store[]>("/api/stores", fetcher, {
+  const { data: storesDataRaw } = useSWR<any>("/api/stores?page=1&pageSize=500", fetcher, {
     ...swrOptions,
     dedupingInterval: 300000,
   });
@@ -289,14 +291,16 @@ export default function FinanceWorkbenchPage() {
   const approvedExpenseRequests: ExpenseRequest[] = Array.isArray(approvedExpenseRequestsData) ? (approvedExpenseRequestsData as ExpenseRequest[]) : [];
   const approvedIncomeRequests: IncomeRequest[] = Array.isArray(approvedIncomeRequestsData) ? (approvedIncomeRequestsData as IncomeRequest[]) : [];
 
+  const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data ?? [];
+  const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
+
   // 重新计算账户余额（包含 initialCapital 和流水记录）
   const accounts: BankAccount[] = useMemo(() => {
-    if (!Array.isArray(accountsData) || !accountsData.length) return [];
-    if (!Array.isArray(cashFlowData)) return accountsData as BankAccount[];
+    if (!accountsListRaw.length) return [];
 
     // 从 initialCapital 开始重新计算余额
-    let updatedAccounts = (accountsData as BankAccount[]).map((acc) => {
-      const hasChildren = accountsData.some((a: any) => a.parentId === acc.id);
+    let updatedAccounts = accountsListRaw.map((acc: BankAccount) => {
+      const hasChildren = accountsListRaw.some((a: any) => a.parentId === acc.id);
       if (acc.accountCategory === "PRIMARY" && hasChildren) {
         // 主账户有子账户，余额应该从子账户汇总，先重置为0
         return {
@@ -321,9 +325,10 @@ export default function FinanceWorkbenchPage() {
     });
 
     // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
-    if (cashFlowData.length > 0) {
-      cashFlowData.forEach((flow: any) => {
-        if (flow.status === "confirmed" && flow.accountId) {
+    if (cashFlowListRaw.length > 0) {
+      cashFlowListRaw.forEach((flow: any) => {
+        const status = flow.status ?? flow.flowStatus;
+        if (status === "confirmed" && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
           if (account) {
             const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
@@ -372,9 +377,9 @@ export default function FinanceWorkbenchPage() {
     });
     
     return updatedAccounts;
-  }, [accountsData, cashFlowData]);
+  }, [accountsListRaw, cashFlowListRaw]);
 
-  const stores: Store[] = Array.isArray(storesData) ? (storesData as Store[]) : [];
+  const stores: Store[] = Array.isArray(storesDataRaw) ? (storesDataRaw as Store[]) : (storesDataRaw?.data ?? []);
 
   // 打开收入入账弹窗时：若申请关联了回款店铺，自动带出该店铺的收款账户
   useEffect(() => {

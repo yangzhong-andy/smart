@@ -35,9 +35,10 @@ export function getStores(): Store[] {
 
 /** 从 API 获取店铺 */
 export async function getStoresFromAPI(): Promise<Store[]> {
-  const res = await fetch("/api/stores");
+  const res = await fetch("/api/stores?page=1&pageSize=500");
   if (!res.ok) throw new Error("Failed to fetch stores");
-  return res.json();
+  const json = await res.json();
+  return Array.isArray(json) ? json : (json?.data ?? []);
 }
 
 /**
@@ -46,7 +47,8 @@ export async function getStoresFromAPI(): Promise<Store[]> {
 export async function saveStores(stores: Store[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const existing: Store[] = await fetch("/api/stores").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/stores?page=1&pageSize=500").then((r) => (r.ok ? r.json() : []));
+    const existing: Store[] = Array.isArray(raw) ? raw : (raw?.data ?? []);
     const existingIds = new Set(existing.map((s) => s.id));
     const newIds = new Set(stores.map((s) => s.id));
     for (const e of existing) {

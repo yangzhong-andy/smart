@@ -61,7 +61,13 @@ export async function getCashFlowFromAPI(params?: {
     const url = query.toString() ? `/api/cash-flow?${query}` : "/api/cash-flow";
     const res = await fetch(url);
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    const list = Array.isArray(json) ? json : (json?.data ?? []);
+    return list.map((f: any) => ({
+      ...f,
+      summary: f.summary ?? f.description,
+      status: f.status ?? f.flowStatus,
+    }));
   } catch (e) {
     console.error("Failed to fetch cash flow", e);
     return [];

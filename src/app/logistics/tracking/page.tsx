@@ -87,23 +87,26 @@ const STATUS_LABELS: Record<TrackingStatus, string> = {
 };
 
 export default function LogisticsTrackingPage() {
-  // 使用 SWR 获取数据
-  const { data: tracking = [], mutate: mutateTracking } = useSWR<LogisticsTracking[]>('/api/logistics-tracking', fetcher, {
+  // 使用 SWR 获取数据（兼容分页结构 { data, pagination }）
+  const { data: trackingRaw, mutate: mutateTracking } = useSWR<any>('/api/logistics-tracking?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: channels = [] } = useSWR<LogisticsChannel[]>('/api/logistics-channels', fetcher, {
+  const { data: channelsRaw } = useSWR<any>('/api/logistics-channels?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher, {
+  const { data: contractsRaw } = useSWR<any>('/api/purchase-contracts?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
+  const tracking = Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? []);
+  const channels = Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw?.data ?? []);
+  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
+
   const [filterStatus, setFilterStatus] = useState<TrackingStatus | "all">("all");
   const [selectedTracking, setSelectedTracking] = useState<LogisticsTracking | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);

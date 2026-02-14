@@ -56,12 +56,13 @@ const STATUS_COLORS: Record<PurchaseOrderStatus, { bg: string; text: string }> =
 
 export default function PurchaseOrdersNewPage() {
   // 使用 SWR 加载采购订单数据
-  const { data: ordersData = [], isLoading: ordersLoading, mutate: mutateOrders } = useSWR<PurchaseOrder[]>('/api/purchase-orders', fetcher, {
+  const { data: ordersDataRaw, isLoading: ordersLoading, mutate: mutateOrders } = useSWR<any>('/api/purchase-orders?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000 // 10分钟内去重
+    dedupingInterval: 600000
   });
+  const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
 
   const [spuList, setSpuList] = useState<SpuListItem[]>([]);
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
@@ -93,8 +94,7 @@ export default function PurchaseOrdersNewPage() {
   const [variantSearch, setVariantSearch] = useState(""); // 变体选择器内按颜色/SKU 搜索
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]); // 已选变体行，用于提交
 
-  // 确保 orders 始终是数组
-  const orders = Array.isArray(ordersData) ? ordersData : [];
+  const orders = ordersData;
 
   const spuOptions = useMemo((): SpuOption[] => {
     return spuList.map((s) => ({
@@ -113,7 +113,7 @@ export default function PurchaseOrdersNewPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     getSpuListFromAPI().then(setSpuList);
-    fetch("/api/stores").then((res) => (res.ok ? res.json() : [])).then(setStores);
+    fetch("/api/stores?page=1&pageSize=500").then((res) => (res.ok ? res.json() : [])).then((json) => setStores(Array.isArray(json) ? json : (json?.data ?? [])));
     setInitialized(true);
   }, []);
 

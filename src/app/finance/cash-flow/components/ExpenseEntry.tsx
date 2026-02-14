@@ -62,17 +62,16 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
 
   // 使用 SWR 获取采购单列表（仅当分类为采购时）
   const fetcher = (url: string) => fetch(url).then(res => res.json());
-  const { data: purchaseOrdersData } = useSWR(
-    isPurchaseCategory ? '/api/purchase-orders' : null,
+  const { data: purchaseOrdersDataRaw } = useSWR(
+    isPurchaseCategory ? '/api/purchase-orders?page=1&pageSize=500' : null,
     fetcher,
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
-      dedupingInterval: 600000, // 10分钟内去重
+      dedupingInterval: 600000,
     }
   );
-  // 确保 purchaseOrders 始终是数组
-  const purchaseOrders = Array.isArray(purchaseOrdersData) ? purchaseOrdersData : [];
+  const purchaseOrders = Array.isArray(purchaseOrdersDataRaw) ? purchaseOrdersDataRaw : (purchaseOrdersDataRaw?.data ?? []);
 
   // 获取当前一级分类下的二级分类选项
   const availableSubCategories = useMemo(() => {

@@ -99,11 +99,12 @@ export type IncomeRequest = {
 
 export async function getExpenseRequests(): Promise<ExpenseRequest[]> {
   try {
-    const response = await fetch('/api/expense-requests');
+    const response = await fetch('/api/expense-requests?page=1&pageSize=500');
     if (!response.ok) {
       throw new Error('Failed to fetch expense requests');
     }
-    return await response.json();
+    const json = await response.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (error) {
     console.error('Error fetching expense requests:', error);
     return [];
@@ -125,11 +126,12 @@ export async function getExpenseRequestById(id: string): Promise<ExpenseRequest 
 
 export async function getExpenseRequestsByStatus(status: RequestStatus): Promise<ExpenseRequest[]> {
   try {
-    const response = await fetch(`/api/expense-requests?status=${status}`);
+    const response = await fetch(`/api/expense-requests?status=${status}&page=1&pageSize=500`);
     if (!response.ok) {
       throw new Error('Failed to fetch expense requests by status');
     }
-    return await response.json();
+    const json = await response.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (error) {
     console.error('Error fetching expense requests by status:', error);
     return [];
@@ -175,11 +177,12 @@ export async function updateExpenseRequest(id: string, updates: Partial<ExpenseR
 
 export async function getIncomeRequests(): Promise<IncomeRequest[]> {
   try {
-    const response = await fetch('/api/income-requests');
+    const response = await fetch('/api/income-requests?page=1&pageSize=500');
     if (!response.ok) {
       throw new Error('Failed to fetch income requests');
     }
-    return await response.json();
+    const json = await response.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (error) {
     console.error('Error fetching income requests:', error);
     return [];
@@ -201,11 +204,12 @@ export async function getIncomeRequestById(id: string): Promise<IncomeRequest | 
 
 export async function getIncomeRequestsByStatus(status: RequestStatus): Promise<IncomeRequest[]> {
   try {
-    const response = await fetch(`/api/income-requests?status=${status}`);
+    const response = await fetch(`/api/income-requests?status=${status}&page=1&pageSize=500`);
     if (!response.ok) {
       throw new Error('Failed to fetch income requests by status');
     }
-    return await response.json();
+    const json = await response.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (error) {
     console.error('Error fetching income requests by status:', error);
     return [];

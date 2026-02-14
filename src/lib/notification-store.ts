@@ -36,10 +36,10 @@ export async function getNotificationsFromAPI(params?: {
     if (params?.relatedType) searchParams.set("relatedType", params.relatedType);
     if (params?.read !== undefined) searchParams.set("read", String(params.read));
     const url = `/api/notifications${searchParams.toString() ? `?${searchParams}` : ""}`;
-    const res = await fetch(url);
+    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "page=1&pageSize=500");
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    return Array.isArray(data) ? data : (data?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch notifications from API", e);
     return [];

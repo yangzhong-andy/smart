@@ -86,27 +86,32 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function InboundPage() {
   const { mutate: globalMutate } = useSWRConfig();
-  const { data: pendingInboundData = [], mutate: mutatePendingInbound } = useSWR<PendingInbound[]>('/api/pending-inbound', fetcher, {
+  const { data: pendingInboundDataRaw, mutate: mutatePendingInbound } = useSWR<any>('/api/pending-inbound?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: deliveryOrders = [] } = useSWR<DeliveryOrder[]>('/api/delivery-orders', fetcher, {
+  const { data: deliveryOrdersRaw } = useSWR<any>('/api/delivery-orders?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: contracts = [] } = useSWR<PurchaseContract[]>('/api/purchase-contracts', fetcher, {
+  const { data: contractsRaw } = useSWR<any>('/api/purchase-contracts?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: warehouses = [] } = useSWR<any[]>('/api/warehouses', fetcher, {
+  const { data: warehousesRaw } = useSWR<any>('/api/warehouses?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
+
+  const pendingInboundData = Array.isArray(pendingInboundDataRaw) ? pendingInboundDataRaw : (pendingInboundDataRaw?.data ?? []);
+  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
+  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
+  const warehouses = Array.isArray(warehousesRaw) ? warehousesRaw : (warehousesRaw?.data ?? []);
+
   // 从待入库单数据中提取批次
   const batches = useMemo(() => {
     const allBatches: InboundBatch[] = [];

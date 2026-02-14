@@ -43,27 +43,26 @@ export default function UsersManagementPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // 获取用户列表
-  const { data: users = [], mutate: mutateUsers } = useSWR<User[]>('/api/users', fetcher, {
+  // 获取用户/部门/员工列表（兼容分页结构 { data, pagination }）
+  const { data: usersRaw, mutate: mutateUsers } = useSWR<any>('/api/users?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
-  // 获取部门列表
-  const { data: departments = [] } = useSWR<Department[]>('/api/departments', fetcher, {
+  const { data: departmentsRaw } = useSWR<any>('/api/departments?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
-  // 获取员工列表（用于关联员工档案）
-  const { data: employees = [] } = useSWR<any[]>('/api/employees', fetcher, {
+  const { data: employeesRaw } = useSWR<any>('/api/employees?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
+  const users = Array.isArray(usersRaw) ? usersRaw : (usersRaw?.data ?? []);
+  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : (departmentsRaw?.data ?? []);
+  const employees = Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? []);
+
   const [form, setForm] = useState({
     email: "",
     password: "",

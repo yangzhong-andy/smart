@@ -129,19 +129,19 @@ export default function PurchaseOrdersPage() {
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({}); // productId -> 该 SPU 下全部 SKU（一次性 include 拉取后缓存）
   const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
   const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
-  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
-    "/api/purchase-contracts",
+  const { data: contractsData, mutate: mutateContracts } = useSWR<PurchaseContract[] | { data: PurchaseContract[]; pagination: unknown }>(
+    "/api/purchase-contracts?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
-  const contracts = contractsData;
+  const contracts = Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
-  const { data: deliveryOrdersData = [], mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[]>(
-    "/api/delivery-orders",
+  const { data: deliveryOrdersData, mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[] | { data: DeliveryOrder[]; pagination: unknown }>(
+    "/api/delivery-orders?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const deliveryOrders = deliveryOrdersData;
+  const deliveryOrders = Array.isArray(deliveryOrdersData) ? deliveryOrdersData : (deliveryOrdersData?.data ?? []);
   const [suppliersReady, setSuppliersReady] = useState(false);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -204,11 +204,13 @@ export default function PurchaseOrdersPage() {
   // 生产进度需用用户本地时间计算，避免线上 SSR 用服务器 UTC 导致进度不动
   const [clientNow, setClientNow] = useState<Date | null>(null);
 
-  // 加载支出申请数据
+  // 加载支出申请数据（接口可能返回 { data, pagination }，getExpenseRequests 已统一返回数组）
   useEffect(() => {
     if (typeof window === "undefined") return;
-    getExpenseRequests().then(setExpenseRequests);
+    getExpenseRequests().then((data) => setExpenseRequests(Array.isArray(data) ? data : (data?.data ?? [])));
   }, []);
+
+  const expenseRequestsList = Array.isArray(expenseRequests) ? expenseRequests : [];
 
   // 生产进度使用用户本地时间，useLayoutEffect 在首屏绘制前设置，避免线上缓存/SSR 导致进度不准
   useLayoutEffect(() => {
@@ -305,12 +307,13 @@ export default function PurchaseOrdersPage() {
   // Load suppliers from API
   useEffect(() => {
     if (typeof window === "undefined") return;
-    fetch("/api/suppliers")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((parsed: Supplier[]) => {
-        setSuppliers(Array.isArray(parsed) ? parsed : []);
-        if (Array.isArray(parsed) && parsed.length && !form.supplierId) {
-          setForm((f) => ({ ...f, supplierId: parsed[0].id }));
+    fetch("/api/suppliers?page=1&pageSize=500")
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((parsed: any) => {
+        const list = Array.isArray(parsed) ? parsed : (parsed?.data ?? []);
+        setSuppliers(list);
+        if (list.length && !form.supplierId) {
+          setForm((f) => ({ ...f, supplierId: list[0].id }));
         }
         setSuppliersReady(true);
       })
@@ -755,7 +758,7 @@ export default function PurchaseOrdersPage() {
       }
 
       // 检查是否已经存在该合同的付款申请（待审批或已审批状态）
-      const existingRequest = expenseRequests.find((r) => {
+      const existingRequest = expenseRequestsList.find((r) => {
         // 通过 summary 匹配合同编号
         const isContractDeposit = r.summary.includes(`采购合同定金 - ${contract.contractNumber}`);
         if (!isContractDeposit) return false;
@@ -1414,7 +1417,7 @@ export default function PurchaseOrdersPage() {
                 const remainingQty = contract.totalQty - contract.pickedQty;
                 
                 // 检查是否已创建定金付款申请
-                const depositRequest = expenseRequests.find((r) => {
+                const depositRequest = expenseRequestsList.find((r) => {
                   const isContractDeposit = r.summary.includes(`采购合同定金 - ${contract.contractNumber}`);
                   return isContractDeposit && (r.status === "Pending_Approval" || r.status === "Approved" || r.status === "Paid");
                 });
@@ -2598,7 +2601,7 @@ export default function PurchaseOrdersPage() {
                 
                 // 检查是否已创建定金付款申请
                 const existingRequest = paymentModal.type === "deposit" && contract
-                  ? expenseRequests.find((r) => {
+                  ? expenseRequestsList.find((r) => {
                       const isContractDeposit = r.summary.includes(`采购合同定金 - ${contract.contractNumber}`);
                       return isContractDeposit && (r.status === "Pending_Approval" || r.status === "Approved" || r.status === "Paid");
                     })

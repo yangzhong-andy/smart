@@ -50,24 +50,21 @@ export default function StoresPage() {
     taxId: ""
   });
 
-  // 使用 SWR 从 API 加载账户数据
-  const { data: accountsData = [], isLoading: accountsLoading } = useSWR<BankAccount[]>('/api/accounts', fetcher, {
+  // 使用 SWR 从 API 加载账户/店铺数据（兼容分页结构 { data, pagination }）
+  const { data: accountsDataRaw, isLoading: accountsLoading } = useSWR<any>('/api/accounts?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000 // 10分钟内去重
+    dedupingInterval: 600000,
   });
-
-  // 使用 SWR 从 API 加载店铺数据
-  const { data: storesData = [], isLoading: storesLoading, mutate: mutateStores } = useSWR<Store[]>('/api/stores', fetcher, {
+  const { data: storesDataRaw, isLoading: storesLoading, mutate: mutateStores } = useSWR<any>('/api/stores?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
-    revalidateOnReconnect: false, // 优化：关闭重连自动刷新
+    revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000 // 10分钟内去重
+    dedupingInterval: 600000,
   });
-
-  const accounts = accountsData || [];
-  const stores = storesData || [];
+  const accounts = Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? []);
+  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
 
   const countriesByRegion = useMemo(() => getCountriesByRegion(), []);
 

@@ -169,10 +169,12 @@ export function getAgencies(): Agency[] {
   }
 }
 
+const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
 /** 从 API 获取代理商 */
 export async function getAgenciesFromAPI(): Promise<Agency[]> {
-  const res = await fetch("/api/ad-agencies");
-  return res.ok ? res.json() : [];
+  const res = await fetch("/api/ad-agencies?page=1&pageSize=500");
+  if (!res.ok) return [];
+  return toList(await res.json());
 }
 
 /**
@@ -221,8 +223,9 @@ export function getAdAccounts(): AdAccount[] {
 
 /** 从 API 获取广告账户 */
 export async function getAdAccountsFromAPI(): Promise<AdAccount[]> {
-  const res = await fetch("/api/ad-accounts");
-  return res.ok ? res.json() : [];
+  const res = await fetch("/api/ad-accounts?page=1&pageSize=500");
+  if (!res.ok) return [];
+  return toList(await res.json());
 }
 
 /**
@@ -231,7 +234,8 @@ export async function getAdAccountsFromAPI(): Promise<AdAccount[]> {
 export async function saveAdAccounts(accounts: AdAccount[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const existing: AdAccount[] = await fetch("/api/ad-accounts").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/ad-accounts?page=1&pageSize=500").then((r) => (r.ok ? r.json() : []));
+    const existing: AdAccount[] = toList(raw);
     const existingIds = new Set(existing.map((a) => a.id));
     const newIds = new Set(accounts.map((a) => a.id));
     for (const e of existing) {
@@ -270,8 +274,9 @@ export function getAdConsumptions(): AdConsumption[] {
 
 /** 从 API 获取消耗记录 */
 export async function getAdConsumptionsFromAPI(): Promise<AdConsumption[]> {
-  const res = await fetch("/api/ad-consumptions");
-  return res.ok ? res.json() : [];
+  const res = await fetch("/api/ad-consumptions?page=1&pageSize=5000");
+  if (!res.ok) return [];
+  return toList(await res.json());
 }
 
 /**
@@ -280,7 +285,8 @@ export async function getAdConsumptionsFromAPI(): Promise<AdConsumption[]> {
 export async function saveAdConsumptions(consumptions: AdConsumption[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const existing: AdConsumption[] = await fetch("/api/ad-consumptions").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/ad-consumptions?page=1&pageSize=5000").then((r) => (r.ok ? r.json() : []));
+    const existing: AdConsumption[] = toList(raw);
     const existingIds = new Set(existing.map((c) => c.id));
     const newIds = new Set(consumptions.map((c) => c.id));
     for (const e of existing) {
@@ -345,7 +351,8 @@ export async function getAdRechargesFromAPI(): Promise<AdRecharge[]> {
 export async function saveAdRecharges(recharges: AdRecharge[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const existing: AdRecharge[] = await fetch("/api/ad-recharges").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/ad-recharges?page=1&pageSize=5000").then((r) => (r.ok ? r.json() : []));
+    const existing: AdRecharge[] = toList(raw);
     const existingIds = new Set(existing.map((r) => r.id));
     const newIds = new Set(recharges.map((r) => r.id));
     for (const e of existing) {

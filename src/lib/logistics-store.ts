@@ -65,9 +65,10 @@ export function getLogisticsChannels(): LogisticsChannel[] {
 export async function getLogisticsChannelsFromAPI(): Promise<LogisticsChannel[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/logistics-channels");
+    const res = await fetch("/api/logistics-channels?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch logistics channels", e);
     return [];
@@ -176,10 +177,12 @@ export async function getLogisticsTrackingFromAPI(params?: {
     if (params?.channelId) query.set("channelId", params.channelId);
     if (params?.storeId) query.set("storeId", params.storeId);
     if (params?.status) query.set("status", params.status);
-    const url = query.toString() ? `/api/logistics-tracking?${query}` : "/api/logistics-tracking";
+    const base = query.toString() ? `/api/logistics-tracking?${query}` : "/api/logistics-tracking";
+    const url = base + (base.includes("?") ? "&" : "?") + "page=1&pageSize=500";
     const res = await fetch(url);
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch logistics tracking", e);
     return [];

@@ -148,9 +148,10 @@ export function getEmployees(): Employee[] {
 export async function getEmployeesFromAPI(): Promise<Employee[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/employees");
+    const res = await fetch("/api/employees?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch employees", e);
     return [];
@@ -221,9 +222,10 @@ export function getCommissionRules(): CommissionRule[] {
 export async function getCommissionRulesFromAPI(): Promise<CommissionRule[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/commission-rules");
+    const res = await fetch("/api/commission-rules?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch commission rules", e);
     return [];
@@ -290,9 +292,10 @@ export function getCommissionRecords(): CommissionRecord[] {
 export async function getCommissionRecordsFromAPI(): Promise<CommissionRecord[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/commission-records");
+    const res = await fetch("/api/commission-records?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch commission records", e);
     return [];

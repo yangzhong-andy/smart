@@ -27,8 +27,10 @@ export default function StoreReportPage() {
       fetch("/api/stores"),
       fetch("/api/accounts"),
     ]);
-    setStores(storesRes.ok ? await storesRes.json() : []);
-    setAccounts(accRes.ok ? await accRes.json() : []);
+    const storesJson = storesRes.ok ? await storesRes.json() : [];
+    const accJson = accRes.ok ? await accRes.json() : [];
+    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
+    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
     const flowList = await getCashFlowFromAPI();
     setCashFlow(flowList);
     })();

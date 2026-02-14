@@ -28,10 +28,12 @@ export default function HomePage() {
         fetch("/api/stores"),
         fetch("/api/accounts"),
       ]);
-      setStores(storesRes.ok ? await storesRes.json() : []);
-      setAccounts(accRes.ok ? await accRes.json() : []);
+      const storesJson = storesRes.ok ? await storesRes.json() : [];
+      setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
+      const accJson = accRes.ok ? await accRes.json() : [];
+      setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
       const flowList = await getCashFlowFromAPI();
-      setCashFlow(flowList);
+      setCashFlow(Array.isArray(flowList) ? flowList : (flowList?.data ?? []));
       
       // 获取待审批账单数量
       (async () => {
@@ -50,16 +52,19 @@ export default function HomePage() {
 
   // 计算店铺贡献排行
   const storeRanking = useMemo(() => {
-    return stores
+    const storeList = Array.isArray(stores) ? stores : [];
+    const accountList = Array.isArray(accounts) ? accounts : [];
+    const flowList = Array.isArray(cashFlow) ? cashFlow : [];
+    return storeList
       .map((store) => {
-        const storeIncomes = cashFlow.filter(
+        const storeIncomes = flowList.filter(
           (flow) =>
             flow.type === "income" &&
             flow.accountId === store.accountId &&
             !(flow as any).isReversal &&
             ((flow as any).status === "confirmed" || !(flow as any).status)
         );
-        const account = accounts.find((a) => a.id === store.accountId);
+        const account = accountList.find((a) => a.id === store.accountId);
         const exchangeRate = account?.exchangeRate || 1;
         const totalIncome = storeIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount || 0), 0);
         const totalIncomeRMB = store.currency === "RMB" ? totalIncome : totalIncome * exchangeRate;
@@ -88,7 +93,8 @@ export default function HomePage() {
 
   // 总资产统计（包含初始资金）
   const totalAssets = useMemo(() => {
-    return accounts.reduce((sum, acc) => {
+    const accountList = Array.isArray(accounts) ? accounts : [];
+    return accountList.reduce((sum, acc) => {
       // 计算账户总余额 = 初始资金 + 当前余额
       const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
       // 转换为RMB
@@ -102,7 +108,8 @@ export default function HomePage() {
   // 本月收支统计
   const thisMonth = new Date().getMonth();
   const thisYear = new Date().getFullYear();
-  const thisMonthFlow = cashFlow.filter((f) => {
+  const cashFlowList = Array.isArray(cashFlow) ? cashFlow : [];
+  const thisMonthFlow = cashFlowList.filter((f) => {
     if (!f.date) return false;
     const d = new Date(f.date);
     if (isNaN(d.getTime())) return false;

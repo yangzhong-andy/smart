@@ -74,8 +74,9 @@ export default function PurchaseOrdersNewPage() {
     setOrders(ords);
     const prods = await getProductsFromAPI();
     setProducts(prods);
-    const storesRes = await fetch("/api/stores");
-    setStores(storesRes.ok ? await storesRes.json() : []);
+    const storesRes = await fetch("/api/stores?page=1&pageSize=500");
+    const storesJson = storesRes.ok ? await storesRes.json() : [];
+    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
     setInitialized(true);
     })();
   }, []);

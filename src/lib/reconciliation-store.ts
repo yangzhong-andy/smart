@@ -71,12 +71,12 @@ export type MonthlyBill = {
  */
 export async function getMonthlyBills(): Promise<MonthlyBill[]> {
   try {
-    const response = await fetch("/api/monthly-bills");
+    const response = await fetch("/api/monthly-bills?page=1&pageSize=500");
     if (!response.ok) {
       throw new Error("Failed to fetch monthly bills");
     }
-    const bills = await response.json();
-    // 转换日期字段为字符串
+    const json = await response.json();
+    const bills = Array.isArray(json) ? json : (json?.data ?? []);
     return bills.map((bill: any) => ({
       ...bill,
       createdAt: bill.createdAt ? new Date(bill.createdAt).toISOString() : bill.createdAt,
@@ -126,12 +126,12 @@ export async function getBillById(id: string): Promise<MonthlyBill | undefined> 
  */
 export async function getBillsByStatus(status: BillStatus): Promise<MonthlyBill[]> {
   try {
-    const response = await fetch(`/api/monthly-bills?status=${status}`);
+    const response = await fetch(`/api/monthly-bills?status=${status}&page=1&pageSize=500`);
     if (!response.ok) {
       throw new Error("Failed to fetch monthly bills");
     }
-    const bills = await response.json();
-    // 转换日期字段为字符串
+    const json = await response.json();
+    const bills = Array.isArray(json) ? json : (json?.data ?? []);
     return bills.map((bill: any) => ({
       ...bill,
       createdAt: bill.createdAt ? new Date(bill.createdAt).toISOString() : bill.createdAt,

@@ -26,10 +26,11 @@ export default function SKUMappingPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
 
-  const { data: products = [], mutate: mutateProducts } = useSWR<Product[]>("/api/products", fetcher, {
+  const { data: productsRaw, mutate: mutateProducts } = useSWR<any>("/api/products?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
+  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
 
   const productsWithMappings = useMemo(() => {
     let result = products;

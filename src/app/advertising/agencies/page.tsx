@@ -193,19 +193,20 @@ export default function AdAgenciesPage() {
     
     (async () => {
     const [agenciesRes, accountsRes, consumptionsRes, rechargesRes, storesRes, bankRes] = await Promise.all([
-      fetch("/api/ad-agencies"),
-      fetch("/api/ad-accounts"),
-      fetch("/api/ad-consumptions"),
-      fetch("/api/ad-recharges"),
-      fetch("/api/stores"),
-      fetch("/api/accounts"),
+      fetch("/api/ad-agencies?page=1&pageSize=500"),
+      fetch("/api/ad-accounts?page=1&pageSize=500"),
+      fetch("/api/ad-consumptions?page=1&pageSize=5000"),
+      fetch("/api/ad-recharges?page=1&pageSize=5000"),
+      fetch("/api/stores?page=1&pageSize=500"),
+      fetch("/api/accounts?page=1&pageSize=500"),
     ]);
-    const loadedAgencies = agenciesRes.ok ? await agenciesRes.json() : [];
-    const loadedAccounts = accountsRes.ok ? await accountsRes.json() : [];
-    const loadedConsumptions = consumptionsRes.ok ? await consumptionsRes.json() : [];
-    const loadedRecharges = rechargesRes.ok ? await rechargesRes.json() : [];
-    const loadedStores = storesRes.ok ? await storesRes.json() : [];
-    const loadedBankAccounts = bankRes.ok ? await bankRes.json() : [];
+    const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
+    const loadedAgencies = agenciesRes.ok ? toList(await agenciesRes.json()) : [];
+    const loadedAccounts = accountsRes.ok ? toList(await accountsRes.json()) : [];
+    const loadedConsumptions = consumptionsRes.ok ? toList(await consumptionsRes.json()) : [];
+    const loadedRecharges = rechargesRes.ok ? toList(await rechargesRes.json()) : [];
+    const loadedStores = storesRes.ok ? toList(await storesRes.json()) : [];
+    const loadedBankAccounts = bankRes.ok ? toList(await bankRes.json()) : [];
     setAgencies(loadedAgencies);
     setAdAccounts(loadedAccounts);
     setConsumptions(loadedConsumptions);

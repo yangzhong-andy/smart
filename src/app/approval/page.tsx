@@ -35,22 +35,24 @@ export default function ApprovalPage() {
     approvedBy: ""
   });
 
-  const { data: ordersData = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>(
-    "/api/purchase-orders",
+  const { data: ordersDataRaw, mutate: mutateOrders } = useSWR<any>(
+    "/api/purchase-orders?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const { data: contractsData = [], mutate: mutateContracts } = useSWR<PurchaseContract[]>(
-    "/api/purchase-contracts",
+  const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
+    "/api/purchase-contracts?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
+  const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
+  const contractsData = Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? []);
   const orders = useMemo(
-    () => ordersData.filter((o) => o.status === "待审批"),
+    () => ordersData.filter((o: PurchaseOrder) => o.status === "待审批"),
     [ordersData]
   );
   const pendingContracts = useMemo(
-    () => contractsData.filter((c) => c.status === "待审批"),
+    () => contractsData.filter((c: PurchaseContract) => c.status === "待审批"),
     [contractsData]
   );
 

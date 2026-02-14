@@ -79,9 +79,10 @@ export function getPurchaseContracts(): PurchaseContract[] {
 export async function getPurchaseContractsFromAPI(): Promise<PurchaseContract[]> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/purchase-contracts");
+    const res = await fetch("/api/purchase-contracts?page=1&pageSize=500");
     if (!res.ok) return [];
-    return await res.json();
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (e) {
     console.error("Failed to fetch purchase contracts", e);
     return [];

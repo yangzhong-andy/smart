@@ -61,19 +61,18 @@ type Warehouse = {
 
 export default function InventoryDashboardPage() {
   // 使用 SWR 加载数据
-  const { data: stockData = [], isLoading: stockLoading, error: stockError } = useSWR<StockItem[]>("/api/stock", fetcher, {
+  const { data: stockDataRaw, isLoading: stockLoading, error: stockError } = useSWR<any>("/api/stock?page=1&pageSize=5000", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  const { data: warehousesDataRaw = [], error: warehousesError } = useSWR<Warehouse[]>("/api/warehouses", fetcher, {
+  const { data: warehousesDataRaw, error: warehousesError } = useSWR<any>("/api/warehouses?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000, // 10分钟内去重
+    dedupingInterval: 600000,
   });
-  
-  // 确保 warehousesData 始终是数组
-  const warehousesData = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : [];
+  const stockData = Array.isArray(stockDataRaw) ? stockDataRaw : (stockDataRaw?.data ?? []);
+  const warehousesData = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? []);
 
   // 筛选状态
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
