@@ -91,7 +91,7 @@ export default function SettlementDashboardPage() {
   });
 
   const { data: storesDataRaw } = useSWR<any>("/api/stores?page=1&pageSize=500", fetcher);
-  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
+  const stores = (Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? [])) as StoreItem[];
 
   const storeNameMap = useMemo(() => {
     const m: Record<string, string> = { _unknown_: "未关联店铺" };
