@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (agencyId) where.agencyId = agencyId;
-    if (accountId) where.accountId = accountId;
+    if (accountId) where.adAccountId = accountId;
     if (startDate || endDate) {
       where.consumptionDate = {};
       if (startDate) where.consumptionDate.gte = new Date(startDate);
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       prisma.adConsumption.findMany({
         where,
         select: {
-          id: true, agencyId: true, agencyName: true, accountId: true, accountName: true,
+          id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
           consumptionDate: true, amount: true, currency: true, status: true,
           notes: true, createdAt: true, updatedAt: true,
         },
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
         id: c.id,
         agencyId: c.agencyId,
         agencyName: c.agencyName,
-        accountId: c.accountId,
+        accountId: c.adAccountId,
         accountName: c.accountName,
         consumptionDate: c.consumptionDate.toISOString().split('T')[0],
         amount: Number(c.amount),
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       data: {
         agencyId: body.agencyId,
         agencyName: body.agencyName,
-        accountId: body.accountId,
+        adAccountId: body.accountId,
         accountName: body.accountName,
         consumptionDate: new Date(body.consumptionDate),
         amount: body.amount,

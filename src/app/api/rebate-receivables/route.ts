@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       prisma.rebateReceivable.findMany({
         where,
         select: {
-          id: true, agencyId: true, agencyName: true, accountId: true, accountName: true,
+          id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
           month: true, rebateAmount: true, currency: true, status: true,
           notes: true, createdAt: true, updatedAt: true,
         },
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       data: {
         agencyId: body.agencyId,
         agencyName: body.agencyName,
-        accountId: body.accountId || null,
+        adAccountId: body.accountId || null,
         accountName: body.accountName || null,
         month: body.month,
         rebateAmount: body.rebateAmount,

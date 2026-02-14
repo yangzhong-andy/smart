@@ -37,13 +37,13 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (agencyId) where.agencyId = agencyId;
-    if (accountId) where.accountId = accountId;
+    if (accountId) where.adAccountId = accountId;
 
     const [recharges, total] = await prisma.$transaction([
       prisma.adRecharge.findMany({
         where,
         select: {
-          id: true, agencyId: true, agencyName: true, accountId: true, accountName: true,
+          id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
           rechargeDate: true, amount: true, currency: true, status: true,
           notes: true, createdAt: true, updatedAt: true,
         },
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       data: {
         agencyId: body.agencyId,
         agencyName: body.agencyName,
-        accountId: body.accountId,
+        adAccountId: body.accountId,
         accountName: body.accountName,
         rechargeDate: new Date(body.rechargeDate),
         amount: body.amount,
