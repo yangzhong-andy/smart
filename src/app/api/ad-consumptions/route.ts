@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
-          date: true, amount: true, currency: true, status: true,
+          date: true, amount: true, currency: true, isSettled: true,
           notes: true, createdAt: true, updatedAt: true,
         },
         orderBy: { date: 'desc' },
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         consumptionDate: c.date.toISOString().split('T')[0],
         amount: Number(c.amount),
         currency: c.currency,
-        status: c.status,
+        status: c.isSettled ? "SETTLED" : "PENDING",
         notes: c.notes || undefined,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
         date: new Date(body.date),
         amount: body.amount,
         currency: body.currency || "USD",
-        status: body.status || "PENDING",
+        isSettled: body.isSettled || false,
         notes: body.notes,
       },
     });
