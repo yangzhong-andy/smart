@@ -78,6 +78,15 @@ export default function BankAccountsPage() {
   // 兼容 API 返回 { data, pagination } 或直接数组
   const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
   const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+  // 统一流水 status 为小写，兼容 API 返回的 CONFIRMED / flowStatus
+  const cashFlowList = useMemo(
+    () =>
+      cashFlowListRaw.map((f: any) => ({
+        ...f,
+        status: (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending"
+      })),
+    [cashFlowListRaw]
+  );
 
   // 基于 API 数据和流水重新计算余额
   const accounts = useMemo(() => {
@@ -110,10 +119,9 @@ export default function BankAccountsPage() {
     });
 
     // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
-    if (cashFlowListRaw.length > 0) {
-      cashFlowListRaw.forEach((flow) => {
-        const status = (flow as any).flowStatus ?? flow.status;
-        if (status === "confirmed" && flow.accountId) {
+    if (cashFlowList.length > 0) {
+      cashFlowList.forEach((flow) => {
+        if (flow.status === "confirmed" && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
           if (account) {
             const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
@@ -155,7 +163,7 @@ export default function BankAccountsPage() {
     });
     
     return updatedAccounts;
-  }, [accountsListRaw, cashFlowListRaw]);
+  }, [accountsListRaw, cashFlowList]);
   
   const [stores, setStores] = useState<Store[]>([]);
   const storesList = Array.isArray(stores) ? stores : [];
@@ -169,8 +177,8 @@ export default function BankAccountsPage() {
   
   // 从 SWR 数据中筛选出选中账户的流水，并分类
   const accountFlows = useMemo(() => {
-    if (!selectedAccountForFlow || !cashFlowListRaw.length) return { normal: [], transfers: [] };
-    const allFlows = cashFlowListRaw
+    if (!selectedAccountForFlow || !cashFlowList.length) return { normal: [], transfers: [] };
+    const allFlows = cashFlowList
       .filter((flow) => flow.accountId === selectedAccountForFlow.id)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
@@ -179,7 +187,7 @@ export default function BankAccountsPage() {
     const transfers = allFlows.filter((flow) => flow.category === "内部划拨");
     
     return { normal, transfers };
-  }, [selectedAccountForFlow, cashFlowListRaw]);
+  }, [selectedAccountForFlow, cashFlowList]);
   
   // 新增状态：搜索、排序、快速筛选
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -448,7 +456,7 @@ export default function BankAccountsPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const flows = cashFlowListRaw;
+    const flows = cashFlowList;
 
     flattenedAccountsBase.forEach((acc) => {
       const trend: Array<{ date: string; balance: number }> = [];
@@ -486,7 +494,7 @@ export default function BankAccountsPage() {
     });
 
     return result;
-  }, [flattenedAccounts, cashFlowListRaw]);
+  }, [flattenedAccounts, cashFlowList]);
 
   // 获取账户图标
   const getAccountIcon = (account: BankAccount) => {
