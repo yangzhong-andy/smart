@@ -299,7 +299,7 @@ export default function FinanceWorkbenchPage() {
     if (!accountsListRaw.length) return [];
 
     // 从 initialCapital 开始重新计算余额
-    let updatedAccounts = accountsListRaw.map((acc: BankAccount) => {
+    let updatedAccounts: BankAccount[] = accountsListRaw.map((acc: BankAccount) => {
       const hasChildren = accountsListRaw.some((a: any) => a.parentId === acc.id);
       if (acc.accountCategory === "PRIMARY" && hasChildren) {
         // 主账户有子账户，余额应该从子账户汇总，先重置为0
