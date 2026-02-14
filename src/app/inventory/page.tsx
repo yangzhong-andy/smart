@@ -17,6 +17,18 @@ const formatCurrency = (n: number, curr: string = "CNY") => {
 };
 import { getMovementsBySkuId, type InventoryMovement } from "@/lib/inventory-movements-store";
 
+type InventoryProductRow = {
+  sku_id?: string;
+  name?: string;
+  category?: string;
+  factory_name?: string;
+  at_factory?: number;
+  at_domestic?: number;
+  in_transit?: number;
+  cost_price?: number;
+  currency?: string;
+};
+
 // 变动历史行组件
 function InventoryHistoryRow({ product, movements }: { product: any; movements: InventoryMovement[] }) {
   const getMovementTypeColor = (type: InventoryMovement["movementType"]) => {
@@ -126,7 +138,7 @@ export default function InventoryPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
+  const products = (Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? [])) as InventoryProductRow[];
 
   // 加载变动历史
   const loadMovements = (skuId: string) => {
@@ -283,7 +295,7 @@ export default function InventoryPage() {
 
     const csvContent = [
       headers.join(","),
-      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      ...rows.map((row: (string | number)[]) => row.map((cell: string | number) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
     ].join("\n");
 
     const BOM = "\uFEFF";
@@ -523,11 +535,11 @@ export default function InventoryPage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <button
-                            onClick={() => toggleExpand(product.sku_id)}
+                            onClick={() => toggleExpand(product.sku_id ?? "")}
                             className="p-1.5 rounded-md hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
                             title="查看变动历史"
                           >
-                            {expandedSkuIds.has(product.sku_id) ? (
+                            {expandedSkuIds.has(product.sku_id ?? "") ? (
                               <ChevronUp className="w-4 h-4" />
                             ) : (
                               <History className="w-4 h-4" />
@@ -535,10 +547,10 @@ export default function InventoryPage() {
                           </button>
                         </td>
                       </tr>
-                      {expandedSkuIds.has(product.sku_id) && (
+                      {expandedSkuIds.has(product.sku_id ?? "") && (
                         <InventoryHistoryRow 
                           product={product}
-                          movements={movementsBySku[product.sku_id] || []}
+                          movements={movementsBySku[product.sku_id ?? ""] || []}
                         />
                       )}
                     </Fragment>

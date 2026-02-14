@@ -14,6 +14,8 @@ import {
   getEmployeesFromAPI,
   getCommissionRulesFromAPI,
   type CommissionRecord,
+  type CommissionRule,
+  type Employee,
   type Department
 } from "@/lib/hr-store";
 
@@ -31,7 +33,7 @@ export default function CommissionsPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const records = Array.isArray(recordsDataRaw) ? recordsDataRaw : (recordsDataRaw?.data ?? []);
+  const records = (Array.isArray(recordsDataRaw) ? recordsDataRaw : (recordsDataRaw?.data ?? [])) as CommissionRecord[];
   const { data: employeesRaw } = useSWR<any>("/api/employees?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
@@ -40,8 +42,8 @@ export default function CommissionsPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const employees = Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? []);
-  const rules = Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw?.data ?? []);
+  const employees = (Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? [])) as Employee[];
+  const rules = (Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw?.data ?? [])) as CommissionRule[];
 
   // 统计摘要
   const stats = useMemo(() => {

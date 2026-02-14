@@ -72,7 +72,7 @@ export default function InventoryDashboardPage() {
     dedupingInterval: 600000,
   });
   const stockData = Array.isArray(stockDataRaw) ? stockDataRaw : (stockDataRaw?.data ?? []);
-  const warehousesData = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? []);
+  const warehousesData = (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[];
 
   // 筛选状态
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");

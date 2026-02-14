@@ -56,7 +56,7 @@ export default function EmployeesPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const employeesData = Array.isArray(employeesDataRaw) ? employeesDataRaw : (employeesDataRaw?.data ?? []);
+  const employeesData = (Array.isArray(employeesDataRaw) ? employeesDataRaw : (employeesDataRaw?.data ?? [])) as Employee[];
   const employees = employeesData;
 
   // 从 API 获取部门列表
@@ -65,11 +65,11 @@ export default function EmployeesPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const departmentsData = Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? []);
+  const departmentsData = (Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? [])) as DepartmentFromAPI[];
 
   // 将 API 返回的部门数据转换为页面需要的格式
-  const departments = useMemo(() => {
-    return departmentsData.map((dept: DepartmentFromAPI) => dept.name);
+  const departments = useMemo((): string[] => {
+    return departmentsData.map((dept) => dept.name);
   }, [departmentsData]);
 
   // 统计摘要

@@ -63,8 +63,8 @@ export default function StoresPage() {
     keepPreviousData: true,
     dedupingInterval: 600000,
   });
-  const accounts = Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? []);
-  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
+  const accounts = (Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? [])) as BankAccount[];
+  const stores = (Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? [])) as Store[];
 
   const countriesByRegion = useMemo(() => getCountriesByRegion(), []);
 

@@ -36,6 +36,14 @@ interface Department {
   code: string | null;
 }
 
+interface EmployeeFromAPI {
+  id: string;
+  name: string;
+  email?: string;
+  department?: string;
+  departmentId?: string;
+}
+
 export default function UsersManagementPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -59,9 +67,9 @@ export default function UsersManagementPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const users = Array.isArray(usersRaw) ? usersRaw : (usersRaw?.data ?? []);
-  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : (departmentsRaw?.data ?? []);
-  const employees = Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? []);
+  const users = (Array.isArray(usersRaw) ? usersRaw : (usersRaw?.data ?? [])) as User[];
+  const departments = (Array.isArray(departmentsRaw) ? departmentsRaw : (departmentsRaw?.data ?? [])) as Department[];
+  const employees = (Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? [])) as EmployeeFromAPI[];
 
   const [form, setForm] = useState({
     email: "",

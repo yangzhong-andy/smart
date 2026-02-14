@@ -88,11 +88,11 @@ export default function CommissionRulesPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const departmentsData = Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? []);
+  const departmentsData = (Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? [])) as DepartmentFromAPI[];
 
   // 将 API 返回的部门数据转换为页面需要的格式
-  const departments = useMemo(() => {
-    return departmentsData.map((dept: DepartmentFromAPI) => dept.name);
+  const departments = useMemo((): string[] => {
+    return departmentsData.map((dept) => dept.name);
   }, [departmentsData]);
 
   // 统计摘要
