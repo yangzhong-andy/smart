@@ -54,7 +54,7 @@ export default function SuppliersPage() {
       toast.error('加载供应商数据失败，请检查网络连接');
     }
   });
-  const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? []);
+  const suppliers = (Array.isArray(suppliersRaw) ? suppliersRaw : (suppliersRaw?.data ?? [])) as Supplier[];
 
   useEffect(() => {
     setMounted(true);
@@ -64,7 +64,7 @@ export default function SuppliersPage() {
     revalidateOnFocus: false,
     dedupingInterval: 600000
   });
-  const productsData = Array.isArray(productsDataRaw) ? productsDataRaw : (productsDataRaw?.data ?? productsDataRaw?.list ?? []);
+  const productsData = (Array.isArray(productsDataRaw) ? productsDataRaw : (productsDataRaw?.data ?? productsDataRaw?.list ?? [])) as Product[];
   const products = productsData;
   const initialized = !suppliersLoading;
   const [isModalOpen, setIsModalOpen] = useState(false);

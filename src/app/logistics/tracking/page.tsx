@@ -103,9 +103,9 @@ export default function LogisticsTrackingPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const tracking = Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? []);
-  const channels = Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw?.data ?? []);
-  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
+  const tracking = (Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? [])) as LogisticsTracking[];
+  const channels = (Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw?.data ?? [])) as LogisticsChannel[];
+  const contracts = (Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? [])) as PurchaseContract[];
 
   const [filterStatus, setFilterStatus] = useState<TrackingStatus | "all">("all");
   const [selectedTracking, setSelectedTracking] = useState<LogisticsTracking | null>(null);

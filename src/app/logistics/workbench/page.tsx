@@ -63,9 +63,9 @@ export default function LogisticsWorkbenchPage() {
     dedupingInterval: 60000
   });
 
-  const tracking = Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? []);
-  const pendingInbound = Array.isArray(pendingInboundRaw) ? pendingInboundRaw : (pendingInboundRaw?.data ?? []);
-  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
+  const tracking = (Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? [])) as LogisticsTracking[];
+  const pendingInbound = (Array.isArray(pendingInboundRaw) ? pendingInboundRaw : (pendingInboundRaw?.data ?? [])) as PendingInbound[];
+  const deliveryOrders = (Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? [])) as DeliveryOrder[];
 
   // 统计信息
   const stats = useMemo(() => {

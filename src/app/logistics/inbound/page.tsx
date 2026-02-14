@@ -58,6 +58,8 @@ type Product = {
   [key: string]: any;
 };
 
+type WarehouseItem = { id: string; name: string; code?: string };
+
 // SWR fetcher
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -107,10 +109,10 @@ export default function InboundPage() {
     dedupingInterval: 600000,
   });
 
-  const pendingInboundData = Array.isArray(pendingInboundDataRaw) ? pendingInboundDataRaw : (pendingInboundDataRaw?.data ?? []);
-  const deliveryOrders = Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? []);
-  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
-  const warehouses = Array.isArray(warehousesRaw) ? warehousesRaw : (warehousesRaw?.data ?? []);
+  const pendingInboundData = (Array.isArray(pendingInboundDataRaw) ? pendingInboundDataRaw : (pendingInboundDataRaw?.data ?? [])) as PendingInbound[];
+  const deliveryOrders = (Array.isArray(deliveryOrdersRaw) ? deliveryOrdersRaw : (deliveryOrdersRaw?.data ?? [])) as DeliveryOrder[];
+  const contracts = (Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? [])) as PurchaseContract[];
+  const warehouses = (Array.isArray(warehousesRaw) ? warehousesRaw : (warehousesRaw?.data ?? [])) as WarehouseItem[];
 
   // 从待入库单数据中提取批次
   const batches = useMemo(() => {

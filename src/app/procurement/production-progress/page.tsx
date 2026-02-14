@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { Factory, Package, TrendingUp, Calendar, AlertCircle, CheckCircle2, Clock, Play, AlertTriangle, Edit2, Save, X } from "lucide-react";
 import { PageHeader, StatCard, SearchBar, EmptyState } from "@/components/ui";
 import { upsertPurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
+import type { DeliveryOrder } from "@/lib/delivery-orders-store";
 import { getProductBySkuIdFromAPI, upsertProduct } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
 import { toast } from "sonner";
@@ -43,8 +44,8 @@ export default function ProductionProgressPage() {
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
-  const contracts = Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? []);
-  const deliveryOrders = Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? []);
+  const contracts = (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[];
+  const deliveryOrders = (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[];
 
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -515,7 +516,7 @@ export default function ProductionProgressPage() {
         ) : (
           <div className="divide-y divide-slate-800/50">
             {filteredContracts.map((contract) => {
-              const StatusIcon = statusIcons[contract.status];
+              const StatusIcon = statusIcons[contract.status as ProductionStatus];
               return (
                 <div
                   key={contract.id}
@@ -531,7 +532,7 @@ export default function ProductionProgressPage() {
                     {/* 左侧：基本信息 */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-3">
-                        <div className={`p-2 rounded-lg ${statusColors[contract.status]}`}>
+                        <div className={`p-2 rounded-lg ${statusColors[contract.status as ProductionStatus]}`}>
                           <StatusIcon className="h-4 w-4" />
                         </div>
                         <div>
@@ -539,7 +540,7 @@ export default function ProductionProgressPage() {
                             <h3 className="text-base font-semibold text-slate-100 group-hover:text-primary-300 transition-colors">
                               {contract.contractNumber}
                             </h3>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${statusColors[contract.status]}`}>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${statusColors[contract.status as ProductionStatus]}`}>
                               {contract.status}
                             </span>
                           </div>
