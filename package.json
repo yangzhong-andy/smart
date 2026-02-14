@@ -1,6 +1,6 @@
 {
   "name": "smart-erp",
-  "version": "1.0.66",
+  "version": "1.0.67",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -24,6 +24,7 @@
     "date-fns": "^4.1.0",
     "framer-motion": "^12.26.1",
     "html2canvas": "^1.4.1",
+    "ioredis": "^5.9.3",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.1.0",
     "lucide-react": "^0.562.0",
