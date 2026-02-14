@@ -36,7 +36,7 @@ export default function ProcurementOrdersPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const contracts = Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? []);
+  const contracts = (Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? [])) as PurchaseContract[];
   const [products, setProducts] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");

@@ -33,7 +33,7 @@ export default function HomePage() {
       const accJson = accRes.ok ? await accRes.json() : [];
       setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
       const flowList = await getCashFlowFromAPI();
-      setCashFlow(Array.isArray(flowList) ? flowList : (flowList?.data ?? []));
+      setCashFlow(Array.isArray(flowList) ? flowList : []);
       
       // 获取待审批账单数量
       (async () => {

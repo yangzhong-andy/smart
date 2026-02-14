@@ -207,7 +207,9 @@ export default function PurchaseOrdersPage() {
   // 加载支出申请数据（接口可能返回 { data, pagination }，getExpenseRequests 已统一返回数组）
   useEffect(() => {
     if (typeof window === "undefined") return;
-    getExpenseRequests().then((data) => setExpenseRequests(Array.isArray(data) ? data : (data?.data ?? [])));
+    getExpenseRequests().then((data: ExpenseRequest[] | { data?: ExpenseRequest[] }) =>
+      setExpenseRequests(Array.isArray(data) ? data : (data?.data ?? []))
+    );
   }, []);
 
   const expenseRequestsList = Array.isArray(expenseRequests) ? expenseRequests : [];

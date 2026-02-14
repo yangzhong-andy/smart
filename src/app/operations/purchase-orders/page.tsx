@@ -62,7 +62,7 @@ export default function PurchaseOrdersNewPage() {
     keepPreviousData: true,
     dedupingInterval: 600000
   });
-  const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
+  const ordersData = (Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? [])) as PurchaseOrder[];
 
   const [spuList, setSpuList] = useState<SpuListItem[]>([]);
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
@@ -466,7 +466,7 @@ export default function PurchaseOrdersNewPage() {
             </thead>
             <tbody className="divide-y divide-slate-800">
               {filteredOrders.map((order) => {
-                const statusColors = STATUS_COLORS[order.status];
+                const statusColors = STATUS_COLORS[order.status as PurchaseOrderStatus];
                 return (
                   <tr key={order.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-3 text-sm text-slate-200 font-medium">{order.orderNumber}</td>

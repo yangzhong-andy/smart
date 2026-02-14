@@ -45,7 +45,7 @@ export default function RiskControlPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
+  const products = (Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? [])) as { sku_id: string; name?: string; [key: string]: unknown }[];
 
   // 筛选订单
   const filteredOrders = useMemo(() => {

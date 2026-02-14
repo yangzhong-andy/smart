@@ -79,18 +79,28 @@ export default function WarehousePage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const warehousesData = Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? []);
+  type WarehouseRaw = { id: string; name: string; code?: string; type?: string; location?: string; isActive?: boolean; email?: string; createdAt?: string; updatedAt?: string; [key: string]: unknown };
+  const warehousesData = (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as WarehouseRaw[];
 
   // 转换数据格式（type 优先用 DB 的 type 字段：国内仓/海外仓）
-  const warehouses = useMemo(() => {
-    return warehousesData.map((w: any) => ({
-      ...w,
-      type: w.type === "OVERSEAS" ? "OVERSEAS" : "DOMESTIC",
-      typeLabel: WAREHOUSE_TYPE_MAP[w.type] || "国内仓",
-      locationLabel: locationMap[w.location] || "其他",
-      status: w.isActive ? "启用" : "停用",
-      email: w.email || ""
-    }));
+  const warehouses = useMemo((): (WarehouseInfo & { typeLabel: string; locationLabel: string; status: string })[] => {
+    return warehousesData.map((w) => {
+      const typeKey = w.type ?? "DOMESTIC";
+      const locKey = w.location ?? "";
+      const locationLabel = (locKey && locationMap[locKey]) ? locationMap[locKey] : "其他";
+      return {
+        ...w,
+        type: w.type === "OVERSEAS" ? "OVERSEAS" : "DOMESTIC",
+        typeLabel: WAREHOUSE_TYPE_MAP[typeKey] || "国内仓",
+        locationLabel,
+        location: (locKey && (locationMap[locKey] != null) ? locKey : "TRANSIT") as WarehouseInfo["location"],
+        status: (w.isActive ? "启用" : "停用") as "启用" | "停用",
+        isActive: !!w.isActive,
+        email: w.email || "",
+        createdAt: w.createdAt ?? "",
+        updatedAt: w.updatedAt ?? ""
+      } as WarehouseInfo & { typeLabel: string; locationLabel: string; status: string };
+    });
   }, [warehousesData]);
 
   const [searchKeyword, setSearchKeyword] = useState("");
