@@ -69,7 +69,7 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
 
   // 根据选择的店铺自动带出币种和关联账户
   const selectedStore = useMemo(() => {
-    return stores.find((s) => s.id === form.storeId);
+    return stores.find((s: Store) => s.id === form.storeId);
   }, [stores, form.storeId]);
 
   // 店铺回款时：选择店铺后同步币种
@@ -280,7 +280,7 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
                       required
                     >
                       <option value="">请选择回款店铺</option>
-                      {stores.map((store) => (
+                      {stores.map((store: Store) => (
                         <option key={store.id} value={store.id}>
                           {store.name} ({store.platform}) - {store.currency}
                         </option>
@@ -318,11 +318,11 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   >
                     <option value="">请选择（可选）</option>
-                    {stores.map((store) => (
-                      <option key={store.id} value={store.id}>
-                        {store.name} ({store.platform}) - {store.currency}
-                      </option>
-                    ))}
+{stores.map((store: Store) => (
+                        <option key={store.id} value={store.id}>
+                          {store.name} ({store.platform}) - {store.currency}
+                        </option>
+                      ))}
                   </select>
                   {stores.length === 0 && (
                     <div className="text-xs text-amber-400 mt-1">暂无店铺，请先前往"设置 - 店铺管理"创建店铺</div>

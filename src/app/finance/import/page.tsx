@@ -119,7 +119,7 @@ export default function FinanceImportPage() {
   const selectedSheet = result?.sheets?.find((s) => s.sheetName === selectedSheetName);
   const headers = selectedSheet?.headers ?? [];
   const previewRows = orderOnlyRows.slice(0, PREVIEW_ROWS);
-  const selectedStore = stores.find((s) => s.id === selectedStoreId);
+  const selectedStore = stores.find((s: StoreItem) => s.id === selectedStoreId);
 
   const handleConfirmStore = () => {
     if (!selectedStoreId) {
@@ -222,7 +222,7 @@ export default function FinanceImportPage() {
                 className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2.5 text-slate-200 text-sm"
               >
                 <option value="">请选择店铺</option>
-                {stores.map((s) => (
+                {stores.map((s: StoreItem) => (
                   <option key={s.id} value={s.id}>
                     {s.name} {s.platform ? `(${s.platform})` : ""}
                   </option>

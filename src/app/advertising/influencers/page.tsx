@@ -58,6 +58,8 @@ const getStatusColor = (status: CooperationStatus | SampleStatus): string => {
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
+type ProductOption = { sku_id: string; name?: string; at_domestic?: number };
+
 export default function InfluencersPage() {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -685,9 +687,9 @@ export default function InfluencersPage() {
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-400/30"
                 >
                   <option value="">请选择产品</option>
-                  {products
-                    .filter((p) => (p.at_domestic || 0) > 0)
-                    .map((p) => (
+                  {(products as ProductOption[])
+                    .filter((p: ProductOption) => (p.at_domestic || 0) > 0)
+                    .map((p: ProductOption) => (
                       <option key={p.sku_id} value={p.sku_id}>
                         {p.name} (SKU: {p.sku_id}) - 库存: {p.at_domestic || 0}
                       </option>

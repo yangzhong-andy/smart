@@ -121,14 +121,14 @@ export default function SupplierBillsPage() {
       return;
     }
 
-    const supplier = suppliers.find((s) => s.id === selectedSupplierId);
+    const supplier = suppliers.find((s: Supplier) => s.id === selectedSupplierId);
     if (!supplier) {
       toast.error("供应商不存在");
       return;
     }
 
     // 获取该供应商的所有合同
-    const supplierContracts = contracts.filter((c) => c.supplierId === selectedSupplierId);
+    const supplierContracts = contracts.filter((c: PurchaseContract) => c.supplierId === selectedSupplierId);
 
     // 获取该供应商的所有拿货单（按月份筛选）
     const monthStart = `${selectedMonth}-01`;
@@ -138,7 +138,7 @@ export default function SupplierBillsPage() {
 
     const supplierDeliveryOrders = deliveryOrders.filter((order) => {
       // 检查拿货单是否属于该供应商的合同
-      const contract = supplierContracts.find((c) => c.id === order.contractId);
+      const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
       if (!contract) return false;
 
       // 按拿货时间筛选：优先使用发货日期，如果没有则使用创建时间
@@ -151,7 +151,7 @@ export default function SupplierBillsPage() {
     const detailsMap = new Map<string, SupplierBillDetail>();
 
     supplierDeliveryOrders.forEach((order) => {
-      const contract = supplierContracts.find((c) => c.id === order.contractId);
+      const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
       if (!contract) return;
 
       // 判断是否有预付款
@@ -212,13 +212,13 @@ export default function SupplierBillsPage() {
 
   // 删除其他费用
   const handleRemoveOtherFee = (id: string) => {
-    setOtherFees(otherFees.filter((f) => f.id !== id));
+    setOtherFees(otherFees.filter((f: OtherFee) => f.id !== id));
   };
 
   // 更新其他费用
   const handleUpdateOtherFee = (id: string, field: keyof OtherFee, value: string | number) => {
     setOtherFees(
-      otherFees.map((f) => (f.id === id ? { ...f, [field]: value } : f))
+      otherFees.map((f: OtherFee) => (f.id === id ? { ...f, [field]: value } : f))
     );
   };
 
@@ -236,7 +236,7 @@ export default function SupplierBillsPage() {
       return;
     }
 
-    const supplier = suppliers.find((s) => s.id === selectedSupplierId);
+    const supplier = suppliers.find((s: Supplier) => s.id === selectedSupplierId);
     if (!supplier) {
       toast.error("供应商不存在");
       return;
@@ -269,7 +269,7 @@ export default function SupplierBillsPage() {
           type: "warning",
           onConfirm: async () => {
             // 删除旧账单
-            const updatedBills = existingBills.filter((b) => b.id !== existingBill.id);
+            const updatedBills = existingBills.filter((b: MonthlyBill) => b.id !== existingBill.id);
             await saveMonthlyBills(updatedBills);
             // 创建新账单
             await createNewBill(supplier);
@@ -339,11 +339,11 @@ export default function SupplierBillsPage() {
           }
 
           // 获取该供应商的所有合同
-          const supplierContracts = contracts.filter((c) => c.supplierId === supplier.id);
+          const supplierContracts = contracts.filter((c: PurchaseContract) => c.supplierId === supplier.id);
 
           // 获取该供应商的所有拿货单（按月份筛选）
           const supplierDeliveryOrders = deliveryOrders.filter((order) => {
-            const contract = supplierContracts.find((c) => c.id === order.contractId);
+            const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
             if (!contract) return false;
             // 按拿货时间筛选：优先使用发货日期，如果没有则使用创建时间
             const deliveryDate = order.shippedDate || order.createdAt;
@@ -365,7 +365,7 @@ export default function SupplierBillsPage() {
           const detailsMap = new Map<string, SupplierBillDetail>();
 
           supplierDeliveryOrders.forEach((order) => {
-            const contract = supplierContracts.find((c) => c.id === order.contractId);
+            const contract = supplierContracts.find((c: PurchaseContract) => c.id === order.contractId);
             if (!contract) return;
 
             // 判断是否有预付款
@@ -498,7 +498,7 @@ export default function SupplierBillsPage() {
       });
 
       // 确定币种（从第一个合同获取，或默认CNY）
-      const firstContract = contracts.find((c) => c.supplierId === selectedSupplierId);
+      const firstContract = contracts.find((c: PurchaseContract) => c.supplierId === selectedSupplierId);
       const currency = "CNY" as "USD" | "CNY" | "HKD"; // 默认CNY，后续可以从供应商信息获取
 
       // 创建账单明细说明
@@ -713,7 +713,7 @@ export default function SupplierBillsPage() {
           <h2 className="text-lg font-semibold text-slate-100 mb-4">账单明细</h2>
           <div className="space-y-4">
             {billDetails.map((detail) => {
-              const contract = contracts.find((c) => c.id === detail.contractId);
+              const contract = contracts.find((c: PurchaseContract) => c.id === detail.contractId);
               return (
                 <div
                   key={detail.contractId}
