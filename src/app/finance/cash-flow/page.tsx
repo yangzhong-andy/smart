@@ -80,13 +80,13 @@ export default function CashFlowPage() {
     dedupingInterval: 600000
   });
 
-  // 兼容 API 返回 { data, pagination } 或直接数组；并统一 description->summary、flowStatus->status
+  // 兼容 API 返回 { data, pagination } 或直接数组；并统一 description->summary、flowStatus->status（API 返回 CONFIRMED/PENDING，需转小写）
   const cashFlowListRaw = useMemo(() => {
     const list = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
     return list.map((f: any) => ({
       ...f,
       summary: f.summary ?? f.description,
-      status: f.status ?? f.flowStatus,
+      status: (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending",
     }));
   }, [cashFlowData]);
 
