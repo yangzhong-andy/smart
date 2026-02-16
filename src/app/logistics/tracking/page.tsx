@@ -116,9 +116,7 @@ export default function LogisticsTrackingPage() {
         currentStatus: "Pending",
         shippedDate: createForm.shippedDate,
         lastUpdatedAt: new Date().toISOString(),
-        events: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        events: []
       });
 
       toast.success("创建成功");

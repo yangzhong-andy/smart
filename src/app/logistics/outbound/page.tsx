@@ -17,10 +17,11 @@ import {
 } from "@/logistics/hooks";
 import type { OutboundOrder, Warehouse as WarehouseType } from "@/logistics/types";
 
-// 扩展出库单类型
+// 扩展出库单类型（含展示用字段）
 interface OutboundItem extends OutboundOrder {
   outboundNumber: string;      // 出库单号
   skuId?: string;             // SKU ID
+  destination?: string;       // 目的地
 }
 
 // 状态颜色配置

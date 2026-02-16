@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { 
   Warehouse, Plus, Download, Pencil, Trash2, 
-  MapPin, Phone, Mail, X 
+  MapPin, Phone, Mail, X, Package 
 } from "lucide-react";
 import { 
   PageHeader, StatCard, ActionButton, 

@@ -94,6 +94,7 @@ export interface Warehouse {
 
 export type InboundStatus = "待入库" | "部分入库" | "已入库" | "已取消";
 
+// 入库订单
 export interface InboundOrder {
   id: string;
   inboundNumber: string;   // 入库单号
@@ -125,10 +126,29 @@ export interface InboundOrder {
   updatedAt: string;
 }
 
+// 待入库类型（兼容旧代码）
+export type PendingInbound = InboundOrder;
+
 // ==================== 出库管理 ====================
 
 export type OutboundStatus = "待出库" | "已出库" | "已取消" | "部分出库";
 
+// 出库批次
+export interface OutboundBatch {
+  id: string;
+  outboundOrderId: string;
+  batchNumber: string;
+  warehouseId: string;
+  warehouseName?: string;
+  qty: number;
+  shippedDate: string;
+  destination?: string;
+  trackingNumber?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+// 出库订单
 export interface OutboundOrder {
   id: string;
   outboundNumber: string;  // 出库单号
@@ -146,6 +166,7 @@ export interface OutboundOrder {
   trackingNumber?: string;  // 物流单号
   channelId?: string;
   channelName?: string;
+  destination?: string;      // 目的地
   
   // 收货信息
   recipientName?: string;
@@ -157,6 +178,9 @@ export interface OutboundOrder {
   shippedDate?: string;
   
   notes?: string;
+  
+  // 批次信息
+  batches?: OutboundBatch[];
   
   createdAt: string;
   updatedAt: string;
