@@ -307,6 +307,51 @@ export function useContractActions() {
   };
 }
 
+// ==================== 供应商操作 Hooks ====================
+
+export function useSupplierActions() {
+  const { mutate: mutateSuppliers } = useSuppliers();
+
+  const create = async (data: any) => {
+    try {
+      await procurementService.supplier.create(data);
+      mutateSuppliers();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建失败");
+      return false;
+    }
+  };
+
+  const update = async (id: string, data: any) => {
+    try {
+      await procurementService.supplier.update(id, data);
+      mutateSuppliers();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新失败");
+      return false;
+    }
+  };
+
+  const deleteSupplier = async (id: string) => {
+    try {
+      await procurementService.supplier.delete(id);
+      mutateSuppliers();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+      return false;
+    }
+  };
+
+  return {
+    createSupplier: create,
+    updateSupplier: update,
+    deleteSupplier: deleteSupplier
+  };
+}
+
 // ==================== 工具函数 ====================
 
 export {
