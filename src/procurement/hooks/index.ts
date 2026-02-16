@@ -159,7 +159,7 @@ export function usePendingInbound(params?: {
 
 export function useSuppliers() {
   const { data, error, isLoading, mutate } = useSWR<Supplier[]>(
-    "/api/procurement/suppliers?page=1&pageSize=500",
+    "/api/suppliers?page=1&pageSize=500",
     fetcher,
     {
       revalidateOnFocus: false,
@@ -168,7 +168,7 @@ export function useSuppliers() {
   );
 
   return {
-    suppliers: data || [],
+    suppliers: Array.isArray(data) ? data : (data?.data || []),
     isLoading,
     isError: !!error,
     error,

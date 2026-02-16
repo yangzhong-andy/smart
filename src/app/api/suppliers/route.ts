@@ -12,16 +12,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const category = searchParams.get("category")
-    const country = searchParams.get("country")
     const page = parseInt(searchParams.get("page") || "1")
-    const pageSize = parseInt(searchParams.get("pageSize") || "20")
+    const pageSize = parseInt(searchParams.get("pageSize") || "500")
     const noCache = searchParams.get("noCache") === "true"
 
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
       category || 'all',
-      country || 'all',
       String(page),
       String(pageSize)
     );
@@ -37,14 +35,10 @@ export async function GET(request: NextRequest) {
 
     const where: any = {}
     if (category) where.category = category
+
     const [suppliers, total] = await prisma.$transaction([
       prisma.supplier.findMany({
         where,
-        select: {
-          id: true, name: true, category: true,
-          contact: true, phone: true, address: true,
-          createdAt: true, updatedAt: true,
-        },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -56,16 +50,24 @@ export async function GET(request: NextRequest) {
       data: suppliers.map(s => ({
         id: s.id,
         name: s.name,
-        code: undefined,
-        category: s.category ?? undefined,
-        country: undefined,
         contact: s.contact,
         phone: s.phone,
-        email: undefined,
+        email: s.email ?? undefined,
         address: s.address ?? undefined,
-        paymentTerms: undefined,
-        currency: undefined,
-        status: undefined,
+        depositRate: Number(s.depositRate) || 0,
+        tailPeriodDays: s.tailPeriodDays || 0,
+        settleBase: s.settleBase,
+        level: s.level ?? undefined,
+        category: s.category ?? undefined,
+        bankAccount: s.bankAccount ?? undefined,
+        bankName: s.bankName ?? undefined,
+        taxId: s.taxId ?? undefined,
+        invoiceRequirement: s.invoiceRequirement ?? undefined,
+        invoicePoint: s.invoicePoint ? Number(s.invoicePoint) : undefined,
+        defaultLeadTime: s.defaultLeadTime ?? undefined,
+        moq: s.moq ?? undefined,
+        factoryImages: s.factoryImages ? (Array.isArray(s.factoryImages) ? s.factoryImages : [s.factoryImages]) : undefined,
+        isActive: true,
         createdAt: s.createdAt.toISOString(),
         updatedAt: s.updatedAt.toISOString(),
       })),
@@ -87,7 +89,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - 创建新供应商（清除缓存）
+// POST - 创建新供应商
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -100,8 +102,16 @@ export async function POST(request: NextRequest) {
         depositRate: body.depositRate ?? 0,
         tailPeriodDays: body.tailPeriodDays ?? 0,
         settleBase: (body.settleBase ?? 'SHIPMENT') as any,
+        level: body.level ?? null,
         category: body.category ?? null,
         address: body.address ?? null,
+        bankAccount: body.bankAccount ?? null,
+        bankName: body.bankName ?? null,
+        taxId: body.taxId ?? null,
+        invoiceRequirement: body.invoiceRequirement ?? null,
+        invoicePoint: body.invoicePoint ?? null,
+        defaultLeadTime: body.defaultLeadTime ?? null,
+        moq: body.moq ?? null,
       }
     })
 
@@ -111,13 +121,96 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       id: supplier.id,
       name: supplier.name,
-      category: supplier.category,
-      createdAt: supplier.createdAt.toISOString()
+      contact: supplier.contact,
+      phone: supplier.phone,
+      depositRate: Number(supplier.depositRate),
+      tailPeriodDays: supplier.tailPeriodDays,
+      settleBase: supplier.settleBase,
+      isActive: true,
+      createdAt: supplier.createdAt.toISOString(),
+      updatedAt: supplier.updatedAt.toISOString(),
     })
   } catch (error) {
     console.error('Error creating supplier:', error)
     return NextResponse.json(
       { error: 'Failed to create supplier' },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT - 更新供应商
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { id, ...data } = body
+    
+    const supplier = await prisma.supplier.update({
+      where: { id },
+      data: {
+        name: data.name,
+        contact: data.contact,
+        phone: data.phone,
+        depositRate: data.depositRate ?? 0,
+        tailPeriodDays: data.tailPeriodDays ?? 0,
+        settleBase: (data.settleBase ?? 'SHIPMENT') as any,
+        level: data.level ?? null,
+        category: data.category ?? null,
+        address: data.address ?? null,
+        bankAccount: data.bankAccount ?? null,
+        bankName: data.bankName ?? null,
+        taxId: data.taxId ?? null,
+        invoiceRequirement: data.invoiceRequirement ?? null,
+        invoicePoint: data.invoicePoint ?? null,
+        defaultLeadTime: data.defaultLeadTime ?? null,
+        moq: data.moq ?? null,
+      }
+    })
+
+    // 清除供应商相关缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({
+      id: supplier.id,
+      name: supplier.name,
+      contact: supplier.contact,
+      phone: supplier.phone,
+      depositRate: Number(supplier.depositRate),
+      tailPeriodDays: supplier.tailPeriodDays,
+      settleBase: supplier.settleBase,
+      isActive: true,
+      createdAt: supplier.createdAt.toISOString(),
+      updatedAt: supplier.updatedAt.toISOString(),
+    })
+  } catch (error) {
+    console.error('Error updating supplier:', error)
+    return NextResponse.json(
+      { error: 'Failed to update supplier' },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE - 删除供应商
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+    
+    if (!id) {
+      return NextResponse.json({ error: 'Missing supplier id' }, { status: 400 })
+    }
+    
+    await prisma.supplier.delete({ where: { id } })
+
+    // 清除供应商相关缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting supplier:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete supplier' },
       { status: 500 }
     )
   }

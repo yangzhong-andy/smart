@@ -267,44 +267,42 @@ export const inboundService = {
 
 export const supplierService = {
   async getAll(params?: {
-    isActive?: boolean;
+    category?: string;
     page?: number;
     pageSize?: number;
   }): Promise<PaginatedResponse<Supplier>> {
     const searchParams = new URLSearchParams();
-    if (params?.isActive !== undefined) {
-      searchParams.set("isActive", String(params.isActive));
-    }
+    if (params?.category) searchParams.set("category", params.category);
     searchParams.set("page", String(params?.page || 1));
-    searchParams.set("pageSize", String(params?.pageSize || PROCUREMENT_CONFIG.DEFAULT_PAGE_SIZE));
+    searchParams.set("pageSize", String(params?.pageSize || 500));
 
     return fetchApi<PaginatedResponse<Supplier>>(
-      `${API_BASE}/procurement/suppliers?${searchParams.toString()}`
+      `/api/suppliers?${searchParams.toString()}`
     );
   },
 
   async getById(id: string): Promise<Supplier | null> {
     return fetchApi<Supplier | null>(
-      `${API_BASE}/procurement/suppliers/${id}`
+      `/api/suppliers/${id}`
     ).catch(() => null);
   },
 
   async create(data: Partial<Supplier>): Promise<Supplier> {
-    return fetchApi<Supplier>(`${API_BASE}/procurement/suppliers`, {
+    return fetchApi<Supplier>("/api/suppliers", {
       method: "POST",
       body: JSON.stringify(data)
     });
   },
 
   async update(id: string, data: Partial<Supplier>): Promise<Supplier> {
-    return fetchApi<Supplier>(`${API_BASE}/procurement/suppliers/${id}`, {
+    return fetchApi<Supplier>(`/api/suppliers`, {
       method: "PUT",
-      body: JSON.stringify(data)
+      body: JSON.stringify({ id, ...data })
     });
   },
 
   async delete(id: string): Promise<void> {
-    await fetchApi(`${API_BASE}/procurement/suppliers/${id}`, {
+    await fetchApi(`/api/suppliers?id=${id}`, {
       method: "DELETE"
     });
   }
