@@ -69,16 +69,23 @@ export default function SuppliersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 统计信息
-  const stats = useMemo(() => ({
-    total: suppliers.length,
-    avgDepositRate: suppliers.length > 0 
-      ? suppliers.reduce((sum, s) => sum + s.depositRate, 0) / suppliers.length 
-      : 0,
-    avgTailPeriod: suppliers.length > 0 
-      ? suppliers.reduce((sum, s) => sum + s.tailPeriodDays, 0) / suppliers.length 
-      : 0,
-    sLevelCount: suppliers.filter(s => s.level === "S").length
-  }), [suppliers]);
+  const stats = useMemo(() => {
+    const total = suppliers.length;
+    const avgDepositRate = total > 0 
+      ? suppliers.reduce((sum: number, s: Supplier) => sum + (Number(s.depositRate) || 0), 0) / total 
+      : 0;
+    const avgTailPeriod = total > 0 
+      ? suppliers.reduce((sum: number, s: Supplier) => sum + (s.tailPeriodDays || 0), 0) / total 
+      : 0;
+    const sLevelCount = suppliers.filter((s: Supplier) => s.level === "S").length;
+    
+    return {
+      total,
+      avgDepositRate,
+      avgTailPeriod,
+      sLevelCount
+    };
+  }, [suppliers]);
 
   // 筛选供应商
   const filteredSuppliers = useMemo(() => {
@@ -109,7 +116,7 @@ export default function SuppliersPage() {
 
   // 获取所有分类
   const categories = useMemo(() => {
-    const cats = new Set(suppliers.map(s => s.category).filter(Boolean));
+    const cats = new Set(suppliers.map((s: Supplier) => s.category).filter(Boolean));
     return Array.from(cats);
   }, [suppliers]);
 

@@ -52,7 +52,6 @@ export async function GET(request: NextRequest) {
         name: s.name,
         contact: s.contact,
         phone: s.phone,
-        email: s.email ?? undefined,
         address: s.address ?? undefined,
         depositRate: Number(s.depositRate) || 0,
         tailPeriodDays: s.tailPeriodDays || 0,

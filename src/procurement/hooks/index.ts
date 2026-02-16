@@ -158,7 +158,7 @@ export function usePendingInbound(params?: {
 // ==================== 供应商 Hooks ====================
 
 export function useSuppliers() {
-  const { data, error, isLoading, mutate } = useSWR<Supplier[]>(
+  const { data, error, isLoading, mutate } = useSWR<{ data: Supplier[] }>(
     "/api/suppliers?page=1&pageSize=500",
     fetcher,
     {
@@ -168,7 +168,7 @@ export function useSuppliers() {
   );
 
   return {
-    suppliers: Array.isArray(data) ? data : (data?.data || []),
+    suppliers: data?.data || [],
     isLoading,
     isError: !!error,
     error,
