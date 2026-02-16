@@ -75,7 +75,7 @@ export default function OutboundPage() {
       result = result.filter(o =>
         o.outboundNumber?.toLowerCase().includes(keyword) ||
         o.sku?.toLowerCase().includes(keyword) ||
-        o.warehouse?.toLowerCase().includes(keyword)
+        o.warehouseName?.toLowerCase().includes(keyword)
       );
     }
 
@@ -263,7 +263,7 @@ function OutboundCard({ order, onView, onShip }: OutboundCardProps) {
             </div>
             <div>
               <span className="text-xs text-slate-500 block">仓库</span>
-              <span className="text-sm text-slate-300">{order.warehouse || "-"}</span>
+              <span className="text-sm text-slate-300">{order.warehouseName || "-"}</span>
             </div>
             <div>
               <span className="text-xs text-slate-500 block">目的地</span>
@@ -359,7 +359,7 @@ function OutboundDetailModal({ order, warehouses, onClose, onShip }: OutboundDet
           </div>
           <div>
             <span className="text-xs text-slate-500 block">仓库</span>
-            <span className="text-sm text-slate-200">{warehouse?.name || order.warehouse || "-"}</span>
+            <span className="text-sm text-slate-200">{warehouse?.name || order.warehouseName || "-"}</span>
           </div>
           <div>
             <span className="text-xs text-slate-500 block">目的地</span>
