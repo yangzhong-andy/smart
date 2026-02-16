@@ -158,9 +158,15 @@ export function usePendingInbound(params?: {
 // ==================== 供应商 Hooks ====================
 
 export function useSuppliers() {
-  const { data, error, isLoading, mutate } = useSWR<{ data: Supplier[] }>(
+  const { data, error, isLoading, mutate } = useSWR<Supplier[]>(
     "/api/suppliers?page=1&pageSize=500",
-    fetcher,
+    async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("请求失败");
+      const json = await res.json();
+      // API 返回 { data: [...], pagination: {...} } 格式
+      return json.data || [];
+    },
     {
       revalidateOnFocus: false,
       dedupingInterval: PROCUREMENT_CONFIG.DEDUPING_INTERVAL
@@ -168,7 +174,7 @@ export function useSuppliers() {
   );
 
   return {
-    suppliers: data?.data || [],
+    suppliers: data || [],
     isLoading,
     isError: !!error,
     error,
