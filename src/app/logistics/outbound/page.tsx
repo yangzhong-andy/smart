@@ -128,7 +128,7 @@ export default function OutboundPage() {
       o.qty.toString(),
       o.shippedQty.toString(),
       (o.qty - o.shippedQty).toString(),
-      o.warehouse || "",
+      o.warehouseName || "",
       o.status,
       formatDate(o.createdAt)
     ]);
