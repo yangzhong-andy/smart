@@ -2,15 +2,13 @@
 
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
-import { Factory, TrendingUp, DollarSign, Search, X, Download, Pencil, Trash2, Building2, Package, ChevronDown, ChevronUp, ExternalLink, MapPin } from "lucide-react";
+import { Factory, TrendingUp, DollarSign, Search, X, Download, Pencil, Trash2, Building2 } from "lucide-react";
 import {
   PageHeader, ActionButton
 } from "@/components/ui";
 import {
   useSuppliers,
-  useSupplierActions,
-  formatDate,
-  formatDateTime
+  useSupplierActions
 } from "@/procurement/hooks";
 import type { Supplier, SupplierFormData } from "@/procurement/types";
 
@@ -112,12 +110,6 @@ export default function SuppliersPage() {
 
     return result;
   }, [suppliers, filterLevel, searchKeyword]);
-
-  // 获取所有分类
-  const categories = useMemo(() => {
-    const cats = new Set(suppliers.map((s: Supplier) => s.category).filter(Boolean));
-    return Array.from(cats);
-  }, [suppliers]);
 
   // 打开 Modal
   const handleOpenModal = (supplier?: Supplier) => {
