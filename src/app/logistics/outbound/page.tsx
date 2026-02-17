@@ -42,7 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function OutboundPage() {
   // 使用统一 Hooks
-  const { outboundOrders, isLoading, mutate } = useOutboundOrders();
+  const { outboundOrders = [], isLoading, mutate } = useOutboundOrders();
   const { warehouses } = useWarehouses();
 
   // 筛选状态

@@ -29,9 +29,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function LogisticsWorkbenchPage() {
   // 使用统一 Hooks 获取数据
-  const { tracking, isLoading: trackingLoading } = useLogisticsTracking();
-  const { inboundOrders, isLoading: inboundLoading } = useInboundOrders();
-  const { outboundOrders, isLoading: outboundLoading } = useOutboundOrders();
+  const { tracking = [], isLoading: trackingLoading } = useLogisticsTracking();
+  const { inboundOrders = [], isLoading: inboundLoading } = useInboundOrders();
+  const { outboundOrders = [], isLoading: outboundLoading } = useOutboundOrders();
   const { stats, isLoading: statsLoading } = useLogisticsStats();
 
   const isLoading = trackingLoading || inboundLoading || outboundLoading || statsLoading;

@@ -1,15 +1,381 @@
 /**
- * 物流中心 - 模块导出
+ * 物流中心 - 组合式函数 Hooks
  */
 
-// 类型定义
-export * from "./types";
+import useSWR from "swr";
+import { toast } from "sonner";
+import type {
+  LogisticsChannel,
+  LogisticsTracking,
+  Warehouse,
+  InboundOrder,
+  OutboundOrder,
+  TrackingStatus,
+  InboundStatus
+} from "@/logistics/types";
+import {
+  LOGISTICS_STATS_CONFIG,
+  STATUS_COLORS,
+  STATUS_LABELS,
+  INBOUND_STATUS_LABELS
+} from "@/logistics/constants";
+import { logisticsService } from "@/logistics/services";
 
-// 常量定义
-export * from "./constants";
+// ==================== 通用 Fetcher ====================
 
-// 服务层
-export * from "./services";
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("请求失败");
+  const json = await res.json();
+  return Array.isArray(json) ? json : (json?.data ?? []);
+};
 
-// Hooks
-export * from "./hooks";
+// ==================== 物流渠道 Hooks ====================
+
+export function useLogisticsChannels() {
+  const { data, error, isLoading, mutate } = useSWR<LogisticsChannel[]>(
+    "/api/logistics-channels?page=1&pageSize=500",
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: LOGISTICS_STATS_CONFIG.dedupingInterval
+    }
+  );
+
+  return {
+    channels: data || [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate
+  };
+}
+
+// ==================== 物流跟踪 Hooks ====================
+
+export function useLogisticsTracking(params?: {
+  channelId?: string;
+  status?: TrackingStatus;
+}) {
+  const query = new URLSearchParams();
+  query.set("page", "1");
+  query.set("pageSize", "500");
+  if (params?.channelId) query.set("channelId", params.channelId);
+  if (params?.status) query.set("status", params.status);
+
+  const { data, error, isLoading, mutate } = useSWR<LogisticsTracking[]>(
+    `/api/logistics-tracking?${query.toString()}`,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: LOGISTICS_STATS_CONFIG.dedupingInterval
+    }
+  );
+
+  return {
+    tracking: data || [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate
+  };
+}
+
+// ==================== 仓库 Hooks ====================
+
+export function useWarehouses() {
+  const { data, error, isLoading, mutate } = useSWR<Warehouse[]>(
+    "/api/warehouses?page=1&pageSize=500",
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: LOGISTICS_STATS_CONFIG.dedupingInterval
+    }
+  );
+
+  return {
+    warehouses: data || [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate
+  };
+}
+
+// ==================== 入库 Hooks ====================
+
+export function useInboundOrders(params?: {
+  warehouseId?: string;
+  status?: InboundStatus;
+}) {
+  const query = new URLSearchParams();
+  query.set("page", "1");
+  query.set("pageSize", "500");
+  if (params?.warehouseId) query.set("warehouseId", params.warehouseId);
+  if (params?.status) query.set("status", params.status);
+
+  const { data, error, isLoading, mutate } = useSWR<InboundOrder[]>(
+    `/api/pending-inbound?${query.toString()}`,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: LOGISTICS_STATS_CONFIG.dedupingInterval
+    }
+  );
+
+  return {
+    inboundOrders: data || [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate
+  };
+}
+
+// ==================== 出库 Hooks ====================
+
+export function useOutboundOrders(params?: {
+  warehouseId?: string;
+  status?: string;
+}) {
+  const query = new URLSearchParams();
+  query.set("page", "1");
+  query.set("pageSize", "500");
+  if (params?.warehouseId) query.set("warehouseId", params.warehouseId);
+  if (params?.status) query.set("status", params.status);
+
+  const { data, error, isLoading, mutate } = useSWR<OutboundOrder[]>(
+    `/api/delivery-orders?${query.toString()}`,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: LOGISTICS_STATS_CONFIG.dedupingInterval
+    }
+  );
+
+  return {
+    outboundOrders: data || [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate
+  };
+}
+
+// ==================== 统计 Hooks ====================
+
+export function useLogisticsStats() {
+  const { tracking = [], isLoading: trackingLoading } = useLogisticsTracking();
+  const { inboundOrders = [], isLoading: inboundLoading } = useInboundOrders();
+  const { outboundOrders = [], isLoading: outboundLoading } = useOutboundOrders();
+
+  const isLoading = trackingLoading || inboundLoading || outboundLoading;
+
+  const stats = {
+    // 物流跟踪统计
+    tracking: {
+      total: tracking.length,
+      pending: tracking.filter((t: LogisticsTracking) => t.currentStatus === "Pending").length,
+      inTransit: tracking.filter((t: LogisticsTracking) => t.currentStatus === "In Transit").length,
+      delivered: tracking.filter((t: LogisticsTracking) => t.currentStatus === "Delivered").length,
+      exception: tracking.filter((t: LogisticsTracking) => t.currentStatus === "Exception").length
+    },
+    // 入库统计
+    inbound: {
+      total: inboundOrders.length,
+      pending: inboundOrders.filter((i: any) => i.status === "待入库").length,
+      partial: inboundOrders.filter((i: any) => i.status === "部分入库").length,
+      completed: inboundOrders.filter((i: any) => i.status === "已入库").length,
+      pendingQty: inboundOrders.reduce((sum: number, i: any) => sum + (i.qty - i.receivedQty), 0)
+    },
+    // 出库统计
+    outbound: {
+      total: outboundOrders.length,
+      pending: outboundOrders.filter((o: any) => o.status === "待出库").length,
+      shipped: outboundOrders.filter((o: any) => o.status === "已出库").length,
+      partial: outboundOrders.filter((o: any) => o.status === "部分出库").length
+    }
+  };
+
+  return {
+    stats,
+    isLoading
+  };
+}
+
+// ==================== 操作 Actions Hooks ====================
+
+export function useChannelActions() {
+  const { mutate: mutateChannels } = useLogisticsChannels();
+
+  const createChannel = async (data: Omit<LogisticsChannel, "id" | "createdAt" | "updatedAt">) => {
+    try {
+      await logisticsService.channel.create(data);
+      toast.success("创建成功");
+      mutateChannels();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建失败");
+      return false;
+    }
+  };
+
+  const updateChannel = async (id: string, data: Partial<LogisticsChannel>) => {
+    try {
+      await logisticsService.channel.update(id, data);
+      toast.success("更新成功");
+      mutateChannels();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新失败");
+      return false;
+    }
+  };
+
+  const deleteChannel = async (id: string) => {
+    try {
+      await logisticsService.channel.delete(id);
+      toast.success("删除成功");
+      mutateChannels();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+      return false;
+    }
+  };
+
+  return {
+    createChannel,
+    updateChannel,
+    deleteChannel
+  };
+}
+
+export function useTrackingActions() {
+  const { mutate: mutateTracking } = useLogisticsTracking();
+
+  const createTracking = async (data: Omit<LogisticsTracking, "id" | "createdAt" | "updatedAt">) => {
+    try {
+      await logisticsService.tracking.create(data);
+      toast.success("创建成功");
+      mutateTracking();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建失败");
+      return false;
+    }
+  };
+
+  const updateTracking = async (id: string, data: Partial<LogisticsTracking>) => {
+    try {
+      await logisticsService.tracking.update(id, data);
+      toast.success("更新成功");
+      mutateTracking();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新失败");
+      return false;
+    }
+  };
+
+  const deleteTracking = async (id: string) => {
+    try {
+      await logisticsService.tracking.delete(id);
+      toast.success("删除成功");
+      mutateTracking();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+      return false;
+    }
+  };
+
+  return {
+    createTracking,
+    updateTracking,
+    deleteTracking
+  };
+}
+
+export function useWarehouseActions() {
+  const { mutate: mutateWarehouses } = useWarehouses();
+
+  const createWarehouse = async (data: Omit<Warehouse, "id" | "createdAt" | "updatedAt">) => {
+    try {
+      await logisticsService.warehouse.create(data);
+      toast.success("创建成功");
+      mutateWarehouses();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建失败");
+      return false;
+    }
+  };
+
+  const updateWarehouse = async (id: string, data: Partial<Warehouse>) => {
+    try {
+      await logisticsService.warehouse.update(id, data);
+      toast.success("更新成功");
+      mutateWarehouses();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新失败");
+      return false;
+    }
+  };
+
+  const deleteWarehouse = async (id: string) => {
+    try {
+      await logisticsService.warehouse.delete(id);
+      toast.success("删除成功");
+      mutateWarehouses();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+      return false;
+    }
+  };
+
+  return {
+    createWarehouse,
+    updateWarehouse,
+    deleteWarehouse
+  };
+}
+
+// ==================== 工具函数 ====================
+
+export function getStatusColor(status: TrackingStatus) {
+  return STATUS_COLORS[status] || STATUS_COLORS.Pending;
+}
+
+export function getStatusLabel(status: TrackingStatus) {
+  return STATUS_LABELS[status] || status;
+}
+
+export function formatDate(dateString?: string): string {
+  if (!dateString) return "-";
+  try {
+    return new Date(dateString).toLocaleDateString("zh-CN");
+  } catch {
+    return dateString;
+  }
+}
+
+export function formatDateTime(dateString?: string): string {
+  if (!dateString) return "-";
+  try {
+    return new Date(dateString).toLocaleString("zh-CN");
+  } catch {
+    return dateString;
+  }
+}
+
+// ==================== 导出 ====================
+
+export {
+  fetcher,
+  STATUS_COLORS,
+  STATUS_LABELS,
+  INBOUND_STATUS_LABELS
+};
