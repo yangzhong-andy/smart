@@ -701,6 +701,17 @@ export default function PurchaseOrdersPage() {
         return;
       }
 
+      const deliveryContractId = deliveryModal.contractId;
+      // 拿货单创建成功：立即提示并关闭拿货弹窗，再执行后续逻辑
+      const orderNumber = result.order?.deliveryNumber;
+      setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
+      setSuccessModal({
+        open: true,
+        type: "delivery",
+        data: { contractNumber: contract.contractNumber, qty: totalQty, orderNumber }
+      });
+      toast.success("拿货单创建成功", { icon: "✅" });
+
       if (result.order) {
       const inboundResult = await createPendingInboundFromDeliveryOrder(result.order.id);
       if (!inboundResult.success) {
@@ -732,16 +743,9 @@ export default function PurchaseOrdersPage() {
     mutateContracts();
     mutateDeliveryOrders();
 
-    if (detailModal.contractId === deliveryModal.contractId) {
+    if (detailModal.contractId === deliveryContractId) {
       setDetailRefreshKey((prev) => prev + 1);
     }
-
-      setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
-      setSuccessModal({
-        open: true,
-        type: "delivery",
-        data: { contractNumber: contract.contractNumber, qty: totalQty, orderNumber: result.order?.deliveryNumber }
-      });
     } finally {
       setDeliverySubmitting(false);
     }
