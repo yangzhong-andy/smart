@@ -82,7 +82,7 @@ export default function InboundPage() {
     pending: inboundOrders.filter((i: InboundOrder) => i.status === "待入库").length,
     partial: inboundOrders.filter((i: InboundOrder) => i.status === "部分入库").length,
     completed: inboundOrders.filter((i: InboundOrder) => i.status === "已入库").length,
-    pendingQty: inboundOrders.reduce((sum, i: InboundOrder) => sum + (i.qty - i.receivedQty), 0)
+    pendingQty: inboundOrders.reduce((sum: number, i: InboundOrder) => sum + (i.qty - i.receivedQty), 0)
   }), [inboundOrders]);
 
   // 筛选订单
