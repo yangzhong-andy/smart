@@ -123,24 +123,38 @@ export default function InboundPage() {
   const handleReceive = async (order: InboundOrder) => {
     const remaining = order.qty - order.receivedQty;
     const confirmQty = prompt(`当前待入库数量: ${remaining}\n请输入入库数量:`, remaining.toString());
-    
+
     if (!confirmQty || isNaN(Number(confirmQty))) return;
-    
-    const qty = Math.min(Number(confirmQty), remaining);
-    
+
+    const qty = Math.min(Math.max(0, Number(confirmQty)), remaining);
+    if (qty <= 0) {
+      toast.error("入库数量需大于 0");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
+      const body: { receivedQty: number; warehouseId?: string } = { receivedQty: qty };
+      if (warehouses.length > 0) body.warehouseId = warehouses[0].id;
+
       const response = await fetch(`/api/pending-inbound/${order.id}/receive`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receivedQty: qty })
+        body: JSON.stringify(body),
       });
 
-      if (!response.ok) throw new Error("入库失败");
-      
-      toast.success(`入库成功，入库数量: ${qty}`);
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error((data as { error?: string }).error || "入库失败");
+      }
+
+      toast.success(`入库成功，入库数量: ${qty}。库存已增加，待入库单已更新。`);
       mutate();
     } catch (error) {
-      toast.error("入库失败，请重试");
+      toast.error(error instanceof Error ? error.message : "入库失败，请重试");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -232,6 +246,7 @@ export default function InboundPage() {
               key={order.id}
               order={order as InboundItem}
               warehouses={warehouses}
+              isSubmitting={isSubmitting}
               onView={() => handleViewDetail(order)}
               onReceive={() => handleReceive(order)}
             />
@@ -244,6 +259,7 @@ export default function InboundPage() {
         <InboundDetailModal
           order={detailModal}
           warehouses={warehouses}
+          isSubmitting={isSubmitting}
           onClose={handleCloseDetail}
           onReceive={() => {
             handleReceive(detailModal);
@@ -260,11 +276,12 @@ export default function InboundPage() {
 interface InboundCardProps {
   order: InboundItem;
   warehouses: WarehouseType[];
+  isSubmitting?: boolean;
   onView: () => void;
   onReceive: () => void;
 }
 
-function InboundCard({ order, warehouses, onView, onReceive }: InboundCardProps) {
+function InboundCard({ order, warehouses, isSubmitting, onView, onReceive }: InboundCardProps) {
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
   const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
@@ -331,7 +348,8 @@ function InboundCard({ order, warehouses, onView, onReceive }: InboundCardProps)
           {remaining > 0 && order.status !== "已取消" && (
             <button
               onClick={onReceive}
-              className="p-2 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+              disabled={isSubmitting}
+              className="p-2 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="入库"
             >
               <CheckCircle2 className="h-5 w-5" />
@@ -348,11 +366,12 @@ function InboundCard({ order, warehouses, onView, onReceive }: InboundCardProps)
 interface InboundDetailModalProps {
   order: InboundItem;
   warehouses: WarehouseType[];
+  isSubmitting?: boolean;
   onClose: () => void;
   onReceive: () => void;
 }
 
-function InboundDetailModal({ order, warehouses, onClose, onReceive }: InboundDetailModalProps) {
+function InboundDetailModal({ order, warehouses, isSubmitting, onClose, onReceive }: InboundDetailModalProps) {
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
   const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
@@ -431,8 +450,13 @@ function InboundDetailModal({ order, warehouses, onClose, onReceive }: InboundDe
             关闭
           </ActionButton>
           {remaining > 0 && order.status !== "已取消" && (
-            <ActionButton onClick={onReceive} variant="primary" icon={CheckCircle2}>
-              立即入库 ({remaining})
+            <ActionButton
+              onClick={onReceive}
+              variant="primary"
+              icon={CheckCircle2}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "处理中..." : `立即入库 (${remaining})`}
             </ActionButton>
           )}
         </div>

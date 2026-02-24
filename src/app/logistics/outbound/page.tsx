@@ -41,8 +41,9 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function OutboundPage() {
-  // 使用统一 Hooks
-  const { outboundOrders = [], isLoading, mutate } = useOutboundOrders();
+  // 使用统一 Hooks（防御：确保为数组）
+  const { outboundOrders: outboundOrdersRaw, isLoading, mutate } = useOutboundOrders();
+  const outboundOrders = Array.isArray(outboundOrdersRaw) ? outboundOrdersRaw : [];
   const { warehouses } = useWarehouses();
 
   // 筛选状态

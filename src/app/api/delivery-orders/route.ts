@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
+import { DeliveryOrderStatus } from "@prisma/client";
 
 export const dynamic = 'force-dynamic';
 
@@ -99,18 +100,39 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    const STATUS_MAP_FRONT_TO_DB: Record<string, DeliveryOrderStatus> = {
+      "待发货": DeliveryOrderStatus.PENDING,
+      "已发货": DeliveryOrderStatus.SHIPPED,
+      "运输中": DeliveryOrderStatus.IN_TRANSIT,
+      "已入库": DeliveryOrderStatus.RECEIVED,
+      "已取消": DeliveryOrderStatus.CANCELLED
+    };
+
+    const contractId = body.contractId as string | undefined;
+    const contractNumber = body.contractNumber as string | undefined;
+    const deliveryNumber = body.deliveryNumber as string | undefined;
+    const qty = Number(body.qty);
+
+    if (!contractId || !contractNumber || !deliveryNumber || !Number.isFinite(qty) || qty <= 0) {
+      return NextResponse.json(
+        { error: "请提供有效的 contractId、contractNumber、deliveryNumber 和 qty（> 0）" },
+        { status: 400 }
+      );
+    }
+
     const order = await prisma.deliveryOrder.create({
       data: {
-        deliveryNumber: body.deliveryNumber,
-        contractId: body.contractId || null,
-        contractNumber: body.contractNumber,
-        qty: body.qty,
+        deliveryNumber,
+        contractId,
+        contractNumber,
+        qty: Math.round(qty),
         itemQtys: body.itemQtys ?? undefined,
         domesticTrackingNumber: body.domesticTrackingNumber || null,
         shippedDate: body.shippedDate ? new Date(body.shippedDate) : null,
-        status: body.status || 'PENDING',
-        tailAmount: body.tailAmount ?? 0,
-        tailPaid: body.tailPaid ?? 0,
+        status: STATUS_MAP_FRONT_TO_DB[String(body.status)] || DeliveryOrderStatus.PENDING,
+        tailAmount: Number(body.tailAmount ?? 0),
+        tailPaid: Number(body.tailPaid ?? 0),
         tailDueDate: body.tailDueDate ? new Date(body.tailDueDate) : null,
       },
     });

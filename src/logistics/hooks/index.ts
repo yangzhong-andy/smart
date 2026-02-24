@@ -155,7 +155,7 @@ export function useOutboundOrders(params?: {
     }
   );
 
-  const outboundOrders = data ?? [];
+  const outboundOrders = Array.isArray(data) ? data : [];
   return {
     outboundOrders,
     isLoading,

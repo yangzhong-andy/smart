@@ -702,50 +702,55 @@ export default function PurchaseOrdersPage() {
       }
 
       const deliveryContractId = deliveryModal.contractId;
-      // 拿货单创建成功：立即提示并关闭拿货弹窗，再执行后续逻辑
-      const orderNumber = result.order?.deliveryNumber;
+      const orderNumber = result.order?.deliveryNumber ?? "";
+      // 拿货单创建成功：立即关闭拿货弹窗并弹出成功提示
       setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
       setSuccessModal({
         open: true,
         type: "delivery",
         data: { contractNumber: contract.contractNumber, qty: totalQty, orderNumber }
       });
-      toast.success("拿货单创建成功", { icon: "✅" });
+      toast.success("拿货单创建成功，已推送到待入库", { icon: "✅", duration: 4000 });
 
       if (result.order) {
-      const inboundResult = await createPendingInboundFromDeliveryOrder(result.order.id);
-      if (!inboundResult.success) {
-        console.warn("创建待入库单失败:", inboundResult.error);
-      }
-      // 按供应商账期（尾款到期日所在月）自动生成/汇总月账单
-      try {
-        const billRes = await fetch("/api/monthly-bills/ensure-from-delivery", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deliveryOrderId: result.order.id }),
-        });
-        if (billRes.ok) {
-          const data = await billRes.json();
-          if (data.created || data.updated) {
-            toast.success(
-              data.created
-                ? `已根据账期生成 ${data.supplierName} ${data.month} 月账单`
-                : `已更新 ${data.supplierName} ${data.month} 月账单`,
-              { icon: "📋" }
-            );
+        try {
+          const inboundResult = await createPendingInboundFromDeliveryOrder(result.order.id);
+          if (!inboundResult.success) {
+            console.warn("创建待入库单失败:", inboundResult.error);
           }
+        } catch (e) {
+          console.warn("创建待入库单异常:", e);
         }
-      } catch (e) {
-        console.warn("自动生成月账单失败:", e);
+        try {
+          const billRes = await fetch("/api/monthly-bills/ensure-from-delivery", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deliveryOrderId: result.order.id }),
+          });
+          if (billRes.ok) {
+            const data = await billRes.json();
+            if (data.created || data.updated) {
+              toast.success(
+                data.created
+                  ? `已根据账期生成 ${data.supplierName} ${data.month} 月账单`
+                  : `已更新 ${data.supplierName} ${data.month} 月账单`,
+                { icon: "📋" }
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("自动生成月账单失败:", e);
+        }
       }
-    }
 
-    mutateContracts();
-    mutateDeliveryOrders();
-
-    if (detailModal.contractId === deliveryContractId) {
-      setDetailRefreshKey((prev) => prev + 1);
-    }
+      mutateContracts();
+      mutateDeliveryOrders();
+      if (detailModal.contractId === deliveryContractId) {
+        setDetailRefreshKey((prev) => prev + 1);
+      }
+    } catch (err) {
+      console.error("创建拿货单异常:", err);
+      toast.error(err instanceof Error ? err.message : "创建拿货单失败，请重试", { icon: "❌", duration: 5000 });
     } finally {
       setDeliverySubmitting(false);
     }

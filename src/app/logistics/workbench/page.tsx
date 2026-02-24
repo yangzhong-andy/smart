@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { Truck, Package, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, Plus } from "lucide-react";
 import {
@@ -29,13 +30,19 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function LogisticsWorkbenchPage() {
   // 使用统一 Hooks 获取数据（防御：确保为数组）
-  const { tracking: trackingRaw, isLoading: trackingLoading } = useLogisticsTracking();
-  const { inboundOrders: inboundRaw, isLoading: inboundLoading } = useInboundOrders();
+  const { tracking: trackingRaw, isLoading: trackingLoading, mutate: mutateTracking } = useLogisticsTracking();
+  const { inboundOrders: inboundRaw, isLoading: inboundLoading, mutate: mutateInbound } = useInboundOrders();
   const { outboundOrders = [], isLoading: outboundLoading } = useOutboundOrders();
   const { stats: statsRaw, isLoading: statsLoading } = useLogisticsStats();
 
-  const tracking = trackingRaw ?? [];
-  const inboundOrders = inboundRaw ?? [];
+  // 进入工作台时主动刷新待入库/物流数据，避免从采购页创建拿货单后看不到新数据
+  useEffect(() => {
+    mutateInbound();
+    mutateTracking();
+  }, [mutateInbound, mutateTracking]);
+
+  const tracking = Array.isArray(trackingRaw) ? trackingRaw : [];
+  const inboundOrders = Array.isArray(inboundRaw) ? inboundRaw : [];
   const stats = statsRaw ?? {
     tracking: { total: 0, pending: 0, inTransit: 0, delivered: 0, exception: 0 },
     inbound: { total: 0, pending: 0, partial: 0, completed: 0, pendingQty: 0 },

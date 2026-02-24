@@ -106,14 +106,28 @@ export async function upsertDeliveryOrder(order: DeliveryOrder): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error("Failed to update delivery order");
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => null);
+      const msg =
+        (errJson && typeof errJson === "object" && "error" in errJson && typeof (errJson as any).error === "string")
+          ? (errJson as any).error
+          : `更新拿货单失败（${res.status}）`;
+      throw new Error(msg);
+    }
   } else {
     const res = await fetch("/api/delivery-orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error("Failed to create delivery order");
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => null);
+      const msg =
+        (errJson && typeof errJson === "object" && "error" in errJson && typeof (errJson as any).error === "string")
+          ? (errJson as any).error
+          : `创建拿货单失败（${res.status}）`;
+      throw new Error(msg);
+    }
   }
 }
 
