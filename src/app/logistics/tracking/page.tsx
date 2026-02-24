@@ -58,10 +58,10 @@ export default function LogisticsTrackingPage() {
   // 统计信息
   const stats = useMemo(() => ({
     total: tracking.length,
-    pending: tracking.filter(t => t.currentStatus === "Pending").length,
-    inTransit: tracking.filter(t => t.currentStatus === "In Transit").length,
-    delivered: tracking.filter(t => t.currentStatus === "Delivered").length,
-    exception: tracking.filter(t => t.currentStatus === "Exception").length
+    pending: tracking.filter((t: TrackingType) => t.currentStatus === "Pending").length,
+    inTransit: tracking.filter((t: TrackingType) => t.currentStatus === "In Transit").length,
+    delivered: tracking.filter((t: TrackingType) => t.currentStatus === "Delivered").length,
+    exception: tracking.filter((t: TrackingType) => t.currentStatus === "Exception").length
   }), [tracking]);
 
   // 筛选跟踪记录
@@ -70,20 +70,20 @@ export default function LogisticsTrackingPage() {
 
     // 状态筛选
     if (filterStatus !== "all") {
-      result = result.filter(t => t.currentStatus === filterStatus);
+      result = result.filter((t: TrackingType) => t.currentStatus === filterStatus);
     }
 
     // 关键词搜索
     if (searchKeyword.trim()) {
       const keyword = searchKeyword.toLowerCase();
-      result = result.filter(t =>
+      result = result.filter((t: TrackingType) =>
         t.trackingNumber?.toLowerCase().includes(keyword) ||
         t.internalOrderNumber?.toLowerCase().includes(keyword) ||
         t.channelName?.toLowerCase().includes(keyword)
       );
     }
 
-    return result.sort((a, b) => 
+    return result.sort((a: TrackingType, b: TrackingType) => 
       new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
     );
   }, [tracking, filterStatus, searchKeyword]);
