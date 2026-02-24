@@ -147,7 +147,7 @@ export function useOutboundOrders(params?: {
   if (params?.status) query.set("status", params.status);
 
   const { data, error, isLoading, mutate } = useSWR<OutboundOrder[]>(
-    `/api/delivery-orders?${query.toString()}`,
+    `/api/outbound-orders?${query.toString()}`,
     fetcher,
     {
       revalidateOnFocus: false,
