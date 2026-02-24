@@ -79,10 +79,10 @@ export default function InboundPage() {
   // 统计信息
   const stats = useMemo(() => ({
     total: inboundOrders.length,
-    pending: inboundOrders.filter(i => i.status === "待入库").length,
-    partial: inboundOrders.filter(i => i.status === "部分入库").length,
-    completed: inboundOrders.filter(i => i.status === "已入库").length,
-    pendingQty: inboundOrders.reduce((sum, i) => sum + (i.qty - i.receivedQty), 0)
+    pending: inboundOrders.filter((i: InboundOrder) => i.status === "待入库").length,
+    partial: inboundOrders.filter((i: InboundOrder) => i.status === "部分入库").length,
+    completed: inboundOrders.filter((i: InboundOrder) => i.status === "已入库").length,
+    pendingQty: inboundOrders.reduce((sum, i: InboundOrder) => sum + (i.qty - i.receivedQty), 0)
   }), [inboundOrders]);
 
   // 筛选订单
@@ -91,20 +91,20 @@ export default function InboundPage() {
 
     // 状态筛选
     if (filterStatus !== "all") {
-      result = result.filter(i => i.status === filterStatus);
+      result = result.filter((i: InboundOrder) => i.status === filterStatus);
     }
 
     // 关键词搜索
     if (searchKeyword.trim()) {
       const keyword = searchKeyword.toLowerCase();
-      result = result.filter(i =>
+      result = result.filter((i: InboundOrder) =>
         i.inboundNumber.toLowerCase().includes(keyword) ||
         i.deliveryNumber?.toLowerCase().includes(keyword) ||
         i.sku?.toLowerCase().includes(keyword)
       );
     }
 
-    return result.sort((a, b) => 
+    return result.sort((a: InboundOrder, b: InboundOrder) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [inboundOrders, filterStatus, searchKeyword]);
@@ -147,7 +147,7 @@ export default function InboundPage() {
   // 导出数据
   const handleExport = () => {
     const headers = ["入库单号", "拿货单号", "SKU", "计划数量", "已入库", "待入库", "状态", "创建时间"];
-    const rows = filteredOrders.map(i => [
+    const rows = filteredOrders.map((i: InboundOrder) => [
       i.inboundNumber,
       i.deliveryNumber || "",
       i.sku,
@@ -267,7 +267,7 @@ interface InboundCardProps {
 function InboundCard({ order, warehouses, onView, onReceive }: InboundCardProps) {
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
-  const warehouse = warehouses.find(w => w.id === order.warehouseId);
+  const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
@@ -355,7 +355,7 @@ interface InboundDetailModalProps {
 function InboundDetailModal({ order, warehouses, onClose, onReceive }: InboundDetailModalProps) {
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
-  const warehouse = warehouses.find(w => w.id === order.warehouseId);
+  const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
