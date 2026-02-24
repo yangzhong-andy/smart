@@ -55,10 +55,10 @@ export default function OutboundPage() {
   // 统计信息
   const stats = useMemo(() => ({
     total: outboundOrders.length,
-    pending: outboundOrders.filter(o => o.status === "待出库").length,
-    partial: outboundOrders.filter(o => o.status === "部分出库").length,
-    shipped: outboundOrders.filter(o => o.status === "已出库").length,
-    pendingQty: outboundOrders.reduce((sum, o) => sum + (o.qty - o.shippedQty), 0)
+    pending: outboundOrders.filter((o: OutboundOrder) => o.status === "待出库").length,
+    partial: outboundOrders.filter((o: OutboundOrder) => o.status === "部分出库").length,
+    shipped: outboundOrders.filter((o: OutboundOrder) => o.status === "已出库").length,
+    pendingQty: outboundOrders.reduce((sum: number, o: OutboundOrder) => sum + (o.qty - o.shippedQty), 0)
   }), [outboundOrders]);
 
   // 筛选订单
@@ -67,20 +67,20 @@ export default function OutboundPage() {
 
     // 状态筛选
     if (filterStatus !== "all") {
-      result = result.filter(o => o.status === filterStatus);
+      result = result.filter((o: OutboundOrder) => o.status === filterStatus);
     }
 
     // 关键词搜索
     if (searchKeyword.trim()) {
       const keyword = searchKeyword.toLowerCase();
-      result = result.filter(o =>
+      result = result.filter((o: OutboundOrder) =>
         o.outboundNumber?.toLowerCase().includes(keyword) ||
         o.sku?.toLowerCase().includes(keyword) ||
         o.warehouseName?.toLowerCase().includes(keyword)
       );
     }
 
-    return result.sort((a, b) => 
+    return result.sort((a: OutboundOrder, b: OutboundOrder) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [outboundOrders, filterStatus, searchKeyword]);
