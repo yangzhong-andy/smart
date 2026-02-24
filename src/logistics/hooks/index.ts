@@ -72,8 +72,9 @@ export function useLogisticsTracking(params?: {
     }
   );
 
+  const tracking = Array.isArray(data) ? data : (data?.data ?? []);
   return {
-    tracking: data || [],
+    tracking,
     isLoading,
     isError: !!error,
     error,
@@ -123,8 +124,9 @@ export function useInboundOrders(params?: {
     }
   );
 
+  const inboundOrders = Array.isArray(data) ? data : (data?.data ?? []);
   return {
-    inboundOrders: data || [],
+    inboundOrders,
     isLoading,
     isError: !!error,
     error,
@@ -153,8 +155,9 @@ export function useOutboundOrders(params?: {
     }
   );
 
+  const outboundOrders = Array.isArray(data) ? data : (data?.data ?? []);
   return {
-    outboundOrders: data || [],
+    outboundOrders,
     isLoading,
     isError: !!error,
     error,
@@ -164,36 +167,40 @@ export function useOutboundOrders(params?: {
 
 // ==================== 统计 Hooks ====================
 
+function ensureArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? v : (v && typeof v === "object" && "data" in v && Array.isArray((v as { data: T[] }).data) ? (v as { data: T[] }).data : []);
+}
+
 export function useLogisticsStats() {
-  const { tracking, isLoading: trackingLoading } = useLogisticsTracking();
-  const { inboundOrders, isLoading: inboundLoading } = useInboundOrders();
-  const { outboundOrders, isLoading: outboundLoading } = useOutboundOrders();
+  const { tracking: trackingRaw, isLoading: trackingLoading } = useLogisticsTracking();
+  const { inboundOrders: inboundRaw, isLoading: inboundLoading } = useInboundOrders();
+  const { outboundOrders: outboundRaw, isLoading: outboundLoading } = useOutboundOrders();
 
   const isLoading = trackingLoading || inboundLoading || outboundLoading;
+  const tracking = ensureArray<LogisticsTracking>(trackingRaw);
+  const inboundOrders = ensureArray<InboundOrder>(inboundRaw);
+  const outboundOrders = ensureArray<OutboundOrder>(outboundRaw);
 
   const stats = {
-    // 物流跟踪统计
     tracking: {
       total: tracking.length,
-      pending: tracking.filter(t => t.currentStatus === "Pending").length,
-      inTransit: tracking.filter(t => t.currentStatus === "In Transit").length,
-      delivered: tracking.filter(t => t.currentStatus === "Delivered").length,
-      exception: tracking.filter(t => t.currentStatus === "Exception").length
+      pending: tracking.filter(t => t?.currentStatus === "Pending").length,
+      inTransit: tracking.filter(t => t?.currentStatus === "In Transit").length,
+      delivered: tracking.filter(t => t?.currentStatus === "Delivered").length,
+      exception: tracking.filter(t => t?.currentStatus === "Exception").length
     },
-    // 入库统计
     inbound: {
       total: inboundOrders.length,
-      pending: inboundOrders.filter(i => i.status === "待入库").length,
-      partial: inboundOrders.filter(i => i.status === "部分入库").length,
-      completed: inboundOrders.filter(i => i.status === "已入库").length,
-      pendingQty: inboundOrders.reduce((sum, i) => sum + (i.qty - i.receivedQty), 0)
+      pending: inboundOrders.filter(i => i?.status === "待入库").length,
+      partial: inboundOrders.filter(i => i?.status === "部分入库").length,
+      completed: inboundOrders.filter(i => i?.status === "已入库").length,
+      pendingQty: inboundOrders.reduce((sum, i) => sum + (Number(i?.qty) || 0) - (Number(i?.receivedQty) || 0), 0)
     },
-    // 出库统计
     outbound: {
       total: outboundOrders.length,
-      pending: outboundOrders.filter(o => o.status === "待出库").length,
-      shipped: outboundOrders.filter(o => o.status === "已出库").length,
-      partial: outboundOrders.filter(o => o.status === "部分出库").length
+      pending: outboundOrders.filter(o => o?.status === "待出库").length,
+      shipped: outboundOrders.filter(o => o?.status === "已出库").length,
+      partial: outboundOrders.filter(o => o?.status === "部分出库").length
     }
   };
 

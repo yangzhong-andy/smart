@@ -28,16 +28,24 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function LogisticsWorkbenchPage() {
-  // 使用统一 Hooks 获取数据
-  const { tracking = [], isLoading: trackingLoading } = useLogisticsTracking();
-  const { inboundOrders = [], isLoading: inboundLoading } = useInboundOrders();
+  // 使用统一 Hooks 获取数据（防御：确保为数组）
+  const { tracking: trackingRaw, isLoading: trackingLoading } = useLogisticsTracking();
+  const { inboundOrders: inboundRaw, isLoading: inboundLoading } = useInboundOrders();
   const { outboundOrders = [], isLoading: outboundLoading } = useOutboundOrders();
-  const { stats, isLoading: statsLoading } = useLogisticsStats();
+  const { stats: statsRaw, isLoading: statsLoading } = useLogisticsStats();
+
+  const tracking = Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? []);
+  const inboundOrders = Array.isArray(inboundRaw) ? inboundRaw : (inboundRaw?.data ?? []);
+  const stats = statsRaw ?? {
+    tracking: { total: 0, pending: 0, inTransit: 0, delivered: 0, exception: 0 },
+    inbound: { total: 0, pending: 0, partial: 0, completed: 0, pendingQty: 0 },
+    outbound: { total: 0, pending: 0, shipped: 0, partial: 0 }
+  };
 
   const isLoading = trackingLoading || inboundLoading || outboundLoading || statsLoading;
 
   // 获取待处理的物流跟踪
-  const urgentTracking = tracking
+  const urgentTracking = (tracking || [])
     .filter((t: LogisticsTrackingType) => 
       t.currentStatus === "Pending" || 
       t.currentStatus === "In Transit" || 
@@ -49,7 +57,7 @@ export default function LogisticsWorkbenchPage() {
     .slice(0, 5);
 
   // 获取待入库的订单
-  const urgentInbound = inboundOrders
+  const urgentInbound = (inboundOrders || [])
     .filter((i: PendingInbound) => i.status === "待入库" || i.status === "部分入库")
     .sort((a: PendingInbound, b: PendingInbound) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -86,12 +94,12 @@ export default function LogisticsWorkbenchPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          <StatCard title="物流跟踪总数" value={stats.tracking.total} icon={Truck} />
-          <StatCard title="待发货" value={stats.tracking.pending} icon={Clock} />
-          <StatCard title="运输中" value={stats.tracking.inTransit} icon={Truck} />
-          <StatCard title="已送达" value={stats.tracking.delivered} icon={CheckCircle2} />
-          <StatCard title="异常" value={stats.tracking.exception} icon={AlertCircle} />
-          <StatCard title="待入库数量" value={stats.inbound.pendingQty} icon={Package} />
+          <StatCard title="物流跟踪总数" value={stats?.tracking?.total ?? 0} icon={Truck} />
+          <StatCard title="待发货" value={stats?.tracking?.pending ?? 0} icon={Clock} />
+          <StatCard title="运输中" value={stats?.tracking?.inTransit ?? 0} icon={Truck} />
+          <StatCard title="已送达" value={stats?.tracking?.delivered ?? 0} icon={CheckCircle2} />
+          <StatCard title="异常" value={stats?.tracking?.exception ?? 0} icon={AlertCircle} />
+          <StatCard title="待入库数量" value={stats?.inbound?.pendingQty ?? 0} icon={Package} />
         </div>
       )}
 
