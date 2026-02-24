@@ -72,7 +72,7 @@ export function useLogisticsTracking(params?: {
     }
   );
 
-  const tracking = Array.isArray(data) ? data : (data?.data ?? []);
+  const tracking = data ?? [];
   return {
     tracking,
     isLoading,
@@ -124,7 +124,7 @@ export function useInboundOrders(params?: {
     }
   );
 
-  const inboundOrders = Array.isArray(data) ? data : (data?.data ?? []);
+  const inboundOrders = data ?? [];
   return {
     inboundOrders,
     isLoading,
@@ -155,7 +155,7 @@ export function useOutboundOrders(params?: {
     }
   );
 
-  const outboundOrders = Array.isArray(data) ? data : (data?.data ?? []);
+  const outboundOrders = data ?? [];
   return {
     outboundOrders,
     isLoading,
