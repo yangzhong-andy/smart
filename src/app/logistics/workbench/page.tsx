@@ -34,8 +34,8 @@ export default function LogisticsWorkbenchPage() {
   const { outboundOrders = [], isLoading: outboundLoading } = useOutboundOrders();
   const { stats: statsRaw, isLoading: statsLoading } = useLogisticsStats();
 
-  const tracking = Array.isArray(trackingRaw) ? trackingRaw : (trackingRaw?.data ?? []);
-  const inboundOrders = Array.isArray(inboundRaw) ? inboundRaw : (inboundRaw?.data ?? []);
+  const tracking = trackingRaw ?? [];
+  const inboundOrders = inboundRaw ?? [];
   const stats = statsRaw ?? {
     tracking: { total: 0, pending: 0, inTransit: 0, delivered: 0, exception: 0 },
     inbound: { total: 0, pending: 0, partial: 0, completed: 0, pendingQty: 0 },
