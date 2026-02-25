@@ -114,6 +114,12 @@ enum LogisticsStatus {
   EXCEPTION
 }
 
+enum ShippingMethod {
+  SEA      // 海运
+  AIR      // 空运
+  EXPRESS  // 快递
+}
+
 enum PurchaseOrderStatus {
   PENDING_RISK
   RISK_APPROVED
@@ -807,17 +813,29 @@ model OutboundOrder {
 
 // 出库批次
 model OutboundBatch {
-  id              String   @id @default(uuid())
-  outboundOrderId String // 关联的出库单ID
-  batchNumber     String // 批次号
-  warehouseId     String // 出库仓库ID
-  warehouseName   String // 出库仓库名称（冗余字段）
-  qty             Int // 本次出库数量
-  shippedDate     DateTime // 出库日期
-  destination     String? // 目的地
-  trackingNumber  String? // 物流单号
-  notes           String? // 备注
-  createdAt       DateTime @default(now())
+  id                 String         @id @default(uuid())
+  outboundOrderId    String // 关联的出库单ID
+  batchNumber        String // 批次号
+  warehouseId        String // 出库仓库ID
+  warehouseName      String // 出库仓库名称（冗余字段）
+  qty                Int // 本次出库数量
+  shippedDate        DateTime // 出库日期
+  destination        String? // 目的地
+  trackingNumber     String? // 物流单号
+
+  // 运输信息
+  shippingMethod     ShippingMethod? // 运输方式（海运/空运/快递）
+  vesselName         String? // 船名/航班号
+  vesselVoyage       String? // 航次
+  portOfLoading      String? // 装货港
+  portOfDischarge    String? // 卸货港
+  eta                DateTime? // 预计到达时间
+  actualDepartureDate DateTime? // 实际开船/起飞日期
+  actualArrivalDate  DateTime? // 实际到达时间
+  status             String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达
+
+  notes              String? // 备注
+  createdAt          DateTime @default(now())
 
   // 关联关系
   outboundOrder OutboundOrder @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
@@ -1817,4 +1835,29 @@ model BusinessUidMapping {
   @@unique([oldId])
   @@index([entityType])
   @@index([uid])
+}
+
+model LogisticsCost {
+  id              String   @id @default(uuid())
+  
+  // 关联
+  outboundBatchId    String?  
+  logisticsChannelId String? 
+  
+  // 费用明细
+  costType        String   
+  amount          Decimal  @db.Decimal(18, 2)
+  currency        String   
+  
+  // 付款方式
+  paymentType     String   
+  creditDays      Int?     
+  dueDate         DateTime? 
+  paymentStatus   String   
+  paidDate        DateTime? 
+  invoiceNumber   String?   
+  invoiceStatus   String?   
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
