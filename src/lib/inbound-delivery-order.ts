@@ -144,6 +144,20 @@ export async function executeDeliveryOrderInbound(
           updatedAt: now,
         },
       });
+
+      // 同步创建一条入库批次，使「入库批次列表」有数据
+      const batchNum = `IB-${now.toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      await tx.inboundBatch.create({
+        data: {
+          pendingInboundId: order.pendingInbound.id,
+          batchNumber: batchNum,
+          warehouseId,
+          warehouseName: warehouse.name,
+          qty: receivedQty,
+          receivedDate: now,
+          notes: `拿货单 ${order.deliveryNumber} 入库`,
+        },
+      });
     }
 
     await tx.inventoryLog.create({

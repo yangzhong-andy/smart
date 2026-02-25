@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const CACHE_KEY_PREFIX = "pending-inbound";
 const OUTBOUND_ORDERS_CACHE_PREFIX = "outbound-orders";
+const INBOUND_BATCHES_CACHE_PREFIX = "inbound-batches";
 
 /**
  * POST 待入库单入库（物流页「入库」按钮）
@@ -65,6 +66,7 @@ export async function POST(
 
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
     await clearCacheByPrefix(OUTBOUND_ORDERS_CACHE_PREFIX);
+    await clearCacheByPrefix(INBOUND_BATCHES_CACHE_PREFIX);
 
     return NextResponse.json({
       success: true,

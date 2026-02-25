@@ -138,6 +138,9 @@ export default function InboundBatchListPage() {
         title="入库批次列表"
         description="按批次查看入库记录，可从批次生成出库单并自动扣减库存"
       />
+      <p className="text-sm text-slate-400 -mt-2">
+        发起拿货后，请先到「国内入库」对相应待入库单执行入库；执行入库后，这里会自动出现对应入库批次。
+      </p>
 
       {loading ? (
         <div className="space-y-3">
