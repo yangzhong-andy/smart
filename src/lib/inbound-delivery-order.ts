@@ -72,6 +72,7 @@ export async function executeDeliveryOrderInbound(
     return { success: false, error: "所选仓库不存在" };
   }
 
+  let outboundParams: { pendingInboundId: string; sku: string; qty: number } | null = null;
   await prisma.$transaction(async (tx) => {
     const now = new Date();
 
@@ -130,12 +131,20 @@ export async function executeDeliveryOrderInbound(
       data: { status: DeliveryOrderStatus.RECEIVED, updatedAt: now },
     });
 
-    let inboundJustCompleted = false;
+    let pendingInboundIdForBatch: string;
+    const batchNum = `IB-${now.toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
     if (order.pendingInbound) {
       const newReceivedQty = order.pendingInbound.receivedQty + receivedQty;
       const newStatus =
         newReceivedQty >= order.pendingInbound.qty ? "已入库" : "部分入库";
-      if (newStatus === "已入库") inboundJustCompleted = true;
+      if (newStatus === "已入库") {
+        outboundParams = {
+          pendingInboundId: order.pendingInbound.id,
+          sku: order.pendingInbound.sku,
+          qty: order.pendingInbound.qty,
+        };
+      }
       await tx.pendingInbound.update({
         where: { id: order.pendingInbound.id },
         data: {
@@ -144,21 +153,43 @@ export async function executeDeliveryOrderInbound(
           updatedAt: now,
         },
       });
-
-      // 同步创建一条入库批次，使「入库批次列表」有数据
-      const batchNum = `IB-${now.toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-      await tx.inboundBatch.create({
+      pendingInboundIdForBatch = order.pendingInbound.id;
+    } else {
+      // 拿货单无关联待入库单时（如直接从拿货单页入库），补建待入库单并建批次，保证「入库批次列表」有数据
+      const skuDisplay = (contract.sku && contract.sku.trim()) ? contract.sku.trim() : (contract.skuId || order.deliveryNumber || "SKU");
+      const newPending = await tx.pendingInbound.create({
         data: {
-          pendingInboundId: order.pendingInbound.id,
-          batchNumber: batchNum,
-          warehouseId,
-          warehouseName: warehouse.name,
-          qty: receivedQty,
-          receivedDate: now,
-          notes: `拿货单 ${order.deliveryNumber} 入库`,
+          inboundNumber: `IN-${order.deliveryNumber}-${Date.now()}`,
+          deliveryOrderId: order.id,
+          deliveryNumber: order.deliveryNumber,
+          contractId: contract.id,
+          contractNumber: contract.contractNumber ?? "",
+          sku: skuDisplay,
+          variantId,
+          qty: order.qty,
+          receivedQty,
+          status: "已入库",
+          domesticTrackingNumber: order.domesticTrackingNumber ?? null,
+          shippedDate: order.shippedDate ?? null,
+          updatedAt: now,
         },
       });
+      pendingInboundIdForBatch = newPending.id;
+      outboundParams = { pendingInboundId: newPending.id, sku: skuDisplay, qty: order.qty };
     }
+
+    // 同步创建一条入库批次，使「入库批次列表」有数据
+    await tx.inboundBatch.create({
+      data: {
+        pendingInboundId: pendingInboundIdForBatch,
+        batchNumber: batchNum,
+        warehouseId,
+        warehouseName: warehouse.name,
+        qty: receivedQty,
+        receivedDate: now,
+        notes: `拿货单 ${order.deliveryNumber} 入库`,
+      },
+    });
 
     await tx.inventoryLog.create({
       data: {
@@ -175,23 +206,19 @@ export async function executeDeliveryOrderInbound(
   });
 
   // 入库完成后自动创建出库单（事务外执行，避免循环依赖）
-  if (order.pendingInbound) {
-    const newReceivedQty = order.pendingInbound.receivedQty + receivedQty;
-    const justCompleted = newReceivedQty >= order.pendingInbound.qty;
-    if (justCompleted) {
-      try {
-        await createOutboundOrderFromPendingInbound({
-          pendingInboundId: order.pendingInbound.id,
-          variantId,
-          sku: order.pendingInbound.sku,
-          qty: order.pendingInbound.qty,
-          warehouseId,
-          warehouseName: warehouse.name,
-        });
-      } catch (err) {
-        console.error("入库完成后自动创建出库单失败:", err);
-        // 不阻断入库成功结果
-      }
+  if (outboundParams) {
+    try {
+      await createOutboundOrderFromPendingInbound({
+        pendingInboundId: outboundParams.pendingInboundId,
+        variantId: variantId!,
+        sku: outboundParams.sku,
+        qty: outboundParams.qty,
+        warehouseId,
+        warehouseName: warehouse.name,
+      });
+    } catch (err) {
+      console.error("入库完成后自动创建出库单失败:", err);
+      // 不阻断入库成功结果
     }
   }
 

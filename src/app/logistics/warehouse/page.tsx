@@ -80,17 +80,19 @@ export default function WarehousePage() {
   const [form, setForm] = useState<WarehouseFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const list = Array.isArray(warehouses) ? warehouses : [];
+
   // 统计信息
   const stats = useMemo(() => ({
-    total: warehouses.length,
-    active: warehouses.filter(w => w.isActive).length,
-    domestic: warehouses.filter(w => w.location === "DOMESTIC").length,
-    overseas: warehouses.filter(w => w.location === "OVERSEAS").length
-  }), [warehouses]);
+    total: list.length,
+    active: list.filter(w => w.isActive).length,
+    domestic: list.filter(w => w.location === "DOMESTIC").length,
+    overseas: list.filter(w => w.location === "OVERSEAS").length
+  }), [list]);
 
   // 筛选仓库
   const filteredWarehouses = useMemo(() => {
-    let result = [...warehouses];
+    let result = [...list];
 
     // 类型筛选
     if (filterType !== "all") {
@@ -121,7 +123,7 @@ export default function WarehousePage() {
     }
 
     return result.sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
-  }, [warehouses, filterType, filterStatus, searchKeyword]);
+  }, [list, filterType, filterStatus, searchKeyword]);
 
   // 打开 Modal
   const handleOpenModal = (warehouse?: WarehouseType) => {

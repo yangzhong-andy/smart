@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +51,9 @@ export async function DELETE(
         }
       })
     }
+
+    await clearCacheByPrefix('inbound-batches')
+    await clearCacheByPrefix('pending-inbound')
 
     return NextResponse.json({ success: true })
   } catch (error) {

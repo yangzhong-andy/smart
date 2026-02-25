@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { executeDeliveryOrderInbound } from '@/lib/inbound-delivery-order';
+import { clearCacheByPrefix } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,11 @@ export async function POST(
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
+
+    // 入库成功：清除相关缓存，保证列表页拿到最新数据
+    await clearCacheByPrefix('inbound-batches');
+    await clearCacheByPrefix('pending-inbound');
+    await clearCacheByPrefix('delivery-orders');
 
     return NextResponse.json({
       success: true,

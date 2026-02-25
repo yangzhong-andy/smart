@@ -99,6 +99,7 @@ export interface InboundOrder {
   id: string;
   inboundNumber: string;   // 入库单号
   deliveryNumber: string;  // 拿货单号
+  contractNumber?: string;  // 合同编号
   sku: string;             // SKU
   qty: number;             // 计划数量
   receivedQty: number;     // 已入库数量
@@ -106,7 +107,7 @@ export interface InboundOrder {
   
   // 仓库信息
   warehouseId?: string;
-  warehouseName?: string;
+  warehouseName?: string;  // 来自最新入库批次（如有）
   
   // 批次信息
   batchNumber?: string;     // 批次号

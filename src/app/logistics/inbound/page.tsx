@@ -342,7 +342,11 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
           </div>
 
           {/* 商品信息 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-3">
+            <div>
+              <span className="text-xs text-slate-500 block">合同号</span>
+              <span className="text-sm text-slate-300">{order.contractNumber || "-"}</span>
+            </div>
             <div>
               <span className="text-xs text-slate-500 block">拿货单号</span>
               <span className="text-sm text-slate-300">{order.deliveryNumber || "-"}</span>
@@ -353,7 +357,7 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
             </div>
             <div>
               <span className="text-xs text-slate-500 block">仓库</span>
-              <span className="text-sm text-slate-300">{warehouse?.name || "-"}</span>
+              <span className="text-sm text-slate-300">{order.warehouseName || warehouse?.name || "入库时指定"}</span>
             </div>
             <div>
               <span className="text-xs text-slate-500 block">创建时间</span>
@@ -453,6 +457,10 @@ function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutboun
             <span className="text-sm text-slate-200">{order.inboundNumber}</span>
           </div>
           <div>
+            <span className="text-xs text-slate-500 block">合同号</span>
+            <span className="text-sm text-slate-200">{order.contractNumber || "-"}</span>
+          </div>
+          <div>
             <span className="text-xs text-slate-500 block">拿货单号</span>
             <span className="text-sm text-slate-200">{order.deliveryNumber || "-"}</span>
           </div>
@@ -462,7 +470,7 @@ function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutboun
           </div>
           <div>
             <span className="text-xs text-slate-500 block">仓库</span>
-            <span className="text-sm text-slate-200">{warehouse?.name || "-"}</span>
+            <span className="text-sm text-slate-200">{order.warehouseName || warehouse?.name || "入库时指定"}</span>
           </div>
           <div>
             <span className="text-xs text-slate-500 block">计划数量</span>

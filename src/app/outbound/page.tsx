@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Package, ArrowRight, CheckCircle, X } from "lucide-react";
+import { Package, ArrowRight, CheckCircle, X, Plus } from "lucide-react";
 import { PageHeader, SearchBar, EmptyState, ActionButton } from "@/components/ui";
+
+type SkuOption = { variant_id: string; sku_id: string; name?: string };
 
 type BatchItem = {
   id: string;
@@ -68,6 +70,17 @@ export default function OutboundListPage() {
   const [toWarehouseId, setToWarehouseId] = useState("");
   const [confirming, setConfirming] = useState(false);
 
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [skus, setSkus] = useState<SkuOption[]>([]);
+  const [createForm, setCreateForm] = useState({
+    variantId: "",
+    sku: "",
+    qty: "",
+    warehouseId: "",
+    destination: "",
+  });
+  const [creating, setCreating] = useState(false);
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
@@ -100,6 +113,90 @@ export default function OutboundListPage() {
       setWarehouses([]);
     }
   }, []);
+
+  const fetchSkus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/products?pageSize=500");
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data) ? data : (data?.data ?? []);
+      setSkus(
+        list
+          .filter((p: any) => p.variant_id && (p.sku_id || p.skuId))
+          .map((p: any) => ({
+            variant_id: p.variant_id,
+            sku_id: p.sku_id ?? p.skuId ?? "",
+            name: p.name,
+          }))
+      );
+    } catch {
+      setSkus([]);
+    }
+  }, []);
+
+  const openCreateModal = () => {
+    setCreateModalOpen(true);
+    setCreateForm({ variantId: "", sku: "", qty: "", warehouseId: "", destination: "" });
+    fetchSkus();
+    fetchWarehouses();
+  };
+
+  const closeCreateModal = () => {
+    setCreateModalOpen(false);
+    setCreateForm({ variantId: "", sku: "", qty: "", warehouseId: "", destination: "" });
+  };
+
+  const handleCreateOutbound = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const qty = Number(createForm.qty);
+    if (!createForm.variantId || !createForm.sku.trim()) {
+      toast.error("请选择 SKU");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast.error("请填写有效的出库数量");
+      return;
+    }
+    if (!createForm.warehouseId) {
+      toast.error("请选择仓库");
+      return;
+    }
+    const warehouse = warehouses.find((w) => w.id === createForm.warehouseId);
+    if (!warehouse) {
+      toast.error("所选仓库无效");
+      return;
+    }
+    setCreating(true);
+    try {
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const r = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const outboundNumber = `OB-${date}-${r}`;
+      const res = await fetch("/api/outbound-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outboundNumber,
+          variantId: createForm.variantId,
+          sku: createForm.sku.trim(),
+          qty,
+          warehouseId: createForm.warehouseId,
+          warehouseName: warehouse.name,
+          destination: createForm.destination.trim() || null,
+          status: "待出库",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? "创建失败");
+      }
+      toast.success(`出库单已创建：${data.outboundNumber ?? outboundNumber}`);
+      closeCreateModal();
+      fetchBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "创建出库单失败");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const openConfirmModal = (batch: BatchItem) => {
     setConfirmBatch(batch);
@@ -162,10 +259,15 @@ export default function OutboundListPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <PageHeader
-        title="出库管理"
-        description="出库单与批次列表，可进入详情编辑运输信息"
-      />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <PageHeader
+          title="出库管理"
+          description="出库单与批次列表，可进入详情编辑运输信息"
+        />
+        <ActionButton icon={Plus} onClick={openCreateModal}>
+          新建出库单
+        </ActionButton>
+      </div>
 
       <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl border border-slate-800 bg-slate-900/60">
         <SearchBar
@@ -249,6 +351,96 @@ export default function OutboundListPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 新建出库单弹窗 */}
+      {createModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">新建出库单</h2>
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateOutbound} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">SKU</label>
+                <select
+                  value={createForm.variantId}
+                  onChange={(e) => {
+                    const opt = skus.find((s) => s.variant_id === e.target.value);
+                    setCreateForm((f) => ({
+                      ...f,
+                      variantId: e.target.value,
+                      sku: opt ? opt.sku_id : "",
+                    }));
+                  }}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  required
+                >
+                  <option value="">请选择 SKU</option>
+                  {skus.map((s) => (
+                    <option key={s.variant_id} value={s.variant_id}>
+                      {s.sku_id} {s.name ? ` · ${s.name}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">出库数量</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={createForm.qty}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, qty: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  placeholder="请输入数量"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">仓库</label>
+                <select
+                  value={createForm.warehouseId}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  required
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                      {w.type === "DOMESTIC" ? " (国内仓)" : w.type === "OVERSEAS" ? " (海外仓)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">目的地</label>
+                <input
+                  type="text"
+                  value={createForm.destination}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, destination: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="如：巴西圣保罗、某仓库（选填）"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <ActionButton type="submit" isLoading={creating}>
+                  创建出库单
+                </ActionButton>
+                <ActionButton type="button" variant="secondary" onClick={closeCreateModal}>
+                  取消
+                </ActionButton>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

@@ -48,6 +48,11 @@ export async function GET(request: NextRequest) {
           qty: true, receivedQty: true, domesticTrackingNumber: true,
           shippedDate: true, status: true, createdAt: true, updatedAt: true,
           _count: { select: { batches: true } },
+          batches: {
+            take: 1,
+            orderBy: { createdAt: 'desc' as const },
+            select: { warehouseName: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -74,6 +79,7 @@ export async function GET(request: NextRequest) {
         createdAt: item.createdAt.toISOString(),
         updatedAt: item.updatedAt.toISOString(),
         batchCount: item._count.batches,
+        warehouseName: item.batches?.[0]?.warehouseName ?? undefined,
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

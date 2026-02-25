@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       prisma.inboundBatch.findMany({
         where,
         include: {
-          pendingInbound: { select: { inboundNumber: true, sku: true } },
+          pendingInbound: { select: { inboundNumber: true, sku: true, contractNumber: true, deliveryNumber: true, status: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -59,13 +59,16 @@ export async function GET(request: NextRequest) {
         inboundId: b.pendingInboundId,
         batchNumber: b.batchNumber,
         warehouseId: b.warehouseId,
-        warehouseName: b.warehouseName,
+        warehouseName: b.warehouseName ?? "",
         qty: b.qty,
         receivedDate: b.receivedDate.toISOString(),
         notes: b.notes || undefined,
         createdAt: b.createdAt.toISOString(),
         inboundNumber: b.pendingInbound?.inboundNumber ?? undefined,
         sku: b.pendingInbound?.sku ?? undefined,
+        contractNumber: b.pendingInbound?.contractNumber ?? "",
+        deliveryNumber: b.pendingInbound?.deliveryNumber ?? "",
+        status: b.pendingInbound?.status ?? undefined,
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

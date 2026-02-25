@@ -94,8 +94,9 @@ export function useWarehouses() {
     }
   );
 
+  const list = Array.isArray(data) ? data : (Array.isArray((data as any)?.data) ? (data as any).data : []);
   return {
-    warehouses: data || [],
+    warehouses: list,
     isLoading,
     isError: !!error,
     error,

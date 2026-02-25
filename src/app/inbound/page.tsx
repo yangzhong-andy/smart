@@ -15,6 +15,9 @@ type InboundBatchItem = {
   receivedDate: string;
   inboundNumber?: string;
   sku?: string;
+  contractNumber?: string;
+  deliveryNumber?: string;
+  status?: string;
 };
 
 type WarehouseItem = {
@@ -27,10 +30,20 @@ type WarehouseItem = {
 function formatDate(iso: string) {
   if (!iso) return "-";
   try {
-    return new Date(iso).toLocaleDateString("zh-CN");
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
   } catch {
     return iso;
   }
+}
+
+function getStatusStyle(status?: string) {
+  if (status === "待入库" || status === "部分入库") return "bg-blue-500/20 text-blue-300";
+  if (status === "已入库") return "bg-emerald-500/20 text-emerald-300";
+  return "bg-slate-500/20 text-slate-400";
 }
 
 export default function InboundBatchListPage() {
@@ -43,7 +56,7 @@ export default function InboundBatchListPage() {
 
   const fetchBatches = useCallback(async () => {
     try {
-      const res = await fetch("/api/inbound-batches?pageSize=200");
+      const res = await fetch("/api/inbound-batches?pageSize=200&noCache=true");
       const data = await res.json().catch(() => ({}));
       setBatches(Array.isArray(data?.data) ? data.data : []);
     } catch {
@@ -160,12 +173,14 @@ export default function InboundBatchListPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-800/50 text-slate-400 text-left">
-                  <th className="px-4 py-3 font-medium">批次号</th>
                   <th className="px-4 py-3 font-medium">入库单号</th>
-                  <th className="px-4 py-3 font-medium">SKU</th>
-                  <th className="px-4 py-3 font-medium">仓库</th>
-                  <th className="px-4 py-3 font-medium">数量</th>
                   <th className="px-4 py-3 font-medium">入库日期</th>
+                  <th className="px-4 py-3 font-medium">合同号</th>
+                  <th className="px-4 py-3 font-medium">拿货单号</th>
+                  <th className="px-4 py-3 font-medium">SKU</th>
+                  <th className="px-4 py-3 font-medium">入库数量</th>
+                  <th className="px-4 py-3 font-medium">仓库</th>
+                  <th className="px-4 py-3 font-medium">状态</th>
                   <th className="px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
@@ -173,11 +188,17 @@ export default function InboundBatchListPage() {
                 {batches.map((b) => (
                   <tr key={b.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-slate-300">{b.batchNumber}</td>
-                    <td className="px-4 py-3 text-slate-300">{b.inboundNumber ?? "-"}</td>
-                    <td className="px-4 py-3 text-slate-300">{b.sku ?? "-"}</td>
-                    <td className="px-4 py-3 text-slate-300">{b.warehouseName}</td>
-                    <td className="px-4 py-3 text-slate-200">{b.qty}</td>
                     <td className="px-4 py-3 text-slate-400">{formatDate(b.receivedDate)}</td>
+                    <td className="px-4 py-3 text-slate-300">{b.contractNumber || "-"}</td>
+                    <td className="px-4 py-3 text-slate-300">{b.deliveryNumber || "-"}</td>
+                    <td className="px-4 py-3 text-slate-300">{b.sku || "-"}</td>
+                    <td className="px-4 py-3 text-slate-200">{b.qty}</td>
+                    <td className="px-4 py-3 text-slate-300">{b.warehouseName || "-"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${getStatusStyle(b.status)}`}>
+                        {b.status ?? "-"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <ActionButton
                         variant="ghost"
