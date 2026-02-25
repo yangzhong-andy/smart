@@ -45,6 +45,9 @@ export async function GET(
       actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
       actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
       status: batch.status,
+      currentLocation: batch.currentLocation ?? undefined,
+      lastEvent: batch.lastEvent ?? undefined,
+      lastEventTime: batch.lastEventTime?.toISOString() ?? undefined,
       notes: batch.notes ?? undefined,
       createdAt: batch.createdAt.toISOString(),
       outboundOrder: batch.outboundOrder
@@ -75,10 +78,15 @@ export async function GET(
   }
 }
 
+// 允许的物流状态（手动更新：已发货 → 运输中 → 已清关 → 已到达）
+const LOGISTICS_STATUS_LIST = ["待发货", "已发货", "运输中", "已清关", "已到达"];
+
 /**
- * PATCH /api/outbound-batch/[id] - 更新出库批次（含物流信息：运输方式、船名、港口、ETA 等）
- * Body: 任意可选字段，如 destination, trackingNumber, shippingMethod, vesselName, vesselVoyage,
- *       portOfLoading, portOfDischarge, eta, actualDepartureDate, actualArrivalDate, status, notes
+ * PATCH /api/outbound-batch/[id] - 更新出库批次（含物流信息、物流追踪状态）
+ * Body: destination, trackingNumber, shippingMethod, vesselName, vesselVoyage,
+ *       portOfLoading, portOfDischarge, eta, actualDepartureDate, actualArrivalDate,
+ *       status, currentLocation, lastEvent, lastEventTime, notes
+ * 当更新 status 时，会同步更新 lastEvent / lastEventTime（除非显式传了 lastEvent/lastEventTime）
  */
 export async function PATCH(
   request: NextRequest,
@@ -109,7 +117,20 @@ export async function PATCH(
       updateData.actualDepartureDate = body.actualDepartureDate ? new Date(body.actualDepartureDate) : null;
     if (body.actualArrivalDate !== undefined)
       updateData.actualArrivalDate = body.actualArrivalDate ? new Date(body.actualArrivalDate) : null;
-    if (body.status !== undefined) updateData.status = body.status ?? "待发货";
+
+    // 物流状态（可手动更新：待发货→已发货→运输中→已清关→已到达）
+    if (body.status !== undefined) {
+      const s = String(body.status).trim();
+      updateData.status = LOGISTICS_STATUS_LIST.includes(s) ? s : "待发货";
+      // 同步更新物流追踪：将 lastEvent 设为当前状态，lastEventTime 设为当前时间（仅当未显式传 lastEvent 时）
+      if (body.lastEvent === undefined) updateData.lastEvent = updateData.status;
+      if (body.lastEventTime === undefined) updateData.lastEventTime = new Date();
+    }
+
+    // 物流追踪字段（可单独维护）
+    if (body.currentLocation !== undefined) updateData.currentLocation = body.currentLocation ?? null;
+    if (body.lastEvent !== undefined) updateData.lastEvent = body.lastEvent ?? null;
+    if (body.lastEventTime !== undefined) updateData.lastEventTime = body.lastEventTime ? new Date(body.lastEventTime) : null;
 
     const batch = await prisma.outboundBatch.update({
       where: { id },
@@ -139,6 +160,9 @@ export async function PATCH(
       actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
       actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
       status: batch.status,
+      currentLocation: batch.currentLocation ?? undefined,
+      lastEvent: batch.lastEvent ?? undefined,
+      lastEventTime: batch.lastEventTime?.toISOString() ?? undefined,
       notes: batch.notes ?? undefined,
       createdAt: batch.createdAt.toISOString(),
       outboundOrder: batch.outboundOrder

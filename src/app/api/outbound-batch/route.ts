@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ShippingMethod } from "@prisma/client";
+import { ShippingMethod, InventoryLogType, InventoryLogStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +55,9 @@ export async function GET(request: NextRequest) {
       actualDepartureDate: b.actualDepartureDate?.toISOString() ?? undefined,
       actualArrivalDate: b.actualArrivalDate?.toISOString() ?? undefined,
       status: b.status,
+      currentLocation: b.currentLocation ?? undefined,
+      lastEvent: b.lastEvent ?? undefined,
+      lastEventTime: b.lastEventTime?.toISOString() ?? undefined,
       notes: b.notes ?? undefined,
       createdAt: b.createdAt.toISOString(),
       outboundOrder: b.outboundOrder
@@ -124,31 +127,109 @@ export async function POST(request: NextRequest) {
         ? (String(body.shippingMethod).toUpperCase() as ShippingMethod)
         : undefined;
 
-    const batch = await prisma.outboundBatch.create({
-      data: {
-        outboundOrderId,
-        batchNumber,
-        warehouseId,
-        warehouseName,
-        qty,
-        shippedDate,
-        destination: body.destination ?? null,
-        trackingNumber: body.trackingNumber ?? null,
-        shippingMethod: shippingMethod ?? null,
-        vesselName: body.vesselName ?? null,
-        vesselVoyage: body.vesselVoyage ?? null,
-        portOfLoading: body.portOfLoading ?? null,
-        portOfDischarge: body.portOfDischarge ?? null,
-        eta: body.eta ? new Date(body.eta) : null,
-        actualDepartureDate: body.actualDepartureDate ? new Date(body.actualDepartureDate) : null,
-        actualArrivalDate: body.actualArrivalDate ? new Date(body.actualArrivalDate) : null,
-        status: body.status ?? "待发货",
-        notes: body.notes ?? null,
-      },
-      include: {
-        outboundOrder: true,
-        warehouse: true,
-      },
+    // 获取出库单以得到 variantId（SKU）
+    const outboundOrder = await prisma.outboundOrder.findUnique({
+      where: { id: outboundOrderId },
+      select: { id: true, variantId: true, outboundNumber: true, sku: true },
+    });
+    if (!outboundOrder) {
+      return NextResponse.json({ error: "出库单不存在" }, { status: 404 });
+    }
+    const variantId = outboundOrder.variantId;
+
+    const now = new Date();
+
+    const batch = await prisma.$transaction(async (tx) => {
+      // 1. 获取当前仓库该 SKU 的库存
+      const stock = await tx.stock.findUnique({
+        where: {
+          variantId_warehouseId: { variantId, warehouseId },
+        },
+      });
+
+      if (!stock) {
+        throw new Error("该仓库下无此 SKU 库存记录，无法出库");
+      }
+      if (stock.qty < qty) {
+        throw new Error(`库存不足：当前 ${stock.qty}，出库需求 ${qty}`);
+      }
+      if (stock.availableQty < qty) {
+        throw new Error(`可用库存不足：当前可用 ${stock.availableQty}，出库需求 ${qty}`);
+      }
+
+      const qtyBefore = stock.qty;
+      const qtyAfter = qtyBefore - qty;
+
+      // 2. 扣减 Stock
+      await tx.stock.update({
+        where: { id: stock.id },
+        data: {
+          qty: qtyAfter,
+          availableQty: stock.availableQty - qty,
+          updatedAt: now,
+        },
+      });
+
+      // 3. 创建出库批次
+      const newBatch = await tx.outboundBatch.create({
+        data: {
+          outboundOrderId,
+          batchNumber,
+          warehouseId,
+          warehouseName,
+          qty,
+          shippedDate,
+          destination: body.destination ?? null,
+          trackingNumber: body.trackingNumber ?? null,
+          shippingMethod: shippingMethod ?? null,
+          vesselName: body.vesselName ?? null,
+          vesselVoyage: body.vesselVoyage ?? null,
+          portOfLoading: body.portOfLoading ?? null,
+          portOfDischarge: body.portOfDischarge ?? null,
+          eta: body.eta ? new Date(body.eta) : null,
+          actualDepartureDate: body.actualDepartureDate ? new Date(body.actualDepartureDate) : null,
+          actualArrivalDate: body.actualArrivalDate ? new Date(body.actualArrivalDate) : null,
+          status: body.status ?? "待发货",
+          notes: body.notes ?? null,
+        },
+        include: {
+          outboundOrder: true,
+          warehouse: true,
+        },
+      });
+
+      // 4. 记录 InventoryLog（type OUT）
+      await tx.inventoryLog.create({
+        data: {
+          type: InventoryLogType.OUT,
+          status: InventoryLogStatus.IN_TRANSIT,
+          variantId,
+          qty,
+          warehouseId,
+          relatedOrderNo: `${outboundOrder.outboundNumber} / ${batchNumber}`,
+          notes: `出库批次 ${batchNumber}，出库单 ${outboundOrder.outboundNumber}`,
+        },
+      });
+
+      // 5. 记录 StockLog（出库流水）
+      await tx.stockLog.create({
+        data: {
+          variantId,
+          warehouseId,
+          reason: StockLogReason.SALE_OUTBOUND,
+          movementType: InventoryMovementType.DOMESTIC_OUTBOUND,
+          qty: -qty,
+          qtyBefore,
+          qtyAfter,
+          operationDate: now,
+          relatedOrderId: newBatch.id,
+          relatedOrderType: "OutboundBatch",
+          relatedOrderNumber: batchNumber,
+          notes: `出库批次 ${batchNumber}，出库单 ${outboundOrder.outboundNumber}，数量 ${qty}`,
+        },
+      });
+
+      return newBatch;
     });
 
     return NextResponse.json({
@@ -161,10 +242,16 @@ export async function POST(request: NextRequest) {
       warehouse: batch.warehouse ? { id: batch.warehouse.id, name: batch.warehouse.name } : undefined,
     });
   } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "创建失败";
+    const isBusinessError =
+      message.includes("库存不足") ||
+      message.includes("无此 SKU 库存") ||
+      message.includes("可用库存不足") ||
+      message.includes("出库单不存在");
     console.error("POST outbound-batch error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "创建失败" },
-      { status: 500 }
+      { error: message },
+      { status: isBusinessError ? 400 : 500 }
     );
   }
 }

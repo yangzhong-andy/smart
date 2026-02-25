@@ -1,9 +1,11 @@
 /**
  * 拿货单入库：统一事务逻辑，供 API 复用
  * 1. 增加 Stock 库存  2. 拿货单状态改为已入库  3. 更新 PendingInbound 已入库数量与状态
+ * 4. 当待入库单变为「已入库」时，自动创建一条出库单（目的地留空，待物流填写）
  */
 
 import { prisma } from "@/lib/prisma";
+import { createOutboundOrderFromPendingInbound } from "@/lib/create-outbound-from-inbound";
 import { DeliveryOrderStatus } from "@prisma/client";
 import { StockLogReason } from "@prisma/client";
 import { InventoryMovementType } from "@prisma/client";
@@ -128,10 +130,12 @@ export async function executeDeliveryOrderInbound(
       data: { status: DeliveryOrderStatus.RECEIVED, updatedAt: now },
     });
 
+    let inboundJustCompleted = false;
     if (order.pendingInbound) {
       const newReceivedQty = order.pendingInbound.receivedQty + receivedQty;
       const newStatus =
         newReceivedQty >= order.pendingInbound.qty ? "已入库" : "部分入库";
+      if (newStatus === "已入库") inboundJustCompleted = true;
       await tx.pendingInbound.update({
         where: { id: order.pendingInbound.id },
         data: {
@@ -155,6 +159,27 @@ export async function executeDeliveryOrderInbound(
       },
     });
   });
+
+  // 入库完成后自动创建出库单（事务外执行，避免循环依赖）
+  if (order.pendingInbound) {
+    const newReceivedQty = order.pendingInbound.receivedQty + receivedQty;
+    const justCompleted = newReceivedQty >= order.pendingInbound.qty;
+    if (justCompleted) {
+      try {
+        await createOutboundOrderFromPendingInbound({
+          pendingInboundId: order.pendingInbound.id,
+          variantId,
+          sku: order.pendingInbound.sku,
+          qty: order.pendingInbound.qty,
+          warehouseId,
+          warehouseName: warehouse.name,
+        });
+      } catch (err) {
+        console.error("入库完成后自动创建出库单失败:", err);
+        // 不阻断入库成功结果
+      }
+    }
+  }
 
   return { success: true };
 }

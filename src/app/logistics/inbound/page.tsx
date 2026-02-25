@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { 
   Package, Plus, Download, Eye, CheckCircle2, 
-  Clock, AlertCircle, Warehouse, X 
+  Clock, AlertCircle, Warehouse, X, Truck 
 } from "lucide-react";
 import { 
   PageHeader, StatCard, ActionButton, 
@@ -75,6 +75,7 @@ export default function InboundPage() {
   const [detailModal, setDetailModal] = useState<InboundItem | null>(null);
   const [form, setForm] = useState<InboundFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [creatingOutboundId, setCreatingOutboundId] = useState<string | null>(null);
 
   // 统计信息
   const stats = useMemo(() => ({
@@ -155,6 +156,41 @@ export default function InboundPage() {
       toast.error(error instanceof Error ? error.message : "入库失败，请重试");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 一键生成出库单（已入库的单据）
+  const handleCreateOutbound = async (order: InboundOrder) => {
+    if (order.status !== "已入库") {
+      toast.error("仅已入库的单据可生成出库单");
+      return;
+    }
+    setCreatingOutboundId(order.id);
+    try {
+      const batchRes = await fetch(
+        `/api/inbound-batches?pendingInboundId=${encodeURIComponent(order.id)}&pageSize=1`
+      );
+      const batchData = await batchRes.json().catch(() => ({}));
+      const batches = Array.isArray(batchData?.data) ? batchData.data : [];
+      if (batches.length === 0) {
+        toast.error("该入库单暂无入库批次，无法生成出库单");
+        return;
+      }
+      const batchId = batches[0].id;
+      const res = await fetch(`/api/inbound-batches/${batchId}/create-outbound`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || "生成出库单失败");
+      }
+      const ob = (data as { outboundOrder?: { outboundNumber?: string } }).outboundOrder;
+      toast.success(ob?.outboundNumber ? `出库单已生成：${ob.outboundNumber}` : "出库单已生成");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "生成出库单失败");
+    } finally {
+      setCreatingOutboundId(null);
     }
   };
 
@@ -247,8 +283,10 @@ export default function InboundPage() {
               order={order as InboundItem}
               warehouses={warehouses}
               isSubmitting={isSubmitting}
+              isCreatingOutbound={creatingOutboundId === order.id}
               onView={() => handleViewDetail(order)}
               onReceive={() => handleReceive(order)}
+              onCreateOutbound={() => handleCreateOutbound(order)}
             />
           ))}
         </div>
@@ -260,11 +298,13 @@ export default function InboundPage() {
           order={detailModal}
           warehouses={warehouses}
           isSubmitting={isSubmitting}
+          isCreatingOutbound={creatingOutboundId === detailModal.id}
           onClose={handleCloseDetail}
           onReceive={() => {
             handleReceive(detailModal);
             handleCloseDetail();
           }}
+          onCreateOutbound={() => handleCreateOutbound(detailModal)}
         />
       )}
     </div>
@@ -277,11 +317,13 @@ interface InboundCardProps {
   order: InboundItem;
   warehouses: WarehouseType[];
   isSubmitting?: boolean;
+  isCreatingOutbound?: boolean;
   onView: () => void;
   onReceive: () => void;
+  onCreateOutbound?: () => void;
 }
 
-function InboundCard({ order, warehouses, isSubmitting, onView, onReceive }: InboundCardProps) {
+function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onView, onReceive, onCreateOutbound }: InboundCardProps) {
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
   const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
@@ -345,6 +387,16 @@ function InboundCard({ order, warehouses, isSubmitting, onView, onReceive }: Inb
           >
             <Eye className="h-5 w-5" />
           </button>
+          {order.status === "已入库" && onCreateOutbound && (
+            <button
+              onClick={onCreateOutbound}
+              disabled={isCreatingOutbound}
+              className="p-2 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="生成出库单"
+            >
+              <Truck className="h-5 w-5" />
+            </button>
+          )}
           {remaining > 0 && order.status !== "已取消" && (
             <button
               onClick={onReceive}
@@ -367,11 +419,13 @@ interface InboundDetailModalProps {
   order: InboundItem;
   warehouses: WarehouseType[];
   isSubmitting?: boolean;
+  isCreatingOutbound?: boolean;
   onClose: () => void;
   onReceive: () => void;
+  onCreateOutbound?: () => void;
 }
 
-function InboundDetailModal({ order, warehouses, isSubmitting, onClose, onReceive }: InboundDetailModalProps) {
+function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutbound, onClose, onReceive, onCreateOutbound }: InboundDetailModalProps) {
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
   const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
@@ -449,6 +503,16 @@ function InboundDetailModal({ order, warehouses, isSubmitting, onClose, onReceiv
           <ActionButton onClick={onClose} variant="secondary">
             关闭
           </ActionButton>
+          {order.status === "已入库" && onCreateOutbound && (
+            <ActionButton
+              onClick={onCreateOutbound}
+              variant="secondary"
+              icon={Truck}
+              disabled={isCreatingOutbound}
+            >
+              {isCreatingOutbound ? "生成中..." : "生成出库单"}
+            </ActionButton>
+          )}
           {remaining > 0 && order.status !== "已取消" && (
             <ActionButton
               onClick={onReceive}

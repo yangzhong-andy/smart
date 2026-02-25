@@ -760,6 +760,7 @@ model PendingInbound {
   deliveryOrder DeliveryOrder   @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
   variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
   batches       InboundBatch[] // 入库批次
+  outboundOrder OutboundOrder? // 入库完成后自动创建的出库单（1:1）
 
   @@index([deliveryOrderId])
   @@index([variantId])
@@ -788,28 +789,31 @@ model InboundBatch {
 
 // 出库单
 model OutboundOrder {
-  id             String   @id @default(uuid())
-  outboundNumber String   @unique // 出库单号
-  variantId      String // SKU ID
-  sku            String // SKU名称（冗余字段）
-  qty            Int // 出库数量
-  shippedQty     Int      @default(0) // 已出库数量
-  warehouseId    String // 出库仓库ID
-  warehouseName  String // 出库仓库名称（冗余字段）
-  destination    String? // 目的地
-  status         String   @default("待出库") // 状态：待出库、部分出库、已出库、已取消
-  reason         String? // 出库原因
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default(uuid())
+  outboundNumber    String   @unique // 出库单号
+  variantId         String // SKU ID
+  sku               String // SKU名称（冗余字段）
+  qty               Int // 出库数量
+  shippedQty        Int      @default(0) // 已出库数量
+  warehouseId       String // 出库仓库ID
+  warehouseName     String // 出库仓库名称（冗余字段）
+  destination       String? // 目的地
+  status            String   @default("待出库") // 状态：待出库、部分出库、已出库、已取消
+  reason            String? // 出库原因
+  pendingInboundId  String?  @unique // 来源待入库单（入库完成后自动创建时填写，防重复）
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   // 关联关系
-  variant   ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  warehouse Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  batches   OutboundBatch[] // 出库批次
+  variant        ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  pendingInbound PendingInbound? @relation(fields: [pendingInboundId], references: [id], onDelete: SetNull)
+  batches        OutboundBatch[] // 出库批次
 
   @@index([variantId])
   @@index([warehouseId])
   @@index([status])
+  @@index([pendingInboundId])
 }
 
 // 出库批次
@@ -834,6 +838,11 @@ model OutboundBatch {
   actualDepartureDate DateTime? // 实际开船/起飞日期
   actualArrivalDate  DateTime? // 实际到达时间
   status             String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达
+
+  // 物流追踪（整合在批次上，不再使用独立 LogisticsTracking）
+  currentLocation    String? // 当前位置
+  lastEvent          String? // 最新物流动态
+  lastEventTime      DateTime? // 最新动态时间
 
   notes              String? // 备注
   createdAt          DateTime @default(now())
