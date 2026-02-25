@@ -646,7 +646,8 @@ model LogisticsChannel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  trackings LogisticsTracking[]
+  trackings   LogisticsTracking[]
+  logisticsCosts LogisticsCost[]
 }
 
 model LogisticsTracking {
@@ -838,8 +839,9 @@ model OutboundBatch {
   createdAt          DateTime @default(now())
 
   // 关联关系
-  outboundOrder OutboundOrder @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
-  warehouse     Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  outboundOrder  OutboundOrder  @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  logisticsCosts LogisticsCost[]
 
   @@index([outboundOrderId])
   @@index([warehouseId])
