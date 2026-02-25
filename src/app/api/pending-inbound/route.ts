@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
             orderBy: { createdAt: 'desc' as const },
             select: { warehouseName: true },
           },
+          variant: { select: { product: { select: { name: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
         updatedAt: item.updatedAt.toISOString(),
         batchCount: item._count.batches,
         warehouseName: item.batches?.[0]?.warehouseName ?? undefined,
+        productName: item.variant?.product?.name ?? "",
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

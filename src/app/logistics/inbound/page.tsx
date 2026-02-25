@@ -101,7 +101,8 @@ export default function InboundPage() {
       result = result.filter((i: InboundOrder) =>
         i.inboundNumber.toLowerCase().includes(keyword) ||
         i.deliveryNumber?.toLowerCase().includes(keyword) ||
-        i.sku?.toLowerCase().includes(keyword)
+        i.sku?.toLowerCase().includes(keyword) ||
+        i.productName?.toLowerCase().includes(keyword)
       );
     }
 
@@ -196,10 +197,11 @@ export default function InboundPage() {
 
   // 导出数据
   const handleExport = () => {
-    const headers = ["入库单号", "拿货单号", "SKU", "计划数量", "已入库", "待入库", "状态", "创建时间"];
+    const headers = ["入库单号", "拿货单号", "产品名称", "SKU", "计划数量", "已入库", "待入库", "状态", "创建时间"];
     const rows = filteredOrders.map((i: InboundOrder) => [
       i.inboundNumber,
       i.deliveryNumber || "",
+      i.productName ?? "",
       i.sku,
       i.qty.toString(),
       i.receivedQty.toString(),
@@ -342,7 +344,7 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
           </div>
 
           {/* 商品信息 */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-3">
             <div>
               <span className="text-xs text-slate-500 block">合同号</span>
               <span className="text-sm text-slate-300">{order.contractNumber || "-"}</span>
@@ -350,6 +352,10 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
             <div>
               <span className="text-xs text-slate-500 block">拿货单号</span>
               <span className="text-sm text-slate-300">{order.deliveryNumber || "-"}</span>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">产品名称</span>
+              <span className="text-sm text-slate-300">{order.productName || "-"}</span>
             </div>
             <div>
               <span className="text-xs text-slate-500 block">SKU</span>
@@ -463,6 +469,10 @@ function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutboun
           <div>
             <span className="text-xs text-slate-500 block">拿货单号</span>
             <span className="text-sm text-slate-200">{order.deliveryNumber || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">产品名称</span>
+            <span className="text-sm text-slate-200">{order.productName || "-"}</span>
           </div>
           <div>
             <span className="text-xs text-slate-500 block">SKU</span>

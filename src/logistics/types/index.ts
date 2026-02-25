@@ -101,6 +101,7 @@ export interface InboundOrder {
   deliveryNumber: string;  // 拿货单号
   contractNumber?: string;  // 合同编号
   sku: string;             // SKU
+  productName?: string;    // 产品名称（来自 variant.product.name）
   qty: number;             // 计划数量
   receivedQty: number;     // 已入库数量
   status: InboundStatus;   // 状态

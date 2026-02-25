@@ -18,6 +18,7 @@ type InboundBatchItem = {
   contractNumber?: string;
   deliveryNumber?: string;
   status?: string;
+  productName?: string;
 };
 
 type WarehouseItem = {
@@ -177,6 +178,7 @@ export default function InboundBatchListPage() {
                   <th className="px-4 py-3 font-medium">入库日期</th>
                   <th className="px-4 py-3 font-medium">合同号</th>
                   <th className="px-4 py-3 font-medium">拿货单号</th>
+                  <th className="px-4 py-3 font-medium">产品名称</th>
                   <th className="px-4 py-3 font-medium">SKU</th>
                   <th className="px-4 py-3 font-medium">入库数量</th>
                   <th className="px-4 py-3 font-medium">仓库</th>
@@ -191,6 +193,7 @@ export default function InboundBatchListPage() {
                     <td className="px-4 py-3 text-slate-400">{formatDate(b.receivedDate)}</td>
                     <td className="px-4 py-3 text-slate-300">{b.contractNumber || "-"}</td>
                     <td className="px-4 py-3 text-slate-300">{b.deliveryNumber || "-"}</td>
+                    <td className="px-4 py-3 text-slate-300">{b.productName || "-"}</td>
                     <td className="px-4 py-3 text-slate-300">{b.sku || "-"}</td>
                     <td className="px-4 py-3 text-slate-200">{b.qty}</td>
                     <td className="px-4 py-3 text-slate-300">{b.warehouseName || "-"}</td>
