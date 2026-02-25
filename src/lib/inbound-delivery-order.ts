@@ -206,13 +206,14 @@ export async function executeDeliveryOrderInbound(
   });
 
   // 入库完成后自动创建出库单（事务外执行，避免循环依赖）
-  if (outboundParams) {
+  const params = outboundParams as { pendingInboundId: string; sku: string; qty: number } | null;
+  if (params) {
     try {
       await createOutboundOrderFromPendingInbound({
-        pendingInboundId: outboundParams.pendingInboundId,
+        pendingInboundId: params.pendingInboundId,
         variantId: variantId!,
-        sku: outboundParams.sku,
-        qty: outboundParams.qty,
+        sku: params.sku,
+        qty: params.qty,
         warehouseId,
         warehouseName: warehouse.name,
       });
