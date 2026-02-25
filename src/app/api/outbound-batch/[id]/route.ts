@@ -1,0 +1,165 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { ShippingMethod } from "@prisma/client";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/outbound-batch/[id] - 获取单条出库批次（含出库单、仓库）
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    const batch = await prisma.outboundBatch.findUnique({
+      where: { id },
+      include: {
+        outboundOrder: true,
+        warehouse: true,
+      },
+    });
+
+    if (!batch) {
+      return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      id: batch.id,
+      outboundOrderId: batch.outboundOrderId,
+      batchNumber: batch.batchNumber,
+      warehouseId: batch.warehouseId,
+      warehouseName: batch.warehouseName,
+      qty: batch.qty,
+      shippedDate: batch.shippedDate.toISOString(),
+      destination: batch.destination ?? undefined,
+      trackingNumber: batch.trackingNumber ?? undefined,
+      shippingMethod: batch.shippingMethod ?? undefined,
+      vesselName: batch.vesselName ?? undefined,
+      vesselVoyage: batch.vesselVoyage ?? undefined,
+      portOfLoading: batch.portOfLoading ?? undefined,
+      portOfDischarge: batch.portOfDischarge ?? undefined,
+      eta: batch.eta?.toISOString() ?? undefined,
+      actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
+      actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
+      status: batch.status,
+      notes: batch.notes ?? undefined,
+      createdAt: batch.createdAt.toISOString(),
+      outboundOrder: batch.outboundOrder
+        ? {
+            id: batch.outboundOrder.id,
+            outboundNumber: batch.outboundOrder.outboundNumber,
+            sku: batch.outboundOrder.sku,
+            qty: batch.outboundOrder.qty,
+            shippedQty: batch.outboundOrder.shippedQty,
+            status: batch.outboundOrder.status,
+          }
+        : undefined,
+      warehouse: batch.warehouse
+        ? {
+            id: batch.warehouse.id,
+            name: batch.warehouse.name,
+            code: batch.warehouse.code ?? undefined,
+            address: batch.warehouse.address ?? undefined,
+          }
+        : undefined,
+    });
+  } catch (error: unknown) {
+    console.error("GET outbound-batch [id] error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "获取失败" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/outbound-batch/[id] - 更新出库批次（含物流信息：运输方式、船名、港口、ETA 等）
+ * Body: 任意可选字段，如 destination, trackingNumber, shippingMethod, vesselName, vesselVoyage,
+ *       portOfLoading, portOfDischarge, eta, actualDepartureDate, actualArrivalDate, status, notes
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    const updateData: Record<string, unknown> = {};
+
+    if (body.destination !== undefined) updateData.destination = body.destination ?? null;
+    if (body.trackingNumber !== undefined) updateData.trackingNumber = body.trackingNumber ?? null;
+    if (body.notes !== undefined) updateData.notes = body.notes ?? null;
+
+    // 物流信息
+    if (body.shippingMethod !== undefined) {
+      const v = String(body.shippingMethod).toUpperCase();
+      updateData.shippingMethod =
+        v === "SEA" || v === "AIR" || v === "EXPRESS" ? (v as ShippingMethod) : null;
+    }
+    if (body.vesselName !== undefined) updateData.vesselName = body.vesselName ?? null;
+    if (body.vesselVoyage !== undefined) updateData.vesselVoyage = body.vesselVoyage ?? null;
+    if (body.portOfLoading !== undefined) updateData.portOfLoading = body.portOfLoading ?? null;
+    if (body.portOfDischarge !== undefined) updateData.portOfDischarge = body.portOfDischarge ?? null;
+    if (body.eta !== undefined) updateData.eta = body.eta ? new Date(body.eta) : null;
+    if (body.actualDepartureDate !== undefined)
+      updateData.actualDepartureDate = body.actualDepartureDate ? new Date(body.actualDepartureDate) : null;
+    if (body.actualArrivalDate !== undefined)
+      updateData.actualArrivalDate = body.actualArrivalDate ? new Date(body.actualArrivalDate) : null;
+    if (body.status !== undefined) updateData.status = body.status ?? "待发货";
+
+    const batch = await prisma.outboundBatch.update({
+      where: { id },
+      data: updateData,
+      include: {
+        outboundOrder: true,
+        warehouse: true,
+      },
+    });
+
+    return NextResponse.json({
+      id: batch.id,
+      outboundOrderId: batch.outboundOrderId,
+      batchNumber: batch.batchNumber,
+      warehouseId: batch.warehouseId,
+      warehouseName: batch.warehouseName,
+      qty: batch.qty,
+      shippedDate: batch.shippedDate.toISOString(),
+      destination: batch.destination ?? undefined,
+      trackingNumber: batch.trackingNumber ?? undefined,
+      shippingMethod: batch.shippingMethod ?? undefined,
+      vesselName: batch.vesselName ?? undefined,
+      vesselVoyage: batch.vesselVoyage ?? undefined,
+      portOfLoading: batch.portOfLoading ?? undefined,
+      portOfDischarge: batch.portOfDischarge ?? undefined,
+      eta: batch.eta?.toISOString() ?? undefined,
+      actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
+      actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
+      status: batch.status,
+      notes: batch.notes ?? undefined,
+      createdAt: batch.createdAt.toISOString(),
+      outboundOrder: batch.outboundOrder
+        ? {
+            id: batch.outboundOrder.id,
+            outboundNumber: batch.outboundOrder.outboundNumber,
+            sku: batch.outboundOrder.sku,
+          }
+        : undefined,
+      warehouse: batch.warehouse
+        ? { id: batch.warehouse.id, name: batch.warehouse.name }
+        : undefined,
+    });
+  } catch (error: unknown) {
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
+    }
+    console.error("PATCH outbound-batch [id] error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "更新失败" },
+      { status: 500 }
+    );
+  }
+}

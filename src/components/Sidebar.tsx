@@ -103,6 +103,8 @@ const navItems: NavItem[] = [
       { label: "国内入库", labelEn: "", icon: Truck, href: "/logistics/inbound" },
       { label: "物流跟踪", labelEn: "", icon: Truck, href: "/logistics/tracking" },
       { label: "出库管理", labelEn: "", icon: Truck, href: "/logistics/outbound" },
+      { label: "出库批次管理", labelEn: "", icon: Truck, href: "/outbound" },
+      { label: "物流费用管理", labelEn: "", icon: Truck, href: "/logistics-cost" },
       { label: "仓储管理", labelEn: "", icon: Truck, href: "/logistics/warehouse" }
     ]
   },

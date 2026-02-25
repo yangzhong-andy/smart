@@ -1860,4 +1860,11 @@ model LogisticsCost {
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  // 关联关系
+  outboundBatch    OutboundBatch?    @relation(fields: [outboundBatchId], references: [id], onDelete: SetNull)
+  logisticsChannel LogisticsChannel? @relation(fields: [logisticsChannelId], references: [id], onDelete: SetNull)
+
+  @@index([outboundBatchId])
+  @@index([logisticsChannelId])
 }
