@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - 创建入库批次，并自动增加库存、记录 InventoryLog（type IN, status INBOUNDED）
+// POST - 创建入库批次，并自动增加库存（参考出库批次逻辑，用 $transaction 保证一致性）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 获取待入库单以得到 variantId（SKU）
+    // 1. 获取入库批次关联的 PendingInbound，得到 variantId（SKU）
     const pending = await prisma.pendingInbound.findUnique({
       where: { id: pendingInboundId },
       select: { id: true, inboundNumber: true, sku: true, variantId: true },
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     const now = new Date();
 
     const batch = await prisma.$transaction(async (tx) => {
-      // 1. 获取或创建 Stock，增加数量
+      // 2. 检查或创建 Stock 记录，并增加库存：stock.qty += 入库数量
       const existing = await tx.stock.findUnique({
         where: { variantId_warehouseId: { variantId, warehouseId } },
       });
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // 2. 创建入库批次
+      // 3. 创建入库批次
       const newBatch = await tx.inboundBatch.create({
         data: {
           pendingInboundId,
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // 3. 创建 InventoryLog：type IN，status INBOUNDED（入库时）
+      // 4. 创建 InventoryLog，type = IN，status = INBOUNDED
       await tx.inventoryLog.create({
         data: {
           type: InventoryLogType.IN,
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // 4. 记录 StockLog（入库流水）
+      // 5. 创建 StockLog，入库原因用 PURCHASE_INBOUND
       await tx.stockLog.create({
         data: {
           variantId,

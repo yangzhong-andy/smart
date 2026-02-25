@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Package, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
+import { Package, ArrowRight, CheckCircle, X } from "lucide-react";
 import { PageHeader, SearchBar, EmptyState, ActionButton } from "@/components/ui";
 
 type BatchItem = {
@@ -53,6 +54,8 @@ function formatDate(iso: string) {
   }
 }
 
+type WarehouseItem = { id: string; name: string; type?: string };
+
 export default function OutboundListPage() {
   const [batches, setBatches] = useState<BatchItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +63,12 @@ export default function OutboundListPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
 
-  const fetchBatches = async () => {
+  const [confirmBatch, setConfirmBatch] = useState<BatchItem | null>(null);
+  const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
+  const [toWarehouseId, setToWarehouseId] = useState("");
+  const [confirming, setConfirming] = useState(false);
+
+  const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -77,11 +85,58 @@ export default function OutboundListPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.pageSize, filterStatus]);
 
   useEffect(() => {
     fetchBatches();
-  }, [pagination.page, filterStatus]);
+  }, [fetchBatches]);
+
+  const fetchWarehouses = useCallback(async () => {
+    try {
+      const res = await fetch("/api/warehouses?page=1&pageSize=500");
+      const data = await res.json().catch(() => ({}));
+      setWarehouses(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setWarehouses([]);
+    }
+  }, []);
+
+  const openConfirmModal = (batch: BatchItem) => {
+    setConfirmBatch(batch);
+    setToWarehouseId("");
+    fetchWarehouses();
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmBatch(null);
+    setToWarehouseId("");
+  };
+
+  const handleConfirmArrival = async () => {
+    if (!confirmBatch || !toWarehouseId) {
+      toast.error("请选择目的地仓库");
+      return;
+    }
+    setConfirming(true);
+    try {
+      const res = await fetch(`/api/outbound-batch/${confirmBatch.id}/confirm-arrival`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toWarehouseId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? "确认失败");
+      }
+      toast.success("已确认到货，海外仓库存已增加");
+      closeConfirmModal();
+      fetchBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "确认到货失败");
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   const filtered = batches.filter((b) => {
     if (!keyword.trim()) return true;
@@ -174,14 +229,73 @@ export default function OutboundListPage() {
                     {formatDate(b.shippedDate)} · {b.qty} 件
                   </span>
                 </div>
-                <Link href={`/outbound/${b.id}`}>
-                  <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
-                    详情 / 编辑
-                  </ActionButton>
-                </Link>
+                <div className="flex items-center gap-2">
+                  {(b.status === "运输中" || b.status === "已清关") && (
+                    <ActionButton
+                      variant="ghost"
+                      size="sm"
+                      icon={CheckCircle}
+                      onClick={() => openConfirmModal(b)}
+                    >
+                      确认到货
+                    </ActionButton>
+                  )}
+                  <Link href={`/outbound/${b.id}`}>
+                    <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
+                      详情 / 编辑
+                    </ActionButton>
+                  </Link>
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 确认到货弹窗 */}
+      {confirmBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">确认到货</h2>
+              <button
+                type="button"
+                onClick={closeConfirmModal}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 text-sm text-slate-400 border-b border-slate-700">
+              批次：{confirmBatch.batchNumber} · 数量：{confirmBatch.qty} 件
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">目的地仓库（海外仓）</label>
+                <select
+                  value={toWarehouseId}
+                  onChange={(e) => setToWarehouseId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                >
+                  <option value="">请选择</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                      {w.type === "OVERSEAS" ? " (海外仓)" : w.type === "DOMESTIC" ? " (国内仓)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <ActionButton onClick={handleConfirmArrival} isLoading={confirming} disabled={!toWarehouseId}>
+                  确认到货
+                </ActionButton>
+                <ActionButton type="button" variant="secondary" onClick={closeConfirmModal}>
+                  取消
+                </ActionButton>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -843,6 +843,7 @@ model OutboundBatch {
   currentLocation    String? // 当前位置
   lastEvent          String? // 最新物流动态
   lastEventTime      DateTime? // 最新动态时间
+  arrivalConfirmedAt DateTime? // 确认到达时间（确认后海外仓加库存）
 
   notes              String? // 备注
   createdAt          DateTime @default(now())
