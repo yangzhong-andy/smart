@@ -43,6 +43,16 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 });
+    }
+    const userRole = session.user?.role;
+    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+      return NextResponse.json({ error: '没有权限' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { poId, receiptId, qty, receivedQty, ownership, receivedDate } = body;

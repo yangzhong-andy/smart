@@ -54,6 +54,16 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    const userRole = session.user?.role
+    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+      return NextResponse.json({ error: '没有权限' }, { status: 403 })
+    }
+
     const body = await request.json()
 
     const updateData: any = {}
