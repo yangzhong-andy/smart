@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { ShippingMethod } from "@prisma/client";
 
@@ -183,6 +185,41 @@ export async function PATCH(
     console.error("PATCH outbound-batch [id] error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "更新失败" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/outbound-batch/[id] - 删除出库批次（需 ADMIN 或 MANAGER）
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "未登录" }, { status: 401 });
+    }
+    const userRole = session.user?.role;
+    if (userRole !== "ADMIN" && userRole !== "MANAGER") {
+      return NextResponse.json({ error: "没有权限" }, { status: 403 });
+    }
+
+    const { id } = await params;
+    await prisma.outboundBatch.delete({
+      where: { id },
+    });
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
+      return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
+    }
+    console.error("DELETE outbound-batch [id] error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "删除失败" },
       { status: 500 }
     );
   }

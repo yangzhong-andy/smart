@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { Platform } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
@@ -131,5 +133,32 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to create store' },
       { status: 500 }
     );
+  }
+}
+
+// DELETE - 删除店铺（需 ADMIN 或 MANAGER，通过 query id 指定）
+export async function DELETE(request: NextRequest) {
+  try {
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    const userRole = session.user?.role
+    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+      return NextResponse.json({ error: '没有权限' }, { status: 403 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    if (!id) {
+      return NextResponse.json({ error: '缺少店铺 id' }, { status: 400 })
+    }
+    await prisma.store.delete({ where: { id } })
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting store:', error)
+    return NextResponse.json({ error: 'Failed to delete store' }, { status: 500 })
   }
 }

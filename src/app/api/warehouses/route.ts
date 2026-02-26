@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { getCache, setCache, generateCacheKey } from '@/lib/redis'
 
@@ -115,5 +117,35 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to create warehouse', details: error.message },
       { status: 500 }
     );
+  }
+}
+
+// DELETE - 删除仓库（需 ADMIN 或 MANAGER，通过 query id 指定）
+export async function DELETE(request: NextRequest) {
+  try {
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    const userRole = session.user?.role
+    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+      return NextResponse.json({ error: '没有权限' }, { status: 403 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    if (!id) {
+      return NextResponse.json({ error: '缺少仓库 id' }, { status: 400 })
+    }
+    await prisma.warehouse.delete({ where: { id } })
+    await import('@/lib/redis').then((m) => m.clearCacheByPrefix(CACHE_KEY_PREFIX))
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Error deleting warehouse:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete warehouse', details: error?.message },
+      { status: 500 }
+    )
   }
 }

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { clearCacheByPrefix } from '@/lib/redis'
 
@@ -10,6 +12,16 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    const userRole = session.user?.role
+    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+      return NextResponse.json({ error: '没有权限' }, { status: 403 })
+    }
+
     const batch = await prisma.inboundBatch.findUnique({
       where: { id: params.id }
     })
