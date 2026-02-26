@@ -154,8 +154,10 @@ export interface OutboundBatch {
 export interface OutboundOrder {
   id: string;
   outboundNumber: string;  // 出库单号
-  orderNumber: string;     // 订单号
+  orderNumber?: string;    // 订单号（可选）
+  contractNumber?: string; // 合同号（来自来源待入库单）
   sku: string;             // SKU
+  productName?: string;   // 产品名称（来自 variant.product.name）
   qty: number;             // 计划数量
   shippedQty: number;      // 已发货数量
   status: OutboundStatus;  // 状态

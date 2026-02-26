@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
           destination: true, status: true, reason: true,
           createdAt: true, updatedAt: true,
           _count: { select: { batches: true } },
+          variant: { select: { product: { select: { name: true } } } },
+          pendingInbound: { select: { contractNumber: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -75,6 +77,8 @@ export async function GET(request: NextRequest) {
         createdAt: o.createdAt.toISOString(),
         updatedAt: o.updatedAt.toISOString(),
         batchCount: o._count.batches,
+        productName: o.variant?.product?.name ?? "",
+        contractNumber: o.pendingInbound?.contractNumber ?? "",
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

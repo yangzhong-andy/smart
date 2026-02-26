@@ -91,8 +91,10 @@ export default function OutboundPage() {
       const keyword = searchKeyword.toLowerCase();
       result = result.filter((o: OutboundOrder) =>
         o.outboundNumber?.toLowerCase().includes(keyword) ||
+        o.contractNumber?.toLowerCase().includes(keyword) ||
         o.sku?.toLowerCase().includes(keyword) ||
-        o.warehouseName?.toLowerCase().includes(keyword)
+        o.warehouseName?.toLowerCase().includes(keyword) ||
+        o.productName?.toLowerCase().includes(keyword)
       );
     }
 
@@ -221,14 +223,17 @@ export default function OutboundPage() {
 
   // 导出数据
   const handleExport = () => {
-    const headers = ["出库单号", "SKU", "计划数量", "已出库", "待出库", "仓库", "状态", "创建时间"];
+    const headers = ["出库单号", "合同号", "产品名称", "SKU", "计划数量", "已出库", "待出库", "仓库", "目的地", "状态", "创建时间"];
     const rows = filteredOrders.map(o => [
       o.outboundNumber || "",
+      o.contractNumber ?? "",
+      o.productName ?? "",
       o.sku,
       o.qty.toString(),
       o.shippedQty.toString(),
       (o.qty - o.shippedQty).toString(),
       o.warehouseName || "",
+      o.destination || "",
       o.status,
       formatDate(o.createdAt)
     ]);
@@ -274,7 +279,7 @@ export default function OutboundPage() {
         <SearchBar
           value={searchKeyword}
           onChange={setSearchKeyword}
-          placeholder="搜索出库单号、SKU、仓库..."
+          placeholder="搜索出库单号、合同号、产品名称、SKU、仓库..."
         />
 
         <select
@@ -448,8 +453,16 @@ function OutboundCard({ order, onView, onShip }: OutboundCardProps) {
             <span className="text-sm font-medium text-slate-200">{order.outboundNumber || "-"}</span>
           </div>
 
-          {/* 商品信息 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+          {/* 商品信息（与国内入库信息布局一致） */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-3">
+            <div>
+              <span className="text-xs text-slate-500 block">合同号</span>
+              <span className="text-sm text-slate-300">{order.contractNumber || "-"}</span>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">产品名称</span>
+              <span className="text-sm text-slate-300">{order.productName || "-"}</span>
+            </div>
             <div>
               <span className="text-xs text-slate-500 block">SKU</span>
               <span className="text-sm text-slate-300">{order.sku}</span>
@@ -540,11 +553,19 @@ function OutboundDetailModal({ order, warehouses, onClose, onShip }: OutboundDet
           </button>
         </div>
 
-        {/* 基本信息 */}
+        {/* 基本信息（与国内入库详情布局一致） */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div>
             <span className="text-xs text-slate-500 block">出库单号</span>
             <span className="text-sm text-slate-200">{order.outboundNumber || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">合同号</span>
+            <span className="text-sm text-slate-200">{order.contractNumber || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">产品名称</span>
+            <span className="text-sm text-slate-200">{order.productName || "-"}</span>
           </div>
           <div>
             <span className="text-xs text-slate-500 block">SKU</span>
