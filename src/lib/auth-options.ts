@@ -3,6 +3,11 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 
+// 检查 NEXTAUTH_SECRET 是否配置
+if (!process.env.NEXTAUTH_SECRET) {
+  console.error('⚠️ 警告：NEXTAUTH_SECRET 未配置，使用不安全的默认密钥！请尽快在环境变量中设置 NEXTAUTH_SECRET');
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -99,5 +104,5 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 7 * 24 * 60 * 60 // 7 天
   },
-  secret: process.env.NEXTAUTH_SECRET || 'your-secret-key-change-in-production'
+  secret: process.env.NEXTAUTH_SECRET || 'insecure-default-do-not-use-in-production'
 }
