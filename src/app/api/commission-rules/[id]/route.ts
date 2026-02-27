@@ -40,7 +40,6 @@ export async function GET(
       updatedAt: rule.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching commission rule:', error)
     return NextResponse.json(
       { error: 'Failed to fetch commission rule' },
       { status: 500 }
@@ -101,7 +100,6 @@ export async function PUT(
       updatedAt: rule.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating commission rule:', error)
     return NextResponse.json(
       { error: 'Failed to update commission rule' },
       { status: 500 }
@@ -131,7 +129,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting commission rule:', error)
     return NextResponse.json(
       { error: 'Failed to delete commission rule' },
       { status: 500 }

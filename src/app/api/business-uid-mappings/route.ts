@@ -44,7 +44,6 @@ export async function GET(request: NextRequest) {
       }))
     );
   } catch (error: any) {
-    console.error('Error fetching business UID mappings:', error);
     return NextResponse.json(
       { error: 'Failed to fetch business UID mappings', details: error.message },
       { status: 500 }
@@ -89,7 +88,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error: any) {
-    console.error('Error upserting business UID mapping:', error);
     return NextResponse.json(
       { error: 'Failed to upsert business UID mapping', details: error.message },
       { status: 500 }

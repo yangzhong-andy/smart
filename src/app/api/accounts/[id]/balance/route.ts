@@ -105,7 +105,6 @@ export async function GET(
       }
     })
   } catch (error: any) {
-    console.error('Error checking account balance:', error)
     return NextResponse.json(
       { error: '查询失败', details: error.message },
       { status: 500 }

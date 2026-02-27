@@ -29,7 +29,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Supplier profiles cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -96,7 +95,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error('Error fetching supplier profiles:', error);
     return NextResponse.json(
       { error: 'Failed to fetch supplier profiles', details: error.message },
       { status: 500 }
@@ -148,7 +146,6 @@ export async function POST(request: NextRequest) {
       createdAt: profile.createdAt.toISOString()
     });
   } catch (error: any) {
-    console.error('Error creating supplier profile:', error);
     return NextResponse.json(
       { error: 'Failed to create supplier profile', details: error.message },
       { status: 500 }

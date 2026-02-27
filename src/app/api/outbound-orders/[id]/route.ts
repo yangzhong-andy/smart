@@ -65,7 +65,6 @@ export async function GET(
       }))
     })
   } catch (error) {
-    console.error('Error fetching outbound order:', error)
     return NextResponse.json(
       { error: 'Failed to fetch outbound order' },
       { status: 500 }
@@ -113,7 +112,6 @@ export async function PUT(
       updatedAt: order.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating outbound order:', error)
     return NextResponse.json(
       { error: 'Failed to update outbound order' },
       { status: 500 }
@@ -133,7 +131,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting outbound order:', error)
     return NextResponse.json(
       { error: 'Failed to delete outbound order' },
       { status: 500 }

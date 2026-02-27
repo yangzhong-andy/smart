@@ -69,7 +69,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting inbound batch:', error)
     return NextResponse.json(
       { error: 'Failed to delete inbound batch' },
       { status: 500 }

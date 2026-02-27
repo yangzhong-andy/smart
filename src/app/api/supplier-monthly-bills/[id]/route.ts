@@ -57,7 +57,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toBill(row));
   } catch (error: any) {
-    console.error('Error fetching supplier monthly bill:', error);
     return NextResponse.json(
       { error: 'Failed to fetch supplier monthly bill', details: error.message },
       { status: 500 }
@@ -113,7 +112,6 @@ export async function PUT(
 
     return NextResponse.json(toBill(row));
   } catch (error: any) {
-    console.error('Error updating supplier monthly bill:', error);
     return NextResponse.json(
       { error: 'Failed to update supplier monthly bill', details: error.message },
       { status: 500 }
@@ -131,7 +129,6 @@ export async function DELETE(
     await prisma.supplierMonthlyBill.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting supplier monthly bill:', error);
     return NextResponse.json(
       { error: 'Failed to delete supplier monthly bill', details: error.message },
       { status: 500 }

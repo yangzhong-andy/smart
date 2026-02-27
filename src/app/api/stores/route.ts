@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { Platform } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
+import { badRequest, serverError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,8 +88,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error('Error fetching stores:', error)
-    return NextResponse.json({ error: 'Failed to fetch stores' }, { status: 500 })
+    return serverError('Failed to fetch stores')
   }
 }
 
@@ -128,11 +128,7 @@ export async function POST(request: NextRequest) {
       createdAt: store.createdAt.toISOString()
     });
   } catch (error) {
-    console.error('Error creating store:', error);
-    return NextResponse.json(
-      { error: 'Failed to create store' },
-      { status: 500 }
-    );
+    return serverError('Failed to create store')
   }
 }
 
@@ -152,13 +148,12 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     if (!id) {
-      return NextResponse.json({ error: '缺少店铺 id' }, { status: 400 })
+      return badRequest('缺少店铺 id')
     }
     await prisma.store.delete({ where: { id } })
     await clearCacheByPrefix(CACHE_KEY_PREFIX)
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting store:', error)
-    return NextResponse.json({ error: 'Failed to delete store' }, { status: 500 })
+    return serverError('Failed to delete store')
   }
 }

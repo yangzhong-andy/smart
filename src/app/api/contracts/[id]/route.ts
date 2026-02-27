@@ -26,7 +26,6 @@ export async function GET(
       createdAt: contract.createdAt.toISOString(),
     })
   } catch (error: any) {
-    console.error('Contract fetch error:', error)
     return NextResponse.json(
       { error: error?.message || '获取合同失败' },
       { status: 500 }

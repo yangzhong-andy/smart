@@ -29,7 +29,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toReceipt(row));
   } catch (error: any) {
-    console.error('Error fetching batch receipt:', error);
     return NextResponse.json(
       { error: 'Failed to fetch batch receipt', details: error.message },
       { status: 500 }
@@ -72,7 +71,6 @@ export async function PUT(
 
     return NextResponse.json(toReceipt(row));
   } catch (error: any) {
-    console.error('Error updating batch receipt:', error);
     return NextResponse.json(
       { error: 'Failed to update batch receipt', details: error.message },
       { status: 500 }
@@ -100,7 +98,6 @@ export async function DELETE(
     await prisma.batchReceipt.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting batch receipt:', error);
     return NextResponse.json(
       { error: 'Failed to delete batch receipt', details: error.message },
       { status: 500 }

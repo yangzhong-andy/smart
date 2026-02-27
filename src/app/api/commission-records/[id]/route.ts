@@ -37,7 +37,6 @@ export async function GET(
       generatedAt: record.generatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching commission record:', error)
     return NextResponse.json(
       { error: 'Failed to fetch commission record' },
       { status: 500 }
@@ -67,7 +66,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting commission record:', error)
     return NextResponse.json(
       { error: 'Failed to delete commission record' },
       { status: 500 }

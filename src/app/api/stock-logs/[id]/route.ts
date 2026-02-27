@@ -47,7 +47,6 @@ export async function GET(
       warehouse: row.warehouse,
     });
   } catch (error: any) {
-    console.error('Error fetching stock log:', error);
     return NextResponse.json(
       { error: 'Failed to fetch stock log', details: error.message },
       { status: 500 }
@@ -65,7 +64,6 @@ export async function DELETE(
     await prisma.stockLog.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting stock log:', error);
     return NextResponse.json(
       { error: 'Failed to delete stock log', details: error.message },
       { status: 500 }

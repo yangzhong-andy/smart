@@ -43,7 +43,6 @@ export async function GET(
       updatedAt: p.updatedAt.toISOString()
     });
   } catch (error: any) {
-    console.error('Error fetching supplier profile:', error);
     return NextResponse.json(
       { error: 'Failed to fetch supplier profile', details: error.message },
       { status: 500 }
@@ -103,7 +102,6 @@ export async function PUT(
       updatedAt: p.updatedAt.toISOString()
     });
   } catch (error: any) {
-    console.error('Error updating supplier profile:', error);
     return NextResponse.json(
       { error: 'Failed to update supplier profile', details: error.message },
       { status: 500 }
@@ -121,7 +119,6 @@ export async function DELETE(
     await prisma.supplierProfile.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting supplier profile:', error);
     return NextResponse.json(
       { error: 'Failed to delete supplier profile', details: error.message },
       { status: 500 }

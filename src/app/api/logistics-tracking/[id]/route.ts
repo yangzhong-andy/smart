@@ -68,7 +68,6 @@ export async function GET(
       updatedAt: tracking.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching logistics tracking:', error)
     return NextResponse.json(
       { error: 'Failed to fetch logistics tracking' },
       { status: 500 }
@@ -141,7 +140,6 @@ export async function PUT(
       updatedAt: tracking.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating logistics tracking:', error)
     return NextResponse.json(
       { error: 'Failed to update logistics tracking' },
       { status: 500 }
@@ -171,7 +169,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting logistics tracking:', error)
     return NextResponse.json(
       { error: 'Failed to delete logistics tracking' },
       { status: 500 }

@@ -154,7 +154,6 @@ export async function POST(request: NextRequest) {
       created: true,
     });
   } catch (error: any) {
-    console.error("Ensure monthly bill from delivery:", error);
     return NextResponse.json(
       { error: error?.message || "生成月账单失败" },
       { status: 500 }

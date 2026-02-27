@@ -69,7 +69,6 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(transformed)
   } catch (error: any) {
-    console.error('Error fetching stock:', error)
     
     // 如果表不存在，返回空数组
     if (error.message?.includes('does not exist') || error.code === 'P2021') {

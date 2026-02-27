@@ -36,7 +36,6 @@ export async function DELETE(
       deletedVariants: product.variants.length
     })
   } catch (error) {
-    console.error('Error deleting product (SPU):', error)
     return NextResponse.json(
       { error: '删除产品失败' },
       { status: 500 }

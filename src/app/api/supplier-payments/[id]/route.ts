@@ -34,7 +34,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toPayment(row));
   } catch (error: any) {
-    console.error('Error fetching supplier payment:', error);
     return NextResponse.json(
       { error: 'Failed to fetch supplier payment', details: error.message },
       { status: 500 }
@@ -74,7 +73,6 @@ export async function PUT(
 
     return NextResponse.json(toPayment(row));
   } catch (error: any) {
-    console.error('Error updating supplier payment:', error);
     return NextResponse.json(
       { error: 'Failed to update supplier payment', details: error.message },
       { status: 500 }
@@ -92,7 +90,6 @@ export async function DELETE(
     await prisma.supplierPayment.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting supplier payment:', error);
     return NextResponse.json(
       { error: 'Failed to delete supplier payment', details: error.message },
       { status: 500 }

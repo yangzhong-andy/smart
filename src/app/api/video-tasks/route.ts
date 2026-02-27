@@ -63,7 +63,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(transformed)
   } catch (error) {
-    console.error('Error fetching video tasks:', error)
     return NextResponse.json(
       { error: 'Failed to fetch video tasks' },
       { status: 500 }
@@ -105,7 +104,6 @@ export async function POST(request: NextRequest) {
       updatedAt: task.updatedAt.toISOString()
     }, { status: 201 })
   } catch (error) {
-    console.error('Error creating video task:', error)
     return NextResponse.json(
       { error: 'Failed to create video task' },
       { status: 500 }

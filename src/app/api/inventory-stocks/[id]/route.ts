@@ -40,7 +40,6 @@ export async function GET(
       createdAt: stock.createdAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching inventory stock:', error)
     return NextResponse.json(
       { error: 'Failed to fetch inventory stock' },
       { status: 500 }
@@ -76,7 +75,6 @@ export async function PUT(
       createdAt: stock.createdAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating inventory stock:', error)
     return NextResponse.json(
       { error: 'Failed to update inventory stock' },
       { status: 500 }
@@ -96,7 +94,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting inventory stock:', error)
     return NextResponse.json(
       { error: 'Failed to delete inventory stock' },
       { status: 500 }

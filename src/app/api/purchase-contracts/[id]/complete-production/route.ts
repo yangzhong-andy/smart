@@ -34,7 +34,6 @@ export async function POST(
 
     return NextResponse.json({ ok: true, message: '已提交生产完成' })
   } catch (error: any) {
-    console.error('Error completing production:', error)
     return NextResponse.json(
       { error: '提交生产完成失败', details: error.message },
       { status: 500 }

@@ -50,7 +50,6 @@ export async function PUT(
 
     return NextResponse.json(productSupplier);
   } catch (error) {
-    console.error(`Error updating product-supplier ${params.id}:`, error);
     return NextResponse.json(
       { error: 'Failed to update product-supplier' },
       { status: 500 }
@@ -68,7 +67,6 @@ export async function DELETE(
     await prisma.productSupplier.delete({ where: { id } });
     return NextResponse.json({ message: 'Product-supplier relationship deleted successfully' });
   } catch (error) {
-    console.error(`Error deleting product-supplier ${params.id}:`, error);
     return NextResponse.json(
       { error: 'Failed to delete product-supplier' },
       { status: 500 }

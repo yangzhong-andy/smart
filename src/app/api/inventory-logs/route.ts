@@ -67,7 +67,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(transformed);
   } catch (error: any) {
-    console.error('Inventory logs GET:', error);
     if (error.message?.includes('does not exist') || error.code === 'P2021') {
       return NextResponse.json([]);
     }
@@ -228,7 +227,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error: any) {
-    console.error('Inventory logs POST:', error);
     return NextResponse.json(
       { error: error.message || '创建库存流水失败' },
       { status: 500 }

@@ -80,7 +80,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Supplier monthly bills cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -125,7 +124,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error('Error fetching supplier monthly bills:', error);
     return NextResponse.json(
       { error: 'Failed to fetch supplier monthly bills', details: error.message },
       { status: 500 }
@@ -172,7 +170,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(toBill(bill));
   } catch (error: any) {
-    console.error('Error creating supplier monthly bill:', error);
     return NextResponse.json(
       { error: 'Failed to create supplier monthly bill', details: error.message },
       { status: 500 }

@@ -60,7 +60,6 @@ export async function PATCH(
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
       return NextResponse.json({ error: "物流费用记录不存在" }, { status: 404 });
     }
-    console.error("PATCH logistics-cost [id] error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "更新失败" },
       { status: 500 }
@@ -97,7 +96,6 @@ export async function DELETE(
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
       return NextResponse.json({ error: "物流费用记录不存在" }, { status: 404 });
     }
-    console.error("DELETE logistics-cost [id] error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "删除失败" },
       { status: 500 }

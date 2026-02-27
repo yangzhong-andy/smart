@@ -199,7 +199,6 @@ export async function POST(request: NextRequest) {
       skipped,
     });
   } catch (e) {
-    console.error("store-order-settlement import error:", e);
     const message = e instanceof Error ? e.message : "导入失败";
     return NextResponse.json({ error: message }, { status: 500 });
   }

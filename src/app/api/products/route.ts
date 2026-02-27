@@ -256,9 +256,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(transformed)
   } catch (error: any) {
-    console.error('Error fetching products:', error)
-    console.error('DATABASE_URL exists:', !!process.env.DATABASE_URL)
-    console.error('NODE_ENV:', process.env.NODE_ENV)
     
     // 检查是否是数据库连接错误
     if (!process.env.DATABASE_URL) {
@@ -462,7 +459,6 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json()
   } catch (parseError: any) {
-    console.error('Product POST body parse error:', parseError)
     const msg = parseError?.message || String(parseError)
     const isTooLarge = /payload|too large|body limit|413|size/i.test(msg)
     return NextResponse.json(
@@ -617,7 +613,6 @@ export async function POST(request: NextRequest) {
               }
             })
           } catch (err: any) {
-            console.error('创建 ProductSupplier 关联失败:', err)
             // 不阻止产品创建，只记录错误
           }
         }
@@ -696,7 +691,6 @@ export async function POST(request: NextRequest) {
       updatedAt: v.updatedAt.toISOString()
     }, { status: 201 })
   } catch (error: any) {
-    console.error('Error creating product:', error)
     const msg = error?.message || String(error)
     const isPayload = /payload|too large|413|body limit/i.test(msg)
     return NextResponse.json(

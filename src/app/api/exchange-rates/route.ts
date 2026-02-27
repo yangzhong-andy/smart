@@ -31,7 +31,6 @@ export async function GET(request: NextRequest) {
     if (!noCache) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Exchange rates cache HIT: ${cacheKey}`);
         cached.cached = true; // 标记为缓存数据
         return NextResponse.json(cached);
       }
@@ -58,7 +57,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error('Error in exchange rates API:', error);
     return NextResponse.json(
       {
         success: false,

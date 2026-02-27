@@ -37,7 +37,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && !sourceUID && !targetUID) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Business relations cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -64,7 +63,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error('Error fetching business relations:', error);
     return NextResponse.json(
       { error: 'Failed to fetch business relations', details: error.message },
       { status: 500 }
@@ -114,7 +112,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(toRelation(relation));
   } catch (error: any) {
-    console.error('Error creating business relation:', error);
     return NextResponse.json(
       { error: 'Failed to create business relation', details: error.message },
       { status: 500 }

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { getCache, setCache, generateCacheKey } from '@/lib/redis'
+import { badRequest, serverError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,14 +70,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error: any) {
-    console.error('Error fetching warehouses:', error)
     if (error.message?.includes('does not exist') || error.code === 'P2021') {
       return NextResponse.json({ data: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 } })
     }
-    return NextResponse.json(
-      { error: 'Failed to fetch warehouses', details: error.message },
-      { status: 500 }
-    )
+    return serverError('Failed to fetch warehouses', error, { includeDetailsInDev: true })
   }
 }
 
@@ -112,11 +109,7 @@ export async function POST(request: NextRequest) {
       createdAt: warehouse.createdAt.toISOString()
     });
   } catch (error: any) {
-    console.error('Error creating warehouse:', error);
-    return NextResponse.json(
-      { error: 'Failed to create warehouse', details: error.message },
-      { status: 500 }
-    );
+    return serverError('Failed to create warehouse', error, { includeDetailsInDev: true })
   }
 }
 
@@ -136,16 +129,12 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     if (!id) {
-      return NextResponse.json({ error: '缺少仓库 id' }, { status: 400 })
+      return badRequest('缺少仓库 id')
     }
     await prisma.warehouse.delete({ where: { id } })
     await import('@/lib/redis').then((m) => m.clearCacheByPrefix(CACHE_KEY_PREFIX))
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('Error deleting warehouse:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete warehouse', details: error?.message },
-      { status: 500 }
-    )
+    return serverError('Failed to delete warehouse', error, { includeDetailsInDev: true })
   }
 }

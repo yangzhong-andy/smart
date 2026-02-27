@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(list.map(toVelocity));
   } catch (error: any) {
-    console.error('Error fetching sales velocity:', error);
     return NextResponse.json(
       { error: 'Failed to fetch sales velocity', details: error.message },
       { status: 500 }
@@ -80,7 +79,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(toVelocity(row), { status: 201 });
   } catch (error: any) {
-    console.error('Error upserting sales velocity:', error);
     return NextResponse.json(
       { error: 'Failed to upsert sales velocity', details: error.message },
       { status: 500 }

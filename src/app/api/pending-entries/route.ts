@@ -20,7 +20,6 @@ export async function GET() {
     }));
     return NextResponse.json(serialized);
   } catch (error: any) {
-    console.error("GET pending-entries error:", error);
     return NextResponse.json(
       { error: error.message || "获取失败" },
       { status: 500 }
@@ -61,7 +60,6 @@ export async function POST(request: NextRequest) {
       updatedAt: entry.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("POST pending-entries error:", error);
     return NextResponse.json(
       { error: error.message || "创建失败" },
       { status: 500 }

@@ -41,7 +41,6 @@ export async function GET(
       updatedAt: employee.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching employee:', error)
     return NextResponse.json(
       { error: 'Failed to fetch employee' },
       { status: 500 }
@@ -104,7 +103,6 @@ export async function PUT(
       updatedAt: employee.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating employee:', error)
     return NextResponse.json(
       { error: 'Failed to update employee' },
       { status: 500 }
@@ -134,7 +132,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting employee:', error)
     return NextResponse.json(
       { error: 'Failed to delete employee' },
       { status: 500 }

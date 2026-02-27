@@ -73,7 +73,6 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   } catch (error: any) {
-    console.error('Contract generate error:', error)
     return NextResponse.json(
       { error: error?.message || '生成合同失败' },
       { status: 500 }

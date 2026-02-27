@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey)
       if (cached) {
-        console.log(`✅ Commission rules cache HIT: ${cacheKey}`)
         return NextResponse.json(cached)
       }
     }
@@ -84,7 +83,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching commission rules:', error)
     return NextResponse.json(
       { error: 'Failed to fetch commission rules' },
       { status: 500 }
@@ -124,7 +122,6 @@ export async function POST(request: NextRequest) {
       createdAt: rule.createdAt.toISOString()
     });
   } catch (error) {
-    console.error('Error creating commission rule:', error);
     return NextResponse.json(
       { error: 'Failed to create commission rule' },
       { status: 500 }

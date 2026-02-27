@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { AccountType } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
+import { serverError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +33,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey)
       if (cached) {
-        console.log(`✅ Accounts cache HIT: ${cacheKey}`)
         return NextResponse.json(cached)
       }
     }
@@ -97,27 +97,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error: any) {
-    console.error('Error fetching accounts:', error)
-    
-    // 检查是否是数据库连接错误
-    if (error.message?.includes('TLS connection') || 
-        error.message?.includes('connection') ||
-        error.message?.includes('ECONNREFUSED') ||
-        error.code === 'P1001' ||
-        !process.env.DATABASE_URL) {
-      return NextResponse.json(
-        { 
-          error: '数据库连接失败，请检查网络或数据库状态',
-          code: 'DATABASE_CONNECTION_ERROR'
-        },
-        { status: 503 }
-      )
+    if (error?.message?.includes('TLS connection') || error?.message?.includes('connection') || error?.message?.includes('ECONNREFUSED') || error?.code === 'P1001' || !process.env.DATABASE_URL) {
+      return NextResponse.json({ error: '数据库连接失败，请检查网络或数据库状态', code: 'DATABASE_CONNECTION_ERROR' }, { status: 503 })
     }
-    
-    return NextResponse.json(
-      { error: error.message || '获取账户列表失败' },
-      { status: 500 }
-    )
+    return serverError(error?.message || '获取账户列表失败')
   }
 }
 
@@ -160,10 +143,6 @@ export async function POST(request: NextRequest) {
       createdAt: account.createdAt.toISOString()
     })
   } catch (error: any) {
-    console.error('Error creating account:', error)
-    return NextResponse.json(
-      { error: error.message || '创建账户失败' },
-      { status: 500 }
-    )
+    return serverError(error?.message || '创建账户失败')
   }
 }

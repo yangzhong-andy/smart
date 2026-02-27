@@ -98,7 +98,6 @@ export async function GET(request: NextRequest) {
     })
     
   } catch (error: any) {
-    console.error('Check NextAuth error:', error)
     return NextResponse.json({
       error: error.message,
       stack: error.stack,

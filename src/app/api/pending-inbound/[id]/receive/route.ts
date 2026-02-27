@@ -73,7 +73,6 @@ export async function POST(
       message: "入库成功，库存已增加，待入库单已更新",
     });
   } catch (error: any) {
-    console.error("POST pending-inbound receive error:", error);
     return NextResponse.json(
       { error: error?.message || "入库失败" },
       { status: 500 }

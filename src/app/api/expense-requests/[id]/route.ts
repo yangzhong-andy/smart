@@ -54,7 +54,6 @@ export async function GET(
       rebateAmount: expenseRequest.rebateAmount ? Number(expenseRequest.rebateAmount) : undefined
     });
   } catch (error: any) {
-    console.error('Error fetching expense request:', error);
     return NextResponse.json(
       { error: 'Failed to fetch expense request', details: error.message },
       { status: 500 }
@@ -122,7 +121,6 @@ export async function PUT(
             });
           }
         } catch (err) {
-          console.error('Sync contract payment on expense Paid:', err);
         }
       }
     }
@@ -136,7 +134,6 @@ export async function PUT(
       paidAt: updated.paidAt?.toISOString()
     });
   } catch (error: any) {
-    console.error('Error updating expense request:', error);
     return NextResponse.json(
       { error: 'Failed to update expense request', details: error.message },
       { status: 500 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { notFound, handlePrismaError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,19 +19,12 @@ export async function GET(
     })
     
     if (!warehouse) {
-      return NextResponse.json(
-        { error: 'Warehouse not found' },
-        { status: 404 }
-      )
+      return notFound('Warehouse not found')
     }
     
     return NextResponse.json(warehouse)
   } catch (error: any) {
-    console.error('Error fetching warehouse:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch warehouse', details: error.message },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: 'Warehouse not found', serverMessage: 'Failed to fetch warehouse' })
   }
 }
 
@@ -75,19 +69,7 @@ export async function PUT(
     
     return NextResponse.json(warehouse)
   } catch (error: any) {
-    console.error('Error updating warehouse:', error)
-    
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { error: 'Warehouse not found' },
-        { status: 404 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: 'Failed to update warehouse', details: error.message },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: 'Warehouse not found', serverMessage: 'Failed to update warehouse' })
   }
 }
 
@@ -115,18 +97,6 @@ export async function DELETE(
     
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('Error deleting warehouse:', error)
-    
-    if (error.code === 'P2025') {
-      return NextResponse.json(
-        { error: 'Warehouse not found' },
-        { status: 404 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: 'Failed to delete warehouse', details: error.message },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: 'Warehouse not found', serverMessage: 'Failed to delete warehouse' })
   }
 }

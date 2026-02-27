@@ -29,7 +29,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toVelocity(row));
   } catch (error: any) {
-    console.error('Error fetching sales velocity:', error);
     return NextResponse.json(
       { error: 'Failed to fetch sales velocity', details: error.message },
       { status: 500 }
@@ -64,7 +63,6 @@ export async function PUT(
 
     return NextResponse.json(toVelocity(row));
   } catch (error: any) {
-    console.error('Error updating sales velocity:', error);
     return NextResponse.json(
       { error: 'Failed to update sales velocity', details: error.message },
       { status: 500 }
@@ -82,7 +80,6 @@ export async function DELETE(
     await prisma.salesVelocity.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting sales velocity:', error);
     return NextResponse.json(
       { error: 'Failed to delete sales velocity', details: error.message },
       { status: 500 }

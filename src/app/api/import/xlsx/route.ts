@@ -89,7 +89,6 @@ export async function POST(request: NextRequest) {
       sheets,
     });
   } catch (e: unknown) {
-    console.error("xlsx import error:", e);
     const message = e instanceof Error ? e.message : "解析表格失败";
     return NextResponse.json({ error: message }, { status: 500 });
   }

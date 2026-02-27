@@ -26,7 +26,6 @@ export async function GET(
       updatedAt: account.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("GET ad-account error:", error);
     return NextResponse.json(
       { error: error.message || "获取失败" },
       { status: 500 }
@@ -73,7 +72,6 @@ export async function PUT(
       updatedAt: account.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("PUT ad-account error:", error);
     return NextResponse.json(
       { error: error.message || "更新失败" },
       { status: 500 }
@@ -99,7 +97,6 @@ export async function DELETE(
     await prisma.adAccount.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error("DELETE ad-account error:", error);
     return NextResponse.json(
       { error: error.message || "删除失败" },
       { status: 500 }

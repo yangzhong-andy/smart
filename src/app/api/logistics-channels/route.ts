@@ -64,7 +64,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching logistics channels:', error)
     return NextResponse.json(
       { error: 'Failed to fetch logistics channels' },
       { status: 500 }
@@ -97,7 +96,6 @@ export async function POST(request: NextRequest) {
       createdAt: channel.createdAt.toISOString()
     });
   } catch (error) {
-    console.error('Error creating logistics channel:', error);
     return NextResponse.json(
       { error: 'Failed to create logistics channel' },
       { status: 500 }

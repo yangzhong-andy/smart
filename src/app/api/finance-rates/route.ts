@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     if (!noCache) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Finance rates cache HIT: ${cacheKey}`);
         cached.cached = true;
         return NextResponse.json(cached);
       }
@@ -60,7 +59,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error('Error in finance rates API:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
       { status: 500 }

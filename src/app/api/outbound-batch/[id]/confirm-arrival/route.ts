@@ -186,7 +186,6 @@ export async function PATCH(
       },
     });
   } catch (error: unknown) {
-    console.error("PATCH outbound-batch [id] confirm-arrival error:", error);
     return NextResponse.json(
       {
         error:

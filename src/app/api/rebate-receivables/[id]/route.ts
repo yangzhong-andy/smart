@@ -25,7 +25,6 @@ export async function GET(
       updatedAt: r.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("GET rebate-receivable error:", error);
     return NextResponse.json(
       { error: error.message || "获取失败" },
       { status: 500 }
@@ -61,7 +60,6 @@ export async function PATCH(
       updatedAt: r.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("PATCH rebate-receivable error:", error);
     return NextResponse.json(
       { error: error.message || "更新失败" },
       { status: 500 }

@@ -153,7 +153,6 @@ export async function POST(
       }))
     })
   } catch (error: any) {
-    console.error('Approve purchase contract error:', error)
     return NextResponse.json(
       { error: '审批失败', details: error?.message },
       { status: 500 }

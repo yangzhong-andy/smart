@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1 && !status && !storeId) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Income requests cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -94,7 +93,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error("GET income-requests error:", error);
     return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }
@@ -131,7 +129,6 @@ export async function POST(request: NextRequest) {
       createdAt: incomeRequest.createdAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("POST income-requests error:", error);
     return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
   }
 }

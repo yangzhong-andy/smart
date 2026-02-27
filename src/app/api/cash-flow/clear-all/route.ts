@@ -36,7 +36,6 @@ export async function DELETE(request: NextRequest) {
       accountsReset: accounts.length
     })
   } catch (error: any) {
-    console.error('Error clearing cash flows:', error)
     
     // 检查是否是数据库连接错误
     if (error.message?.includes('TLS connection') || 

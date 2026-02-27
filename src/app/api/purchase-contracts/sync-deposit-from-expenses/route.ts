@@ -48,7 +48,6 @@ export async function POST() {
 
     return NextResponse.json({ ok: true, synced });
   } catch (e) {
-    console.error('Sync deposit from expenses:', e);
     return NextResponse.json(
       { error: '同步失败', details: (e as Error).message },
       { status: 500 }

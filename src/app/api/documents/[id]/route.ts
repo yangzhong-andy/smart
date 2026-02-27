@@ -28,7 +28,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toDoc(row));
   } catch (error: any) {
-    console.error('Error fetching document:', error);
     return NextResponse.json(
       { error: 'Failed to fetch document', details: error.message },
       { status: 500 }
@@ -63,7 +62,6 @@ export async function PUT(
 
     return NextResponse.json(toDoc(row));
   } catch (error: any) {
-    console.error('Error updating document:', error);
     return NextResponse.json(
       { error: 'Failed to update document', details: error.message },
       { status: 500 }
@@ -81,7 +79,6 @@ export async function DELETE(
     await prisma.document.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting document:', error);
     return NextResponse.json(
       { error: 'Failed to delete document', details: error.message },
       { status: 500 }

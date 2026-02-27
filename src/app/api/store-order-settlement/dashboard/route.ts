@@ -140,7 +140,6 @@ export async function GET(req: NextRequest) {
       topProducts,
     });
   } catch (e) {
-    console.error("store-order-settlement dashboard error:", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Dashboard failed" },
       { status: 500 }

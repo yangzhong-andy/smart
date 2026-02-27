@@ -68,7 +68,6 @@ export async function GET(
     if (!po) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(toFrontend(po))
   } catch (error) {
-    console.error('Error fetching purchase order:', error)
     return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
   }
 }
@@ -185,7 +184,6 @@ export async function PUT(
 
     return NextResponse.json(transformed)
   } catch (error) {
-    console.error(`Error updating purchase order ${params.id}:`, error)
     return NextResponse.json(
       { error: `Failed to update purchase order ${params.id}` },
       { status: 500 }
@@ -217,7 +215,6 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Purchase order deleted successfully' })
   } catch (error) {
-    console.error(`Error deleting purchase order ${params.id}:`, error)
     return NextResponse.json(
       { error: `Failed to delete purchase order ${params.id}` },
       { status: 500 }

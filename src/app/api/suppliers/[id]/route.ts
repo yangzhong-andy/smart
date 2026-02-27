@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { handlePrismaError } from '@/lib/api-response'
 import { SettleBase, InvoiceRequirement } from '@prisma/client'
 import {
   SETTLE_BASE_LABEL,
@@ -89,11 +90,7 @@ export async function PUT(
     
     return NextResponse.json(transformed)
   } catch (error) {
-    console.error('Error updating supplier:', error)
-    return NextResponse.json(
-      { error: 'Failed to update supplier' },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: '未找到供应商', serverMessage: 'Failed to update supplier' })
   }
 }
 
@@ -120,10 +117,6 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Supplier deleted successfully' })
   } catch (error) {
-    console.error('Error deleting supplier:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete supplier' },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: '未找到供应商', serverMessage: 'Failed to delete supplier' })
   }
 }

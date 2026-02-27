@@ -27,7 +27,6 @@ export async function GET(
       employeeCount: dept._count.employees,
     });
   } catch (error: any) {
-    console.error('Error fetching department:', error);
     return NextResponse.json(
       { error: 'Failed to fetch department', details: error.message },
       { status: 500 }
@@ -66,7 +65,6 @@ export async function PUT(
       updatedAt: dept.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error('Error updating department:', error);
     return NextResponse.json(
       { error: 'Failed to update department', details: error.message },
       { status: 500 }
@@ -95,7 +93,6 @@ export async function DELETE(
     await prisma.department.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting department:', error);
     return NextResponse.json(
       { error: 'Failed to delete department', details: error.message },
       { status: 500 }

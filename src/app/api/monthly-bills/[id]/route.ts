@@ -35,7 +35,6 @@ export async function GET(
         : undefined,
     });
   } catch (error) {
-    console.error("Error fetching monthly bill:", error);
     return NextResponse.json(
       { error: "Failed to fetch monthly bill" },
       { status: 500 }
@@ -155,7 +154,6 @@ export async function PUT(
         : undefined,
     });
   } catch (error) {
-    console.error("Error updating monthly bill:", error);
     return NextResponse.json(
       { error: "Failed to update monthly bill" },
       { status: 500 }

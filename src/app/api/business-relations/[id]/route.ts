@@ -27,7 +27,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toRelation(row));
   } catch (error: any) {
-    console.error('Error fetching business relation:', error);
     return NextResponse.json(
       { error: 'Failed to fetch business relation', details: error.message },
       { status: 500 }
@@ -55,7 +54,6 @@ export async function DELETE(
     await prisma.businessRelation.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting business relation:', error);
     return NextResponse.json(
       { error: 'Failed to delete business relation', details: error.message },
       { status: 500 }

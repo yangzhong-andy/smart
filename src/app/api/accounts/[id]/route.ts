@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { AccountType, AccountCategory } from '@prisma/client'
+import { handlePrismaError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -103,7 +104,6 @@ export async function PUT(
     
     return NextResponse.json(transformed)
   } catch (error: any) {
-    console.error(`Error updating account ${params.id}:`, error)
     // 返回更详细的错误信息
     const errorMessage = error?.message || `Failed to update account ${params.id}`
     const errorCode = error?.code || 'UNKNOWN_ERROR'
@@ -143,10 +143,6 @@ export async function DELETE(
     
     return NextResponse.json({ message: 'Account deleted successfully' })
   } catch (error) {
-    console.error(`Error deleting account ${params.id}:`, error)
-    return NextResponse.json(
-      { error: `Failed to delete account ${params.id}` },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: '未找到账户', serverMessage: `Failed to delete account ${params.id}` })
   }
 }

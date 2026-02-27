@@ -31,7 +31,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1 && !supplierId && !productId) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Product suppliers cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -84,7 +83,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error('Error fetching product suppliers:', error);
     return NextResponse.json(
       { error: 'Failed to fetch product suppliers' },
       { status: 500 }
@@ -123,7 +121,6 @@ export async function POST(request: NextRequest) {
       createdAt: ps.createdAt.toISOString()
     });
   } catch (error: any) {
-    console.error('Error creating product supplier:', error);
     return NextResponse.json(
       { error: 'Failed to create product supplier', details: error.message },
       { status: 500 }

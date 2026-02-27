@@ -59,7 +59,6 @@ export async function GET(request: NextRequest) {
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     })
   } catch (error) {
-    console.error('Error fetching users:', error)
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }
@@ -87,7 +86,6 @@ export async function DELETE(request: NextRequest) {
     })
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting user:', error)
     return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
   }
 }

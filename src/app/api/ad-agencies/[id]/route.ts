@@ -33,7 +33,6 @@ export async function GET(
       updatedAt: agency.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("GET ad-agency error:", error);
     return NextResponse.json(
       { error: error.message || "获取失败" },
       { status: 500 }
@@ -80,7 +79,6 @@ export async function PUT(
       updatedAt: agency.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("PUT ad-agency error:", error);
     return NextResponse.json(
       { error: error.message || "更新失败" },
       { status: 500 }
@@ -106,7 +104,6 @@ export async function DELETE(
     await prisma.adAgency.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error("DELETE ad-agency error:", error);
     return NextResponse.json(
       { error: error.message || "删除失败" },
       { status: 500 }

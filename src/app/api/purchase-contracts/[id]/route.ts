@@ -119,7 +119,6 @@ export async function GET(
       }))
     })
   } catch (error: any) {
-    console.error('Error fetching purchase contract:', error)
     return NextResponse.json(
       { error: '获取采购合同失败', details: error.message },
       { status: 500 }
@@ -205,7 +204,6 @@ export async function PUT(
       updatedAt: contract.updatedAt.toISOString()
     })
   } catch (error: any) {
-    console.error('Error updating purchase contract:', error)
     return NextResponse.json(
       { error: '更新采购合同失败', details: error.message },
       { status: 500 }
@@ -250,7 +248,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('Error deleting purchase contract:', error)
     const code = error?.code
     if (code === 'P2003' || (error?.message && String(error.message).includes('foreign key'))) {
       return NextResponse.json(

@@ -35,7 +35,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(list.map(toDoc));
   } catch (error: any) {
-    console.error('Error fetching documents:', error);
     return NextResponse.json(
       { error: 'Failed to fetch documents', details: error.message },
       { status: 500 }
@@ -80,7 +79,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(toDoc(row), { status: 201 });
   } catch (error: any) {
-    console.error('Error creating document:', error);
     return NextResponse.json(
       { error: 'Failed to create document', details: error.message },
       { status: 500 }

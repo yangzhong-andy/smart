@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey)
       if (cached) {
-        console.log(`✅ Influencers cache HIT: ${cacheKey}`)
         return NextResponse.json(cached)
       }
     }
@@ -94,7 +93,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching influencers:', error)
     return NextResponse.json(
       { error: 'Failed to fetch influencers' },
       { status: 500 }
@@ -138,7 +136,6 @@ export async function POST(request: NextRequest) {
       createdAt: influencer.createdAt.toISOString()
     });
   } catch (error) {
-    console.error('Error creating influencer:', error);
     return NextResponse.json(
       { error: 'Failed to create influencer' },
       { status: 500 }

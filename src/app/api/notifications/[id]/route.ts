@@ -24,7 +24,6 @@ export async function PATCH(
       readAt: n.readAt?.toISOString()
     });
   } catch (error: any) {
-    console.error('Error marking notification read:', error);
     return NextResponse.json(
       { error: 'Failed to update notification', details: error.message },
       { status: 500 }
@@ -52,7 +51,6 @@ export async function DELETE(
     await prisma.notification.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting notification:', error);
     return NextResponse.json(
       { error: 'Failed to delete notification', details: error.message },
       { status: 500 }

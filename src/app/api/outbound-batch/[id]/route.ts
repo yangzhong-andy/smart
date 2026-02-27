@@ -72,7 +72,6 @@ export async function GET(
         : undefined,
     });
   } catch (error: unknown) {
-    console.error("GET outbound-batch [id] error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "获取失败" },
       { status: 500 }
@@ -182,7 +181,6 @@ export async function PATCH(
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
       return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
     }
-    console.error("PATCH outbound-batch [id] error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "更新失败" },
       { status: 500 }
@@ -217,7 +215,6 @@ export async function DELETE(
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
       return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
     }
-    console.error("DELETE outbound-batch [id] error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "删除失败" },
       { status: 500 }

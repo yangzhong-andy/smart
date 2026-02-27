@@ -225,7 +225,6 @@ export async function POST(request: NextRequest) {
       msg.includes("入库批次不存在") ||
       msg.includes("出库数量不能超过") ||
       msg.includes("未找到国内仓");
-    console.error("POST outbound-batch/from-inbound error:", error);
     return NextResponse.json(
       { error: msg },
       { status: isBusiness ? 400 : 500 }

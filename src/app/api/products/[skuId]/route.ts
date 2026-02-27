@@ -96,7 +96,6 @@ export async function PATCH(
     if (error?.code === 'P2025') {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
-    console.error('PATCH product variant error:', error)
     return NextResponse.json(
       { error: error?.message || 'Update failed' },
       { status: 500 }
@@ -288,7 +287,6 @@ export async function PUT(
               }
             })
           } catch (err: any) {
-            console.error('更新 ProductSupplier 关联失败:', err)
           }
         }
       }
@@ -370,7 +368,6 @@ export async function PUT(
       updatedAt: v.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error(`Error updating product ${params.skuId}:`, error)
     return NextResponse.json(
       { error: `Failed to update product ${params.skuId}` },
       { status: 500 }
@@ -427,7 +424,6 @@ export async function DELETE(
     
     return NextResponse.json({ message: 'Product deleted successfully' })
   } catch (error) {
-    console.error(`Error deleting product ${params.skuId}:`, error)
     return NextResponse.json(
       { error: `Failed to delete product ${params.skuId}` },
       { status: 500 }

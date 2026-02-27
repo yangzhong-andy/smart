@@ -105,7 +105,6 @@ export async function POST(
       status: STATUS_MAP[status]
     })
   } catch (error: any) {
-    console.error('Error updating contract picked qty:', error)
     return NextResponse.json(
       { error: error?.message || '更新已取货数失败' },
       { status: 500 }

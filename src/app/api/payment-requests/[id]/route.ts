@@ -49,7 +49,6 @@ export async function GET(
       notes: request.remark || undefined
     });
   } catch (error: any) {
-    console.error('Error fetching payment request:', error);
     return NextResponse.json(
       { error: 'Failed to fetch payment request', details: error.message },
       { status: 500 }
@@ -117,7 +116,6 @@ export async function PUT(
       notes: updated.remark || undefined
     });
   } catch (error: any) {
-    console.error('Error updating payment request:', error);
     return NextResponse.json(
       { error: 'Failed to update payment request', details: error.message },
       { status: 500 }
@@ -149,7 +147,6 @@ export async function DELETE(
     
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Error deleting payment request:', error);
     return NextResponse.json(
       { error: 'Failed to delete payment request', details: error.message },
       { status: 500 }

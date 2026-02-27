@@ -47,7 +47,6 @@ export async function GET(
       updatedAt: influencer.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching influencer:', error)
     return NextResponse.json(
       { error: 'Failed to fetch influencer' },
       { status: 500 }
@@ -112,7 +111,6 @@ export async function PUT(
       updatedAt: influencer.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating influencer:', error)
     return NextResponse.json(
       { error: 'Failed to update influencer' },
       { status: 500 }
@@ -142,7 +140,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting influencer:', error)
     return NextResponse.json(
       { error: 'Failed to delete influencer' },
       { status: 500 }

@@ -57,7 +57,6 @@ export async function POST(
 
     return NextResponse.json({ ok: true, message: '已更新完工数量' })
   } catch (error: any) {
-    console.error('Error updating finished qty:', error)
     return NextResponse.json(
       { error: error?.message || '更新完工数失败' },
       { status: 500 }

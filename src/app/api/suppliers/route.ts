@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
+import { badRequest, serverError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +29,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Suppliers cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -80,11 +80,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching suppliers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch suppliers' },
-      { status: 500 }
-    )
+    return serverError('Failed to fetch suppliers')
   }
 }
 
@@ -130,11 +126,7 @@ export async function POST(request: NextRequest) {
       updatedAt: supplier.updatedAt.toISOString(),
     })
   } catch (error) {
-    console.error('Error creating supplier:', error)
-    return NextResponse.json(
-      { error: 'Failed to create supplier' },
-      { status: 500 }
-    )
+    return serverError('Failed to create supplier')
   }
 }
 
@@ -182,11 +174,7 @@ export async function PUT(request: NextRequest) {
       updatedAt: supplier.updatedAt.toISOString(),
     })
   } catch (error) {
-    console.error('Error updating supplier:', error)
-    return NextResponse.json(
-      { error: 'Failed to update supplier' },
-      { status: 500 }
-    )
+    return serverError('Failed to update supplier')
   }
 }
 
@@ -197,7 +185,7 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get("id")
     
     if (!id) {
-      return NextResponse.json({ error: 'Missing supplier id' }, { status: 400 })
+      return badRequest('Missing supplier id')
     }
     
     await prisma.supplier.delete({ where: { id } })
@@ -207,10 +195,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting supplier:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete supplier' },
-      { status: 500 }
-    )
+    return serverError('Failed to delete supplier')
   }
 }

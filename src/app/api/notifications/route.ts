@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1 && !relatedId && !relatedType && read === null) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Notifications cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -81,7 +80,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error("GET notifications error:", error);
     return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
   }
 }
@@ -106,7 +104,6 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true, updatedCount: ids.length });
   } catch (error: any) {
-    console.error("PATCH notifications error:", error);
     return NextResponse.json({ error: error.message || "更新失败" }, { status: 500 });
   }
 }

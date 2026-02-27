@@ -100,7 +100,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error("GET logistics-cost error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "获取失败" },
       { status: 500 }
@@ -167,7 +166,6 @@ export async function POST(request: NextRequest) {
       logisticsChannelId: cost.logisticsChannelId ?? undefined,
     });
   } catch (error: unknown) {
-    console.error("POST logistics-cost error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "创建失败" },
       { status: 500 }

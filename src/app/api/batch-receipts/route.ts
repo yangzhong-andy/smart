@@ -31,7 +31,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(list.map(toReceipt));
   } catch (error: any) {
-    console.error('Error fetching batch receipts:', error);
     return NextResponse.json(
       { error: 'Failed to fetch batch receipts', details: error.message },
       { status: 500 }
@@ -65,7 +64,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(toReceipt(row), { status: 201 });
   } catch (error: any) {
-    console.error('Error creating batch receipt:', error);
     return NextResponse.json(
       { error: 'Failed to create batch receipt', details: error.message },
       { status: 500 }

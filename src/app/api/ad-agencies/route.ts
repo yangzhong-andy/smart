@@ -24,7 +24,6 @@ export async function GET(request: NextRequest) {
     if (!noCache) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
-        console.log(`✅ Ad-agencies cache HIT: ${cacheKey}`);
         return NextResponse.json(cached);
       }
     }
@@ -57,7 +56,6 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(serialized);
   } catch (error: any) {
-    console.error("GET ad-agencies error:", error);
     return NextResponse.json(
       { error: error.message || "获取失败" },
       { status: 500 }
@@ -94,7 +92,6 @@ export async function POST(request: NextRequest) {
       updatedAt: agency.updatedAt.toISOString(),
     });
   } catch (error: any) {
-    console.error("POST ad-agencies error:", error);
     return NextResponse.json(
       { error: error.message || "创建失败" },
       { status: 500 }

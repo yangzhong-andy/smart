@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
       redirectPath
     })
   } catch (error: any) {
-    console.error('Login error:', error)
     return NextResponse.json(
       { error: '登录失败，请稍后重试', details: error.message },
       { status: 500 }

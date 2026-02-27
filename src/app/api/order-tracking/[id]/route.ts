@@ -44,7 +44,6 @@ export async function GET(
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(toTracking(row));
   } catch (error: any) {
-    console.error('Error fetching order tracking:', error);
     return NextResponse.json(
       { error: 'Failed to fetch order tracking', details: error.message },
       { status: 500 }
@@ -75,7 +74,6 @@ export async function PUT(
 
     return NextResponse.json(toTracking(row));
   } catch (error: any) {
-    console.error('Error updating order tracking:', error);
     return NextResponse.json(
       { error: 'Failed to update order tracking', details: error.message },
       { status: 500 }
@@ -103,7 +101,6 @@ export async function DELETE(
     await prisma.orderTracking.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting order tracking:', error);
     return NextResponse.json(
       { error: 'Failed to delete order tracking', details: error.message },
       { status: 500 }

@@ -47,7 +47,6 @@ export async function GET(
       paymentVoucher: incomeRequest.paymentVoucher ? (incomeRequest.paymentVoucher.startsWith('[') ? JSON.parse(incomeRequest.paymentVoucher) : incomeRequest.paymentVoucher) : undefined
     });
   } catch (error: any) {
-    console.error('Error fetching income request:', error);
     return NextResponse.json(
       { error: 'Failed to fetch income request', details: error.message },
       { status: 500 }
@@ -93,7 +92,6 @@ export async function PUT(
       receivedAt: updated.receivedAt?.toISOString()
     });
   } catch (error: any) {
-    console.error('Error updating income request:', error);
     return NextResponse.json(
       { error: 'Failed to update income request', details: error.message },
       { status: 500 }

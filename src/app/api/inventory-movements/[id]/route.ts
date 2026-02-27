@@ -49,7 +49,6 @@ export async function GET(
       createdAt: movement.createdAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching inventory movement:', error)
     return NextResponse.json(
       { error: 'Failed to fetch inventory movement' },
       { status: 500 }
@@ -69,7 +68,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting inventory movement:', error)
     return NextResponse.json(
       { error: 'Failed to delete inventory movement' },
       { status: 500 }

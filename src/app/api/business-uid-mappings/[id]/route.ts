@@ -22,7 +22,6 @@ export async function GET(
       createdAt: row.createdAt.toISOString(),
     });
   } catch (error: any) {
-    console.error('Error fetching business UID mapping:', error);
     return NextResponse.json(
       { error: 'Failed to fetch business UID mapping', details: error.message },
       { status: 500 }
@@ -50,7 +49,6 @@ export async function DELETE(
     await prisma.businessUidMapping.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error: any) {
-    console.error('Error deleting business UID mapping:', error);
     return NextResponse.json(
       { error: 'Failed to delete business UID mapping', details: error.message },
       { status: 500 }

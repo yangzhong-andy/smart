@@ -31,7 +31,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1) {
       const cached = await getCache<any>(cacheKey)
       if (cached) {
-        console.log(`✅ Employees cache HIT: ${cacheKey}`)
         return NextResponse.json(cached)
       }
     }
@@ -84,7 +83,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching employees:', error)
     return NextResponse.json(
       { error: 'Failed to fetch employees' },
       { status: 500 }
@@ -124,7 +122,6 @@ export async function POST(request: NextRequest) {
       createdAt: employee.createdAt.toISOString()
     })
   } catch (error) {
-    console.error('Error creating employee:', error)
     return NextResponse.json(
       { error: 'Failed to create employee' },
       { status: 500 }

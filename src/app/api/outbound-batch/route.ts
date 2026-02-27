@@ -90,7 +90,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    console.error("GET outbound-batch error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "获取失败" },
       { status: 500 }
@@ -248,7 +247,6 @@ export async function POST(request: NextRequest) {
       message.includes("无此 SKU 库存") ||
       message.includes("可用库存不足") ||
       message.includes("出库单不存在");
-    console.error("POST outbound-batch error:", error);
     return NextResponse.json(
       { error: message },
       { status: isBusinessError ? 400 : 500 }

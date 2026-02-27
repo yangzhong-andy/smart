@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
       })
     } catch (dbErr: any) {
       dbError = dbErr.message
-      console.error('Database error:', dbErr)
     }
     
     // 测试 NextAuth session
@@ -30,7 +29,6 @@ export async function GET(request: NextRequest) {
       session = await getServerSession(authOptions)
     } catch (authErr: any) {
       sessionError = authErr.message
-      console.error('NextAuth error:', authErr)
     }
     
     return NextResponse.json({
@@ -70,7 +68,6 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString()
     })
   } catch (error: any) {
-    console.error('Test auth error:', error)
     return NextResponse.json({
       success: false,
       error: error.message,

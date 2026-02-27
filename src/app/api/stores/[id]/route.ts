@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { Platform } from '@prisma/client'
+import { notFound, handlePrismaError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,10 +18,7 @@ export async function GET(
     })
 
     if (!store) {
-      return NextResponse.json(
-        { error: 'Store not found' },
-        { status: 404 }
-      )
+      return notFound('Store not found')
     }
 
     // 转换平台格式：数据库枚举转前端字符串
@@ -45,11 +43,7 @@ export async function GET(
       createdAt: store.createdAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching store:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch store' },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: 'Store not found', serverMessage: 'Failed to fetch store' })
   }
 }
 
@@ -117,11 +111,7 @@ export async function PUT(
       createdAt: store.createdAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating store:', error)
-    return NextResponse.json(
-      { error: 'Failed to update store' },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: 'Store not found', serverMessage: 'Failed to update store' })
   }
 }
 
@@ -147,10 +137,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting store:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete store' },
-      { status: 500 }
-    )
+    return handlePrismaError(error, { notFoundMessage: 'Store not found', serverMessage: 'Failed to delete store' })
   }
 }

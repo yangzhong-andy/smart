@@ -59,7 +59,6 @@ export async function GET(
       updatedAt: task.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching video task:', error)
     return NextResponse.json(
       { error: 'Failed to fetch video task' },
       { status: 500 }
@@ -106,7 +105,6 @@ export async function PUT(
       updatedAt: task.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating video task:', error)
     return NextResponse.json(
       { error: 'Failed to update video task' },
       { status: 500 }
@@ -136,7 +134,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting video task:', error)
     return NextResponse.json(
       { error: 'Failed to delete video task' },
       { status: 500 }

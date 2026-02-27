@@ -34,7 +34,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1 && !variantId) {
       const cached = await getCache<any>(cacheKey)
       if (cached) {
-        console.log(`✅ Inventory movements cache HIT: ${cacheKey}`)
         return NextResponse.json(cached)
       }
     }
@@ -94,7 +93,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching inventory movements:', error)
     return NextResponse.json(
       { error: 'Failed to fetch inventory movements' },
       { status: 500 }

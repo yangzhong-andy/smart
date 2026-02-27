@@ -33,7 +33,6 @@ export async function GET(
       updatedAt: channel.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching logistics channel:', error)
     return NextResponse.json(
       { error: 'Failed to fetch logistics channel' },
       { status: 500 }
@@ -72,7 +71,6 @@ export async function PUT(
       updatedAt: channel.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating logistics channel:', error)
     return NextResponse.json(
       { error: 'Failed to update logistics channel' },
       { status: 500 }
@@ -102,7 +100,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting logistics channel:', error)
     return NextResponse.json(
       { error: 'Failed to delete logistics channel' },
       { status: 500 }

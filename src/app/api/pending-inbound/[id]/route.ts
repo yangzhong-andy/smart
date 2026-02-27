@@ -65,7 +65,6 @@ export async function GET(
       }))
     })
   } catch (error) {
-    console.error('Error fetching pending inbound:', error)
     return NextResponse.json(
       { error: 'Failed to fetch pending inbound' },
       { status: 500 }
@@ -115,7 +114,6 @@ export async function PUT(
       updatedAt: pendingInbound.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating pending inbound:', error)
     return NextResponse.json(
       { error: 'Failed to update pending inbound' },
       { status: 500 }
@@ -135,7 +133,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting pending inbound:', error)
     return NextResponse.json(
       { error: 'Failed to delete pending inbound' },
       { status: 500 }

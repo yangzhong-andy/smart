@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
     if (!noCache && page === 1 && !channelId && !storeId) {
       const cached = await getCache<any>(cacheKey)
       if (cached) {
-        console.log(`✅ Logistics tracking cache HIT: ${cacheKey}`)
         return NextResponse.json(cached)
       }
     }
@@ -106,7 +105,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching logistics tracking:', error)
     return NextResponse.json(
       { error: 'Failed to fetch logistics tracking' },
       { status: 500 }

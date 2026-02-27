@@ -89,7 +89,6 @@ export async function PUT(
     
     return NextResponse.json(transformed)
   } catch (error) {
-    console.error(`Error updating cash flow ${params.id}:`, error)
     return NextResponse.json(
       { error: `Failed to update cash flow ${params.id}` },
       { status: 500 }
@@ -161,7 +160,6 @@ export async function PATCH(
     
     return NextResponse.json(transformed)
   } catch (error) {
-    console.error(`Error patching cash flow ${params.id}:`, error)
     return NextResponse.json(
       { error: `Failed to update cash flow ${params.id}` },
       { status: 500 }
@@ -193,7 +191,6 @@ export async function DELETE(
     
     return NextResponse.json({ message: 'Cash flow deleted successfully' })
   } catch (error) {
-    console.error(`Error deleting cash flow ${params.id}:`, error)
     return NextResponse.json(
       { error: `Failed to delete cash flow ${params.id}` },
       { status: 500 }

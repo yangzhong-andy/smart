@@ -71,7 +71,6 @@ export async function POST(
       },
     });
   } catch (error: unknown) {
-    console.error("POST inbound-batches [id] create-outbound error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "创建出库单失败" },
       { status: 500 }

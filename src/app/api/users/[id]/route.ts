@@ -86,7 +86,6 @@ export async function PUT(
       updatedAt: user.updatedAt.toISOString()
     })
   } catch (error: any) {
-    console.error('Error updating user:', error)
     return NextResponse.json(
       { error: 'Failed to update user', details: error.message },
       { status: 500 }

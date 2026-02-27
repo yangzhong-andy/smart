@@ -41,7 +41,6 @@ export async function POST(
       message: '入库成功，库存已增加，拿货单状态已更新为已入库'
     });
   } catch (error: any) {
-    console.error('Delivery order inbound error:', error);
     return NextResponse.json(
       { error: error.message || '入库失败' },
       { status: 500 }

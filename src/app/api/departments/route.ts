@@ -69,7 +69,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error fetching departments:', error)
     return NextResponse.json(
       { error: 'Failed to fetch departments' },
       { status: 500 }

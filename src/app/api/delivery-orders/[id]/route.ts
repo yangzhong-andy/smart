@@ -57,7 +57,6 @@ export async function GET(
       updatedAt: order.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error fetching delivery order:', error)
     return NextResponse.json(
       { error: 'Failed to fetch delivery order' },
       { status: 500 }
@@ -115,7 +114,6 @@ export async function PUT(
       updatedAt: order.updatedAt.toISOString()
     })
   } catch (error) {
-    console.error('Error updating delivery order:', error)
     return NextResponse.json(
       { error: 'Failed to update delivery order' },
       { status: 500 }
@@ -145,7 +143,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting delivery order:', error)
     return NextResponse.json(
       { error: 'Failed to delete delivery order' },
       { status: 500 }
