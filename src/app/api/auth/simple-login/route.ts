@@ -133,14 +133,12 @@ export async function POST(request: NextRequest) {
       { expiresIn: JWT_EXPIRES_IN }
     )
 
-
     // 登录成功，清除限流记录
     loginAttempts.delete(clientIP);
 
-    // 返回成功响应
-    return NextResponse.json({
+    // 返回成功响应，并设置cookie
+    const response = NextResponse.json({
       success: true,
-      token,
       user: {
         id: user.id,
         email: user.email,
@@ -150,7 +148,18 @@ export async function POST(request: NextRequest) {
         departmentName: departmentName,
         departmentCode: departmentCode
       }
-    })
+    });
+
+    // 设置HttpOnly cookie，前端通过JS无法读取，更安全
+    response.cookies.set('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7天
+      path: '/',
+    });
+
+    return response;
   } catch (error: any) {
     return NextResponse.json(
       { error: '登录失败，请稍后重试' },
