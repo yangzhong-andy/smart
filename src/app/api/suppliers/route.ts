@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic'
 // 缓存配置
 const CACHE_TTL = 600; // 10分钟
 const CACHE_KEY_PREFIX = 'suppliers';
+// 缓存版本标识，数据结构变化时更改
+const CACHE_VERSION = 'v1';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,9 +19,10 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("pageSize") || "500")
     const noCache = searchParams.get("noCache") === "true"
 
-    // 生成缓存键
+    // 生成缓存键（带版本号）
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
+      CACHE_VERSION,
       category || 'all',
       String(page),
       String(pageSize)

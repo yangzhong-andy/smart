@@ -3,6 +3,16 @@ import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 
+// 简单内存限流：IP -> { count, firstAttempt }
+const loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_WINDOW = 15 * 60 * 1000; // 15分钟
+
+// 强制要求配置JWT密钥，不允许使用默认值
+if (!process.env.JWT_SECRET && !process.env.NEXTAUTH_SECRET) {
+  throw new Error('❌ 严重安全漏洞：JWT_SECRET 或 NEXTAUTH_SECRET 环境变量未配置！请在 .env 文件中添加 JWT_SECRET=你的安全密钥')
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || 'your-secret-key-change-in-production'
 const JWT_EXPIRES_IN = '7d' // 7天
 
@@ -12,6 +22,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { email, password } = body
+
+    // 限流检查
+    const clientIP = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const now = Date.now();
+    const attempt = loginAttempts.get(clientIP);
+
+    if (attempt && attempt.count >= MAX_ATTEMPTS && now - attempt.firstAttempt < LOCKOUT_WINDOW) {
+      return NextResponse.json({ error: '登录尝试过多，请15分钟后再试' }, { status: 429 });
+    }
+
+    if (attempt) {
+      attempt.count++;
+    } else {
+      loginAttempts.set(clientIP, { count: 1, firstAttempt: now });
+    }
 
 
     // 验证输入
@@ -49,6 +74,7 @@ export async function POST(request: NextRequest) {
     const isPasswordValid = await bcrypt.compare(password, user.password)
     
     if (!isPasswordValid) {
+      // 登录失败，限流已在上方处理
       return NextResponse.json(
         { error: '邮箱或密码错误' },
         { status: 401 }
@@ -106,6 +132,9 @@ export async function POST(request: NextRequest) {
       { expiresIn: JWT_EXPIRES_IN }
     )
 
+
+    // 登录成功，清除限流记录
+    loginAttempts.delete(clientIP);
 
     // 返回成功响应
     return NextResponse.json({

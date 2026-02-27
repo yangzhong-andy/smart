@@ -207,14 +207,52 @@ export async function GET(request: NextRequest) {
         where: { id: spuId },
         include: {
           variants: {
+            select: {
+              id: true,
+              skuId: true,
+              costPrice: true,
+              targetRoi: true,
+              currency: true,
+              weightKg: true,
+              lengthCm: true,
+              widthCm: true,
+              heightCm: true,
+              volumetricDivisor: true,
+              color: true,
+              size: true,
+              barcode: true,
+              stockQuantity: true,
+              atFactory: true,
+              atDomestic: true,
+              inTransit: true,
+              platformSkuMapping: true,
+              createdAt: true,
+              updatedAt: true
+            },
             orderBy: [
               { color: 'asc' },
               { size: 'asc' },
               { skuId: 'asc' }
             ]
           },
-          productSuppliers: { include: { supplier: true } },
-          defaultSupplier: { select: { id: true, name: true } }
+          productSuppliers: {
+            select: {
+              id: true,
+              price: true,
+              moq: true,
+              leadTime: true,
+              isPrimary: true,
+              supplier: {
+                select: { id: true, name: true }
+              }
+            }
+          },
+          defaultSupplier: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
         }
       })
       if (!product) {
@@ -228,6 +266,28 @@ export async function GET(request: NextRequest) {
     const products = await prisma.product.findMany({
       include: {
         variants: {
+          select: {
+            id: true,
+            skuId: true,
+            costPrice: true,
+            targetRoi: true,
+            currency: true,
+            weightKg: true,
+            lengthCm: true,
+            widthCm: true,
+            heightCm: true,
+            volumetricDivisor: true,
+            color: true,
+            size: true,
+            barcode: true,
+            stockQuantity: true,
+            atFactory: true,
+            atDomestic: true,
+            inTransit: true,
+            platformSkuMapping: true,
+            createdAt: true,
+            updatedAt: true
+          },
           orderBy: [
             { color: 'asc' },
             { size: 'asc' },
@@ -235,8 +295,15 @@ export async function GET(request: NextRequest) {
           ]
         },
         productSuppliers: {
-          include: {
-            supplier: true
+          select: {
+            id: true,
+            price: true,
+            moq: true,
+            leadTime: true,
+            isPrimary: true,
+            supplier: {
+              select: { id: true, name: true }
+            }
           }
         },
         defaultSupplier: {
@@ -623,12 +690,16 @@ export async function POST(request: NextRequest) {
     const productWithVariant = await prisma.product.findUnique({
       where: { id: product.id },
       include: {
-        variants: {
-          where: { id: variant.id }
-        },
         productSuppliers: {
-          include: {
-            supplier: true
+          select: {
+            id: true,
+            price: true,
+            moq: true,
+            leadTime: true,
+            isPrimary: true,
+            supplier: {
+              select: { id: true, name: true }
+            }
           }
         },
         defaultSupplier: {

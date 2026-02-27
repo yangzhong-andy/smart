@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const costType = searchParams.get("costType");
     const paymentStatus = searchParams.get("paymentStatus");
     const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20") || 20, 100);
+    const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20") || 20, 30);
 
     const where: any = {};
     if (outboundBatchId) where.outboundBatchId = outboundBatchId;

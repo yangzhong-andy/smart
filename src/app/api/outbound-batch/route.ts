@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const warehouseId = searchParams.get("warehouseId");
     const status = searchParams.get("status");
     const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20") || 20, 100);
+    const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20") || 20, 30);
 
     const where: Record<string, unknown> = {};
     if (outboundOrderId) where.outboundOrderId = outboundOrderId;
