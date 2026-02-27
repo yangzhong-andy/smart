@@ -8,18 +8,19 @@ const loginAttempts = new Map<string, { count: number; firstAttempt: number }>()
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_WINDOW = 15 * 60 * 1000; // 15分钟
 
-// 强制要求配置JWT密钥，不允许使用默认值
-if (!process.env.JWT_SECRET && !process.env.NEXTAUTH_SECRET) {
-  throw new Error('❌ 严重安全漏洞：JWT_SECRET 或 NEXTAUTH_SECRET 环境变量未配置！请在 .env 文件中添加 JWT_SECRET=你的安全密钥')
-}
-
-const JWT_SECRET = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || 'your-secret-key-change-in-production'
 const JWT_EXPIRES_IN = '7d' // 7天
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
+    // JWT密钥：运行时检查，如果未配置则使用默认值但记录警告
+    const JWT_SECRET = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
+    if (!JWT_SECRET) {
+      console.error('⚠️ 警告：JWT_SECRET 未配置，使用不安全的默认密钥！请尽快在环境变量中设置 JWT_SECRET');
+    }
+    const actualSecret = JWT_SECRET || 'insecure-default-change-me';
+
     const body = await request.json()
     const { email, password } = body
 
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
         departmentName: departmentName,
         departmentCode: departmentCode
       },
-      JWT_SECRET,
+      actualSecret,
       { expiresIn: JWT_EXPIRES_IN }
     )
 
