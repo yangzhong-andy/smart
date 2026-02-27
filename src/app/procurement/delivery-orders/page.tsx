@@ -6,7 +6,7 @@ import { type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
-import { Truck, Search, X, Download, Eye, Package, PackageCheck } from "lucide-react";
+import { Truck, Search, X, Download, Eye, Package, PackageCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
@@ -46,6 +46,7 @@ export default function DeliveryOrdersPage() {
   const [inboundReceivedQty, setInboundReceivedQty] = useState<number>(0);
   const [inboundWarehouseId, setInboundWarehouseId] = useState<string>("");
   const [inboundSubmitting, setInboundSubmitting] = useState(false);
+  const [generatingBills, setGeneratingBills] = useState(false);
   const { mutate: globalMutate } = useSWRConfig();
 
   const { data: deliveryOrdersDataRaw, mutate: mutateDeliveryOrders } = useSWR<any>(
@@ -232,6 +233,29 @@ export default function DeliveryOrdersPage() {
     toast.success("拿货单数据导出成功", { icon: "✅" });
   };
 
+  const handleGenerateMonthlyBills = async () => {
+    if (generatingBills) return;
+    setGeneratingBills(true);
+    const t = toast.loading("正在根据拿货单生成月账单…");
+    try {
+      const res = await fetch("/api/monthly-bills/ensure-from-delivery/batch", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error || "生成失败", { id: t });
+        return;
+      }
+      toast.success(data.message || "月账单已生成", { id: t });
+      if (data.created > 0 || data.updated > 0) {
+        globalMutate("monthly-bills-all");
+        globalMutate("monthly-bills");
+      }
+    } catch (e) {
+      toast.error("请求失败，请稍后重试", { id: t });
+    } finally {
+      setGeneratingBills(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <header className="flex items-baseline justify-between gap-3">
@@ -240,6 +264,13 @@ export default function DeliveryOrdersPage() {
           <p className="mt-1 text-sm text-slate-400">查询和管理所有拿货单，支持按状态、关键词筛选。</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleGenerateMonthlyBills}
+            disabled={generatingBills}
+            className="flex items-center gap-2 rounded-md border border-emerald-600 bg-emerald-800/60 px-3 py-1.5 text-sm font-medium text-emerald-200 shadow hover:bg-emerald-700/80 active:translate-y-px transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <><Wallet className="h-4 w-4" /> {generatingBills ? "生成中…" : "根据拿货单生成月账单"}</>
+          </button>
           <button
             onClick={handleExportData}
             className="flex items-center gap-2 rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-200 shadow hover:bg-slate-700 active:translate-y-px transition-colors"

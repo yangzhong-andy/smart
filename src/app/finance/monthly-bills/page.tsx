@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import useSWR, { mutate } from "swr";
-import { FileText, Plus, Search, Eye, TrendingUp, Zap } from "lucide-react";
+import { FileText, Plus, Search, Eye, TrendingUp, Zap, Wallet } from "lucide-react";
 import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui";
 import { getMonthlyBills, saveMonthlyBills, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { formatCurrency } from "@/lib/currency-utils";
@@ -28,18 +28,43 @@ export default function MonthlyBillsPage() {
   const [selectedBill, setSelectedBill] = useState<MonthlyBill | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const [generatingFromDelivery, setGeneratingFromDelivery] = useState(false);
 
   // 使用 SWR 获取数据
   const fetcher = async () => {
     if (typeof window === "undefined") return [];
     return await getMonthlyBills();
   };
-  const { data: billsData } = useSWR("monthly-bills-all", fetcher, { 
+  const { data: billsData, mutate: mutateBills } = useSWR("monthly-bills-all", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
   const bills: MonthlyBill[] = Array.isArray(billsData) ? billsData : [];
+
+  // 根据拿货单批量生成月账单（供已有拿货单但无月账单时使用）
+  const handleGenerateFromDelivery = async () => {
+    if (generatingFromDelivery) return;
+    setGeneratingFromDelivery(true);
+    const t = toast.loading("正在根据拿货单生成月账单…");
+    try {
+      const res = await fetch("/api/monthly-bills/ensure-from-delivery/batch", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error || "生成失败", { id: t });
+        return;
+      }
+      toast.success(data.message || "月账单已生成", { id: t });
+      if (data.created > 0 || data.updated > 0) {
+        mutateBills();
+        mutate("monthly-bills");
+      }
+    } catch (e) {
+      toast.error("请求失败，请稍后重试", { id: t });
+    } finally {
+      setGeneratingFromDelivery(false);
+    }
+  };
 
   // 统计信息
   const stats = useMemo(() => {
@@ -345,6 +370,16 @@ export default function MonthlyBillsPage() {
         description="管理供应商和广告月账单，生成、查看、统计"
         actions={
           <>
+            <InteractiveButton 
+              icon={<Wallet className="h-4 w-4" />} 
+              variant="primary"
+              size="md"
+              onClick={handleGenerateFromDelivery}
+              disabled={generatingFromDelivery}
+              className="bg-emerald-600 hover:bg-emerald-500 border-emerald-500"
+            >
+              {generatingFromDelivery ? "生成中…" : "根据拿货单生成月账单"}
+            </InteractiveButton>
             <Link href="/finance/monthly-bills/supplier-bills">
               <InteractiveButton icon={<Plus className="h-4 w-4" />} variant="primary" size="md">
                 生成供应商月账单
