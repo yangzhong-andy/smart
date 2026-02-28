@@ -32,6 +32,12 @@ import {
   saveRebateReceivables
 } from "@/lib/rebate-receivable-store";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import { AgencyStats as AgencyStatsComponent } from "./components/AgencyStats";
+import { AgencyFilters } from "./components/AgencyFilters";
+import { AgenciesTable } from "./components/AgenciesTable";
+import { AgencyFormDialog } from "./components/AgencyFormDialog";
+import { AgencyDetailDialog } from "./components/AgencyDetailDialog";
+import { initialAgencyFormState } from "./components/types";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -163,6 +169,12 @@ export default function AdAgenciesPage() {
   const [filterAgency, setFilterAgency] = useState<string>("all");
   const [filterStore, setFilterStore] = useState<string>("all");
   const [isFilterLoading, setIsFilterLoading] = useState(false);
+
+  // 代理商 tab 筛选与详情
+  const [agencyPlatformFilter, setAgencyPlatformFilter] = useState<string>("all");
+  const [agencyKeywordFilter, setAgencyKeywordFilter] = useState("");
+  const [agencyDetailAgency, setAgencyDetailAgency] = useState<Agency | null>(null);
+  const [isAgencyDetailOpen, setIsAgencyDetailOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -753,17 +765,7 @@ export default function AdAgenciesPage() {
     try {
       setAgencies((prev) => [...prev, newAgency]);
       await saveAgencies([...agencies, newAgency]);
-    setAgencyForm({ 
-      name: "", 
-      platform: "TikTok", 
-      rebateRate: "", 
-      rebatePeriod: "月",
-      settlementCurrency: "USD",
-      creditTerm: "",
-      contact: "", 
-      phone: "", 
-      notes: "" 
-    });
+    setAgencyForm(initialAgencyFormState);
     setIsAgencyModalOpen(false);
     } finally {
       setIsSubmitting(false);
@@ -775,7 +777,7 @@ export default function AdAgenciesPage() {
     setAgencyForm({
       name: agency.name,
       platform: agency.platform,
-      rebateRate: String(agency.rebateRate),
+      rebateRate: String(agency.rebateConfig?.rate ?? agency.rebateRate ?? 0),
       rebatePeriod: agency.rebateConfig?.period || "月",
       settlementCurrency: agency.settlementCurrency || "USD",
       creditTerm: agency.creditTerm || "",
@@ -838,17 +840,7 @@ export default function AdAgenciesPage() {
     setAdAccounts(updatedAccounts);
     await saveAdAccounts(updatedAccounts);
 
-    setAgencyForm({ 
-      name: "", 
-      platform: "TikTok", 
-      rebateRate: "", 
-      rebatePeriod: "月",
-      settlementCurrency: "USD",
-      creditTerm: "",
-      contact: "", 
-      phone: "", 
-      notes: "" 
-    });
+    setAgencyForm(initialAgencyFormState);
     setEditAgency(null);
     setIsAgencyModalOpen(false);
     } finally {
@@ -886,6 +878,72 @@ export default function AdAgenciesPage() {
       }
     });
   };
+
+  // 代理商 tab：统计与筛选列表
+  const agencyStats = useMemo(() => {
+    let totalRecharge = 0;
+    let totalConsumption = 0;
+    let totalRebate = 0;
+    let totalBalance = 0;
+    const rechargeByCurrency: Record<string, number> = {};
+    const consumptionByCurrency: Record<string, number> = {};
+    const rebateByCurrency: Record<string, number> = {};
+    const balanceByCurrency: Record<string, number> = {};
+    agencies.forEach((agency) => {
+      const agencyAccounts = adAccounts.filter((acc) => acc.agencyId === agency.id);
+      const agencyRecharges = recharges.filter((r) =>
+        agencyAccounts.some((acc) => acc.id === r.adAccountId)
+      );
+      agencyRecharges.forEach((r) => {
+        const c = r.currency || "USD";
+        rechargeByCurrency[c] = (rechargeByCurrency[c] || 0) + r.amount;
+        const rate = agency.rebateConfig?.rate ?? agency.rebateRate ?? 0;
+        rebateByCurrency[c] = (rebateByCurrency[c] || 0) + (r.amount * rate) / 100;
+      });
+      const agencyConsumptions = consumptions.filter((c) =>
+        agencyAccounts.some((acc) => acc.id === c.adAccountId)
+      );
+      agencyConsumptions.forEach((c) => {
+        const cur = c.currency || "USD";
+        consumptionByCurrency[cur] = (consumptionByCurrency[cur] || 0) + (c.amount || 0);
+      });
+      agencyAccounts.forEach((acc) => {
+        const cur = acc.currency || "USD";
+        const balance = Math.max(0, acc.currentBalance || 0);
+        if (balance > 0) balanceByCurrency[cur] = (balanceByCurrency[cur] || 0) + balance;
+      });
+    });
+    const main = Object.keys(rechargeByCurrency).includes("USD") ? "USD" : Object.keys(rechargeByCurrency)[0] || "USD";
+    totalRecharge = rechargeByCurrency[main] || 0;
+    totalConsumption = consumptionByCurrency[main] || 0;
+    totalRebate = rebateByCurrency[main] || 0;
+    totalBalance = balanceByCurrency[main] || 0;
+    return {
+      agencyCount: agencies.length,
+      totalRecharge,
+      totalConsumption,
+      totalRebate,
+      totalBalance,
+      mainCurrency: main,
+    };
+  }, [agencies, adAccounts, consumptions, recharges]);
+
+  const filteredAgencies = useMemo(() => {
+    let list = agencies;
+    if (agencyPlatformFilter !== "all") {
+      list = list.filter((a) => a.platform === agencyPlatformFilter);
+    }
+    if (agencyKeywordFilter.trim()) {
+      const kw = agencyKeywordFilter.toLowerCase().trim();
+      list = list.filter(
+        (a) =>
+          a.name.toLowerCase().includes(kw) ||
+          (a.contact || "").toLowerCase().includes(kw) ||
+          (a.phone || "").includes(kw)
+      );
+    }
+    return list;
+  }, [agencies, agencyPlatformFilter, agencyKeywordFilter]);
 
   const handleCreateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -2399,17 +2457,7 @@ export default function AdAgenciesPage() {
             <button
               onClick={() => {
                 setEditAgency(null);
-                setAgencyForm({ 
-                  name: "", 
-                  platform: "TikTok", 
-                  rebateRate: "", 
-                  rebatePeriod: "月",
-                  settlementCurrency: "USD",
-                  creditTerm: "",
-                  contact: "", 
-                  phone: "", 
-                  notes: "" 
-                });
+                setAgencyForm(initialAgencyFormState);
                 setIsAgencyModalOpen(true);
               }}
               className="flex items-center gap-2 rounded-md bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px transition-colors"
@@ -2418,139 +2466,47 @@ export default function AdAgenciesPage() {
             </button>
           </div>
 
-          {agencies.length === 0 ? (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-12 text-center">
-              <p className="text-slate-400">
-                暂无代理商，请点击右上角「新增代理商」开始添加
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800/60">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">代理商名称</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">平台</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">结算币种</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">返点比例</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">返点周期</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">账期规则</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">联系人</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">总充值金额</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">消耗金额</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">返点</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">账户剩余金额</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {agencies.map((agency) => {
-                    // 计算该代理商的统计数据
-                    const agencyAccounts = adAccounts.filter((acc) => acc.agencyId === agency.id);
-                    
-                    // 总充值金额：该代理商下所有账户的充值总额
-                    const agencyRecharges = recharges.filter((r) => 
-                      agencyAccounts.some((acc) => acc.id === r.adAccountId)
-                    );
-                    const totalRechargeByCurrency: Record<string, number> = {};
-                    agencyRecharges.forEach((r) => {
-                      const currency = r.currency || "USD";
-                      totalRechargeByCurrency[currency] = (totalRechargeByCurrency[currency] || 0) + r.amount;
-                    });
-                    // 优先显示 USD，如果没有则显示第一个币种
-                    const mainRechargeCurrency = totalRechargeByCurrency["USD"] !== undefined ? "USD" : Object.keys(totalRechargeByCurrency)[0] || "USD";
-                    const totalRecharge = totalRechargeByCurrency[mainRechargeCurrency] || 0;
-                    
-                    // 消耗金额：该代理商下所有账户的消耗总额
-                    const agencyConsumptions = consumptions.filter((c) => 
-                      agencyAccounts.some((acc) => acc.id === c.adAccountId)
-                    );
-                    const totalConsumptionByCurrency: Record<string, number> = {};
-                    agencyConsumptions.forEach((c) => {
-                      const currency = c.currency || "USD";
-                      totalConsumptionByCurrency[currency] = (totalConsumptionByCurrency[currency] || 0) + (c.amount || 0);
-                    });
-                    // 优先显示 USD，如果没有则显示第一个币种
-                    const mainConsumptionCurrency = totalConsumptionByCurrency["USD"] !== undefined ? "USD" : Object.keys(totalConsumptionByCurrency)[0] || "USD";
-                    const totalConsumption = totalConsumptionByCurrency[mainConsumptionCurrency] || 0;
-                    
-                    // 返点：该代理商下所有账户的返点总额 = 充值金额 * 返点比例
-                    const rebateRate = agency.rebateConfig?.rate || agency.rebateRate || 0;
-                    const totalRebateByCurrency: Record<string, number> = {};
-                    agencyRecharges.forEach((r) => {
-                      const currency = r.currency || "USD";
-                      const rebate = (r.amount * rebateRate) / 100;
-                      totalRebateByCurrency[currency] = (totalRebateByCurrency[currency] || 0) + rebate;
-                    });
-                    // 优先显示 USD，如果没有则显示第一个币种
-                    const mainRebateCurrency = totalRebateByCurrency["USD"] !== undefined ? "USD" : Object.keys(totalRebateByCurrency)[0] || "USD";
-                    const totalRebate = totalRebateByCurrency[mainRebateCurrency] || 0;
-                    
-                    // 账户剩余金额：该代理商下所有账户的余额总和（只统计正数余额，负数表示透支）
-                    const totalBalanceByCurrency: Record<string, number> = {};
-                    agencyAccounts.forEach((acc) => {
-                      const currency = acc.currency || "USD";
-                      const balance = Math.max(0, acc.currentBalance || 0); // 只统计正数余额
-                      if (balance > 0) {
-                        totalBalanceByCurrency[currency] = (totalBalanceByCurrency[currency] || 0) + balance;
-                      }
-                    });
-                    // 优先显示 USD，如果没有则显示第一个币种
-                    const mainBalanceCurrency = totalBalanceByCurrency["USD"] !== undefined ? "USD" : Object.keys(totalBalanceByCurrency)[0] || "USD";
-                    const totalBalance = totalBalanceByCurrency[mainBalanceCurrency] || 0;
-                    
-                    return (
-                      <tr key={agency.id} className="hover:bg-slate-800/40">
-                        <td className="px-4 py-3 text-slate-100 font-medium">{agency.name}</td>
-                        <td className="px-4 py-3 text-slate-300">{agency.platform}</td>
-                        <td className="px-4 py-3 text-slate-300">
-                          {agency.settlementCurrency || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right text-emerald-300 font-medium">
-                          {agency.rebateConfig?.rate || agency.rebateRate}%
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">
-                          {agency.rebateConfig?.period || "月"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300 text-xs">
-                          {agency.creditTerm || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">{agency.contact || "-"}</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatCurrency(totalRecharge, mainRechargeCurrency as "USD" | "CNY" | "HKD", "income")}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatCurrency(totalConsumption, mainConsumptionCurrency as "USD" | "RMB" | "EUR" | "GBP" | "JPY", "expense")}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium text-emerald-300">
-                          {formatCurrency(totalRebate, mainRebateCurrency as "USD" | "RMB" | "EUR" | "GBP" | "JPY", "income")}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatCurrency(totalBalance, mainBalanceCurrency as "USD" | "RMB" | "EUR" | "GBP" | "JPY", "balance")}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => handleEditAgency(agency)}
-                            className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20"
-                          >
-                            编辑
-                          </button>
-                          <button
-                            onClick={() => handleDeleteAgency(agency.id)}
-                            className="px-2 py-1 rounded border border-rose-500/40 bg-rose-500/10 text-xs text-rose-100 hover:bg-rose-500/20"
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <AgencyStatsComponent stats={agencyStats} />
+          <AgencyFilters
+            platformFilter={agencyPlatformFilter}
+            onPlatformFilterChange={setAgencyPlatformFilter}
+            keyword={agencyKeywordFilter}
+            onKeywordChange={setAgencyKeywordFilter}
+            hasActiveFilters={agencyPlatformFilter !== "all" || agencyKeywordFilter.trim() !== ""}
+            onClearFilters={() => {
+              setAgencyPlatformFilter("all");
+              setAgencyKeywordFilter("");
+            }}
+          />
+          <AgenciesTable
+            agencies={filteredAgencies}
+            adAccounts={adAccounts}
+            consumptions={consumptions}
+            recharges={recharges}
+            onViewDetail={(agency) => {
+              setAgencyDetailAgency(agency);
+              setIsAgencyDetailOpen(true);
+            }}
+            onEdit={handleEditAgency}
+            onDelete={handleDeleteAgency}
+          />
+
+          <AgencyDetailDialog
+            isOpen={isAgencyDetailOpen}
+            agency={agencyDetailAgency}
+            adAccounts={adAccounts}
+            consumptions={consumptions}
+            recharges={recharges}
+            onClose={() => {
+              setIsAgencyDetailOpen(false);
+              setAgencyDetailAgency(null);
+            }}
+            onEdit={(agency) => {
+              setIsAgencyDetailOpen(false);
+              setAgencyDetailAgency(null);
+              handleEditAgency(agency);
+            }}
+          />
         </div>
       )}
 
@@ -3203,167 +3159,19 @@ export default function AdAgenciesPage() {
         </div>
       )}
 
-      {/* 代理商表单弹窗 */}
-      {isAgencyModalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">{editAgency ? "编辑代理商" : "新增代理商"}</h2>
-              <button
-                onClick={() => {
-                  setIsAgencyModalOpen(false);
-                  setEditAgency(null);
-                  setAgencyForm({ 
-                    name: "", 
-                    platform: "TikTok", 
-                    rebateRate: "", 
-                    rebatePeriod: "月",
-                    settlementCurrency: "USD",
-                    creditTerm: "",
-                    contact: "", 
-                    phone: "", 
-                    notes: "" 
-                  });
-                }}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={editAgency ? handleUpdateAgency : handleCreateAgency} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">代理商名称 *</label>
-                <input
-                  type="text"
-                  value={agencyForm.name}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, name: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">平台 *</label>
-                <select
-                  value={agencyForm.platform}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, platform: e.target.value as Agency["platform"] }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                >
-                  <option value="FB">Facebook</option>
-                  <option value="Google">Google</option>
-                  <option value="TikTok">TikTok</option>
-                  <option value="其他">其他</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">返点比例 (%) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    value={agencyForm.rebateRate}
-                    onChange={(e) => setAgencyForm((f) => ({ ...f, rebateRate: e.target.value }))}
-                    className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">返点周期 *</label>
-                  <select
-                    value={agencyForm.rebatePeriod}
-                    onChange={(e) => setAgencyForm((f) => ({ ...f, rebatePeriod: e.target.value as "月" | "季" }))}
-                    className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  >
-                    <option value="月">月度</option>
-                    <option value="季">季度</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">结算币种</label>
-                <select
-                  value={agencyForm.settlementCurrency}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, settlementCurrency: e.target.value as "USD" | "CNY" }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                >
-                  <option value="USD">USD</option>
-                  <option value="CNY">CNY</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">账期规则</label>
-                <input
-                  type="text"
-                  value={agencyForm.creditTerm}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, creditTerm: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  placeholder="例如：本月消耗，次月第15天结算"
-                />
-                <div className="text-xs text-slate-500 mt-1">
-                  格式：本月消耗，次月第X天结算（X为1-31之间的数字）
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">联系人</label>
-                <input
-                  type="text"
-                  value={agencyForm.contact}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, contact: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">联系电话</label>
-                <input
-                  type="text"
-                  value={agencyForm.phone}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, phone: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">备注</label>
-                <textarea
-                  value={agencyForm.notes}
-                  onChange={(e) => setAgencyForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                />
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                  setIsAgencyModalOpen(false);
-                  setEditAgency(null);
-                  setAgencyForm({ 
-                    name: "", 
-                    platform: "TikTok", 
-                    rebateRate: "", 
-                    rebatePeriod: "月",
-                    settlementCurrency: "USD",
-                    creditTerm: "",
-                    contact: "", 
-                    phone: "", 
-                    notes: "" 
-                  });
-                  }}
-                  className="px-4 py-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-md bg-[#00E5FF] text-slate-900 font-semibold hover:bg-[#00B8CC] transition-all duration-200 shadow-lg shadow-[#00E5FF]/20"
-                >
-                  {editAgency ? "更新" : "创建"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AgencyFormDialog
+        isOpen={isAgencyModalOpen}
+        onClose={() => {
+          setIsAgencyModalOpen(false);
+          setEditAgency(null);
+          setAgencyForm(initialAgencyFormState);
+        }}
+        editingAgency={editAgency}
+        form={agencyForm}
+        setForm={setAgencyForm}
+        isSubmitting={isSubmitting}
+        onSubmit={editAgency ? handleUpdateAgency : handleCreateAgency}
+      />
 
       {/* 广告账户表单弹窗 */}
       {isAccountModalOpen && (
