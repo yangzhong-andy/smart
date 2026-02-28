@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { toast } from "sonner";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -209,8 +209,8 @@ export default function ApprovalCenterPage() {
     
     setConfirmDialog({
       open: true,
-      title: "鎵瑰噯璐﹀崟",
-      message: `纭畾瑕佹壒鍑嗚繖绗旇处鍗曞悧锛熸壒鍑嗗悗绯荤粺灏嗚嚜鍔ㄦ帹閫佺粰璐㈠姟浜哄憳澶勭悊鍏ヨ处銆俓n\n璐﹀崟淇℃伅锛歕n- 绫诲瀷锛?{billType}\n- 閲戦锛?{billAmount}\n- 鏈嶅姟鏂癸細${serviceProvider}`,
+      title: "批准账单",
+      message: `确定要批准这笔账单吗？批准后系统将自动推送给财务人员处理入账。\n\n账单信息：\n- 类型：${billType}\n- 金额：${billAmount}\n- 服务方：${serviceProvider}`,
       type: "info",
       onConfirm: async () => {
         const updatedBills = allBills.map((b) =>
@@ -218,7 +218,7 @@ export default function ApprovalCenterPage() {
             ? {
                 ...b,
                 status: "Approved" as BillStatus,
-                approvedBy: "鑰佹澘", // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
+                approvedBy: "老板", // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
                 approvedAt: new Date().toISOString()
               }
             : b
@@ -229,7 +229,7 @@ export default function ApprovalCenterPage() {
         mutate("pending-bills");
         
         // 濡傛灉鏄箍鍛婅处鍗曪紝涓旀湭鐢熸垚杩旂偣搴旀敹娆撅紝鍒欒嚜鍔ㄧ敓鎴?
-        if (bill.billType === "骞垮憡" && bill.agencyId && bill.adAccountId) {
+        if (bill.billType === "广告" && bill.agencyId && bill.adAccountId) {
           (async () => {
             try {
               // 鑾峰彇浠ｇ悊鍟嗕俊鎭紝鐢ㄤ簬鑾峰彇杩旂偣姣斾緥锛圓PI锛?
@@ -283,18 +283,18 @@ export default function ApprovalCenterPage() {
                         agencyName: bill.agencyName || agency.name,
                         adAccountId: bill.adAccountId || "",
                         accountName: bill.accountName || "-",
-                        platform: agency.platform || "鍏朵粬",
+                        platform: agency.platform || "其他",
                         rebateAmount,
                         currency: bill.currency,
                         currentBalance: rebateAmount,
-                        status: "寰呮牳閿€",
-                        notes: `瀹℃壒閫氳繃鍚庤嚜鍔ㄧ敓鎴愶細骞垮憡璐﹀崟 ${billId} 鐨勮繑鐐瑰簲鏀舵锛堝疄浠橀噾棰濓細${formatCurrency(bill.netAmount, bill.currency, "expense")}锛岃繑鐐规瘮渚嬶細${rebateRate}%锛塦,
+                        status: "待核销",
+                        notes: `审批通过后自动生成：广告账单 ${billId} 的返点应收款（实付金额：${formatCurrencyString(bill.netAmount, bill.currency)}，返点比例：${rebateRate}%）`,
                       }),
                     });
                     if (createRes.ok) {
                       const created = await createRes.json();
                       mutate("rebate-receivables");
-                      console.log(`鉁?宸茬敓鎴愯繑鐐瑰簲鏀舵璁板綍锛?{created.id}锛岄噾棰濓細${formatCurrency(rebateAmount, bill.currency, "income")}`);
+                      console.log("已生成返点应收款记录:", created.id, "金额:", formatCurrencyString(rebateAmount, bill.currency));
                     }
                     
                     // 鍦ㄥ璐︿腑蹇冪敓鎴?骞垮憡杩旂偣"绫诲瀷鐨勫簲鏀舵璐﹀崟
@@ -303,7 +303,7 @@ export default function ApprovalCenterPage() {
                     const existingRebateBill = existingBills.find(
                       (b) =>
                         b.month === bill.month &&
-                        b.billType === "骞垮憡杩旂偣" &&
+                        b.billType === "广告返点" &&
                         b.billCategory === "Receivable" &&
                         b.agencyId === bill.agencyId &&
                         b.adAccountId === bill.adAccountId &&
@@ -325,14 +325,14 @@ export default function ApprovalCenterPage() {
                         b.id === existingRebateBill.id ? updatedRebateBill : b
                       );
                       await saveMonthlyBills(updatedBills);
-                      console.log(`鉁?宸叉洿鏂板璐︿腑蹇冨簲鏀舵璐﹀崟锛?{updatedRebateBill.id}`);
+                      console.log("已更新对账中心应收款账单:", updatedRebateBill.id);
                     } else {
                       // 鍒涘缓鏂扮殑杩旂偣搴旀敹娆捐处鍗?
                       const newRebateBill: MonthlyBill = {
                         id: `bill-rebate-approval-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
                         month: bill.month,
                         billCategory: "Receivable" as const,
-                        billType: "骞垮憡杩旂偣" as const,
+                        billType: "广告返点" as const,
                         agencyId: bill.agencyId || undefined,
                         agencyName: bill.agencyName || agency.name,
                         adAccountId: bill.adAccountId || undefined,
@@ -344,13 +344,13 @@ export default function ApprovalCenterPage() {
                         consumptionIds: [],
                         rechargeIds: [rechargeId],
                         status: "Draft",
-                        createdBy: "绯荤粺",
+                        createdBy: "系统",
                         createdAt: new Date().toISOString(),
-                        notes: `鑷姩鐢熸垚锛氬鎵归€氳繃骞垮憡璐﹀崟 ${billId} 鍚庣敓鎴愮殑杩旂偣搴旀敹娆撅紙鍏宠仈鍗曟嵁鍙凤細${billId}锛塦
+                        notes: `自动生成：审批通过广告账单 ${billId} 后生成的返点应收款（关联单据号：${billId}）`
                       };
                       const updatedBills = [...existingBills, newRebateBill];
                       await saveMonthlyBills(updatedBills);
-                      console.log(`鉁?宸茬敓鎴愬璐︿腑蹇冨簲鏀舵璐﹀崟骞舵帹閫佸埌瀵硅处涓績锛?{newRebateBill.id}锛堝叧鑱斿崟鎹彿锛?{billId}锛塦);
+                      console.log("已生成对账中心应收款账单并推送到对账中心:", newRebateBill.id, "关联单号:", billId);
                     }
                   }
                 }
@@ -382,28 +382,28 @@ export default function ApprovalCenterPage() {
                 amount: bill.totalAmount,
                 currency: bill.currency,
                 netAmount: bill.netAmount,
-                approvedBy: "鑰佹澘",
+                approvedBy: "老板",
                 approvedAt: new Date().toISOString(),
                 notes: bill.notes
               });
-              console.log(`鉁?搴旀敹娆捐处鍗?${billId} 瀹℃壒閫氳繃锛屽凡鍒涘缓寰呭叆璐︿换鍔★紙鎺ㄩ€佸埌寰呭叆璐﹀垪琛級`);
+              console.log("应收款账单", billId, "审批通过，已创建待入账任务（推送到待入账列表）");
             } catch (e) {
-              console.error(`鉂?鍒涘缓寰呭叆璐︿换鍔″け璐ワ細${billId}`, e);
-              toast.error("鍒涘缓寰呭叆璐︿换鍔″け璐ワ紝璇锋墜鍔ㄥ鐞?);
+              console.error("创建待入账任务失败:", billId, e);
+              toast.error("创建待入账任务失败，请手动处理");
             }
           } else {
-            console.log(`鈿狅笍 搴旀敹娆捐处鍗?${billId} 鐨勫緟鍏ヨ处浠诲姟宸插瓨鍦紝璺宠繃鍒涘缓`);
+            console.log("应收款账单", billId, "的待入账任务已存在，跳过创建");
           }
         } else if (bill.billCategory === "Payable") {
           // 搴斾粯娆撅細涓嶅垱寤哄緟鍏ヨ处浠诲姟锛屼細鑷姩鍑虹幇鍦ㄥ緟浠樻鍒楄〃涓紙閫氳繃 status === "Approved" 鍜?billCategory === "Payable" 绛涢€夛級
-          console.log(`鉁?搴斾粯娆捐处鍗?${billId} 瀹℃壒閫氳繃锛屽凡鎺ㄩ€佸埌寰呬粯娆惧垪琛紙status: Approved, billCategory: Payable锛塦);
+          console.log("应付账款单", billId, "审批通过，已推送到待付款列表（status: Approved, billCategory: Payable）");
         } else {
           // 濡傛灉 billCategory 鏈缃垨涓哄叾浠栧€硷紝鏍规嵁璐﹀崟绫诲瀷鎺ㄦ柇
-          console.warn(`鈿狅笍 璐﹀崟 ${billId} 鐨?billCategory 涓?${bill.billCategory || "undefined"}锛屾棤娉曠‘瀹氭帹閫佷綅缃甡);
+          console.warn("账单", billId, "的 billCategory 为", bill.billCategory || "undefined", "，无法确定推送位置");
         }
         
         setConfirmDialog(null);
-        toast.success("宸叉壒鍑嗭紝宸叉帹閫佺粰璐㈠姟浜哄憳澶勭悊鍏ヨ处");
+        toast.success("已批准，已推送给财务人员处理入账");
       }
     });
   };
@@ -415,7 +415,7 @@ export default function ApprovalCenterPage() {
   const handleConfirmReject = () => {
     if (!rejectModal.id || !rejectModal.type) return;
     if (!rejectReason.trim()) {
-      toast.error("璇疯緭鍏ラ€€鍥炲師鍥?);
+      toast.error("请输入退回原因");
       return;
     }
     if (rejectSubmitting) return;
@@ -432,12 +432,12 @@ export default function ApprovalCenterPage() {
           await saveMonthlyBills(updatedBills);
           mutate("monthly-bills");
           mutate("pending-bills");
-          toast.success("宸查€€鍥炰慨鏀?);
+          toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
         })
         .catch((err: any) => {
-          toast.error(err?.message || "閫€鍥炲け璐?);
+          toast.error(err?.message || "退回失败");
         })
         .finally(() => setRejectSubmitting(false));
       return;
@@ -455,12 +455,12 @@ export default function ApprovalCenterPage() {
           }, false);
           mutate("expense-requests", undefined, { revalidate: true });
           mutate("pending-expense-requests", undefined, { revalidate: true });
-          toast.success("宸查€€鍥炰慨鏀?);
+          toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
         })
         .catch((error: any) => {
-          toast.error(error.message || "閫€鍥炲け璐?);
+          toast.error(error.message || "退回失败");
         })
         .finally(() => setRejectSubmitting(false));
       return;
@@ -478,12 +478,12 @@ export default function ApprovalCenterPage() {
           }, false);
           mutate("income-requests", undefined, { revalidate: true });
           mutate("pending-income-requests", undefined, { revalidate: true });
-          toast.success("宸查€€鍥炰慨鏀?);
+          toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
         })
         .catch((error: any) => {
-          toast.error(error.message || "閫€鍥炲け璐?);
+          toast.error(error.message || "退回失败");
         })
         .finally(() => setRejectSubmitting(false));
       return;
@@ -501,14 +501,14 @@ export default function ApprovalCenterPage() {
     
     setConfirmDialog({
       open: true,
-      title: "鎵瑰噯鏀嚭鐢宠",
-      message: `纭畾瑕佹壒鍑嗚繖绗旀敮鍑虹敵璇峰悧锛熸壒鍑嗗悗璐㈠姟灏嗛€夋嫨璐︽埛骞跺畬鎴愬嚭璐︺€俓n\n鐢宠淇℃伅锛歕n- 鎽樿锛?{request.summary}\n- 鍒嗙被锛?{request.category}\n- 閲戦锛?{formatCurrencyString(request.amount, request.currency)}`,
+      title: "批准支出申请",
+      message: `确定要批准这笔支出申请吗？批准后财务将选择账户并完成出账。\n\n申请信息：\n- 摘要：${request.summary}\n- 分类：${request.category}\n- 金额：${formatCurrencyString(request.amount, request.currency)}`,
       type: "info",
       onConfirm: async () => {
         try {
           await updateExpenseRequest(requestId, {
             status: "Approved",
-            approvedBy: "鑰佹澘",
+            approvedBy: "老板",
             approvedAt: new Date().toISOString()
           });
           // 涔愯鏇存柊锛氱珛鍗充粠寰呭鎵瑰垪琛ㄤ腑绉婚櫎璇ラ」锛岄伩鍏嶆壒鍑嗗悗浠嶆樉绀哄湪鍒楄〃
@@ -519,14 +519,14 @@ export default function ApprovalCenterPage() {
           mutate("expense-requests", undefined, { revalidate: true });
           mutate("pending-expense-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
-          toast.success("宸叉壒鍑嗭紝宸叉帹閫佺粰璐㈠姟浜哄憳澶勭悊鍑鸿处");
+          toast.success("已批准，已推送给财务人员处理出账");
           setConfirmDialog(null);
           if (selectedExpenseRequest?.id === requestId) {
             setSelectedExpenseRequest(null);
             setIsRequestDetailOpen(false);
           }
         } catch (error: any) {
-          toast.error(error.message || "瀹℃壒澶辫触");
+          toast.error(error.message || "审批失败");
           setConfirmDialog(null);
         }
       }
@@ -541,14 +541,14 @@ export default function ApprovalCenterPage() {
     
     setConfirmDialog({
       open: true,
-      title: "鎵瑰噯鏀跺叆鐢宠",
-      message: `纭畾瑕佹壒鍑嗚繖绗旀敹鍏ョ敵璇峰悧锛熸壒鍑嗗悗璐㈠姟灏嗛€夋嫨璐︽埛骞跺畬鎴愬叆璐︺€俓n\n鐢宠淇℃伅锛歕n- 鎽樿锛?{request.summary}\n- 鍒嗙被锛?{request.category}\n- 閲戦锛?{formatCurrencyString(request.amount, request.currency)}`,
+      title: "批准收入申请",
+      message: `确定要批准这笔收入申请吗？批准后财务将选择账户并完成入账。\n\n申请信息：\n- 摘要：${request.summary}\n- 分类：${request.category}\n- 金额：${formatCurrencyString(request.amount, request.currency)}`,
       type: "info",
       onConfirm: async () => {
         try {
           await updateIncomeRequest(requestId, {
             status: "Approved",
-            approvedBy: "鑰佹澘",
+            approvedBy: "老板",
             approvedAt: new Date().toISOString()
           });
           mutate("pending-income-requests", (current: unknown) => {
@@ -558,14 +558,14 @@ export default function ApprovalCenterPage() {
           mutate("income-requests", undefined, { revalidate: true });
           mutate("pending-income-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
-          toast.success("宸叉壒鍑嗭紝宸叉帹閫佺粰璐㈠姟浜哄憳澶勭悊鍏ヨ处");
+          toast.success("已批准，已推送给财务人员处理入账");
           setConfirmDialog(null);
           if (selectedIncomeRequest?.id === requestId) {
             setSelectedIncomeRequest(null);
             setIsRequestDetailOpen(false);
           }
         } catch (error: any) {
-          toast.error(error.message || "瀹℃壒澶辫触");
+          toast.error(error.message || "审批失败");
           setConfirmDialog(null);
         }
       }
@@ -650,11 +650,11 @@ export default function ApprovalCenterPage() {
     <div className="p-6 space-y-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">瀹℃壒涓績</h1>
+          <h1 className="text-2xl font-bold text-slate-100">审批中心</h1>
           <p className="text-sm text-slate-400 mt-1">
             {activeTab === "pending"
-              ? `寰呭鎵癸細鏈堣处鍗?${pendingBills.length} 绗旓紝鏀嚭鐢宠 ${pendingExpenseRequests.length} 绗旓紝鏀跺叆鐢宠 ${pendingIncomeRequests.length} 绗擿
-              : `鍘嗗彶璁板綍锛氭湀璐﹀崟 ${historyBills.length} 绗旓紝鏀嚭鐢宠 ${historyExpenseRequests.length} 绗旓紝鏀跺叆鐢宠 ${historyIncomeRequests.length} 绗擿}
+              ? `待审批：月账单 ${pendingBills.length} 笔，支出申请 ${pendingExpenseRequests.length} 笔，收入申请 ${pendingIncomeRequests.length} 笔`
+              : `历史记录：月账单 ${historyBills.length} 笔，支出申请 ${historyExpenseRequests.length} 笔，收入申请 ${historyIncomeRequests.length} 笔`}
           </p>
         </div>
       </div>

@@ -150,6 +150,7 @@ export default function BankAccountsPage() {
   const [filterAccountType, setFilterAccountType] = useState<string>("all");
   const [selectedAccountForFlow, setSelectedAccountForFlow] = useState<BankAccount | null>(null);
   const [accountFlowModalOpen, setAccountFlowModalOpen] = useState(false);
+  const [selectedDetailAccount, setSelectedDetailAccount] = useState<BankAccount | null>(null);
   
   // 从 SWR 数据中筛选出选中账户的流水，并分类
   const accountFlows = useMemo(() => {
