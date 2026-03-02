@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { type Product, type ProductStatus, type SpuListItem, getVariantsBySpuIdFromAPI, getProductsFromAPI } from "@/lib/products-store";
@@ -878,7 +878,7 @@ export default function ProductsPage() {
             onClick={() => handleOpenModal()}
             className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
           >
-            褰曞叆浜у搧
+            录入产品
           </button>
         </div>
       </header>
@@ -924,20 +924,19 @@ export default function ProductsPage() {
         }}
       />
 
-      {/* 鍥剧墖棰勮寮瑰眰锛氭敮鎸佸鍥撅紝涓婁竴寮?涓嬩竴寮?*/}
       {previewImages.length > 0 && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
           onClick={() => setPreviewImages([])}
           role="dialog"
           aria-modal="true"
-          aria-label="鏌ョ湅澶у浘"
+          aria-label="查看大图"
         >
           <button
             type="button"
             onClick={() => setPreviewImages([])}
             className="absolute top-4 right-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-            aria-label="鍏抽棴"
+            aria-label="关闭"
           >
             <X className="h-6 w-6" />
           </button>
@@ -947,7 +946,7 @@ export default function ProductsPage() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i <= 0 ? previewImages.length - 1 : i - 1)); }}
                 className="absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-                aria-label="涓婁竴寮?
+                aria-label="上一张"
               >
                 <ChevronLeft className="h-8 w-8" />
               </button>
@@ -955,7 +954,7 @@ export default function ProductsPage() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i >= previewImages.length - 1 ? 0 : i + 1)); }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-                aria-label="涓嬩竴寮?
+                aria-label="下一张"
               >
                 <ChevronRight className="h-8 w-8" />
               </button>
