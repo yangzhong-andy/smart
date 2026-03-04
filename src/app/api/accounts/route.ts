@@ -108,12 +108,29 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+
+    // 兼容中文账户类型到枚举值的映射
+    const rawAccountType = (body.accountType || '').toString().trim()
+    const normalizedAccountType: AccountType = ((): AccountType => {
+      switch (rawAccountType) {
+        case '对公':
+          return 'CORPORATE'
+        case '对私':
+          return 'PERSONAL'
+        case '平台':
+        case '平台账户':
+          return 'PLATFORM'
+        default:
+          // 直接假定前端已经传的是枚举值，例如 CORPORATE / PERSONAL / PLATFORM
+          return rawAccountType as AccountType
+      }
+    })()
     
     const account = await prisma.bankAccount.create({
       data: {
         name: body.name,
         accountNumber: body.accountNumber,
-        accountType: body.accountType as AccountType,
+        accountType: normalizedAccountType,
         accountCategory: body.accountCategory || 'PRIMARY',
         accountPurpose: body.accountPurpose || null,
         currency: body.currency || 'CNY',
