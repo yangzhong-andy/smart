@@ -152,7 +152,8 @@ export function getAccountStats(accounts: BankAccount[]) {
       totalAssetsRMB: 0,
       totalUSD: 0,
       totalJPY: 0,
-      totalEUR: 0
+      totalEUR: 0,
+      totalBRL: 0
     };
   }
 
@@ -160,6 +161,7 @@ export function getAccountStats(accounts: BankAccount[]) {
   let totalUSD = 0;
   let totalJPY = 0;
   let totalEUR = 0;
+  let totalBRL = 0;
 
   accounts.forEach((acc) => {
     if (acc.accountCategory === "PRIMARY") {
@@ -180,14 +182,15 @@ export function getAccountStats(accounts: BankAccount[]) {
         children.forEach((child) => {
           // originalBalance 已经包含了 initialCapital + 所有流水
           const childTotal = child.originalBalance || 0;
-          if (Number.isFinite(childTotal)) {
-            if (child.currency === "USD") {
-              totalUSD += childTotal;
-            } else if (child.currency === "JPY") {
-              totalJPY += childTotal;
-            } else if (child.currency === "EUR") {
-              totalEUR += childTotal;
-            }
+          if (!Number.isFinite(childTotal)) return;
+          if (child.currency === "USD") {
+            totalUSD += childTotal;
+          } else if (child.currency === "JPY") {
+            totalJPY += childTotal;
+          } else if (child.currency === "EUR") {
+            totalEUR += childTotal;
+          } else if (child.currency === "BRL") {
+            totalBRL += childTotal;
           }
         });
         // 加上主账户自己的初始资金（原币）
@@ -199,6 +202,8 @@ export function getAccountStats(accounts: BankAccount[]) {
             totalJPY += primaryInitialCapital;
           } else if (acc.currency === "EUR") {
             totalEUR += primaryInitialCapital;
+          } else if (acc.currency === "BRL") {
+            totalBRL += primaryInitialCapital;
           }
         }
       } else {
@@ -209,14 +214,16 @@ export function getAccountStats(accounts: BankAccount[]) {
           : accountTotal * (acc.exchangeRate || 1);
         totalAssetsRMB += Number.isFinite(rmbBal) ? rmbBal : 0;
         
-        if (Number.isFinite(accountTotal)) {
-          if (acc.currency === "USD") {
-            totalUSD += accountTotal;
-          } else if (acc.currency === "JPY") {
-            totalJPY += accountTotal;
-          } else if (acc.currency === "EUR") {
-            totalEUR += accountTotal;
-          }
+        if (!Number.isFinite(accountTotal)) {
+          // skip
+        } else if (acc.currency === "USD") {
+          totalUSD += accountTotal;
+        } else if (acc.currency === "JPY") {
+          totalJPY += accountTotal;
+        } else if (acc.currency === "EUR") {
+          totalEUR += accountTotal;
+        } else if (acc.currency === "BRL") {
+          totalBRL += accountTotal;
         }
       }
     } else if (acc.accountCategory === "VIRTUAL") {
@@ -231,14 +238,16 @@ export function getAccountStats(accounts: BankAccount[]) {
         : accountTotal * (acc.exchangeRate || 1);
       totalAssetsRMB += Number.isFinite(rmbBal) ? rmbBal : 0;
       
-      if (Number.isFinite(accountTotal)) {
-        if (acc.currency === "USD") {
-          totalUSD += accountTotal;
-        } else if (acc.currency === "JPY") {
-          totalJPY += accountTotal;
-        } else if (acc.currency === "EUR") {
-          totalEUR += accountTotal;
-        }
+      if (!Number.isFinite(accountTotal)) {
+        // skip
+      } else if (acc.currency === "USD") {
+        totalUSD += accountTotal;
+      } else if (acc.currency === "JPY") {
+        totalJPY += accountTotal;
+      } else if (acc.currency === "EUR") {
+        totalEUR += accountTotal;
+      } else if (acc.currency === "BRL") {
+        totalBRL += accountTotal;
       }
     }
   });
@@ -247,7 +256,8 @@ export function getAccountStats(accounts: BankAccount[]) {
     totalAssetsRMB: Number.isFinite(totalAssetsRMB) ? totalAssetsRMB : 0,
     totalUSD: Number.isFinite(totalUSD) ? totalUSD : 0,
     totalJPY: Number.isFinite(totalJPY) ? totalJPY : 0,
-    totalEUR: Number.isFinite(totalEUR) ? totalEUR : 0
+    totalEUR: Number.isFinite(totalEUR) ? totalEUR : 0,
+    totalBRL: Number.isFinite(totalBRL) ? totalBRL : 0
   };
 }
 

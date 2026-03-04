@@ -246,13 +246,14 @@ export default function BankAccountsPage() {
   const exchangeRates = useMemo(() => {
     const USD = getRate("USD");
     const JPY = getRate("JPY");
+    const BRL = getRate("BRL");
     const THB = getRate("THB");
-    if (!rates || (USD === 0 && JPY === 0 && THB === 0)) return null;
-    return { USD, JPY, THB, lastUpdated: date || "" };
+    if (!rates || (USD === 0 && JPY === 0 && BRL === 0 && THB === 0)) return null;
+    return { USD, JPY, BRL, THB, lastUpdated: date || "" };
   }, [rates, getRate, date]);
 
   // 使用 finance-store 的统计函数（基础数据）
-  const { totalUSD, totalJPY } = useMemo(() => getAccountStats(accounts), [accounts]);
+  const { totalUSD, totalJPY, totalBRL } = useMemo(() => getAccountStats(accounts), [accounts]);
 
   // 计算人民币账户总金额（只统计币种为CNY的账户）
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
@@ -294,6 +295,18 @@ export default function BankAccountsPage() {
         // originalBalance 已经包含了 initialCapital + 所有流水
         // 使用实时汇率计算，如果没有实时汇率则回退到账户汇率
         const rate = exchangeRates?.JPY || acc.exchangeRate || 1;
+        const rmbValue = (acc.originalBalance || 0) * rate;
+        return sum + rmbValue;
+      }
+      return sum;
+    }, 0);
+  }, [accounts, exchangeRates]);
+
+  // 计算BRL账户的预估CNY金额（优先实时汇率，其次账户上配置的汇率）
+  const totalBRLRMB = useMemo(() => {
+    return accounts.reduce((sum, acc) => {
+      if (acc.currency === "BRL") {
+        const rate = exchangeRates?.BRL || acc.exchangeRate || 1;
         const rmbValue = (acc.originalBalance || 0) * rate;
         return sum + rmbValue;
       }
@@ -854,8 +867,10 @@ export default function BankAccountsPage() {
         totalAssetsRMB={totalAssetsRMB}
         totalUSD={totalUSD}
         totalJPY={totalJPY}
+        totalBRL={totalBRL}
         totalUSDRMB={totalUSDRMB}
         totalJPYRMB={totalJPYRMB}
+        totalBRLRMB={totalBRLRMB}
         totalRMBAccountBalance={totalRMBAccountBalance}
         exchangeRates={exchangeRates}
         ratesError={ratesError}

@@ -17,8 +17,10 @@ type AccountsStatsProps = {
   totalAssetsRMB: number;
   totalUSD: number;
   totalJPY: number;
+  totalBRL: number;
   totalUSDRMB: number;
   totalJPYRMB: number;
+  totalBRLRMB: number;
   totalRMBAccountBalance: number;
   exchangeRates: AccountStatsRates;
   ratesError: Error | null;
@@ -31,8 +33,10 @@ export function AccountsStats({
   totalAssetsRMB,
   totalUSD,
   totalJPY,
+  totalBRL,
   totalUSDRMB,
   totalJPYRMB,
+  totalBRLRMB,
   totalRMBAccountBalance,
   exchangeRates,
   ratesError,
@@ -205,6 +209,53 @@ export function AccountsStats({
               {currency(totalRMBAccountBalance, "CNY")}
             </div>
             <div className="text-xs text-white/60">CNY 账户原币余额（含初始资金）</div>
+          </div>
+        </div>
+
+        <div
+          className="group relative overflow-hidden rounded-2xl border p-6 shadow-lg transition-all hover:shadow-xl hover:scale-[1.02]"
+          style={{
+            background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+          }}
+        >
+          <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
+          <div className="relative z-10">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="rounded-xl bg-white/20 p-3 backdrop-blur-sm">
+                <Coins className="h-6 w-6 text-white" />
+              </div>
+              <div className="text-xs font-medium text-white/80">巴西雷亚尔总额</div>
+            </div>
+            <div className="mb-1 text-xs font-medium text-white/70">BRL 账户</div>
+            <div className="mb-2 text-3xl font-bold text-white" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              {currency(totalBRL, "BRL")}
+            </div>
+            <div className="mb-1 text-xs text-white/60">预估 CNY（基于实时或账户汇率）</div>
+            <div className="mb-2 text-xl font-semibold text-white/90" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              {currency(totalBRLRMB, "CNY")}
+            </div>
+            <div className="text-xs text-white/60">
+              {exchangeRates?.BRL ? (
+                <div className="flex items-center gap-2">
+                  <span>实时汇率: 1 BRL = {exchangeRates.BRL.toFixed(4)} CNY</span>
+                  {exchangeRates.lastUpdated && (
+                    <span className="text-[10px] text-white/40">
+                      ({new Date(exchangeRates.lastUpdated).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })})
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onRefreshRates()}
+                    className="text-[10px] text-cyan-200 underline hover:text-cyan-100"
+                    title="手动刷新汇率"
+                  >
+                    刷新
+                  </button>
+                </div>
+              ) : (
+                "BRL 账户原币余额按账户汇率折算"
+              )}
+            </div>
           </div>
         </div>
       </section>

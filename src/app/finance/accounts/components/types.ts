@@ -12,6 +12,7 @@ export type AccountSummary = {
 export type AccountStatsRates = {
   USD: number;
   JPY: number;
+  BRL?: number;
   THB?: number;
   lastUpdated?: string;
 } | null;
