@@ -241,6 +241,7 @@ export function AccountFormDialog({
                   <option value="JPY">JPY (日元)</option>
                   <option value="EUR">EUR (欧元)</option>
                   <option value="GBP">GBP (英镑)</option>
+                  <option value="BRL">BRL (巴西雷亚尔)</option>
                   <option value="HKD">HKD (港币)</option>
                   <option value="SGD">SGD (新加坡元)</option>
                   <option value="AUD">AUD (澳元)</option>

@@ -39,7 +39,9 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
                 ? currency(account.originalBalance || 0, "CNY")
                 : account.currency === "USD"
                   ? currency(account.originalBalance || 0, "USD")
-                  : `${formatNumber(account.originalBalance || 0)} ${account.currency}`}
+                  : account.currency === "BRL"
+                    ? currency(account.originalBalance || 0, "BRL")
+                    : `${formatNumber(account.originalBalance || 0)} ${account.currency}`}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">
@@ -102,7 +104,9 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
                             ? currency(Math.abs(flow.amount), "CNY")
                             : flow.currency === "USD"
                               ? currency(Math.abs(flow.amount), "USD")
-                              : `${formatNumber(Math.abs(flow.amount))} ${flow.currency}`}
+                              : flow.currency === "BRL"
+                                ? currency(Math.abs(flow.amount), "BRL")
+                                : `${formatNumber(Math.abs(flow.amount))} ${flow.currency}`}
                         </td>
                         <td className="max-w-xs truncate px-3 py-2 text-slate-400" title={flow.remark}>
                           {flow.remark || "-"}
@@ -232,7 +236,9 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
                             ? currency(Math.abs(flow.amount), "CNY")
                             : flow.currency === "USD"
                               ? currency(Math.abs(flow.amount), "USD")
-                              : `${formatNumber(Math.abs(flow.amount))} ${flow.currency}`}
+                              : flow.currency === "BRL"
+                                ? currency(Math.abs(flow.amount), "BRL")
+                                : `${formatNumber(Math.abs(flow.amount))} ${flow.currency}`}
                         </td>
                         <td className="max-w-xs truncate px-3 py-2 text-slate-400" title={flow.remark}>
                           {flow.remark || "-"}

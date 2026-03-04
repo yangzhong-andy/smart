@@ -121,6 +121,8 @@ export function AccountsTable({
                 return "bg-purple-500/20 text-purple-200 border-purple-400/30";
               case "EUR":
                 return "bg-emerald-500/20 text-emerald-200 border-emerald-400/30";
+              case "BRL":
+                return "bg-green-600/20 text-green-200 border-green-400/30";
               default:
                 return "bg-slate-500/20 text-slate-200 border-slate-400/30";
             }
@@ -273,7 +275,9 @@ export function AccountsTable({
                       ? currency(displayBalance, "USD")
                       : acc.currency === "JPY"
                         ? `¥${formatNumber(displayBalance)}`
-                        : `${formatNumber(displayBalance)} ${acc.currency}`}
+                        : acc.currency === "BRL"
+                          ? currency(displayBalance, "BRL")
+                          : `${formatNumber(displayBalance)} ${acc.currency}`}
                 </div>
                 {acc.currency !== "RMB" && (
                   <div className="mt-1 text-xs text-white/60">
@@ -422,7 +426,9 @@ export function AccountsTable({
                               ? currency(displayBalance, "USD")
                               : acc.currency === "JPY"
                                 ? `¥${formatNumber(displayBalance)}`
-                                : `${formatNumber(displayBalance)} ${acc.currency}`}
+                                : acc.currency === "BRL"
+                                  ? currency(displayBalance, "BRL")
+                                  : `${formatNumber(displayBalance)} ${acc.currency}`}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">

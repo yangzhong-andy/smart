@@ -10,7 +10,7 @@ export type BankAccount = {
   accountType: "对公" | "对私" | "平台"; // 账号类型（旧字段，保留兼容）
   accountCategory: "PRIMARY" | "VIRTUAL"; // 账户类别：主账户/虚拟子账号
   accountPurpose: string; // 账号用途
-  currency: "CNY" | "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "HKD" | "SGD" | "AUD"; // 币种（CNY 和 RMB 都支持，兼容旧数据）
+  currency: "CNY" | "RMB" | "USD" | "JPY" | "EUR" | "GBP" | "BRL" | "HKD" | "SGD" | "AUD"; // 币种（CNY 和 RMB 都支持，兼容旧数据）
   country: string; // 所属国家/地区（ISO代码，如 CN, HK, GLOBAL）
   originalBalance: number; // 原币余额（当前余额，会随流水变化）
   initialCapital?: number; // 原始资金（账户初始资金，固定值，不受流水影响）
