@@ -1,6 +1,6 @@
 {
   "name": "smart-erp",
-  "version": "1.1.25",
+  "version": "1.1.26",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,6 +12,18 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:sync": "prisma generate && prisma db push",
+    "dev:client-a": "npx env-cmd -f .env.client-a next dev",
+    "dev:client-b": "npx env-cmd -f .env.client-b next dev",
+    "dev:client-c": "npx env-cmd -f .env.client-c next dev",
+    "dev:client-d": "npx env-cmd -f .env.client-d next dev",
+    "db:push:client-a": "npx env-cmd -f .env.client-a prisma db push",
+    "db:push:client-b": "npx env-cmd -f .env.client-b prisma db push",
+    "db:push:client-c": "npx env-cmd -f .env.client-c prisma db push",
+    "db:push:client-d": "npx env-cmd -f .env.client-d prisma db push",
+    "db:migrate:client-a": "npx env-cmd -f .env.client-a prisma migrate deploy",
+    "db:migrate:client-b": "npx env-cmd -f .env.client-b prisma migrate deploy",
+    "db:migrate:client-c": "npx env-cmd -f .env.client-c prisma migrate deploy",
+    "db:migrate:client-d": "npx env-cmd -f .env.client-d prisma migrate deploy",
     "fix:warehouse-type": "node scripts/add-warehouse-type.js",
     "fix:inventory-log": "node scripts/add-inventory-log-table.js"
   },
@@ -52,6 +64,7 @@
     "eslint-config-next": "^14.2.18",
     "postcss": "8.4.38",
     "prisma": "5.19.1",
+    "env-cmd": "^10.1.0",
     "tailwindcss": "3.4.3",
     "ts-node": "^10.9.2",
     "typescript": "5.5.3"

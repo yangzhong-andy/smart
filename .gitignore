@@ -25,6 +25,11 @@ yarn-error.log*
 # Local env files
 .env*.local
 .env
+# 多套系统环境（勿提交含真实连接串的文件；.example 模板可提交）
+.env.client-a
+.env.client-b
+.env.client-c
+.env.client-d
 
 # Vercel
 .vercel
