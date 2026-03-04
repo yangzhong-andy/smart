@@ -132,8 +132,8 @@ export async function POST(request: NextRequest) {
         accountNumber: body.accountNumber,
         accountType: normalizedAccountType,
         accountCategory: body.accountCategory || 'PRIMARY',
-        // accountPurpose 在 schema 中是必填字段，不能为 null，但可以不传
-        accountPurpose: body.accountPurpose ? String(body.accountPurpose) : undefined,
+        // accountPurpose 在 schema 中是必填字段，不能为 null；如果前端未填，则使用一个默认说明
+        accountPurpose: body.accountPurpose ? String(body.accountPurpose) : '未指定用途',
         currency: body.currency || 'CNY',
         country: body.country,
         originalBalance: body.originalBalance ?? 0,
