@@ -225,9 +225,13 @@ export function PurchaseOrderCreateDialog({
                   <thead className="bg-slate-800/80">
                     <tr>
                       <th className="px-2 py-1.5 text-left text-slate-400 w-8">#</th>
-                      <th className="px-2 py-1.5 text-left text-slate-400">品名 / 规格</th>
+                      <th className="px-2 py-1.5 text-left text-slate-400">
+                        品名 / SKU / 规格
+                      </th>
                       <th className="px-2 py-1.5 text-left text-slate-400 w-24">规格备注</th>
-                      <th className="px-2 py-1.5 text-right text-slate-400 w-16">数量</th>
+                      <th className="px-2 py-1.5 text-right text-slate-400 w-24">
+                        数量
+                      </th>
                       <th className="px-2 py-1.5 text-right text-slate-400 w-20">单价(元)</th>
                       <th className="px-2 py-1.5 text-right text-slate-400 w-20">小计</th>
                       <th className="px-2 py-1.5 w-10"></th>
@@ -237,12 +241,24 @@ export function PurchaseOrderCreateDialog({
                     {formItems.map((row, idx) => {
                       const lineTotal =
                         (Number(row.quantity) || 0) * (Number(row.unitPrice) || 0);
-                      const displayName =
-                        [row.skuName || row.sku, row.spec].filter(Boolean).join(" · ") || "—";
                       return (
                         <tr key={row.tempId} className="bg-slate-900/40">
                           <td className="px-2 py-1.5 text-slate-500">{idx + 1}</td>
-                          <td className="px-2 py-1.5 text-slate-200">{displayName}</td>
+                            <td className="px-2 py-1.5 text-slate-200">
+                              <div className="text-xs">
+                                {row.skuName || row.sku || "—"}
+                              </div>
+                              {row.sku && (
+                                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                  SKU: {row.sku}
+                                </div>
+                              )}
+                              {row.spec && (
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  规格：{row.spec}
+                                </div>
+                              )}
+                            </td>
                           <td className="px-2 py-1.5">
                             <input
                               value={row.spec}
@@ -258,7 +274,7 @@ export function PurchaseOrderCreateDialog({
                               className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200"
                             />
                           </td>
-                          <td className="px-2 py-1.5 text-right">
+                          <td className="px-2 py-1.5 text-right w-24">
                             <input
                               type="number"
                               min={0}
@@ -272,7 +288,7 @@ export function PurchaseOrderCreateDialog({
                                       : r
                                   )
                                 )}
-                              className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-200"
+                              className="w-full min-w-[80px] rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-200"
                             />
                           </td>
                           <td className="px-2 py-1.5 text-right">
