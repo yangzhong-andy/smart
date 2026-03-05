@@ -324,7 +324,12 @@ export default function PurchaseOrdersPage() {
     }
     fetch(`/api/product-suppliers?supplierId=${encodeURIComponent(sid)}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((list: { productId: string }[]) => {
+      .then((json: any) => {
+        const list: { productId: string }[] = Array.isArray(json)
+          ? json
+          : Array.isArray(json?.data)
+            ? json.data
+            : [];
         setSupplierLinkedProductIds(list.map((x) => x.productId));
       })
       .catch(() => setSupplierLinkedProductIds([]));
@@ -380,7 +385,12 @@ export default function PurchaseOrdersPage() {
     if (sid) {
       fetch(`/api/product-suppliers?supplierId=${encodeURIComponent(sid)}`)
         .then((r) => (r.ok ? r.json() : []))
-        .then((list: { productId: string }[]) => {
+        .then((json: any) => {
+          const list: { productId: string }[] = Array.isArray(json)
+            ? json
+            : Array.isArray(json?.data)
+              ? json.data
+              : [];
           setVariantModalProductIds(list.map((x) => x.productId));
         })
         .catch(() => setVariantModalProductIds([]));
