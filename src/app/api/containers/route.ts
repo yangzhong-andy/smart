@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { ContainerStatus } from "@prisma/client";
 import { badRequest, serverError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +116,12 @@ export async function POST(request: NextRequest) {
       return badRequest("该柜号已存在");
     }
 
+    const requestedStatus = (body.status as string | undefined) ?? undefined;
+    const normalizedStatus: ContainerStatus =
+      requestedStatus && Object.values(ContainerStatus).includes(requestedStatus as ContainerStatus)
+        ? (requestedStatus as ContainerStatus)
+        : ContainerStatus.PLANNED;
+
     const container = await prisma.container.create({
       data: {
         containerNo,
@@ -130,7 +137,7 @@ export async function POST(request: NextRequest) {
         eta: body.eta ? new Date(body.eta) : null,
         actualDeparture: body.actualDeparture ? new Date(body.actualDeparture) : null,
         actualArrival: body.actualArrival ? new Date(body.actualArrival) : null,
-        status: (body.status as string) || "PLANNED",
+        status: normalizedStatus,
         totalVolumeCBM: body.totalVolumeCBM != null ? Number(body.totalVolumeCBM) : null,
         totalWeightKG: body.totalWeightKG != null ? Number(body.totalWeightKG) : null,
       },
