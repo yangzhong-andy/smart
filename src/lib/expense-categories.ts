@@ -90,6 +90,8 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
       { label: "营销推广", value: "运营费用/营销推广" },
       { label: "技术服务费", value: "运营费用/技术服务费" },
       { label: "咨询费", value: "运营费用/咨询费" },
+      { label: "注册商标", value: "运营费用/注册商标" },
+      { label: "店铺主体", value: "运营费用/店铺主体" },
       { label: "其他运营费用", value: "运营费用/其他运营费用" }
     ]
   },
