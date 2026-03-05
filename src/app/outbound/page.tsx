@@ -23,6 +23,12 @@ type BatchItem = {
   portOfDischarge?: string;
   eta?: string;
   status: string;
+  containerId?: string;
+  container?: {
+    id: string;
+    containerNo: string;
+    status: string;
+  };
   outboundOrder?: {
     id: string;
     outboundNumber: string;
@@ -70,6 +76,11 @@ export default function OutboundListPage() {
   const [toWarehouseId, setToWarehouseId] = useState("");
   const [confirming, setConfirming] = useState(false);
 
+  // 柜子选择（只做简单绑定，不影响现有逻辑）
+  const [containers, setContainers] = useState<
+    { id: string; containerNo: string; status: string }[]
+  >([]);
+
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [skus, setSkus] = useState<SkuOption[]>([]);
   const [createForm, setCreateForm] = useState({
@@ -103,6 +114,23 @@ export default function OutboundListPage() {
   useEffect(() => {
     fetchBatches();
   }, [fetchBatches]);
+
+  const fetchContainers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/containers?page=1&pageSize=200");
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data?.data) ? data.data : [];
+      setContainers(
+        list.map((c: any) => ({
+          id: c.id,
+          containerNo: c.containerNo,
+          status: c.status,
+        }))
+      );
+    } catch {
+      setContainers([]);
+    }
+  }, []);
 
   const fetchWarehouses = useCallback(async () => {
     try {
@@ -138,6 +166,7 @@ export default function OutboundListPage() {
     setCreateForm({ variantId: "", sku: "", qty: "", warehouseId: "", destination: "" });
     fetchSkus();
     fetchWarehouses();
+    fetchContainers();
   };
 
   const closeCreateModal = () => {
@@ -342,6 +371,43 @@ export default function OutboundListPage() {
                       确认到货
                     </ActionButton>
                   )}
+                  {/* 柜子选择：仅简单绑定，不改变原有出库流程 */}
+                  <select
+                    value={b.containerId || ""}
+                    onChange={async (e) => {
+                      const containerId = e.target.value || null;
+                      try {
+                        const res = await fetch(
+                          `/api/outbound-batch/${b.id}/set-container`,
+                          {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ containerId }),
+                          }
+                        );
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          throw new Error(data?.error ?? "更新失败");
+                        }
+                        toast.success("柜子绑定已更新");
+                        fetchBatches();
+                      } catch (err) {
+                        toast.error(
+                          err instanceof Error ? err.message : "更新失败"
+                        );
+                      }
+                    }}
+                    className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                  >
+                    <option value="">
+                      {b.containerId ? "取消绑定柜子" : "未绑定柜子"}
+                    </option>
+                    {containers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.containerNo}
+                      </option>
+                    ))}
+                  </select>
                   <Link href={`/outbound/${b.id}`}>
                     <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
                       详情 / 编辑

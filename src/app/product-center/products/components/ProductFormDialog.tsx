@@ -83,13 +83,16 @@ export function ProductFormDialog({
             </label>
             {editingProduct ? (
               <label className="space-y-1">
-                <span className="text-slate-300">SKU 编码 <span className="text-rose-400">*</span></span>
+                <span className="text-slate-300">
+                  SKU 编码 <span className="text-rose-400">*</span>
+                </span>
                 <input
                   value={form.sku_id}
-                  onChange={(e) => setForm((f) => ({ ...f, sku_id: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, sku_id: e.target.value }))
+                  }
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   required
-                  disabled
                 />
               </label>
             ) : null}
