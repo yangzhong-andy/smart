@@ -120,6 +120,17 @@ enum ShippingMethod {
   EXPRESS  // 快递
 }
 
+// 柜子状态：用于按柜跟踪在途货物
+enum ContainerStatus {
+  PLANNED       // 已计划，待装柜
+  LOADING       // 装柜中 / 已装柜待开船
+  IN_TRANSIT    // 在途（已开船/飞行中）
+  ARRIVED_PORT  // 已到港
+  CUSTOMS_CLEAR // 清关完成
+  IN_WAREHOUSE  // 已入目的仓/海外仓
+  CLOSED        // 已完结
+}
+
 enum PurchaseOrderStatus {
   PENDING_RISK
   RISK_APPROVED
@@ -816,45 +827,82 @@ model OutboundOrder {
   @@index([pendingInboundId])
 }
 
+// 柜子：用于按柜管理在途货物、海运信息
+model Container {
+  id              String           @id @default(uuid())
+  containerNo     String           @unique               // 柜号，如 MSKU1234567
+  containerType   String                                   // 柜型：20GP / 40GP / 40HQ / LCL 等
+  sealNo          String?                                  // 封号
+
+  shippingMethod  ShippingMethod                          // 运输方式（海运/空运/快递）
+  shipCompany     String?                                  // 船公司/承运人
+  vesselName      String?                                  // 船名/航班号
+  voyageNo        String?                                  // 航次
+
+  originPort      String?                                  // 起运港
+  destinationPort String?                                  // 目的港
+  etd             DateTime?                                // 预计开船 ETD
+  eta             DateTime?                                // 预计到港 ETA
+  actualDeparture DateTime?                                // 实际开船时间
+  actualArrival   DateTime?                                // 实际到港时间
+
+  status          ContainerStatus   @default(PLANNED)      // 柜状态
+
+  // 汇总信息（可选，用于后续成本/在途分析）
+  totalVolumeCBM  Decimal?         @db.Decimal(18, 3)      // 柜内总体积
+  totalWeightKG   Decimal?         @db.Decimal(18, 3)      // 柜内总重量
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // 关联关系
+  outboundBatches OutboundBatch[]
+}
+
 // 出库批次
 model OutboundBatch {
-  id                 String         @id @default(uuid())
-  outboundOrderId    String // 关联的出库单ID
-  batchNumber        String // 批次号
-  warehouseId        String // 出库仓库ID
-  warehouseName      String // 出库仓库名称（冗余字段）
-  qty                Int // 本次出库数量
-  shippedDate        DateTime // 出库日期
-  destination        String? // 目的地
-  trackingNumber     String? // 物流单号
+  id                  String         @id @default(uuid())
+  outboundOrderId     String // 关联的出库单ID
+  batchNumber         String // 批次号
+  warehouseId         String // 出库仓库ID
+  warehouseName       String // 出库仓库名称（冗余字段）
+  qty                 Int // 本次出库数量
+  shippedDate         DateTime // 出库日期
+  destination         String? // 目的地
+  trackingNumber      String? // 物流单号
 
   // 运输信息
-  shippingMethod     ShippingMethod? // 运输方式（海运/空运/快递）
-  vesselName         String? // 船名/航班号
-  vesselVoyage       String? // 航次
-  portOfLoading      String? // 装货港
-  portOfDischarge    String? // 卸货港
-  eta                DateTime? // 预计到达时间
+  shippingMethod      ShippingMethod? // 运输方式（海运/空运/快递）
+  vesselName          String? // 船名/航班号
+  vesselVoyage        String? // 航次
+  portOfLoading       String? // 装货港
+  portOfDischarge     String? // 卸货港
+  eta                 DateTime? // 预计到达时间
   actualDepartureDate DateTime? // 实际开船/起飞日期
-  actualArrivalDate  DateTime? // 实际到达时间
-  status             String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达
+  actualArrivalDate   DateTime? // 实际到达时间
+  status              String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达
+
+  // 柜子信息：一个批次可选择所属柜子
+  containerId         String?
 
   // 物流追踪（整合在批次上，不再使用独立 LogisticsTracking）
-  currentLocation    String? // 当前位置
-  lastEvent          String? // 最新物流动态
-  lastEventTime      DateTime? // 最新动态时间
-  arrivalConfirmedAt DateTime? // 确认到达时间（确认后海外仓加库存）
+  currentLocation     String? // 当前位置
+  lastEvent           String? // 最新物流动态
+  lastEventTime       DateTime? // 最新动态时间
+  arrivalConfirmedAt  DateTime? // 确认到达时间（确认后海外仓加库存）
 
-  notes              String? // 备注
-  createdAt          DateTime @default(now())
+  notes               String? // 备注
+  createdAt           DateTime @default(now())
 
   // 关联关系
   outboundOrder  OutboundOrder  @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
   warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   logisticsCosts LogisticsCost[]
+  container      Container?     @relation(fields: [containerId], references: [id], onDelete: SetNull)
 
   @@index([outboundOrderId])
   @@index([warehouseId])
+  @@index([containerId])
 }
 
 model VideoTask {

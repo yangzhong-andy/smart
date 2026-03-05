@@ -1,0 +1,346 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import useSWR from "swr";
+import { toast } from "sonner";
+import { Truck, Package, Plus, RefreshCw } from "lucide-react";
+import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
+import type { Container } from "@/logistics/types";
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+const statusLabels: Record<string, string> = {
+  PLANNED: "已计划",
+  LOADING: "装柜中",
+  IN_TRANSIT: "在途",
+  ARRIVED_PORT: "已到港",
+  CUSTOMS_CLEAR: "清关完成",
+  IN_WAREHOUSE: "已入仓",
+  CLOSED: "已完结",
+};
+
+const methodLabels: Record<string, string> = {
+  SEA: "海运",
+  AIR: "空运",
+  EXPRESS: "快递",
+};
+
+function getProgress(status: string): number {
+  switch (status) {
+    case "PLANNED":
+      return 5;
+    case "LOADING":
+      return 20;
+    case "IN_TRANSIT":
+      return 50;
+    case "ARRIVED_PORT":
+      return 70;
+    case "CUSTOMS_CLEAR":
+      return 85;
+    case "IN_WAREHOUSE":
+    case "CLOSED":
+      return 100;
+    default:
+      return 0;
+  }
+}
+
+function getProgressBarColor(status: string): string {
+  switch (status) {
+    case "IN_TRANSIT":
+      return "bg-amber-400";
+    case "ARRIVED_PORT":
+    case "CUSTOMS_CLEAR":
+      return "bg-blue-400";
+    case "IN_WAREHOUSE":
+    case "CLOSED":
+      return "bg-emerald-400";
+    default:
+      return "bg-slate-400";
+  }
+}
+
+export default function ContainersPage() {
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterMethod, setFilterMethod] = useState<string>("all");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    containerNo: "",
+    containerType: "40HQ",
+    shippingMethod: "SEA",
+  });
+
+  const { data, isLoading, mutate } = useSWR("/api/containers?page=1&pageSize=200", fetcher);
+  const containers: Container[] = Array.isArray(data?.data) ? data.data : [];
+
+  const stats = useMemo(() => {
+    const total = containers.length;
+    const byStatus: Record<string, number> = {};
+    containers.forEach((c) => {
+      byStatus[c.status] = (byStatus[c.status] || 0) + 1;
+    });
+    return { total, byStatus };
+  }, [containers]);
+
+  const filtered = useMemo(() => {
+    let result = [...containers];
+    if (filterStatus !== "all") {
+      result = result.filter((c) => c.status === filterStatus);
+    }
+    if (filterMethod !== "all") {
+      result = result.filter((c) => c.shippingMethod === filterMethod);
+    }
+    if (searchKeyword.trim()) {
+      const kw = searchKeyword.trim().toLowerCase();
+      result = result.filter(
+        (c) =>
+          c.containerNo.toLowerCase().includes(kw) ||
+          (c.vesselName ?? "").toLowerCase().includes(kw) ||
+          (c.voyageNo ?? "").toLowerCase().includes(kw)
+      );
+    }
+    return result.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [containers, filterStatus, filterMethod, searchKeyword]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const no = createForm.containerNo.trim();
+    if (!no) {
+      toast.error("请填写柜号");
+      return;
+    }
+    if (!["SEA", "AIR", "EXPRESS"].includes(createForm.shippingMethod)) {
+      toast.error("运输方式仅支持 SEA / AIR / EXPRESS");
+      return;
+    }
+    try {
+      const res = await fetch("/api/containers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          containerNo: no,
+          containerType: createForm.containerType.trim() || "40HQ",
+          shippingMethod: createForm.shippingMethod,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json?.error || "创建柜子失败");
+        return;
+      }
+      toast.success("柜子已创建");
+      setIsCreateOpen(false);
+      setCreateForm({ containerNo: "", containerType: "40HQ", shippingMethod: "SEA" });
+      mutate();
+    } catch (e) {
+      console.error(e);
+      toast.error("创建失败，请稍后重试");
+    }
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      <PageHeader
+        title="柜子管理"
+        description="按柜管理在途货物、海运信息和出库批次"
+        actions={
+          <div className="flex gap-2">
+            <ActionButton
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={() => mutate()}
+            >
+              刷新
+            </ActionButton>
+            <ActionButton
+              variant="primary"
+              icon={Plus}
+              onClick={() => setIsCreateOpen((v) => !v)}
+            >
+              新增柜子
+            </ActionButton>
+          </div>
+        }
+      />
+
+      {/* 统计卡片 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <StatCard title="柜子总数" value={stats.total} icon={Truck} />
+        <StatCard title="在途柜" value={stats.byStatus["IN_TRANSIT"] || 0} icon={Truck} />
+        <StatCard title="已到港" value={stats.byStatus["ARRIVED_PORT"] || 0} icon={Package} />
+        <StatCard title="已入仓" value={stats.byStatus["IN_WAREHOUSE"] || 0} icon={Package} />
+      </div>
+
+      {/* 筛选区 */}
+      <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl border border-slate-800 bg-slate-900/60">
+        <SearchBar
+          value={searchKeyword}
+          onChange={setSearchKeyword}
+          placeholder="搜索柜号、船名、航次..."
+        />
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
+        >
+          <option value="all">全部状态</option>
+          {Object.keys(statusLabels).map((s) => (
+            <option key={s} value={s}>
+              {statusLabels[s]}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterMethod}
+          onChange={(e) => setFilterMethod(e.target.value)}
+          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
+        >
+          <option value="all">全部方式</option>
+          <option value="SEA">海运</option>
+          <option value="AIR">空运</option>
+          <option value="EXPRESS">快递</option>
+        </select>
+      </div>
+
+      {/* 新建柜子表单（简易版） */}
+      {isCreateOpen && (
+        <div className="rounded-xl border border-primary-500/40 bg-slate-900/80 p-4 space-y-3">
+          <div className="text-sm font-medium text-slate-100">新建柜子</div>
+          <form className="grid grid-cols-1 md:grid-cols-4 gap-4" onSubmit={handleCreate}>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">柜号 *</span>
+              <input
+                value={createForm.containerNo}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, containerNo: e.target.value }))
+                }
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="例如 MSKU1234567"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">柜型</span>
+              <input
+                value={createForm.containerType}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, containerType: e.target.value }))
+                }
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="如 40HQ / 20GP"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">运输方式</span>
+              <select
+                value={createForm.shippingMethod}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, shippingMethod: e.target.value }))
+                }
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              >
+                <option value="SEA">SEA（海运）</option>
+                <option value="AIR">AIR（空运）</option>
+                <option value="EXPRESS">EXPRESS（快递）</option>
+              </select>
+            </label>
+            <div className="flex items-end gap-2">
+              <ActionButton type="submit" variant="primary">
+                保存
+              </ActionButton>
+              <ActionButton
+                type="button"
+                variant="ghost"
+                onClick={() => setIsCreateOpen(false)}
+              >
+                取消
+              </ActionButton>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 列表区域 */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        {isLoading ? (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 rounded-lg bg-slate-800/50 animate-pulse" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={Truck}
+            title="暂无柜子记录"
+            description="可以通过右上角“新增柜子”按钮，录入第一批柜信息。"
+          />
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3 hover:border-primary-500/60 transition-all"
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-100">
+                        {c.containerNo}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                        {c.containerType}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                        {methodLabels[c.shippingMethod] ?? c.shippingMethod}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-primary-300">
+                        {statusLabels[c.status] ?? c.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      {c.originPort || "-"} → {c.destinationPort || "-"} · 批次数：
+                      {c.outboundBatchCount ?? 0}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      ETD：{c.etd ? new Date(c.etd).toLocaleDateString() : "-"} · ETA：
+                      {c.eta ? new Date(c.eta).toLocaleDateString() : "-"}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">
+                      实际开船：
+                      {c.actualDeparture
+                        ? new Date(c.actualDeparture).toLocaleDateString()
+                        : "-"}{" "}
+                      · 实际到港：
+                      {c.actualArrival
+                        ? new Date(c.actualArrival).toLocaleDateString()
+                        : "-"}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span>创建于：{new Date(c.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                {/* 运输进度条 */}
+                <div className="mt-1">
+                  <div className="flex justify-between text-[11px] text-slate-500 mb-1">
+                    <span>运输进度</span>
+                    <span>{getProgress(c.status)}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className={`h-full ${getProgressBarColor(c.status)} transition-all`}
+                      style={{ width: `${getProgress(c.status)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

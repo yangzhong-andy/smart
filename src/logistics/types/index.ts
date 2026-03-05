@@ -146,8 +146,52 @@ export interface OutboundBatch {
   shippedDate: string;
   destination?: string;
   trackingNumber?: string;
+  shippingMethod?: string;
+  vesselName?: string;
+  vesselVoyage?: string;
+  status?: string;
+  containerId?: string;
+  container?: {
+    id: string;
+    containerNo: string;
+    status: ContainerStatus;
+  };
   notes?: string;
   createdAt: string;
+}
+
+// ==================== 柜子管理 ====================
+
+export type ContainerStatus =
+  | "PLANNED"
+  | "LOADING"
+  | "IN_TRANSIT"
+  | "ARRIVED_PORT"
+  | "CUSTOMS_CLEAR"
+  | "IN_WAREHOUSE"
+  | "CLOSED";
+
+export interface Container {
+  id: string;
+  containerNo: string;
+  containerType: string;
+  sealNo?: string;
+  shippingMethod: "SEA" | "AIR" | "EXPRESS";
+  shipCompany?: string;
+  vesselName?: string;
+  voyageNo?: string;
+  originPort?: string;
+  destinationPort?: string;
+  etd?: string;
+  eta?: string;
+  actualDeparture?: string;
+  actualArrival?: string;
+  status: ContainerStatus;
+  totalVolumeCBM?: string;
+  totalWeightKG?: string;
+  outboundBatchCount?: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // 出库订单

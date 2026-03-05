@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
         include: {
           outboundOrder: true,
           warehouse: true,
+          container: true,
         },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
@@ -60,6 +61,14 @@ export async function GET(request: NextRequest) {
       lastEventTime: b.lastEventTime?.toISOString() ?? undefined,
       notes: b.notes ?? undefined,
       createdAt: b.createdAt.toISOString(),
+      containerId: b.containerId ?? undefined,
+      container: b.container
+        ? {
+            id: b.container.id,
+            containerNo: b.container.containerNo,
+            status: b.container.status,
+          }
+        : undefined,
       outboundOrder: b.outboundOrder
         ? {
             id: b.outboundOrder.id,
@@ -138,7 +147,7 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
 
-    const batch = await prisma.$transaction(async (tx) => {
+      const batch = await prisma.$transaction(async (tx) => {
       // 1. 获取当前仓库该 SKU 的库存
       const stock = await tx.stock.findUnique({
         where: {
@@ -189,6 +198,7 @@ export async function POST(request: NextRequest) {
           actualDepartureDate: body.actualDepartureDate ? new Date(body.actualDepartureDate) : null,
           actualArrivalDate: body.actualArrivalDate ? new Date(body.actualArrivalDate) : null,
           status: body.status ?? "待发货",
+          containerId: body.containerId ?? null,
           notes: body.notes ?? null,
         },
         include: {
