@@ -353,62 +353,206 @@ interface SupplierCardProps {
 
 function SupplierCard({ supplier, onEdit, onDelete }: SupplierCardProps) {
   const levelColor = getLevelColor(supplier.level);
+  const [expanded, setExpanded] = useState(false);
+
+  const invoiceLabel = (v?: Supplier["invoiceRequirement"]) => {
+    switch (v) {
+      case "SPECIAL_INVOICE":
+        return "专票";
+      case "GENERAL_INVOICE":
+        return "普票";
+      case "NO_INVOICE":
+        return "不需要发票";
+      default:
+        return "-";
+    }
+  };
+
+  const settleBaseLabel = (v: Supplier["settleBase"]) => {
+    switch (v) {
+      case "SHIPMENT":
+        return "发货";
+      case "INBOUND":
+        return "入库";
+      default:
+        return v as unknown as string;
+    }
+  };
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
       {/* 头部 */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-white/10 p-2">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="rounded-xl bg-white/10 p-2.5 shrink-0">
             <Factory className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h3 className="font-medium text-white">{supplier.name}</h3>
-            {supplier.category && (
-              <p className="text-xs text-slate-400">{supplier.category}</p>
-            )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-medium text-white truncate" title={supplier.name}>
+                {supplier.name}
+              </h3>
+              {supplier.level && (
+                <span className={`px-2 py-0.5 rounded-full text-xs ${levelColor}`}>
+                  {supplier.level}级
+                </span>
+              )}
+              {!supplier.isActive && (
+                <span className="px-2 py-0.5 rounded-full text-xs text-slate-300 bg-slate-700/60">
+                  已停用
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex items-center gap-2 flex-wrap text-xs text-slate-400">
+              {supplier.category ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-slate-300">
+                  <Package className="h-3 w-3" />
+                  <span className="truncate max-w-[160px]" title={supplier.category}>
+                    {supplier.category}
+                  </span>
+                </span>
+              ) : null}
+              {supplier.address ? (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate max-w-[220px]" title={supplier.address}>
+                    {supplier.address}
+                  </span>
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
-        {supplier.level && (
-          <span className={`px-2 py-0.5 rounded text-xs ${levelColor}`}>
-            {supplier.level}级
-          </span>
-        )}
+
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="shrink-0 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-2 text-slate-300 hover:bg-slate-800"
+          title={expanded ? "收起" : "展开更多"}
+        >
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
       </div>
 
       {/* 信息 */}
-      <div className="space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-slate-400">联系人</span>
-          <span className="text-slate-300">{supplier.contact}</span>
+      <div className="space-y-3 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-400">联系人</div>
+            <div className="text-slate-200 truncate" title={supplier.contact || ""}>
+              {supplier.contact || "-"}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-slate-400">手机号</div>
+            <button
+              type="button"
+              className="font-mono text-slate-200 hover:text-primary-300"
+              title="点击复制"
+              onClick={async () => {
+                const phone = supplier.phone || "";
+                if (!phone) return;
+                try {
+                  await navigator.clipboard.writeText(phone);
+                  toast.success("手机号已复制");
+                } catch {
+                  toast.error("复制失败，请手动复制");
+                }
+              }}
+            >
+              {supplier.phone || "-"}
+            </button>
+          </div>
         </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">手机号</span>
-          <span className="text-slate-300 font-mono">{supplier.phone}</span>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2">
+            <div className="text-xs text-slate-400">定金比例</div>
+            <div className="text-emerald-300 font-medium">{formatNumber(Number(supplier.depositRate) || 0)}%</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2">
+            <div className="text-xs text-slate-400">尾款账期</div>
+            <div className="text-blue-300 font-medium">{supplier.tailPeriodDays ?? 0}天</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2">
+            <div className="text-xs text-slate-400">默认交期</div>
+            <div className="text-slate-200 font-medium">
+              {supplier.defaultLeadTime != null ? `${supplier.defaultLeadTime}天` : "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2">
+            <div className="text-xs text-slate-400">起订量 MOQ</div>
+            <div className="text-slate-200 font-medium">{supplier.moq != null ? supplier.moq : "-"}</div>
+          </div>
         </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">定金比例</span>
-          <span className="text-emerald-300">{supplier.depositRate}%</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">尾款账期</span>
-          <span className="text-blue-300">{supplier.tailPeriodDays}天</span>
-        </div>
+
+        {expanded && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">结算基准</span>
+                <span className="text-slate-200">{settleBaseLabel(supplier.settleBase)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">发票要求</span>
+                <span className="text-slate-200">{invoiceLabel(supplier.invoiceRequirement)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">开票点数</span>
+                <span className="text-slate-200">
+                  {supplier.invoicePoint != null ? `${formatNumber(Number(supplier.invoicePoint) || 0)}%` : "-"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">纳税人识别号</span>
+                <span className="text-slate-200 font-mono truncate max-w-[160px]" title={supplier.taxId || ""}>
+                  {supplier.taxId || "-"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 col-span-2">
+                <span className="text-slate-400">开户行</span>
+                <span className="text-slate-200 truncate" title={supplier.bankName || ""}>
+                  {supplier.bankName || "-"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 col-span-2">
+                <span className="text-slate-400">银行账号</span>
+                <span className="text-slate-200 font-mono truncate" title={supplier.bankAccount || ""}>
+                  {supplier.bankAccount || "-"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 col-span-2">
+                <span className="text-slate-400">创建时间</span>
+                <span className="text-slate-300">{supplier.createdAt ? formatDateTime(supplier.createdAt) : "-"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 col-span-2">
+                <span className="text-slate-400">更新时间</span>
+                <span className="text-slate-300">{supplier.updatedAt ? formatDateTime(supplier.updatedAt) : "-"}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 操作 */}
       <div className="flex gap-2 mt-4 pt-4 border-t border-slate-800">
         <button
           onClick={onEdit}
-          className="flex-1 rounded-lg bg-primary-500/20 px-3 py-2 text-xs text-primary-300 hover:bg-primary-500/30 transition-colors"
+          className="flex-1 rounded-xl bg-primary-500/20 px-3 py-2 text-xs text-primary-200 hover:bg-primary-500/30 transition-colors"
         >
-          编辑
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Pencil className="h-3.5 w-3.5" />
+            编辑
+          </span>
         </button>
         <button
           onClick={onDelete}
-          className="flex-1 rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-300 hover:bg-rose-500/30 transition-colors"
+          className="flex-1 rounded-xl bg-rose-500/20 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/30 transition-colors"
         >
-          删除
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Trash2 className="h-3.5 w-3.5" />
+            删除
+          </span>
         </button>
       </div>
     </div>
