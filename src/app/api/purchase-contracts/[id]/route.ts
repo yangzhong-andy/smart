@@ -138,6 +138,7 @@ export async function PUT(
     if (body.supplierId !== undefined) updateData.supplierId = body.supplierId || null
     if (body.supplierName !== undefined) updateData.supplierName = body.supplierName
     if (body.depositRate !== undefined) updateData.depositRate = Number(body.depositRate)
+    if (body.depositAmount !== undefined) updateData.depositAmount = Number(body.depositAmount)
     if (body.depositPaid !== undefined) updateData.depositPaid = Number(body.depositPaid)
     if (body.tailPeriodDays !== undefined) updateData.tailPeriodDays = Number(body.tailPeriodDays)
     if (body.deliveryDate !== undefined) updateData.deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : null

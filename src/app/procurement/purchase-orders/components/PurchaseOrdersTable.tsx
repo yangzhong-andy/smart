@@ -71,7 +71,12 @@ export function PurchaseOrdersTable({
                   <td className="px-4 py-2">
                     <div className="text-slate-100">{contract.supplierName}</div>
                     <div className="text-[11px] text-slate-500">
-                      定金 {contract.depositRate}% · 尾款账期 {contract.tailPeriodDays} 天
+                      {contract.depositRate > 0
+                        ? `定金 ${contract.depositRate}% · `
+                        : (contract.depositAmount ?? 0) > 0
+                        ? "定金（固定） · "
+                        : ""}
+                      尾款账期 {contract.tailPeriodDays} 天
                     </div>
                   </td>
                   <td className="px-4 py-2">
@@ -134,6 +139,9 @@ export function PurchaseOrdersTable({
                     <div className="text-slate-100">{currency(contract.totalAmount)}</div>
                     <div className="text-[11px] text-amber-200">
                       定金 {currency(contract.depositAmount)}
+                      {(contract.depositRate ?? 0) === 0 && (contract.depositAmount ?? 0) > 0 && (
+                        <span className="text-slate-400">（固定）</span>
+                      )}
                       {contract.depositPaid > 0 && (
                         <span className="text-emerald-300">
                           （已付 {currency(contract.depositPaid)}）

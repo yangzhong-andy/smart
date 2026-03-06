@@ -12,6 +12,7 @@ import {
   Trash2,
   Upload,
   FileText,
+  Edit2,
 } from "lucide-react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
@@ -61,10 +62,26 @@ export function PurchaseOrderDetailDialog({
     contract.contractVoucher
   );
   const [voucherSaving, setVoucherSaving] = useState(false);
+  // 编辑定金：按比例 或 固定金额
+  const [depositType, setDepositType] = useState<"ratio" | "fixed">(
+    (contract.depositRate ?? 0) > 0 ? "ratio" : "fixed"
+  );
+  const [depositRateInput, setDepositRateInput] = useState(stringifyNum(contract.depositRate));
+  const [depositAmountInput, setDepositAmountInput] = useState(stringifyNum(contract.depositAmount));
+  const [depositSaving, setDepositSaving] = useState(false);
   useEffect(() => {
     setVoucherDraft(contract.contractVoucher ?? "");
     setVoucherDisplay(contract.contractVoucher);
   }, [contract.id, contract.contractVoucher]);
+  useEffect(() => {
+    setDepositType((contract.depositRate ?? 0) > 0 ? "ratio" : "fixed");
+    setDepositRateInput(stringifyNum(contract.depositRate));
+    setDepositAmountInput(stringifyNum(contract.depositAmount));
+  }, [contract.id, contract.depositRate, contract.depositAmount]);
+  function stringifyNum(n: number | undefined) {
+    if (n == null || !Number.isFinite(n)) return "";
+    return String(n);
+  }
   const product = products.find(
     (p) =>
       p.sku_id === contract.skuId ||
@@ -234,6 +251,103 @@ export function PurchaseOrderDetailDialog({
                 <span className="text-amber-200 ml-2">
                   {currency(contract.totalOwed || contract.totalAmount)}
                 </span>
+              </div>
+            </div>
+            {/* 编辑定金：支持按比例或固定金额（供应商有时定金不按比例） */}
+            <div className="mt-3 pt-3 border-t border-slate-700">
+              <h4 className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
+                <Edit2 className="h-3.5 w-3.5" />
+                编辑定金
+              </h4>
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="depositType"
+                    checked={depositType === "ratio"}
+                    onChange={() => setDepositType("ratio")}
+                    className="rounded border-slate-600 bg-slate-800 text-primary-500"
+                  />
+                  <span className="text-slate-300">按比例</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={depositRateInput}
+                    onChange={(e) => setDepositRateInput(e.target.value)}
+                    disabled={depositType !== "ratio"}
+                    className="w-16 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-slate-200 text-right disabled:opacity-50"
+                  />
+                  <span className="text-slate-500">%</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="depositType"
+                    checked={depositType === "fixed"}
+                    onChange={() => setDepositType("fixed")}
+                    className="rounded border-slate-600 bg-slate-800 text-primary-500"
+                  />
+                  <span className="text-slate-300">固定金额</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={depositAmountInput}
+                    onChange={(e) => setDepositAmountInput(e.target.value)}
+                    disabled={depositType !== "fixed"}
+                    className="w-28 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-slate-200 text-right disabled:opacity-50"
+                  />
+                  <span className="text-slate-500">元</span>
+                </label>
+                <button
+                  type="button"
+                  disabled={depositSaving}
+                  onClick={async () => {
+                    const rate = depositType === "ratio" ? parseFloat(depositRateInput) : 0;
+                    const amount =
+                      depositType === "fixed"
+                        ? parseFloat(depositAmountInput)
+                        : (contract.totalAmount * (rate / 100)) || 0;
+                    if (depositType === "ratio" && (Number.isNaN(rate) || rate < 0 || rate > 100)) {
+                      toast.error("请输入 0–100 的定金比例");
+                      return;
+                    }
+                    if (depositType === "fixed" && (Number.isNaN(amount) || amount < 0)) {
+                      toast.error("请输入有效的定金金额");
+                      return;
+                    }
+                    if ((contract.depositPaid ?? 0) > amount) {
+                      toast.error("定金金额不能小于已付定金");
+                      return;
+                    }
+                    setDepositSaving(true);
+                    try {
+                      const res = await fetch(`/api/purchase-contracts/${contract.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          depositRate: depositType === "ratio" ? rate : 0,
+                          depositAmount: amount,
+                        }),
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.error || "保存失败");
+                      }
+                      toast.success("定金已更新");
+                      onRefresh?.();
+                    } catch (e: any) {
+                      toast.error(e?.message || "保存失败");
+                    } finally {
+                      setDepositSaving(false);
+                    }
+                  }}
+                  className="rounded border border-primary-500/50 bg-primary-500/20 px-3 py-1.5 text-xs font-medium text-primary-200 hover:bg-primary-500/30 disabled:opacity-50"
+                >
+                  {depositSaving ? "保存中…" : "保存"}
+                </button>
               </div>
             </div>
           </div>
