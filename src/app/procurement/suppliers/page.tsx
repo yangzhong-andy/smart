@@ -431,14 +431,14 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
 
   return (
     <div
-      className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+      className="group relative flex h-80 flex-col overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
       style={{
         background: "linear-gradient(135deg, #1e3a8a 0%, #020617 55%, #020617 100%)",
         border: "1px solid rgba(148, 163, 184, 0.45)",
       }}
     >
       {/* 头部 */}
-      <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <div className="rounded-xl bg-white/10 p-2.5 shrink-0">
             <Factory className="h-5 w-5 text-white" />
@@ -490,8 +490,8 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
         </button>
       </div>
 
-      {/* 信息 */}
-      <div className="space-y-3 text-sm">
+      {/* 信息 + 关联产品 + 展开详情，固定卡片高度内滚动 */}
+      <div className="flex-1 space-y-3 overflow-y-auto pr-1 text-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-xs text-slate-400">联系人</div>
@@ -542,7 +542,7 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 space-y-1">
+        <div className="space-y-1 rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>关联产品</span>
             <span className="text-slate-200 font-medium">{productSummary?.count ?? 0} 个</span>
@@ -627,7 +627,7 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
       </div>
 
       {/* 操作 */}
-      <div className="flex gap-2 mt-4 pt-4 border-t border-slate-800">
+      <div className="mt-4 flex gap-2 border-t border-slate-800 pt-4">
         <button
           onClick={onEdit}
           className="flex-1 rounded-xl bg-primary-500/20 px-3 py-2 text-xs text-primary-200 hover:bg-primary-500/30 transition-colors"

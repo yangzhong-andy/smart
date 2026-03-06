@@ -34,6 +34,7 @@ import { LucideIcon } from "lucide-react";
 
 /** 子菜单悬停时预取路由 + 可选预请求主 API（暖机），减轻点击后等待 */
 const ROUTE_PREFETCH_API: Record<string, string> = {
+  "/procurement": "/api/suppliers",
   "/finance/accounts": "/api/accounts",
   "/finance/cash-flow": "/api/cash-flow",
   "/finance/monthly-bills": "/api/monthly-bills",
@@ -86,6 +87,7 @@ const navItems: NavItem[] = [
     labelEn: "SCM",
     icon: Factory,
     children: [
+      { label: "供应链看板", labelEn: "", icon: Factory, href: "/procurement" },
       { label: "供应商库", labelEn: "", icon: Factory, href: "/procurement/suppliers" },
       { label: "采购合同（分批拿货）", labelEn: "", icon: Factory, href: "/procurement/purchase-orders" },
       { label: "采购订单", labelEn: "", icon: Factory, href: "/procurement/procurement-orders" },
