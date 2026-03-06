@@ -19,7 +19,8 @@ export async function PUT(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    const canEdit = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN' || userRole === 'MANAGER'
+    if (!canEdit) {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
@@ -131,12 +132,13 @@ export async function DELETE(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    const canDelete = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN' || userRole === 'MANAGER'
+    if (!canDelete) {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
     const { id } = params
-    
+
     await prisma.bankAccount.delete({
       where: { id }
     })
