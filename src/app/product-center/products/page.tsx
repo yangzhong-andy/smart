@@ -92,6 +92,10 @@ export default function ProductsPage() {
 
   const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<any>('/api/products?list=spu&page=1&pageSize=500');
 
+  // 按供应商过滤的 productId 集合（来自 /api/product-suppliers?supplierId=...）
+  const [supplierFilterProductIds, setSupplierFilterProductIds] = useState<Set<string> | null>(null);
+  const [supplierFilterName, setSupplierFilterName] = useState<string | null>(null);
+
   const apiSummary = useMemo(() => {
     if (!swrProductsData || Array.isArray(swrProductsData)) return null;
     return swrProductsData.summary ?? null;
@@ -114,6 +118,33 @@ export default function ProductsPage() {
       setProductsReady(true);
     }
   }, [productsError]);
+
+  // 如果 URL 中带有 supplierId，则按供应商过滤产品列表
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const supplierId = params.get("supplierId");
+    if (!supplierId) return;
+    const supplierName = params.get("supplierName");
+    if (supplierName) setSupplierFilterName(supplierName);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/product-suppliers?supplierId=${encodeURIComponent(supplierId)}&page=1&pageSize=2000`
+        );
+        if (!res.ok) return;
+        const json = await res.json();
+        const list: any[] = Array.isArray(json) ? json : json?.data ?? [];
+        const ids = new Set<string>();
+        for (const ps of list) {
+          if (ps.productId) ids.add(ps.productId as string);
+        }
+        setSupplierFilterProductIds(ids);
+      } catch (error) {
+        console.error("Failed to load supplier filter products", error);
+      }
+    })();
+  }, []);
 
   const loadVariantsForSpu = useCallback(async (productId: string): Promise<Product[]> => {
     if (variantCache[productId]?.length) return variantCache[productId] ?? [];
@@ -158,9 +189,12 @@ export default function ProductsPage() {
         s.name.toLowerCase().includes(keyword) || (s.category && s.category.toLowerCase().includes(keyword))
       );
     }
+    if (supplierFilterProductIds && supplierFilterProductIds.size > 0) {
+      result = result.filter((s) => supplierFilterProductIds.has(s.productId));
+    }
     result.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh-Hans-CN"));
     return result;
-  }, [spuList, filterStatus, filterCategory, searchKeyword]);
+  }, [spuList, filterStatus, filterCategory, searchKeyword, supplierFilterProductIds]);
 
   const filteredProducts = useMemo(() => products, [products]);
 

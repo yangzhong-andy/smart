@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Factory, TrendingUp, DollarSign, Search, X, Download, Pencil, Trash2, Building2, Package, ChevronDown, ChevronUp, ExternalLink, MapPin } from "lucide-react";
 import {
@@ -57,6 +58,7 @@ export default function SuppliersPage() {
   // 使用统一 Hooks
   const { suppliers, isLoading, mutate } = useSuppliers();
   const { createSupplier, updateSupplier, deleteSupplier } = useSupplierActions();
+  const router = useRouter();
 
   // 筛选状态
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -67,6 +69,17 @@ export default function SuppliersPage() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [form, setForm] = useState<SupplierFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 每个供应商关联的产品统计（数量 + 前几条示例）
+  const [supplierProducts, setSupplierProducts] = useState<
+    Record<
+      string,
+      {
+        count: number;
+        samples: { name: string; sku?: string; unitPrice?: number }[];
+      }
+    >
+  >({});
 
   // 统计信息
   const stats = useMemo(() => {
@@ -113,6 +126,52 @@ export default function SuppliersPage() {
 
     return result;
   }, [suppliers, filterLevel, searchKeyword]);
+
+  // 预加载供应商关联产品信息，用于卡片展示
+  useEffect(() => {
+    if (!suppliers.length) {
+      setSupplierProducts({});
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/product-suppliers?page=1&pageSize=2000");
+        if (!res.ok) return;
+        const json = await res.json();
+        const list: any[] = Array.isArray(json) ? json : json?.data ?? [];
+        const supplierIdSet = new Set(suppliers.map((s) => s.id));
+        const map: typeof supplierProducts = {};
+        for (const ps of list) {
+          const sid = ps.supplierId as string | undefined;
+          if (!sid || !supplierIdSet.has(sid)) continue;
+          if (!map[sid]) {
+            map[sid] = { count: 0, samples: [] };
+          }
+          map[sid].count += 1;
+          if (map[sid].samples.length < 3) {
+            map[sid].samples.push({
+              name: ps.productName || ps.productSku || "未命名产品",
+              sku: ps.productSku,
+              unitPrice:
+                typeof ps.unitPrice === "number" && Number.isFinite(ps.unitPrice)
+                  ? ps.unitPrice
+                  : undefined,
+            });
+          }
+        }
+        if (!cancelled) {
+          setSupplierProducts(map);
+        }
+      } catch (error) {
+        console.error("Failed to load supplier products", error);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [suppliers]);
 
   // 获取所有分类
   const categories = useMemo(() => {
@@ -317,12 +376,20 @@ export default function SuppliersPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredSuppliers.map(supplier => (
+          {filteredSuppliers.map((supplier) => (
             <SupplierCard
               key={supplier.id}
               supplier={supplier}
+              productSummary={supplierProducts[supplier.id]}
               onEdit={() => handleOpenModal(supplier)}
               onDelete={() => handleDelete(supplier.id)}
+              onViewProducts={() =>
+                router.push(
+                  `/product-center/products?supplierId=${encodeURIComponent(
+                    supplier.id
+                  )}&supplierName=${encodeURIComponent(supplier.name)}`
+                )
+              }
             />
           ))}
         </div>
@@ -347,11 +414,16 @@ export default function SuppliersPage() {
 
 interface SupplierCardProps {
   supplier: Supplier;
+  productSummary?: {
+    count: number;
+    samples: { name: string; sku?: string; unitPrice?: number }[];
+  };
   onEdit: () => void;
   onDelete: () => void;
+  onViewProducts?: () => void;
 }
 
-function SupplierCard({ supplier, onEdit, onDelete }: SupplierCardProps) {
+function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProducts }: SupplierCardProps) {
   const levelColor = getLevelColor(supplier.level);
   const [expanded, setExpanded] = useState(false);
 
@@ -380,7 +452,13 @@ function SupplierCard({ supplier, onEdit, onDelete }: SupplierCardProps) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
+    <div
+      className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+      style={{
+        background: "linear-gradient(135deg, #1e3a8a 0%, #020617 55%, #020617 100%)",
+        border: "1px solid rgba(148, 163, 184, 0.45)",
+      }}
+    >
       {/* 头部 */}
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-start gap-3 min-w-0">
@@ -485,6 +563,44 @@ function SupplierCard({ supplier, onEdit, onDelete }: SupplierCardProps) {
             <div className="text-slate-200 font-medium">{supplier.moq != null ? supplier.moq : "-"}</div>
           </div>
         </div>
+
+        {productSummary && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 space-y-1">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>关联产品</span>
+              <span className="text-slate-200 font-medium">{productSummary.count} 个</span>
+            </div>
+            {productSummary.samples.length > 0 && (
+              <ul className="max-h-16 overflow-y-auto space-y-1 text-xs">
+                {productSummary.samples.map((p, idx) => (
+                  <li key={idx} className="flex items-center justify-between gap-2">
+                    <span className="truncate text-slate-200" title={p.name}>
+                      {p.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-slate-400 font-mono">
+                      {p.sku}
+                      {p.unitPrice != null && (
+                        <span className="ml-1 text-emerald-300">
+                          ¥{formatNumber(Number(p.unitPrice) || 0)}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {onViewProducts && (
+              <button
+                type="button"
+                onClick={onViewProducts}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary-300 hover:text-primary-200"
+              >
+                <ExternalLink className="h-3 w-3" />
+                在产品库中查看
+              </button>
+            )}
+          </div>
+        )}
 
         {expanded && (
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3 space-y-2">
@@ -721,6 +837,61 @@ function SupplierModal({ form, setForm, isEditing, isSubmitting, onSave, onClose
                 value={form.taxId}
                 onChange={(e) => setForm(f => ({ ...f, taxId: e.target.value }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+
+            {/* 发票信息 */}
+            <label className="block space-y-1">
+              <span className="text-sm text-slate-300">发票要求</span>
+              <select
+                value={form.invoiceRequirement}
+                onChange={(e) => setForm((f) => ({ ...f, invoiceRequirement: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">未设置</option>
+                <option value="SPECIAL_INVOICE">专票</option>
+                <option value="GENERAL_INVOICE">普票</option>
+                <option value="NO_INVOICE">不需要发票</option>
+              </select>
+            </label>
+
+            <label className="block space-y-1">
+              <span className="text-sm text-slate-300">开票点数(%)</span>
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={form.invoicePoint}
+                onChange={(e) => setForm((f) => ({ ...f, invoicePoint: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
+                placeholder="如 13"
+              />
+            </label>
+
+            {/* 供应能力 */}
+            <label className="block space-y-1">
+              <span className="text-sm text-slate-300">默认交期(天)</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={form.defaultLeadTime}
+                onChange={(e) => setForm((f) => ({ ...f, defaultLeadTime: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
+                placeholder="如 7"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="text-sm text-slate-300">起订量 MOQ</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={form.moq}
+                onChange={(e) => setForm((f) => ({ ...f, moq: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
+                placeholder="如 100"
               />
             </label>
           </div>
