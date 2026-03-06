@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Package,
@@ -9,7 +10,11 @@ import {
   Truck,
   CheckCircle2,
   Trash2,
+  Upload,
+  FileText,
 } from "lucide-react";
+import { toast } from "sonner";
+import ImageUploader from "@/components/ImageUploader";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { currency, formatDate } from "./types";
 import type { ContractDetail } from "./types";
@@ -32,6 +37,7 @@ interface PurchaseOrderDetailDialogProps {
   onDelete: (contractId: string) => void;
   onFactoryFinished: (contractId: string) => void;
   onPaymentTail: (contractId: string, deliveryOrderId: string) => void;
+  onRefresh?: () => void;
 }
 
 export function PurchaseOrderDetailDialog({
@@ -43,10 +49,22 @@ export function PurchaseOrderDetailDialog({
   onDelete,
   onFactoryFinished,
   onPaymentTail,
+  onRefresh,
 }: PurchaseOrderDetailDialogProps) {
   if (!open || !contractDetail) return null;
 
   const { contract, deliveryOrders } = contractDetail;
+  const [voucherDraft, setVoucherDraft] = useState<string | string[]>(
+    contract.contractVoucher ?? ""
+  );
+  const [voucherDisplay, setVoucherDisplay] = useState<string | string[] | undefined>(
+    contract.contractVoucher
+  );
+  const [voucherSaving, setVoucherSaving] = useState(false);
+  useEffect(() => {
+    setVoucherDraft(contract.contractVoucher ?? "");
+    setVoucherDisplay(contract.contractVoucher);
+  }, [contract.id, contract.contractVoucher]);
   const product = products.find(
     (p) =>
       p.sku_id === contract.skuId ||
@@ -225,12 +243,28 @@ export function PurchaseOrderDetailDialog({
               <FileImage className="h-4 w-4" />
               合同凭证
             </h3>
-            {contract.contractVoucher ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {(Array.isArray(contract.contractVoucher)
-                  ? contract.contractVoucher
-                  : [contract.contractVoucher]
+            {voucherDisplay && (Array.isArray(voucherDisplay) ? voucherDisplay.length > 0 : !!voucherDisplay) ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                {(Array.isArray(voucherDisplay)
+                  ? voucherDisplay
+                  : [voucherDisplay]
                 ).map((voucher, index) => {
+                  const isPdf = typeof voucher === "string" && voucher.startsWith("data:application/pdf");
+                  if (isPdf) {
+                    return (
+                      <div
+                        key={index}
+                        className="relative group w-full h-32 flex flex-col items-center justify-center rounded-lg border border-slate-700 cursor-pointer hover:border-primary-400 transition-all bg-slate-800"
+                        onClick={() => window.open(voucher as string, "_blank")}
+                      >
+                        <FileText className="w-10 h-10 text-rose-400 mb-1" />
+                        <span className="text-xs text-slate-300">PDF</span>
+                        <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                          {index + 1}
+                        </div>
+                      </div>
+                    );
+                  }
                   let imageSrc = voucher;
                   if (typeof voucher === "string") {
                     if (
@@ -269,8 +303,58 @@ export function PurchaseOrderDetailDialog({
                 })}
               </div>
             ) : (
-              <div className="text-center py-6 text-slate-500 text-sm">暂无合同凭证</div>
+              <div className="text-center py-4 text-slate-500 text-sm mb-4">暂无合同凭证，可下方补充上传</div>
             )}
+            <div className="border-t border-slate-700 pt-4">
+              <p className="text-xs text-slate-400 mb-2">补充凭证（盖完章后上传扫描件/照片）</p>
+              <ImageUploader
+                value={voucherDraft}
+                onChange={setVoucherDraft}
+                label=""
+                multiple
+                maxImages={10}
+                placeholder="点击上传或 Ctrl+V 粘贴，支持 JPG、PDF，最多10张"
+                acceptPdf
+              />
+              <button
+                type="button"
+                disabled={voucherSaving}
+                onClick={async () => {
+                  setVoucherSaving(true);
+                  try {
+                    const res = await fetch(`/api/purchase-contracts/${contract.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        contractVoucher:
+                          !voucherDraft ||
+                          (Array.isArray(voucherDraft) && voucherDraft.length === 0) ||
+                          (typeof voucherDraft === "string" && !voucherDraft.trim())
+                            ? null
+                            : voucherDraft,
+                      }),
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(err?.error || "保存失败");
+                    }
+                    const data = await res.json();
+                    const next = data.contractVoucher ?? null;
+                    setVoucherDisplay(next && (Array.isArray(next) ? next.length > 0 : next) ? next : undefined);
+                    toast.success("合同凭证已更新");
+                    onRefresh?.();
+                  } catch (e: any) {
+                    toast.error(e?.message || "保存失败");
+                  } finally {
+                    setVoucherSaving(false);
+                  }
+                }}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-primary-500/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-60"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {voucherSaving ? "保存中…" : "保存凭证"}
+              </button>
+            </div>
           </div>
 
           {contract.skuId && product && (

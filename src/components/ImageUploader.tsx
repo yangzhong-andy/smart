@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { compressImage, getImagesFromClipboard, isSupportedImageType, SUPPORTED_IMAGE_TYPES } from "@/lib/image-utils";
-import { X, Upload } from "lucide-react";
+import { X, Upload, FileText } from "lucide-react";
 
 export interface ImageUploaderProps {
-  value: string | string[]; // 单个图片Base64或图片数组
+  value: string | string[]; // 单个图片Base64或图片数组，或 data:application/pdf;base64,...
   onChange: (value: string | string[]) => void;
   multiple?: boolean; // 是否支持多图
   label?: string;
@@ -14,6 +14,12 @@ export interface ImageUploaderProps {
   maxImages?: number; // 最大图片数量
   maxSizeKB?: number; // 单张图片压缩后最大 KB，默认 500，产品表单建议 200 以减小请求体
   onError?: (error: string) => void;
+  /** 是否支持 PDF（如合同凭证），与图片一起上传 */
+  acceptPdf?: boolean;
+}
+
+function isPdfDataUrl(s: string): boolean {
+  return typeof s === "string" && (s.startsWith("data:application/pdf") || s.startsWith("data:application/pdf;"));
 }
 
 export default function ImageUploader({
@@ -25,7 +31,8 @@ export default function ImageUploader({
   placeholder = "点击上传或直接 Ctrl + V 粘贴图片",
   maxImages = 5,
   maxSizeKB = 500,
-  onError
+  onError,
+  acceptPdf = false,
 }: ImageUploaderProps) {
   const [images, setImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -69,14 +76,29 @@ export default function ImageUploader({
       const compressedImages: string[] = [];
 
       for (const file of filesToProcess) {
+        if (acceptPdf && file.type === "application/pdf") {
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error("PDF 读取失败"));
+              reader.readAsDataURL(file);
+            });
+            compressedImages.push(dataUrl);
+          } catch (err) {
+            onError?.("PDF 读取失败，请重试");
+          }
+          continue;
+        }
+
         if (!file.type.startsWith("image/")) {
-          onError?.(`文件 "${file.name}" 不是图片文件`);
+          onError?.(`文件 "${file.name}" 不是图片或 PDF`);
           continue;
         }
 
         if (!isSupportedImageType(file)) {
           const supportedFormats = SUPPORTED_IMAGE_TYPES.map(t => t.replace("image/", "").toUpperCase()).join(", ");
-          onError?.(`不支持的图片格式: ${file.type}。支持的格式: ${supportedFormats}`);
+          onError?.(`不支持的图片格式: ${file.type}。支持的格式: ${supportedFormats}${acceptPdf ? ", PDF" : ""}`);
           continue;
         }
 
@@ -229,7 +251,7 @@ export default function ImageUploader({
         <input
           ref={fileInputRef}
           type="file"
-          accept={SUPPORTED_IMAGE_TYPES.join(",")}
+          accept={acceptPdf ? SUPPORTED_IMAGE_TYPES.join(",") + ",application/pdf" : SUPPORTED_IMAGE_TYPES.join(",")}
           multiple={multiple}
           onChange={handleFileSelect}
           className="hidden"
@@ -246,7 +268,7 @@ export default function ImageUploader({
               <Upload className="w-8 h-8 text-[#00E5FF]" />
               <p className="text-sm text-slate-300">{placeholder}</p>
               <p className="text-xs text-slate-500">
-                支持格式: JPEG, PNG, GIF, WebP, BMP, HEIC, HEIF, TIFF, SVG
+                支持格式: JPG, PNG, GIF, WebP, BMP, HEIC, HEIF, TIFF, SVG{acceptPdf ? ", PDF" : ""}
               </p>
               {multiple && images.length > 0 && (
                 <p className="text-xs text-slate-500">
@@ -258,7 +280,7 @@ export default function ImageUploader({
         </div>
       </div>
 
-      {/* 图片预览列表 */}
+      {/* 图片/PDF 预览列表 */}
       {images.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {images.map((img, index) => (
@@ -267,11 +289,18 @@ export default function ImageUploader({
               className="relative group rounded-lg border border-slate-700 overflow-hidden bg-slate-900 cursor-pointer"
               onClick={() => setImageViewModal({ images, currentIndex: index })}
             >
-              <img
-                src={img}
-                alt={`预览 ${index + 1}`}
-                className="w-full h-32 object-cover"
-              />
+              {isPdfDataUrl(img) ? (
+                <div className="w-full h-32 flex flex-col items-center justify-center bg-slate-800 text-slate-300">
+                  <FileText className="w-10 h-10 text-rose-400 mb-1" />
+                  <span className="text-xs font-medium">PDF</span>
+                </div>
+              ) : (
+                <img
+                  src={img}
+                  alt={`预览 ${index + 1}`}
+                  className="w-full h-32 object-cover"
+                />
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -283,7 +312,7 @@ export default function ImageUploader({
                 <X className="w-4 h-4" />
               </button>
               <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
-                图片 {index + 1} - 点击查看
+                {isPdfDataUrl(img) ? "PDF" : "图片"} {index + 1} - 点击查看
               </div>
             </div>
           ))}
@@ -345,26 +374,32 @@ export default function ImageUploader({
               </div>
             )}
 
-            {/* 当前图片 */}
+            {/* 当前图片或 PDF */}
             {(() => {
               const currentImage = imageViewModal.images[imageViewModal.currentIndex];
+              if (isPdfDataUrl(currentImage)) {
+                return (
+                  <iframe
+                    src={currentImage}
+                    title={`PDF ${imageViewModal.currentIndex + 1}`}
+                    className="w-[80vw] h-[85vh] rounded-lg shadow-2xl bg-white"
+                  />
+                );
+              }
               let imageSrc = currentImage;
-              
-              // 处理 base64 图片
-              if (currentImage && /^[A-Za-z0-9+/=]+$/.test(currentImage) && currentImage.length > 100 && !currentImage.startsWith('data:')) {
+              if (currentImage && /^[A-Za-z0-9+/=]+$/.test(currentImage) && currentImage.length > 100 && !currentImage.startsWith("data:")) {
                 imageSrc = `data:image/jpeg;base64,${currentImage}`;
               }
-              
               return (
-                <img 
-                  src={imageSrc || currentImage} 
+                <img
+                  src={imageSrc || currentImage}
                   alt={`图片 ${imageViewModal.currentIndex + 1}`}
                   className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain bg-white/5"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     target.style.display = "none";
                     const parent = target.parentElement;
-                    if (parent && !parent.querySelector('.error-message')) {
+                    if (parent && !parent.querySelector(".error-message")) {
                       const errorDiv = document.createElement("div");
                       errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
                       errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;

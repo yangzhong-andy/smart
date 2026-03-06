@@ -493,10 +493,13 @@ export default function PurchaseOrdersPage() {
       toast.error("请至少添加一条有效物料（SKU/品名、数量、单价）", { icon: "⚠️" });
       return;
     }
-    if (!form.contractVoucher || (Array.isArray(form.contractVoucher) && form.contractVoucher.length === 0) || (typeof form.contractVoucher === "string" && form.contractVoucher.trim() === "")) {
-      toast.error("请上传合同凭证", { icon: "⚠️" });
-      return;
-    }
+    // 合同凭证改为可选：可先保存合同，盖完章后到合同详情中补充上传
+    const voucher =
+      !form.contractVoucher ||
+      (Array.isArray(form.contractVoucher) && form.contractVoucher.length === 0) ||
+      (typeof form.contractVoucher === "string" && form.contractVoucher.trim() === "")
+        ? undefined
+        : form.contractVoucher;
     const items = validRows.map((row) => {
       const product = products.find((p) => (p.id || p.sku_id) === row.productId);
       const sku = row.sku?.trim() || product?.sku || product?.sku_id || "";
@@ -523,7 +526,7 @@ export default function PurchaseOrdersPage() {
       tailPeriodDays: selectedSupplier.tailPeriodDays,
       deliveryDate: form.deliveryDate || undefined,
       status: "待审批",
-      contractVoucher: form.contractVoucher,
+      contractVoucher: voucher,
       relatedOrderIds: sourceOrder ? [sourceOrder.id] : [],
       relatedOrderNumbers: sourceOrder ? [sourceOrder.orderNumber ?? ""] : [],
       items,
@@ -1267,6 +1270,7 @@ export default function PurchaseOrdersPage() {
         onDelete={handleDeleteContract}
         onFactoryFinished={handleFactoryFinished}
         onPaymentTail={(contractId, deliveryOrderId) => handlePayment(contractId, "tail", deliveryOrderId)}
+        onRefresh={mutateContracts}
       />
 
       {/* 发起拿货模态框 */}

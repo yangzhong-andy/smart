@@ -118,6 +118,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const v = body.contractVoucher;
+    const contractVoucher =
+      v == null || v === '' ? null : Array.isArray(v) ? JSON.stringify(v) : String(v).trim() || null;
     const contract = await prisma.purchaseContract.create({
       data: {
         contractNumber: body.contractNumber,
@@ -134,6 +137,7 @@ export async function POST(request: NextRequest) {
         tailPeriodDays: body.tailPeriodDays ?? 0,
         deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : null,
         status: body.status || 'PENDING_APPROVAL',
+        contractVoucher,
       },
     });
 

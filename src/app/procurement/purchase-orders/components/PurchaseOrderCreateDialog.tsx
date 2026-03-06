@@ -345,9 +345,7 @@ export function PurchaseOrderCreateDialog({
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <FileImage className="h-4 w-4 text-slate-400" />
-              <span className="text-sm font-medium text-slate-300">
-                合同凭证 <span className="text-rose-400">*</span>
-              </span>
+              <span className="text-sm font-medium text-slate-300">合同凭证（可选）</span>
             </div>
             <ImageUploader
               value={form.contractVoucher}
@@ -355,10 +353,12 @@ export function PurchaseOrderCreateDialog({
               label=""
               multiple={true}
               maxImages={10}
-              placeholder="点击上传或直接 Ctrl + V 粘贴合同凭证图片，支持多张"
-              required
+              placeholder="点击上传或直接 Ctrl + V 粘贴合同凭证（支持 JPG、PDF 等），多张"
+              acceptPdf
             />
-            <p className="text-xs text-slate-500">请上传合同扫描件或照片，支持多张图片，最多10张</p>
+            <p className="text-xs text-slate-500">
+              可先保存合同，生成文档拿去盖章后再上传；盖完章后可到合同详情中「补充凭证」。
+            </p>
           </div>
 
           <div className="flex justify-end gap-2">
