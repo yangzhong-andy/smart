@@ -431,7 +431,7 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
 
   return (
     <div
-      className="group relative flex h-80 flex-col overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+      className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
       style={{
         background: "linear-gradient(135deg, #1e3a8a 0%, #020617 55%, #020617 100%)",
         border: "1px solid rgba(148, 163, 184, 0.45)",
@@ -490,8 +490,8 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
         </button>
       </div>
 
-      {/* 信息 + 关联产品 + 展开详情，固定卡片高度内滚动 */}
-      <div className="flex-1 space-y-3 overflow-y-auto pr-1 text-sm">
+      {/* 信息 + 关联产品 + 展开详情 */}
+      <div className="space-y-3 text-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-xs text-slate-400">联系人</div>
