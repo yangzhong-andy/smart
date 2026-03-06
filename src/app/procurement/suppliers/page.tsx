@@ -80,6 +80,7 @@ export default function SuppliersPage() {
       }
     >
   >({});
+  const [detailSupplier, setDetailSupplier] = useState<Supplier | null>(null);
 
   // 统计信息
   const stats = useMemo(() => {
@@ -368,6 +369,7 @@ export default function SuppliersPage() {
                   )}&supplierName=${encodeURIComponent(supplier.name)}`
                 )
               }
+              onExpand={() => setDetailSupplier(supplier)}
             />
           ))}
         </div>
@@ -382,6 +384,14 @@ export default function SuppliersPage() {
           isSubmitting={isSubmitting}
           onSave={handleSave}
           onClose={handleCloseModal}
+        />
+      )}
+
+      {detailSupplier && (
+        <SupplierDetailDrawer
+          supplier={detailSupplier}
+          productSummary={supplierProducts[detailSupplier.id]}
+          onClose={() => setDetailSupplier(null)}
         />
       )}
     </div>
@@ -399,35 +409,35 @@ interface SupplierCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onViewProducts?: () => void;
+  onExpand: () => void;
 }
 
-function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProducts }: SupplierCardProps) {
+const invoiceLabel = (v?: Supplier["invoiceRequirement"]) => {
+  switch (v) {
+    case "SPECIAL_INVOICE":
+      return "专票";
+    case "GENERAL_INVOICE":
+      return "普票";
+    case "NO_INVOICE":
+      return "不需要发票";
+    default:
+      return "-";
+  }
+};
+
+const settleBaseLabel = (v: Supplier["settleBase"]) => {
+  switch (v) {
+    case "SHIPMENT":
+      return "发货";
+    case "INBOUND":
+      return "入库";
+    default:
+      return v as unknown as string;
+  }
+};
+
+function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProducts, onExpand }: SupplierCardProps) {
   const levelColor = getLevelColor(supplier.level);
-  const [expanded, setExpanded] = useState(false);
-
-  const invoiceLabel = (v?: Supplier["invoiceRequirement"]) => {
-    switch (v) {
-      case "SPECIAL_INVOICE":
-        return "专票";
-      case "GENERAL_INVOICE":
-        return "普票";
-      case "NO_INVOICE":
-        return "不需要发票";
-      default:
-        return "-";
-    }
-  };
-
-  const settleBaseLabel = (v: Supplier["settleBase"]) => {
-    switch (v) {
-      case "SHIPMENT":
-        return "发货";
-      case "INBOUND":
-        return "入库";
-      default:
-        return v as unknown as string;
-    }
-  };
 
   return (
     <div
@@ -482,11 +492,11 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
 
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={onExpand}
           className="shrink-0 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-2 text-slate-300 hover:bg-slate-800"
-          title={expanded ? "收起" : "展开更多"}
+          title="查看详细信息"
         >
-          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          <ChevronDown className="h-4 w-4" />
         </button>
       </div>
 
@@ -578,52 +588,6 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
           )}
         </div>
 
-        {expanded && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3 space-y-2">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-400">结算基准</span>
-                <span className="text-slate-200">{settleBaseLabel(supplier.settleBase)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-400">发票要求</span>
-                <span className="text-slate-200">{invoiceLabel(supplier.invoiceRequirement)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-400">开票点数</span>
-                <span className="text-slate-200">
-                  {supplier.invoicePoint != null ? `${formatNumber(Number(supplier.invoicePoint) || 0)}%` : "-"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-400">纳税人识别号</span>
-                <span className="text-slate-200 font-mono truncate max-w-[160px]" title={supplier.taxId || ""}>
-                  {supplier.taxId || "-"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 col-span-2">
-                <span className="text-slate-400">开户行</span>
-                <span className="text-slate-200 truncate" title={supplier.bankName || ""}>
-                  {supplier.bankName || "-"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 col-span-2">
-                <span className="text-slate-400">银行账号</span>
-                <span className="text-slate-200 font-mono truncate" title={supplier.bankAccount || ""}>
-                  {supplier.bankAccount || "-"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2 col-span-2">
-                <span className="text-slate-400">创建时间</span>
-                <span className="text-slate-300">{supplier.createdAt ? formatDateTime(supplier.createdAt) : "-"}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2 col-span-2">
-                <span className="text-slate-400">更新时间</span>
-                <span className="text-slate-300">{supplier.updatedAt ? formatDateTime(supplier.updatedAt) : "-"}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 操作 */}
@@ -894,6 +858,180 @@ function SupplierModal({ form, setForm, isEditing, isSubmitting, onSave, onClose
             </ActionButton>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+interface SupplierDetailDrawerProps {
+  supplier: Supplier;
+  productSummary?: {
+    count: number;
+    samples: { name: string; sku?: string; unitPrice?: number }[];
+  };
+  onClose: () => void;
+}
+
+function SupplierDetailDrawer({ supplier, productSummary, onClose }: SupplierDetailDrawerProps) {
+  const levelColor = getLevelColor(supplier.level);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950/95 p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-primary-500/20 p-2.5">
+              <Factory className="h-5 w-5 text-primary-200" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-semibold text-slate-50">{supplier.name}</h2>
+                {supplier.level && (
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${levelColor}`}>
+                    {supplier.level}级
+                  </span>
+                )}
+                {!supplier.isActive && (
+                  <span className="px-2 py-0.5 rounded-full text-xs text-slate-300 bg-slate-700/60">
+                    已停用
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-slate-400 space-x-2">
+                {supplier.category && <span>{supplier.category}</span>}
+                {supplier.address && <span>{supplier.address}</span>}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full border border-slate-700 bg-slate-900/60 p-1.5 text-slate-300 hover:bg-slate-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <div className="text-xs text-slate-400">联系人</div>
+            <div className="text-slate-200">{supplier.contact || "-"}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <div className="text-xs text-slate-400">手机号</div>
+            <div className="font-mono text-slate-200">{supplier.phone || "-"}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <div className="text-xs text-slate-400">定金比例</div>
+            <div className="text-emerald-300 font-medium">
+              {formatNumber(Number(supplier.depositRate) || 0)}%
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <div className="text-xs text-slate-400">尾款账期</div>
+            <div className="text-blue-300 font-medium">
+              {supplier.tailPeriodDays ?? 0}天
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <div className="text-xs text-slate-400">默认交期</div>
+            <div className="text-slate-200 font-medium">
+              {supplier.defaultLeadTime != null ? `${supplier.defaultLeadTime}天` : "-"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+            <div className="text-xs text-slate-400">起订量 MOQ</div>
+            <div className="text-slate-200 font-medium">{supplier.moq ?? "-"}</div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-200">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 space-y-2">
+            <div className="text-slate-400 text-xs mb-1">结算与发票</div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">结算基准</span>
+              <span>{settleBaseLabel(supplier.settleBase)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">发票要求</span>
+              <span>{invoiceLabel(supplier.invoiceRequirement)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">开票点数</span>
+              <span>
+                {supplier.invoicePoint != null
+                  ? `${formatNumber(Number(supplier.invoicePoint) || 0)}%`
+                  : "-"}
+              </span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 space-y-2">
+            <div className="text-slate-400 text-xs mb-1">银行与税务信息</div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">开户行</span>
+              <span className="truncate max-w-[220px]" title={supplier.bankName || ""}>
+                {supplier.bankName || "-"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">银行账号</span>
+              <span className="font-mono truncate" title={supplier.bankAccount || ""}>
+                {supplier.bankAccount || "-"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">纳税人识别号</span>
+              <span className="font-mono truncate max-w-[220px]" title={supplier.taxId || ""}>
+                {supplier.taxId || "-"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-200">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+            <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+              <span>关联产品</span>
+              <span className="text-slate-200 font-medium">
+                {productSummary?.count ?? 0} 个
+              </span>
+            </div>
+            {productSummary?.samples?.length ? (
+              <ul className="space-y-1 max-h-40 overflow-y-auto">
+                {productSummary.samples.map((p, idx) => (
+                  <li key={idx} className="flex items-center justify-between gap-2">
+                    <span className="truncate text-slate-200" title={p.name}>
+                      {p.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-slate-400 font-mono">
+                      {p.sku}
+                      {p.unitPrice != null && (
+                        <span className="ml-1 text-emerald-300">
+                          ¥{formatNumber(Number(p.unitPrice) || 0)}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-[11px] text-slate-500">暂无关联产品</div>
+            )}
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">创建时间</span>
+              <span className="text-slate-300">
+                {supplier.createdAt ? formatDateTime(supplier.createdAt) : "-"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-400">更新时间</span>
+              <span className="text-slate-300">
+                {supplier.updatedAt ? formatDateTime(supplier.updatedAt) : "-"}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
