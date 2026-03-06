@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
                   const up = Number(item.unitPrice) || 0;
                   return {
                     sku: (item.sku || item.skuName || "未填").toString().trim() || "未填",
-                    variantId: item.skuId != null ? String(item.skuId) : null,
+                    variantId: null,
                     skuName: item.skuName != null ? String(item.skuName).trim() : null,
                     spec: item.spec != null ? String(item.spec).trim() : null,
                     unitPrice: up,
