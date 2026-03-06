@@ -58,6 +58,36 @@ export function getCompanyInfo(): CompanyInfo {
 }
 
 /**
+ * 从数据库 CompanyProfile 合并出本公司信息（空字段用环境变量/默认值兜底）。
+ * 仅在服务端可用，用于合同生成等。
+ */
+export function companyFromProfile(profile: {
+  name?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  contact?: string | null;
+  bankAccount?: string | null;
+  bankAccountName?: string | null;
+  bankName?: string | null;
+  taxId?: string | null;
+} | null): CompanyInfo {
+  const env = getCompanyInfo();
+  if (!profile) return env;
+  const s = (v: string | null | undefined, fallback: string) =>
+    (v ?? fallback).trim() || fallback;
+  return {
+    name: s(profile.name, env.name),
+    address: s(profile.address, env.address),
+    phone: s(profile.phone, env.phone),
+    contact: s(profile.contact, env.contact),
+    bankAccount: s(profile.bankAccount, env.bankAccount),
+    bankAccountName: s(profile.bankAccountName, env.bankAccountName),
+    bankName: s(profile.bankName, env.bankName),
+    taxId: (profile.taxId ?? env.taxId)?.trim() || env.taxId,
+  };
+}
+
+/**
  * 仅在服务端/API 中可用。前端合同预览使用的甲方数据来自合同快照（snapshot.buyer），
  * 由生成合同时的服务端写入，无需在前端读取环境变量。
  */

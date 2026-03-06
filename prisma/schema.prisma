@@ -1284,6 +1284,21 @@ model GeneratedContract {
   @@index([purchaseContractId])
 }
 
+// 本公司（甲方）信息，用于合同生成等；系统内可编辑，优先于环境变量
+model CompanyProfile {
+  id                String   @id @default("default")
+  name              String?   // 公司全称
+  address           String?   // 地址
+  phone             String?   // 电话
+  contact           String?   // 联系代表/签字人
+  bankAccount       String?   // 付款账号（卡号）
+  bankAccountName   String?   // 付款账号户名
+  bankName          String?   // 开户行
+  taxId             String?   // 税号
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
 // 产品-供应商关联表（多对多关系）
 model ProductSupplier {
   id         String   @id @default(uuid())

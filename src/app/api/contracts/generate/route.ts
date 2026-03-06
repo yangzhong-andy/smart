@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { amountToChineseUppercase } from '@/lib/amount-to-chinese'
-import { getCompanyInfo } from '@/lib/company'
+import { companyFromProfile } from '@/lib/company'
 
 export const dynamic = 'force-dynamic'
 
@@ -129,7 +129,8 @@ async function generateFromPurchaseContract(purchaseContractId: string) {
         },
       ]
 
-  const company = getCompanyInfo()
+  const profile = await prisma.companyProfile.findUnique({ where: { id: 'default' } })
+  const company = companyFromProfile(profile)
   const snapshot: ContractSnapshot = {
     contractNumber: contract.contractNumber,
     orderNumber: contract.relatedOrderNumbers?.[0],
@@ -216,7 +217,8 @@ async function generateFromPurchaseOrder(purchaseOrderId: string) {
       }
     })
     const totalAmount = items.reduce((sum, i) => sum + i.totalAmount, 0)
-    const company = getCompanyInfo()
+    const profile = await prisma.companyProfile.findUnique({ where: { id: 'default' } })
+    const company = companyFromProfile(profile)
     const snapshot: ContractSnapshot = {
       contractNumber: order.orderNumber,
       orderNumber: order.orderNumber,
@@ -285,7 +287,8 @@ async function generateFromPurchaseOrder(purchaseOrderId: string) {
   const deliveryDateSingle = new Date(orderDate)
   deliveryDateSingle.setDate(deliveryDateSingle.getDate() + supplierLeadTime)
 
-  const company = getCompanyInfo()
+  const profile = await prisma.companyProfile.findUnique({ where: { id: 'default' } })
+  const company = companyFromProfile(profile)
   const snapshot: ContractSnapshot = {
     contractNumber: order.orderNumber,
     orderNumber: order.orderNumber,

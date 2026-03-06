@@ -132,16 +132,16 @@ export function PurchaseOrderCreateDialog({
 
         <form onSubmit={onSubmit} className="mt-4 space-y-4 text-sm">
           <div className="space-y-1">
-            <span className="text-slate-300">编号格式（可选）</span>
+            <span className="text-slate-300">编号格式（手动设置）</span>
             <input
               type="text"
               value={contractNumberFormat}
               onChange={(e) => setContractNumberFormatAndSave(e.target.value)}
-              placeholder="如 SDFY-2026-  留空则用 PC-"
+              placeholder="如 SDFY-BAXI-  留空则用 PC-"
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             />
             <p className="text-xs text-slate-500">
-              自动生成时使用「格式+时间戳」，例如 SDFY-2026-1738765432123；会记住您的设置。
+              上面填前缀，下面「自动生成」为：格式+年月日+序号（如 SDFY-BAXI-20260227-1），当日按顺序递增。
             </p>
           </div>
           <div className="space-y-1">
@@ -165,7 +165,7 @@ export function PurchaseOrderCreateDialog({
               </button>
             </div>
             <p className="text-xs text-slate-500">
-              可手动填写编号，或点击「自动生成」按当前格式生成；不填则保存时自动生成。
+              可手动填写编号，或点击「自动生成」按格式+年月日+序号生成；不填则保存时自动生成。
             </p>
           </div>
 

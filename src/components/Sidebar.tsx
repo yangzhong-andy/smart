@@ -23,7 +23,8 @@ import {
   Settings,
   LogOut,
   Upload,
-  BarChart3
+  BarChart3,
+  Building2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
@@ -41,6 +42,7 @@ const ROUTE_PREFETCH_API: Record<string, string> = {
   "/procurement/delivery-orders": "/api/delivery-orders",
   "/product-center/products": "/api/products",
   "/settings/stores": "/api/stores",
+  "/settings/company": "/api/company",
   "/hr/employees": "/api/employees",
   "/inventory": "/api/stock",
   "/logistics/channels": "/api/logistics-channels",
@@ -153,6 +155,7 @@ const navItems: NavItem[] = [
     icon: Settings,
     children: [
       { label: "员工档案管理", labelEn: "User Management", icon: Users, href: "/settings/users" },
+      { label: "本公司信息", labelEn: "Company (Party A)", icon: Building2, href: "/settings/company" },
       { label: "生成测试数据", labelEn: "", icon: Database, href: "/settings/generate-test-data" },
       { label: "清空系统数据", labelEn: "", icon: Trash2, href: "/settings/clear-data" }
     ]

@@ -133,19 +133,34 @@ export default function PurchaseOrdersPage() {
     contractVoucher: "" as string | string[],
     contractNumber: "" // 留空则保存时自动生成
   });
-  // 合同编号格式（如 SDFY-2026-），自动生成时用「格式+时间戳」；存 localStorage 记住
+  // 合同编号：上面格式手动设置；下面自动生成的数字按顺序 1、2、3… 递增（按格式分别记序号）
   const [contractNumberFormat, setContractNumberFormat] = useState("");
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const saved = localStorage.getItem("tk_erp_contract_number_format");
-    if (saved != null) setContractNumberFormat(saved);
+    const savedFormat = localStorage.getItem("tk_erp_contract_number_format");
+    if (savedFormat != null) setContractNumberFormat(savedFormat);
   }, []);
   const setContractNumberFormatAndSave = (value: string) => {
     setContractNumberFormat(value);
     if (typeof window !== "undefined") localStorage.setItem("tk_erp_contract_number_format", value);
   };
-  const generateContractNumber = () =>
-    (contractNumberFormat.trim() || "PC-") + Date.now();
+  const generateContractNumber = () => {
+    const prefix = contractNumberFormat.trim() || "PC-";
+    const now = new Date();
+    const ymd =
+      String(now.getFullYear()) +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      String(now.getDate()).padStart(2, "0");
+    if (typeof window === "undefined") return prefix + ymd + "-1";
+    const key = "tk_erp_contract_seq_" + prefix + "_" + ymd;
+    let next = 1;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved != null) next = Math.max(1, parseInt(saved, 10) || 1);
+    } catch (_) {}
+    localStorage.setItem(key, String(next + 1));
+    return prefix + ymd + "-" + next;
+  };
   const [formItems, setFormItems] = useState<FormItemRow[]>([]);
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [variantModalSupplierId, setVariantModalSupplierId] = useState<string | null>(null); // 弹窗打开时锁定的供应商 ID，避免中途被清空又显示全部
