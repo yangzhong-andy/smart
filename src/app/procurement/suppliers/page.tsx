@@ -845,7 +845,13 @@ function SupplierModal({ form, setForm, isEditing, isSubmitting, onSave, onClose
               <span className="text-sm text-slate-300">发票要求</span>
               <select
                 value={form.invoiceRequirement}
-                onChange={(e) => setForm((f) => ({ ...f, invoiceRequirement: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    invoiceRequirement:
+                      (e.target.value as SupplierFormData["invoiceRequirement"]) || "",
+                  }))
+                }
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
               >
                 <option value="">未设置</option>
