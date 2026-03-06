@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { clearCacheByPrefix } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
+const CACHE_KEY_PREFIX = 'product-suppliers';
 
 // PUT - 更新供应商-产品关联
 export async function PUT(
@@ -48,6 +50,9 @@ export async function PUT(
       },
     });
 
+    // 关联数据变更后清除缓存（列表页/汇总页都会命中缓存）
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
     return NextResponse.json(productSupplier);
   } catch (error) {
     return NextResponse.json(
@@ -65,6 +70,7 @@ export async function DELETE(
   try {
     const { id } = params;
     await prisma.productSupplier.delete({ where: { id } });
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
     return NextResponse.json({ message: 'Product-supplier relationship deleted successfully' });
   } catch (error) {
     return NextResponse.json(

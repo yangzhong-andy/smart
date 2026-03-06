@@ -68,10 +68,11 @@ export function usePurchaseOrders(params?: {
 export function useContracts(params?: {
   supplierId?: string;
   status?: string;
+  pageSize?: number;
 }) {
   const query = new URLSearchParams();
   query.set("page", "1");
-  query.set("pageSize", String(PROCUREMENT_CONFIG.DEFAULT_PAGE_SIZE));
+  query.set("pageSize", String(params?.pageSize ?? 500));
   if (params?.supplierId) query.set("supplierId", params.supplierId);
   if (params?.status) query.set("status", params.status);
 
@@ -99,10 +100,11 @@ export function useDeliveryOrders(params?: {
   contractId?: string;
   supplierId?: string;
   status?: string;
+  pageSize?: number;
 }) {
   const query = new URLSearchParams();
   query.set("page", "1");
-  query.set("pageSize", String(PROCUREMENT_CONFIG.DEFAULT_PAGE_SIZE));
+  query.set("pageSize", String(params?.pageSize ?? 500));
   if (params?.contractId) query.set("contractId", params.contractId);
   if (params?.supplierId) query.set("supplierId", params.supplierId);
   if (params?.status) query.set("status", params.status);
@@ -130,10 +132,11 @@ export function useDeliveryOrders(params?: {
 export function usePendingInbound(params?: {
   warehouseId?: string;
   status?: string;
+  pageSize?: number;
 }) {
   const query = new URLSearchParams();
   query.set("page", "1");
-  query.set("pageSize", String(PROCUREMENT_CONFIG.DEFAULT_PAGE_SIZE));
+  query.set("pageSize", String(params?.pageSize ?? 500));
   if (params?.warehouseId) query.set("warehouseId", params.warehouseId);
   if (params?.status) query.set("status", params.status);
 

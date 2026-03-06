@@ -136,33 +136,11 @@ export default function SuppliersPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/product-suppliers?page=1&pageSize=2000");
+        const res = await fetch("/api/product-suppliers/summary?sampleSize=3");
         if (!res.ok) return;
         const json = await res.json();
-        const list: any[] = Array.isArray(json) ? json : json?.data ?? [];
-        const supplierIdSet = new Set(suppliers.map((s) => s.id));
-        const map: typeof supplierProducts = {};
-        for (const ps of list) {
-          const sid = ps.supplierId as string | undefined;
-          if (!sid || !supplierIdSet.has(sid)) continue;
-          if (!map[sid]) {
-            map[sid] = { count: 0, samples: [] };
-          }
-          map[sid].count += 1;
-          if (map[sid].samples.length < 3) {
-            map[sid].samples.push({
-              name: ps.productName || ps.productSku || "未命名产品",
-              sku: ps.productSku,
-              unitPrice:
-                typeof ps.unitPrice === "number" && Number.isFinite(ps.unitPrice)
-                  ? ps.unitPrice
-                  : undefined,
-            });
-          }
-        }
-        if (!cancelled) {
-          setSupplierProducts(map);
-        }
+        const map = (json?.data ?? {}) as typeof supplierProducts;
+        if (!cancelled) setSupplierProducts(map);
       } catch (error) {
         console.error("Failed to load supplier products", error);
       }
@@ -564,43 +542,41 @@ function SupplierCard({ supplier, productSummary, onEdit, onDelete, onViewProduc
           </div>
         </div>
 
-        {productSummary && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>关联产品</span>
-              <span className="text-slate-200 font-medium">{productSummary.count} 个</span>
-            </div>
-            {productSummary.samples.length > 0 && (
-              <ul className="max-h-16 overflow-y-auto space-y-1 text-xs">
-                {productSummary.samples.map((p, idx) => (
-                  <li key={idx} className="flex items-center justify-between gap-2">
-                    <span className="truncate text-slate-200" title={p.name}>
-                      {p.name}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-slate-400 font-mono">
-                      {p.sku}
-                      {p.unitPrice != null && (
-                        <span className="ml-1 text-emerald-300">
-                          ¥{formatNumber(Number(p.unitPrice) || 0)}
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {onViewProducts && (
-              <button
-                type="button"
-                onClick={onViewProducts}
-                className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary-300 hover:text-primary-200"
-              >
-                <ExternalLink className="h-3 w-3" />
-                在产品库中查看
-              </button>
-            )}
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 space-y-1">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>关联产品</span>
+            <span className="text-slate-200 font-medium">{productSummary?.count ?? 0} 个</span>
           </div>
-        )}
+          {productSummary?.samples?.length ? (
+            <ul className="max-h-16 overflow-y-auto space-y-1 text-xs">
+              {productSummary.samples.map((p, idx) => (
+                <li key={idx} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-slate-200" title={p.name}>
+                    {p.name}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-slate-400 font-mono">
+                    {p.sku}
+                    {p.unitPrice != null && (
+                      <span className="ml-1 text-emerald-300">¥{formatNumber(Number(p.unitPrice) || 0)}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-[11px] text-slate-500">暂无关联产品</div>
+          )}
+          {onViewProducts && (
+            <button
+              type="button"
+              onClick={onViewProducts}
+              className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary-300 hover:text-primary-200"
+            >
+              <ExternalLink className="h-3 w-3" />
+              在产品库中查看
+            </button>
+          )}
+        </div>
 
         {expanded && (
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3 space-y-2">
