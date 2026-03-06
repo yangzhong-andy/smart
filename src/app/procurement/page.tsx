@@ -8,19 +8,28 @@ import { useSuppliers, useContracts, useDeliveryOrders, usePendingInbound } from
 
 export default function ProcurementDashboardPage() {
   const { suppliers, isLoading: suppliersLoading } = useSuppliers();
-  const { contracts, isLoading: contractsLoading } = useContracts();
-  const { deliveryOrders, isLoading: deliveryLoading } = useDeliveryOrders();
-  const { inboundOrders, isLoading: inboundLoading } = usePendingInbound();
+  const { contracts, isLoading: contractsLoading } = useContracts({ pageSize: 500 });
+  const { deliveryOrders, isLoading: deliveryLoading } = useDeliveryOrders({ pageSize: 500 });
+  const { inboundOrders, isLoading: inboundLoading } = usePendingInbound({ pageSize: 500 });
 
   const isLoading = suppliersLoading || contractsLoading || deliveryLoading || inboundLoading;
 
   const stats = useMemo(() => {
-    const supplierCount = suppliers.length;
-    const contractCount = contracts.length;
-    const activeContracts = contracts.filter((c) => !["已结清", "已取消"].includes(String((c as any).status))).length;
-    const deliveryCount = deliveryOrders.length;
-    const inTransit = deliveryOrders.filter((o) => ["运输中", "已发货", "待发货"].includes(String((o as any).status))).length;
-    const pendingInboundCount = inboundOrders.length;
+    const s = Array.isArray(suppliers) ? suppliers : [];
+    const cts = Array.isArray(contracts) ? contracts : [];
+    const dos = Array.isArray(deliveryOrders) ? deliveryOrders : [];
+    const ins = Array.isArray(inboundOrders) ? inboundOrders : [];
+
+    const supplierCount = s.length;
+    const contractCount = cts.length;
+    const activeContracts = cts.filter(
+      (c: any) => !["COMPLETED", "CANCELLED", "已结清", "已取消"].includes(String(c.status))
+    ).length;
+    const deliveryCount = dos.length;
+    const inTransit = dos.filter((o: any) =>
+      ["PENDING", "SHIPPED", "IN_TRANSIT", "待发货", "已发货", "运输中"].includes(String(o.status))
+    ).length;
+    const pendingInboundCount = ins.length;
 
     return { supplierCount, contractCount, activeContracts, deliveryCount, inTransit, pendingInboundCount };
   }, [suppliers, contracts, deliveryOrders, inboundOrders]);

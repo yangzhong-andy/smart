@@ -51,6 +51,14 @@ export const INCOME_CATEGORIES: IncomeCategory[] = [
       { label: "补贴收入", value: "其他收入/补贴收入" },
       { label: "其他", value: "其他收入/其他" }
     ]
+  },
+  {
+    label: "投资 / 股东投入",
+    value: "投资",
+    subCategories: [
+      { label: "股东投入", value: "投资/股东投入" },
+      { label: "其他投资", value: "投资/其他投资" }
+    ]
   }
 ];
 
