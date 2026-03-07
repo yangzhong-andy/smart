@@ -155,7 +155,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       remark: `划拨至 ${toAccount.name}，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
       status: "confirmed",
       relatedId: transferId,
-      voucher: form.voucher || undefined,
+      voucher: paymentVoucherValue ?? undefined,
       paymentVoucher: paymentVoucherValue,
       createdAt: now
     };
@@ -173,7 +173,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       remark: `从 ${fromAccount.name} 划拨，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
       status: "confirmed",
       relatedId: transferId,
-      voucher: form.voucher || undefined,
+      voucher: paymentVoucherValue ?? undefined,
       paymentVoucher: paymentVoucherValue,
       createdAt: now
     };
