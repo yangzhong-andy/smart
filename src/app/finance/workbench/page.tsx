@@ -695,9 +695,13 @@ export default function FinanceWorkbenchPage() {
         paymentFlowId: cashFlowResult.id
       });
       
-      // 刷新数据
-      const updated = await getExpenseRequestsByStatus("Approved");
-        mutate("approved-expense-requests");
+      // 立即从「待处理/已审批」列表中移除该条，并重新拉取
+      mutate(
+        "approved-expense-requests",
+        (prev: ExpenseRequest[] | undefined) =>
+          Array.isArray(prev) ? prev.filter((r) => r.id !== requestId) : prev,
+        { revalidate: true }
+      );
       mutate('/api/cash-flow');
       mutate('/api/accounts');
       
