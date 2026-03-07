@@ -802,7 +802,11 @@ export default function PurchaseOrdersPage() {
       }
 
       const depositAmount = contract.depositAmount - (contract.depositPaid || 0);
-      
+      // 从供应商档案带出工厂/供应商收款信息，便于财务打款
+      const supplier = suppliers.find((s) => s.id === contract.supplierId) as { id: string; name: string; bankAccount?: string; bankName?: string } | undefined;
+      const payeeName = supplier?.name ?? contract.supplierName ?? undefined;
+      const payeeAccount = supplier?.bankAccount?.trim() ? supplier.bankAccount : undefined;
+
       // 创建支出申请（原付款申请）
       const newExpenseRequest: ExpenseRequest = {
         id: `temp_${Date.now()}`, // 临时ID，后端会生成新的
@@ -817,7 +821,9 @@ export default function PurchaseOrdersPage() {
         submittedAt: new Date().toISOString(),
         remark: `采购合同：${contract.contractNumber}\n供应商：${contract.supplierName}\nSKU：${contract.sku}\n采购数量：${contract.totalQty}\n单价：${currency(contract.unitPrice)}\n合同总额：${currency(contract.totalAmount)}\n已取货数：${contract.pickedQty} / ${contract.totalQty}`,
         departmentId: undefined, // 可以从用户系统获取
-        departmentName: "全球供应链部" // 可以从用户系统获取
+        departmentName: "全球供应链部", // 可以从用户系统获取
+        payeeName,
+        payeeAccount
       };
 
       // 创建支出申请
