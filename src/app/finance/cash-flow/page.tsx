@@ -575,12 +575,13 @@ export default function CashFlowPage() {
     });
     
     const totalIncome = Object.values(incomeByCurrency).reduce((sum, stat) => sum + stat.rmb, 0);
+    // 支出在系统中为负数，totalExpense 为负值（如 -4500）；净收入 = 总收入 + totalExpense = 总收入 - 支出绝对值
     const totalExpense = Object.values(expenseByCurrency).reduce((sum, stat) => sum + stat.rmb, 0);
     
     return {
       totalIncome,
       totalExpense,
-      netIncome: totalIncome - totalExpense,
+      netIncome: totalIncome + totalExpense,
       transactionCount: sortedFlow.length,
       incomeCount: income.length,
       expenseCount: expense.length,
