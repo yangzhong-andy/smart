@@ -27,6 +27,8 @@ import {
   getPendingEntries, 
   getPendingEntriesByStatus, 
   completePendingEntry,
+  createPendingEntry,
+  getPendingEntryByRelatedId,
   type PendingEntry 
 } from "@/lib/pending-entry-store";
 import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
@@ -358,6 +360,36 @@ export default function ReconciliationPage() {
         mutate("monthly-bills");
         await saveMonthlyBills(updatedBills);
         
+        // 应收款：创建待入账任务，推送到「待入账」列表供财务入账
+        if (bill.billCategory === "Receivable") {
+          const existingEntry = await getPendingEntryByRelatedId("Bill", billId);
+          if (!existingEntry) {
+            try {
+              await createPendingEntry({
+                type: "Bill",
+                relatedId: billId,
+                billCategory: bill.billCategory,
+                billType: bill.billType,
+                month: bill.month,
+                agencyName: bill.agencyName,
+                supplierName: bill.supplierName,
+                factoryName: bill.factoryName,
+                accountName: bill.accountName,
+                amount: bill.totalAmount,
+                currency: bill.currency,
+                netAmount: bill.netAmount,
+                approvedBy: bill.approvedBy ?? "公司主管",
+                approvedAt: new Date().toISOString(),
+                notes: bill.notes,
+              });
+              mutate("pending-entries");
+            } catch (e) {
+              console.error("创建待入账任务失败:", billId, e);
+              toast.error("创建待入账任务失败，请稍后在「待入账」中核对");
+            }
+          }
+        }
+        
         // 创建出纳打款通知（仅对应付款账单，异步不阻塞）
         if (bill.billCategory === "Payable" || (!bill.billCategory && ["广告", "物流", "工厂订单"].includes(bill.billType))) {
           const payeeName = bill.agencyName || bill.supplierName || bill.factoryName || "未知";
@@ -372,7 +404,7 @@ export default function ReconciliationPage() {
         }
         
         setConfirmDialog(null);
-        toast.success("已批准，已通知出纳进行打款", {
+        toast.success(bill.billCategory === "Receivable" ? "已批准，已推送到待入账" : "已批准，已通知出纳进行打款", {
           icon: "✅",
           duration: 4000,
         });
