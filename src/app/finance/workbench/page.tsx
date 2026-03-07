@@ -328,7 +328,8 @@ export default function FinanceWorkbenchPage() {
     if (cashFlowListRaw.length > 0) {
       cashFlowListRaw.forEach((flow: any) => {
         const status = flow.status ?? flow.flowStatus;
-        if (status === "confirmed" && flow.accountId) {
+        const isConfirmed = String(status).toLowerCase() === "confirmed";
+        if (isConfirmed && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
           if (account) {
             const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
@@ -372,6 +373,24 @@ export default function FinanceWorkbenchPage() {
             rmbBalance: totalRmbBalance
           };
         }
+      }
+      return acc;
+    });
+
+    // 回退：若前端计算余额为 0 但接口返回的 originalBalance 非零，则使用接口值（避免仅填了「当前余额」未填「初始资金」时出账账户显示为 0）
+    const apiBalanceById = new Map<string, number>();
+    accountsListRaw.forEach((raw: any) => {
+      const v = Number(raw.originalBalance);
+      if (!Number.isNaN(v)) apiBalanceById.set(raw.id, v);
+    });
+    updatedAccounts = updatedAccounts.map((acc) => {
+      const computed = acc.originalBalance || 0;
+      const apiBalance = apiBalanceById.get(acc.id);
+      if (computed === 0 && apiBalance != null && apiBalance !== 0) {
+        const rmb = acc.currency === "CNY" || acc.currency === "RMB"
+          ? apiBalance
+          : apiBalance * (acc.exchangeRate || 1);
+        return { ...acc, originalBalance: apiBalance, rmbBalance: rmb };
       }
       return acc;
     });
