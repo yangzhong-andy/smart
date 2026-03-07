@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { CashFlowType } from "@prisma/client";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
+
+const TYPE_MAP: Record<string, CashFlowType> = {
+  income: CashFlowType.INCOME,
+  INCOME: CashFlowType.INCOME,
+  expense: CashFlowType.EXPENSE,
+  EXPENSE: CashFlowType.EXPENSE,
+  transfer: CashFlowType.TRANSFER,
+  TRANSFER: CashFlowType.TRANSFER,
+};
 
 // 缓存配置
 const CACHE_TTL = 120; // 2分钟（资金流高频）
@@ -107,12 +117,20 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const rawType = String(body.type ?? "").trim();
+    const type = TYPE_MAP[rawType];
+    if (!type) {
+      return NextResponse.json(
+        { error: "无效的 type，应为 income / expense / transfer（或 INCOME / EXPENSE / TRANSFER）" },
+        { status: 400 }
+      );
+    }
     const flow = await prisma.cashFlow.create({
       data: {
         uid: body.uid || null,
         accountId: body.accountId,
         accountName: body.accountName ?? "",
-        type: body.type,
+        type,
         date: new Date(body.date),
         summary: body.description ?? body.summary ?? "",
         category: body.category ?? "",
