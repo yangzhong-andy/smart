@@ -642,9 +642,12 @@ export default function FinanceWorkbenchPage() {
       };
       const paymentVoucherStr = toVoucherStr(request.voucher); // 发起时的凭证
       const transferVoucherStr = toVoucherStr(paymentVoucher);   // 财务上传的转账凭证
+      const reqDate = request.date;
+      const flowDate = (reqDate != null && String(reqDate).trim() !== "") ? new Date(reqDate) : new Date();
+      const dateStr = Number.isNaN(flowDate.getTime()) ? new Date().toISOString().slice(0, 10) : flowDate.toISOString().slice(0, 10);
       
       const cashFlowData = {
-        date: request.date,
+        date: dateStr,
         summary: request.summary,
         category: request.category,
         type: "expense" as const,
@@ -737,9 +740,12 @@ export default function FinanceWorkbenchPage() {
       };
       const paymentVoucherStr = toVoucherStr(request.voucher);
       const transferVoucherStr = toVoucherStr(paymentVoucher);
+      const reqDate = request.date;
+      const flowDate = (reqDate != null && String(reqDate).trim() !== "") ? new Date(reqDate) : new Date();
+      const dateStr = Number.isNaN(flowDate.getTime()) ? new Date().toISOString().slice(0, 10) : flowDate.toISOString().slice(0, 10);
       
       const cashFlowData = {
-        date: request.date,
+        date: dateStr,
         summary: request.summary,
         category: request.category,
         type: "income" as const,

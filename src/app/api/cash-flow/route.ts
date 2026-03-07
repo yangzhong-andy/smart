@@ -125,13 +125,23 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const rawDate = body.date;
+    const flowDate = (rawDate != null && String(rawDate).trim() !== "")
+      ? new Date(rawDate)
+      : new Date();
+    if (Number.isNaN(flowDate.getTime())) {
+      return NextResponse.json(
+        { error: "无效的 date，请传 ISO 日期字符串或有效日期" },
+        { status: 400 }
+      );
+    }
     const flow = await prisma.cashFlow.create({
       data: {
         uid: body.uid || null,
         accountId: body.accountId,
         accountName: body.accountName ?? "",
         type,
-        date: new Date(body.date),
+        date: flowDate,
         summary: body.description ?? body.summary ?? "",
         category: body.category ?? "",
         amount: body.amount,
