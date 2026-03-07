@@ -824,9 +824,11 @@ export default function CashFlowPage() {
               <p 
                 className={`text-2xl font-bold ${filteredStats.netIncome >= 0 ? "text-primary-300" : "text-rose-300"}`}
                 style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                title="筛选总收入 − 筛选总支出，与下方列表范围一致"
               >
                 {currency(filteredStats.netIncome, "CNY")}
               </p>
+              <p className="text-[10px] text-slate-500 mt-1">总收入 − 总支出（当前筛选）</p>
             </div>
             <DollarSign className={`h-8 w-8 ${filteredStats.netIncome >= 0 ? "text-primary-300" : "text-rose-300"} opacity-60`} />
           </div>
@@ -1270,7 +1272,7 @@ export default function CashFlowPage() {
                       {flow.type === "income" ? "收款" : "付款"}
                     </span>
                   </td>
-                  <td className="px-2 py-1.5 text-slate-300">{formatDate(flow.createdAt || flow.date)}</td>
+                  <td className="px-2 py-1.5 text-slate-300" title="业务日期（与筛选、统计一致）">{formatDate(flow.date || flow.createdAt)}</td>
                   <td className="px-2 py-2">
                     <div className="space-y-1.5">
                       {/* 分类标签 */}

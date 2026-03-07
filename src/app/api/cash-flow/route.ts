@@ -135,6 +135,15 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const toVoucherStr = (v: unknown): string | null => {
+      if (v == null || v === "") return null;
+      if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
+      if (typeof v === "string") return v.trim() || null;
+      return null;
+    };
+    const paymentVoucherVal = body.paymentVoucher !== undefined ? toVoucherStr(body.paymentVoucher) : null;
+    const transferVoucherVal = body.transferVoucher !== undefined ? toVoucherStr(body.transferVoucher) : null;
+    const voucherVal = body.voucher !== undefined ? toVoucherStr(body.voucher) : (paymentVoucherVal ?? transferVoucherVal ?? null);
     const flow = await prisma.cashFlow.create({
       data: {
         uid: body.uid || null,
@@ -149,6 +158,9 @@ export async function POST(request: NextRequest) {
         remark: body.notes ?? body.remark ?? "",
         relatedId: body.relatedOrderId ?? body.relatedId ?? null,
         businessNumber: body.businessNumber ?? null,
+        voucher: voucherVal,
+        paymentVoucher: paymentVoucherVal,
+        transferVoucher: transferVoucherVal,
       },
     });
 
