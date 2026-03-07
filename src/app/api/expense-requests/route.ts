@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
         select: {
           id: true, uid: true, summary: true, category: true, amount: true,
           currency: true, storeId: true, storeName: true, country: true,
+          payeeName: true,
+          payeeAccount: true,
           status: true, createdBy: true, createdAt: true, submittedAt: true,
           approvedBy: true, approvedAt: true, rejectionReason: true,
           paidBy: true, paidAt: true, financeAccountId: true, financeAccountName: true,
