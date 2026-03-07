@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { useSession } from "next-auth/react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useState, useCallback, useMemo } from "react";
 import useSWR, { mutate } from "swr";
@@ -34,7 +35,14 @@ import { ApprovalFilters, type ActiveTab } from "./components/ApprovalFilters";
 import { ApprovalList } from "./components/ApprovalList";
 import { ApprovalDetailDialog } from "./components/ApprovalDetailDialog";
 
+function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
+  if (!session?.user) return "当前用户";
+  const u = session.user;
+  return (u.name && String(u.name).trim()) || (u.email && String(u.email).trim()) || "当前用户";
+}
+
 export default function ApprovalCenterPage() {
+  const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending"); // 褰撳墠鏍囩锛氬緟瀹℃壒/鍘嗗彶璁板綍
   const [historyFilter, setHistoryFilter] = useState<BillStatus | "all">("all"); // 鍘嗗彶璁板綍鐘舵€佺瓫閫?
   const [billTypeFilter, setBillTypeFilter] = useState<BillType | "all">("all"); // 璐﹀崟绫诲瀷绛涢€夛紙寰呭鎵瑰拰鍘嗗彶璁板綍鍏辩敤锛?
@@ -218,7 +226,7 @@ export default function ApprovalCenterPage() {
             ? {
                 ...b,
                 status: "Approved" as BillStatus,
-                approvedBy: "老板", // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
+                approvedBy: getCurrentUserDisplayName(session), // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
                 approvedAt: new Date().toISOString()
               }
             : b
@@ -382,7 +390,7 @@ export default function ApprovalCenterPage() {
                 amount: bill.totalAmount,
                 currency: bill.currency,
                 netAmount: bill.netAmount,
-                approvedBy: "老板",
+                approvedBy: getCurrentUserDisplayName(session),
                 approvedAt: new Date().toISOString(),
                 notes: bill.notes
               });
@@ -508,7 +516,7 @@ export default function ApprovalCenterPage() {
         try {
           await updateExpenseRequest(requestId, {
             status: "Approved",
-            approvedBy: "老板",
+            approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
           // 涔愯鏇存柊锛氱珛鍗充粠寰呭鎵瑰垪琛ㄤ腑绉婚櫎璇ラ」锛岄伩鍏嶆壒鍑嗗悗浠嶆樉绀哄湪鍒楄〃
@@ -548,7 +556,7 @@ export default function ApprovalCenterPage() {
         try {
           await updateIncomeRequest(requestId, {
             status: "Approved",
-            approvedBy: "老板",
+            approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
           mutate("pending-income-requests", (current: unknown) => {

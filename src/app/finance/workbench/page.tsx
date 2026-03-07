@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import useSWR, { mutate } from "swr";
 import useSWRMutation from "swr/mutation";
 import { toast } from "sonner";
@@ -103,7 +104,14 @@ const getStatusColor = (status: BillStatus | string) => {
   }
 };
 
+function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
+  if (!session?.user) return "当前用户";
+  const u = session.user;
+  return (u.name && String(u.name).trim()) || (u.email && String(u.email).trim()) || "当前用户";
+}
+
 export default function FinanceWorkbenchPage() {
+  const { data: session } = useSession();
   const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
@@ -690,7 +698,7 @@ export default function FinanceWorkbenchPage() {
         status: "Paid",
         financeAccountId: selectedAccountId,
         financeAccountName: account.name,
-        paidBy: "财务人员", // TODO: 从用户系统获取
+        paidBy: getCurrentUserDisplayName(session),
         paidAt: new Date().toISOString(),
         paymentFlowId: cashFlowResult.id
       });
@@ -792,7 +800,7 @@ export default function FinanceWorkbenchPage() {
         status: "Received",
         financeAccountId: selectedAccountId,
         financeAccountName: account.name,
-        receivedBy: "财务人员", // TODO: 从用户系统获取
+        receivedBy: getCurrentUserDisplayName(session),
         receivedAt: new Date().toISOString(),
         paymentFlowId: cashFlowResult.id
       });

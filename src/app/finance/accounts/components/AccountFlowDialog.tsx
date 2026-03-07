@@ -24,6 +24,12 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
   if (!open || !account) return null;
 
   const { normal, transfers } = flows;
+  const totalIncome = normal
+    .filter((f) => String(f.type || "").toLowerCase() === "income" && f.status === "confirmed" && !f.isReversal)
+    .reduce((sum, f) => sum + Math.abs(f.amount), 0);
+  const totalExpense = normal
+    .filter((f) => String(f.type || "").toLowerCase() === "expense" && f.status === "confirmed" && !f.isReversal)
+    .reduce((sum, f) => sum + Math.abs(f.amount), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
@@ -134,46 +140,18 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
                           <div className="font-medium text-emerald-300">
                             收入：
                             {account.currency === "RMB"
-                              ? currency(
-                                  normal
-                                    .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
-                                    .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                  "CNY"
-                                )
+                              ? currency(totalIncome, "CNY")
                               : account.currency === "USD"
-                                ? currency(
-                                    normal
-                                      .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
-                                      .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                    "USD"
-                                  )
-                                : `${formatNumber(
-                                    normal
-                                      .filter((f) => f.type === "income" && f.status === "confirmed" && !f.isReversal)
-                                      .reduce((sum, f) => sum + Math.abs(f.amount), 0)
-                                  )} ${account.currency}`}
+                                ? currency(totalIncome, "USD")
+                                : `${formatNumber(totalIncome)} ${account.currency}`}
                           </div>
                           <div className="font-medium text-rose-300">
                             支出：
                             {account.currency === "RMB"
-                              ? currency(
-                                  normal
-                                    .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
-                                    .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                  "CNY"
-                                )
+                              ? currency(totalExpense, "CNY")
                               : account.currency === "USD"
-                                ? currency(
-                                    normal
-                                      .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
-                                      .reduce((sum, f) => sum + Math.abs(f.amount), 0),
-                                    "USD"
-                                  )
-                                : `${formatNumber(
-                                    normal
-                                      .filter((f) => f.type === "expense" && f.status === "confirmed" && !f.isReversal)
-                                      .reduce((sum, f) => sum + Math.abs(f.amount), 0)
-                                  )} ${account.currency}`}
+                                ? currency(totalExpense, "USD")
+                                : `${formatNumber(totalExpense)} ${account.currency}`}
                           </div>
                         </div>
                       </td>
