@@ -69,6 +69,19 @@ export async function GET(request: NextRequest) {
           totalPaid: true, totalOwed: true, approvedBy: true, approvedAt: true,
           createdAt: true, updatedAt: true,
           _count: { select: { items: true, deliveryOrders: true } },
+          items: {
+            select: {
+              id: true,
+              sku: true,
+              skuName: true,
+              spec: true,
+              unitPrice: true,
+              qty: true,
+              pickedQty: true,
+              totalAmount: true,
+            },
+            orderBy: { sortOrder: 'asc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -118,6 +131,16 @@ export async function GET(request: NextRequest) {
         itemCount: c._count.items,
         deliveryOrderCount: c._count.deliveryOrders,
         syncedDeposit: depositByContract[c.contractNumber] || 0,
+        items: (c as any).items?.map((it: { id: string; sku: string; skuName: string | null; spec: string | null; unitPrice: unknown; qty: number; pickedQty: number; totalAmount: unknown }) => ({
+          id: it.id,
+          sku: it.sku,
+          skuName: it.skuName ?? undefined,
+          spec: it.spec ?? undefined,
+          unitPrice: Number(it.unitPrice),
+          qty: it.qty,
+          pickedQty: it.pickedQty,
+          totalAmount: Number(it.totalAmount),
+        })) ?? [],
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

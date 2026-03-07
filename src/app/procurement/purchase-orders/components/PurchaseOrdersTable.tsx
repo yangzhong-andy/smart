@@ -102,11 +102,11 @@ export function PurchaseOrdersTable({
                             </div>
                           );
                         })()}
-                        <div className="max-h-24 overflow-y-auto space-y-0.5 pr-1">
+                        <div className="max-h-28 overflow-y-auto space-y-0.5 pr-1">
                           {contract.items.map((item) => (
                             <div
                               key={item.id}
-                              className="text-[11px] text-slate-300 flex justify-between gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
+                              className="text-[11px] text-slate-300 flex justify-between items-baseline gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
                             >
                               <span
                                 className="truncate"
@@ -116,8 +116,11 @@ export function PurchaseOrdersTable({
                               >
                                 {item.spuName ? `${item.spuName} · ${item.sku}` : item.sku}
                               </span>
-                              <span className="text-slate-500 shrink-0">
-                                {currency(item.unitPrice)} × {item.qty}
+                              <span className="shrink-0 text-amber-200/90 font-medium" title="下单数量">
+                                {item.qty}
+                              </span>
+                              <span className="text-slate-500 shrink-0 text-[10px]">
+                                {currency(item.unitPrice)}
                               </span>
                             </div>
                           ))}
