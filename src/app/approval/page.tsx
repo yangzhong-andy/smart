@@ -543,7 +543,16 @@ export default function ApprovalPage() {
                 </div>
                 <div>
                   <span className="text-slate-400">定金比例：</span>
-                  <span className="text-slate-200 ml-2">{selectedContract.depositRate}%</span>
+                  <span className="text-slate-200 ml-2">{(selectedContract.depositRate ?? 0)}%</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">定金金额：</span>
+                  <span className="text-amber-200 ml-2 font-medium">
+                    ¥{Number(selectedContract.depositAmount ?? 0).toLocaleString("zh-CN")}
+                    {(selectedContract.depositRate ?? 0) === 0 && Number(selectedContract.depositAmount ?? 0) > 0 && (
+                      <span className="text-slate-500 text-xs ml-1">（固定）</span>
+                    )}
+                  </span>
                 </div>
               </div>
               {selectedContract.items && selectedContract.items.length > 0 && (
