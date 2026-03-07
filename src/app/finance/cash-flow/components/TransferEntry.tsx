@@ -36,7 +36,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     exchangeRate: "",
     actualReceived: "",
     remark: "",
-    voucher: "" // 凭证
+    voucher: "" as string | string[] // 凭证，支持多张
   });
 
   useEffect(() => {
@@ -520,10 +520,11 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
             <span className="text-sm text-slate-300">付款凭证（发起划拨时，可选）</span>
             <ImageUploader
               value={form.voucher}
-              onChange={(value) => setForm((f) => ({ ...f, voucher: typeof value === "string" ? value : value[0] || "" }))}
-              multiple={false}
+              onChange={(value) => setForm((f) => ({ ...f, voucher: value }))}
+              multiple
+              maxImages={10}
               label="上传付款凭证"
-              placeholder="点击上传或 Ctrl+V 粘贴，财务打款后可在此流水行「补充凭证」上传转账凭证"
+              placeholder="点击上传或 Ctrl+V 粘贴，可多次粘贴追加多张"
             />
           </label>
 

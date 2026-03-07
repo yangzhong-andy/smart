@@ -199,6 +199,7 @@ export default function CashFlowPage() {
   const [voucherViewLabel, setVoucherViewLabel] = useState<string>("凭证");
   const [currentVoucherIndex, setCurrentVoucherIndex] = useState(0);
   const [supplementVoucherFlow, setSupplementVoucherFlow] = useState<CashFlow | null>(null);
+  const [supplementPaymentVoucher, setSupplementPaymentVoucher] = useState<string | string[]>("");
   const [supplementTransferVoucher, setSupplementTransferVoucher] = useState<string | string[]>("");
 
   // 数据已通过 SWR 加载，余额计算在账户页面处理
@@ -333,26 +334,33 @@ export default function CashFlowPage() {
 
   const handleSupplementVoucher = async () => {
     if (!supplementVoucherFlow) return;
-    const value = Array.isArray(supplementTransferVoucher)
-      ? (supplementTransferVoucher.length > 0 ? JSON.stringify(supplementTransferVoucher) : null)
-      : (typeof supplementTransferVoucher === "string" && supplementTransferVoucher.length > 10 ? supplementTransferVoucher : null);
-    if (!value) {
-      toast.error("请上传转账成功凭证");
+    const toStr = (v: string | string[]): string | null => {
+      if (Array.isArray(v)) return v.length > 0 ? JSON.stringify(v) : null;
+      return typeof v === "string" && v.length > 10 ? v : null;
+    };
+    const paymentVal = toStr(supplementPaymentVoucher);
+    const transferVal = toStr(supplementTransferVoucher);
+    if (!paymentVal && !transferVal) {
+      toast.error("请上传付款凭证或转账凭证");
       return;
     }
     try {
+      const body: { paymentVoucher?: string; transferVoucher?: string } = {};
+      if (paymentVal) body.paymentVoucher = paymentVal;
+      if (transferVal) body.transferVoucher = transferVal;
       const res = await fetch(`/api/cash-flow/${supplementVoucherFlow.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transferVoucher: value }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || "保存失败");
       }
       await swrMutate(CASH_FLOW_LIST_KEY);
-      toast.success("转账凭证已保存");
+      toast.success("凭证已保存");
       setSupplementVoucherFlow(null);
+      setSupplementPaymentVoucher("");
       setSupplementTransferVoucher("");
     } catch (e: any) {
       toast.error(e.message || "保存失败");
@@ -1435,6 +1443,7 @@ export default function CashFlowPage() {
                           type="button"
                           onClick={() => {
                             setSupplementVoucherFlow(flow);
+                            setSupplementPaymentVoucher("");
                             setSupplementTransferVoucher("");
                           }}
                           className="text-xs text-primary-400 hover:text-primary-300 underline"
@@ -1604,11 +1613,12 @@ export default function CashFlowPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
           <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-100">补充转账凭证</h3>
+              <h3 className="text-lg font-semibold text-slate-100">补充凭证</h3>
               <button
                 type="button"
                 onClick={() => {
                   setSupplementVoucherFlow(null);
+                  setSupplementPaymentVoucher("");
                   setSupplementTransferVoucher("");
                 }}
                 className="text-slate-400 hover:text-slate-200"
@@ -1619,21 +1629,35 @@ export default function CashFlowPage() {
             <p className="text-xs text-slate-400 mb-3">
               流水：{supplementVoucherFlow.summary} · {formatDate(supplementVoucherFlow.date)}
             </p>
-            <div className="space-y-2 mb-4">
-              <label className="block text-sm font-medium text-slate-300">转账成功凭证（财务打款后）</label>
-              <ImageUploader
-                value={supplementTransferVoucher}
-                onChange={(v) => setSupplementTransferVoucher(v)}
-                multiple
-                label="上传转账成功凭证"
-                placeholder="点击上传或 Ctrl+V 粘贴，支持多张"
-              />
+            <div className="space-y-4 mb-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-300">付款凭证（发起付款时）</label>
+                <ImageUploader
+                  value={supplementPaymentVoucher}
+                  onChange={(v) => setSupplementPaymentVoucher(v)}
+                  multiple
+                  label="上传付款凭证"
+                  placeholder="点击上传或 Ctrl+V 粘贴，支持多张"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-300">转账成功凭证（财务打款后）</label>
+                <ImageUploader
+                  value={supplementTransferVoucher}
+                  onChange={(v) => setSupplementTransferVoucher(v)}
+                  multiple
+                  label="上传转账成功凭证"
+                  placeholder="点击上传或 Ctrl+V 粘贴，支持多张"
+                />
+              </div>
             </div>
+            <p className="text-xs text-slate-500 mb-4">付款凭证与转账凭证可只填一项或两项都填，保存后生效。</p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setSupplementVoucherFlow(null);
+                  setSupplementPaymentVoucher("");
                   setSupplementTransferVoucher("");
                 }}
                 className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"

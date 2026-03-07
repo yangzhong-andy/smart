@@ -139,23 +139,21 @@ export default function ImageUploader({
     }
   }, [multiple, maxImages, onChange, onError]);
 
-  // 全局粘贴事件监听 - 允许在页面上任何地方粘贴图片
+  // 全局粘贴事件监听：仅当焦点在本上传区域内时才处理，避免多个上传框同时接收、且支持多次粘贴追加
   useEffect(() => {
     const handleGlobalPaste = async (e: ClipboardEvent) => {
-      // 检查上传区域是否存在
       if (!uploadAreaRef.current) return;
-      
-      // 检查是否在输入框或文本区域中（避免干扰正常的文本输入）
-      const activeElement = document.activeElement;
-      if (activeElement && (
-        (activeElement.tagName === "INPUT" && (activeElement as HTMLInputElement).type !== "file") ||
-        activeElement.tagName === "TEXTAREA" ||
-        ((activeElement as HTMLElement).isContentEditable && activeElement !== document.body)
-      )) {
-        // 如果焦点在输入框中，检查是否在上传区域内
-        if (!uploadAreaRef.current.contains(activeElement)) {
-          return; // 不在上传区域内，不处理，让输入框正常处理粘贴
-        }
+      const activeElement = document.activeElement as Node | null;
+      // 只有焦点在本上传区域内部时才处理粘贴，否则不拦截（避免抢其他输入框的粘贴，也避免一粘贴被多个上传区同时接收）
+      if (!activeElement || !uploadAreaRef.current.contains(activeElement)) return;
+      // 若焦点在输入框/文本框内（且在本区域内），不拦截，让输入框正常粘贴文字
+      if (
+        activeElement &&
+        (activeElement as HTMLElement).tagName &&
+        ["INPUT", "TEXTAREA"].includes((activeElement as HTMLElement).tagName) &&
+        (activeElement as HTMLInputElement).type !== "file"
+      ) {
+        return;
       }
 
       const clipboardData = e.clipboardData;
@@ -169,12 +167,8 @@ export default function ImageUploader({
       }
     };
 
-    // 添加全局粘贴监听（使用捕获阶段，确保优先处理）
     document.addEventListener("paste", handleGlobalPaste, true);
-    
-    return () => {
-      document.removeEventListener("paste", handleGlobalPaste, true);
-    };
+    return () => document.removeEventListener("paste", handleGlobalPaste, true);
   }, [handleImageUpload]);
 
   // 处理文件选择
@@ -267,6 +261,9 @@ export default function ImageUploader({
             <>
               <Upload className="w-8 h-8 text-[#00E5FF]" />
               <p className="text-sm text-slate-300">{placeholder}</p>
+              {multiple && (
+                <p className="text-xs text-slate-400">可多次 Ctrl+V 粘贴追加，或点击选择多张</p>
+              )}
               <p className="text-xs text-slate-500">
                 支持格式: JPG, PNG, GIF, WebP, BMP, HEIC, HEIF, TIFF, SVG{acceptPdf ? ", PDF" : ""}
               </p>

@@ -50,7 +50,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
     businessNumber: "",
     remark: "",
     adAccountId: "", // 广告账户ID（仅当分类为"广告费"时显示）
-    voucher: "" // 凭证
+    voucher: "" as string | string[] // 凭证，支持多张
   });
   
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
@@ -540,10 +540,11 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
               <span className="text-slate-300">凭证</span>
               <ImageUploader
                 value={form.voucher}
-                onChange={(value) => setForm((f) => ({ ...f, voucher: typeof value === "string" ? value : value[0] || "" }))}
-                multiple={false}
+                onChange={(value) => setForm((f) => ({ ...f, voucher: value }))}
+                multiple
+                maxImages={10}
                 label="上传支出凭证"
-                placeholder="点击上传凭证或直接 Ctrl + V 粘贴图片"
+                placeholder="点击上传或 Ctrl+V 粘贴，可多次粘贴追加多张"
               />
             </label>
           </div>
