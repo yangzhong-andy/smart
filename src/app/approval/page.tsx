@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
-import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText } from "lucide-react";
+import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText, FileImage } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import { approvePurchaseOrder, type PurchaseOrder } from "@/lib/purchase-orders-store";
 import { approvePurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
@@ -347,6 +347,16 @@ export default function ApprovalPage() {
                       <span className="text-slate-400">创建时间：</span>
                       <span className="text-slate-200">{formatDate(contract.createdAt)}</span>
                     </div>
+                    {contract.contractVoucher && (
+                      <div className="col-span-2 md:col-span-4">
+                        <span className="text-slate-400">合同凭证：</span>
+                        <span className="text-emerald-300 text-xs">
+                          {Array.isArray(contract.contractVoucher)
+                            ? `有 ${contract.contractVoucher.length} 张`
+                            : "已上传"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   {contract.items && contract.items.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-slate-700">
@@ -557,6 +567,54 @@ export default function ApprovalPage() {
                   )}
                 </p>
               )}
+              {selectedContract.contractVoucher && (() => {
+                const voucher = selectedContract.contractVoucher;
+                const list = Array.isArray(voucher) ? voucher : voucher ? [voucher] : [];
+                if (list.length === 0) return null;
+                return (
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1.5 flex items-center gap-1">
+                      <FileImage className="h-3.5 w-3.5" />
+                      合同凭证
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto rounded border border-slate-700 bg-slate-900/50 p-2">
+                      {list.map((v: string, index: number) => {
+                        const isPdf = typeof v === "string" && v.startsWith("data:application/pdf");
+                        if (isPdf) {
+                          return (
+                            <div
+                              key={index}
+                              className="flex flex-col items-center justify-center rounded border border-slate-600 bg-slate-800 h-20 cursor-pointer hover:border-primary-400"
+                              onClick={() => window.open(v, "_blank")}
+                            >
+                              <FileText className="h-6 w-6 text-rose-400 mb-0.5" />
+                              <span className="text-[10px] text-slate-400">PDF</span>
+                            </div>
+                          );
+                        }
+                        const imgSrc = typeof v === "string" && !v.startsWith("data:") && !v.startsWith("http") && !v.startsWith("/")
+                          ? `data:image/jpeg;base64,${v}`
+                          : v;
+                        return (
+                          <img
+                            key={index}
+                            src={imgSrc}
+                            alt={`凭证 ${index + 1}`}
+                            className="w-full h-20 object-cover rounded border border-slate-600 cursor-pointer hover:border-primary-400"
+                            onClick={() => window.open(imgSrc, "_blank")}
+                            onError={(e) => {
+                              const t = e.target as HTMLImageElement;
+                              if (typeof v === "string" && !v.startsWith("data:") && !v.startsWith("http")) {
+                                t.src = `data:image/png;base64,${v}`;
+                              }
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <form onSubmit={handleContractSubmit} className="space-y-4">
               <label className="block space-y-1">

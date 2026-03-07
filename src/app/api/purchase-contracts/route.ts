@@ -23,6 +23,20 @@ const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
   [PurchaseContractStatus.CANCELLED]: '已取消',
 };
 
+function parseContractVoucher(v: string | null | undefined): string | string[] | undefined {
+  if (v == null || v === '') return undefined;
+  const s = String(v).trim();
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s);
+      return Array.isArray(arr) ? arr : s;
+    } catch {
+      return s;
+    }
+  }
+  return s;
+}
+
 // 缓存配置
 const CACHE_TTL = 300; // 5分钟
 const CACHE_KEY_PREFIX = 'purchase-contracts';
@@ -66,6 +80,7 @@ export async function GET(request: NextRequest) {
           pickedQty: true, finishedQty: true, totalAmount: true,
           depositRate: true, depositAmount: true, depositPaid: true,
           tailPeriodDays: true, deliveryDate: true, status: true,
+          contractVoucher: true,
           totalPaid: true, totalOwed: true, approvedBy: true, approvedAt: true,
           createdAt: true, updatedAt: true,
           _count: { select: { items: true, deliveryOrders: true } },
@@ -122,6 +137,7 @@ export async function GET(request: NextRequest) {
         tailPeriodDays: c.tailPeriodDays,
         deliveryDate: c.deliveryDate?.toISOString(),
         status: STATUS_MAP_DB_TO_FRONT[c.status] ?? c.status,
+        contractVoucher: parseContractVoucher((c as any).contractVoucher),
         totalPaid: Number(c.totalPaid),
         totalOwed: Number(c.totalOwed),
         approvedBy: c.approvedBy || undefined,
