@@ -324,32 +324,55 @@ export default function ApprovalPage() {
               key={contract.id}
               className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 hover:border-primary-500/50 transition-all"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 mb-1">
                     <h3 className="font-semibold text-white text-lg">{contract.contractNumber}</h3>
                     <span className="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300">待审批</span>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-slate-400">供应商：</span>
-                      <span className="text-slate-200 ml-2">{contract.supplierName}</span>
-                    </div>
+                  <p className="text-sm text-slate-300 mb-3">
+                    供应商：<span className="text-slate-100 font-medium">{contract.supplierName}</span>
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-sm">
                     <div>
                       <span className="text-slate-400">合同总额：</span>
-                      <span className="text-slate-200 ml-2 font-medium">¥{Number(contract.totalAmount).toLocaleString("zh-CN")}</span>
+                      <span className="text-slate-200 font-medium">¥{Number(contract.totalAmount).toLocaleString("zh-CN")}</span>
                     </div>
                     <div>
-                      <span className="text-slate-400">物料：</span>
-                      <span className="text-slate-200 ml-2 truncate max-w-[180px] inline-block" title={contract.sku}>{contract.sku}</span>
+                      <span className="text-slate-400">合同总数：</span>
+                      <span className="text-amber-200 font-medium">{contract.totalQty ?? 0}</span>
+                      <span className="text-slate-500 text-xs ml-0.5">件</span>
                     </div>
                     <div>
                       <span className="text-slate-400">创建时间：</span>
-                      <span className="text-slate-200 ml-2">{formatDate(contract.createdAt)}</span>
+                      <span className="text-slate-200">{formatDate(contract.createdAt)}</span>
                     </div>
                   </div>
+                  {contract.items && contract.items.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-700">
+                      <p className="text-xs text-slate-400 mb-1.5">下单数量明细</p>
+                      <div className="max-h-24 overflow-y-auto space-y-0.5 text-xs">
+                        {contract.items.map((item: { id: string; sku: string; skuName?: string; qty: number }) => (
+                          <div key={item.id} className="flex justify-between gap-4 text-slate-300">
+                            <span className="truncate" title={[item.skuName, item.sku].filter(Boolean).join(" / ")}>
+                              {item.skuName ? `${item.skuName} · ${item.sku}` : item.sku}
+                            </span>
+                            <span className="text-amber-200/90 font-medium shrink-0">数量 {item.qty}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(!contract.items || contract.items.length === 0) && contract.sku && (
+                    <div className="mt-2 text-sm text-slate-400">
+                      物料：<span className="text-slate-200">{contract.sku}</span>
+                      {contract.totalQty != null && (
+                        <span className="ml-2 text-amber-200/90">数量 {contract.totalQty}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="ml-4">
+                <div className="shrink-0">
                   <ActionButton
                     onClick={() => handleOpenContractModal(contract)}
                     variant="primary"
@@ -494,25 +517,46 @@ export default function ApprovalPage() {
                 ✕
               </button>
             </div>
-            <div className="mb-6 p-4 rounded-lg border border-slate-700 bg-slate-800/50">
+            <div className="mb-6 p-4 rounded-lg border border-slate-700 bg-slate-800/50 space-y-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <span className="text-slate-400">供应商：</span>
-                  <span className="text-slate-200 ml-2">{selectedContract.supplierName}</span>
+                  <span className="text-slate-200 ml-2 font-medium">{selectedContract.supplierName}</span>
                 </div>
                 <div>
                   <span className="text-slate-400">合同总额：</span>
                   <span className="text-slate-200 ml-2 font-medium">¥{Number(selectedContract.totalAmount).toLocaleString("zh-CN")}</span>
                 </div>
                 <div>
+                  <span className="text-slate-400">合同总数：</span>
+                  <span className="text-amber-200 ml-2 font-medium">{selectedContract.totalQty ?? 0} 件</span>
+                </div>
+                <div>
                   <span className="text-slate-400">定金比例：</span>
                   <span className="text-slate-200 ml-2">{selectedContract.depositRate}%</span>
                 </div>
-                <div>
-                  <span className="text-slate-400">物料：</span>
-                  <span className="text-slate-200 ml-2 break-all">{selectedContract.sku}</span>
-                </div>
               </div>
+              {selectedContract.items && selectedContract.items.length > 0 && (
+                <div>
+                  <p className="text-xs text-slate-400 mb-1.5">下单数量明细</p>
+                  <div className="max-h-32 overflow-y-auto rounded border border-slate-700 bg-slate-900/50 p-2 space-y-0.5 text-xs">
+                    {selectedContract.items.map((item: { id: string; sku: string; skuName?: string; qty: number; unitPrice?: number }) => (
+                      <div key={item.id} className="flex justify-between gap-4 text-slate-300">
+                        <span className="truncate">{item.skuName ? `${item.skuName} · ${item.sku}` : item.sku}</span>
+                        <span className="text-amber-200/90 font-medium shrink-0">数量 {item.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(!selectedContract.items || selectedContract.items.length === 0) && selectedContract.sku && (
+                <p className="text-sm text-slate-400">
+                  物料：<span className="text-slate-200">{selectedContract.sku}</span>
+                  {selectedContract.totalQty != null && (
+                    <span className="ml-2 text-amber-200/90">数量 {selectedContract.totalQty}</span>
+                  )}
+                </p>
+              )}
             </div>
             <form onSubmit={handleContractSubmit} className="space-y-4">
               <label className="block space-y-1">

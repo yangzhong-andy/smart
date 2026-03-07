@@ -181,10 +181,11 @@ export default function ContractPreviewPage() {
           style={{ width: "210mm", minHeight: "297mm", margin: "0 auto" }}
         >
           <div className="p-10 text-sm" style={{ fontFamily: "SimSun, serif", fontSize: "12px" }}>
-            {/* 标题：公司名 + 采购订单，右侧订单编号 */}
-            <div className="flex justify-between items-start mb-6">
-              <h1 className="text-xl font-bold">采购订单</h1>
-              <p className="font-semibold">订单编号：【{s.contractNumber}】</p>
+            {/* 抬头：顶部居中公司名，下面居中采购订单，右侧订单编号 */}
+            <div className="relative mb-6">
+              <p className="absolute top-0 right-0 font-semibold">订单编号：【{s.contractNumber}】</p>
+              <p className="text-center text-lg font-bold tracking-wide">福州水滴飞扬网络科技有限公司</p>
+              <h1 className="text-center text-xl font-bold mt-1">采购订单</h1>
             </div>
 
             {/* 甲乙双方 */}
