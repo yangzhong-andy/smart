@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText, FileImage } from "lucide-react";
@@ -21,7 +22,15 @@ const formatDate = (dateString?: string) => {
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
+// 当前登录用户显示名（用于预填审批人）
+function getCurrentApproverName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
+  if (!session?.user) return "";
+  const u = session.user;
+  return (u.name && String(u.name).trim()) || (u.email && String(u.email).trim()) || "";
+}
+
 export default function ApprovalPage() {
+  const { data: session } = useSession();
   const [tab, setTab] = useState<"orders" | "contracts">("orders");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
@@ -97,13 +106,13 @@ export default function ApprovalPage() {
     };
   }, [filteredOrders, filteredContracts]);
 
-  // 打开审批模态框
+  // 打开审批模态框（审批人预填当前登录用户）
   const handleOpenModal = (order: PurchaseOrder) => {
     setSelectedOrder(order);
     setApprovalForm({
       result: "通过",
       notes: "",
-      approvedBy: ""
+      approvedBy: getCurrentApproverName(session)
     });
     setIsModalOpen(true);
   };
@@ -144,7 +153,11 @@ export default function ApprovalPage() {
 
   const handleOpenContractModal = (contract: PurchaseContract) => {
     setSelectedContract(contract);
-    setApprovalForm({ result: "通过", notes: "", approvedBy: "" });
+    setApprovalForm({
+      result: "通过",
+      notes: "",
+      approvedBy: getCurrentApproverName(session)
+    });
     setIsContractModalOpen(true);
   };
 
@@ -472,7 +485,7 @@ export default function ApprovalPage() {
                   value={approvalForm.approvedBy}
                   onChange={(e) => setApprovalForm((f) => ({ ...f, approvedBy: e.target.value }))}
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
-                  placeholder="审批人姓名"
+                  placeholder="默认当前登录用户，可修改"
                   required
                 />
               </label>
@@ -645,7 +658,7 @@ export default function ApprovalPage() {
                   value={approvalForm.approvedBy}
                   onChange={(e) => setApprovalForm((f) => ({ ...f, approvedBy: e.target.value }))}
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400"
-                  placeholder="审批人姓名（公司主管）"
+                  placeholder="默认当前登录用户，可修改"
                   required
                 />
               </label>

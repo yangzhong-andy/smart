@@ -55,6 +55,9 @@ export const STATUS_OPTIONS = [
   { value: "待发货", label: "待发货" },
   { value: "部分发货", label: "部分发货" },
   { value: "已发货", label: "已发货" },
+  { value: "发货完成", label: "发货完成" },
+  { value: "已结清", label: "已结清" },
+  { value: "已取消", label: "已取消" },
 ] as const;
 
 export const currency = (n: number, curr: string = "CNY") =>

@@ -185,9 +185,15 @@ export function PurchaseOrdersTable({
                             );
                           })}
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          {contract.status}{" "}
-                          {remainingQty > 0 && `· 剩余 ${remainingQty}`}
+                        <div className="text-[10px] mt-0.5 flex items-center gap-1 flex-wrap">
+                          {contract.status === "已结清" ? (
+                            <span className="rounded px-1.5 py-0.5 text-emerald-300 bg-emerald-500/20 text-[10px] font-medium">已结清</span>
+                          ) : contract.status === "已取消" ? (
+                            <span className="rounded px-1.5 py-0.5 text-slate-400 bg-slate-600/40 text-[10px]">已取消</span>
+                          ) : (
+                            <span className="text-slate-500">{contract.status}</span>
+                          )}
+                          {remainingQty > 0 && <span className="text-slate-500">· 剩余 {remainingQty}</span>}
                         </div>
                       </div>
                     ) : (
@@ -203,9 +209,15 @@ export function PurchaseOrdersTable({
                             {contract.pickedQty} / {contract.totalQty}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-1">
-                          {contract.status}{" "}
-                          {remainingQty > 0 && `· 剩余 ${remainingQty}`}
+                        <div className="text-[11px] mt-1 flex items-center gap-1 flex-wrap">
+                          {contract.status === "已结清" ? (
+                            <span className="rounded px-1.5 py-0.5 text-emerald-300 bg-emerald-500/20 text-[10px] font-medium">已结清</span>
+                          ) : contract.status === "已取消" ? (
+                            <span className="rounded px-1.5 py-0.5 text-slate-400 bg-slate-600/40 text-[10px]">已取消</span>
+                          ) : (
+                            <span className="text-slate-500">{contract.status}</span>
+                          )}
+                          {remainingQty > 0 && <span className="text-slate-500">· 剩余 {remainingQty}</span>}
                         </div>
                       </>
                     )}

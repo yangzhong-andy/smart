@@ -69,6 +69,9 @@ export function PurchaseOrderDetailDialog({
   const [depositRateInput, setDepositRateInput] = useState(stringifyNum(contract.depositRate));
   const [depositAmountInput, setDepositAmountInput] = useState(stringifyNum(contract.depositAmount));
   const [depositSaving, setDepositSaving] = useState(false);
+  const [settleSaving, setSettleSaving] = useState(false);
+  const canManuallySettle =
+    contract.status !== "已结清" && contract.status !== "已取消";
   useEffect(() => {
     setVoucherDraft(contract.contractVoucher ?? "");
     setVoucherDisplay(contract.contractVoucher);
@@ -118,6 +121,45 @@ export function PurchaseOrderDetailDialog({
             <p className="text-xs text-slate-400">{contract.contractNumber}</p>
           </div>
           <div className="flex items-center gap-2">
+            {canManuallySettle && (
+              <button
+                type="button"
+                disabled={settleSaving}
+                onClick={async () => {
+                  const totalQty = contract.totalQty ?? 0;
+                  const pickedQty = contract.pickedQty ?? 0;
+                  const remaining = totalQty - pickedQty;
+                  const msg =
+                    remaining > 0
+                      ? `确定要手动完结该合同吗？合同数量 ${totalQty} 件，已拿货 ${pickedQty} 件，剩余 ${remaining} 件将不再跟进，合同将标记为「已结清」。`
+                      : "确定要将该合同标记为「已结清」吗？";
+                  if (!confirm(msg)) return;
+                  setSettleSaving(true);
+                  try {
+                    const res = await fetch(`/api/purchase-contracts/${contract.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: "已结清" }),
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(err?.error || "操作失败");
+                    }
+                    toast.success("合同已手动完结");
+                    onRefresh?.();
+                    onClose();
+                  } catch (e: any) {
+                    toast.error(e?.message || "操作失败");
+                  } finally {
+                    setSettleSaving(false);
+                  }
+                }}
+                className="flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {settleSaving ? "处理中…" : "手动完结"}
+              </button>
+            )}
             {isSuperAdmin && (
               <button
                 type="button"
