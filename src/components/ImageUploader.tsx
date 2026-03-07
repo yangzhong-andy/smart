@@ -139,14 +139,15 @@ export default function ImageUploader({
     }
   }, [multiple, maxImages, onChange, onError]);
 
-  // 全局粘贴事件监听：仅当焦点在本上传区域内时才处理，避免多个上传框同时接收、且支持多次粘贴追加
+  // 全局粘贴：焦点在本上传区内、或粘贴事件 target 在本区内时处理（先点一下虚线框再 Ctrl+V 最可靠）
   useEffect(() => {
     const handleGlobalPaste = async (e: ClipboardEvent) => {
       if (!uploadAreaRef.current) return;
       const activeElement = document.activeElement as Node | null;
-      // 只有焦点在本上传区域内部时才处理粘贴，否则不拦截（避免抢其他输入框的粘贴，也避免一粘贴被多个上传区同时接收）
-      if (!activeElement || !uploadAreaRef.current.contains(activeElement)) return;
-      // 若焦点在输入框/文本框内（且在本区域内），不拦截，让输入框正常粘贴文字
+      const eventTarget = (e.target as Node | null) ?? null;
+      const focusInArea = activeElement && uploadAreaRef.current.contains(activeElement);
+      const targetInArea = eventTarget && uploadAreaRef.current.contains(eventTarget);
+      if (!focusInArea && !targetInArea) return;
       if (
         activeElement &&
         (activeElement as HTMLElement).tagName &&
@@ -228,12 +229,12 @@ export default function ImageUploader({
       {/* 上传区域 */}
       <div
         ref={uploadAreaRef}
+        onMouseDown={() => uploadAreaRef.current?.focus()}
         onPaste={handlePaste}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        onClick={handleUploadAreaClick}
         className={`
-          relative border-2 border-dashed rounded-lg p-4 cursor-pointer
+          relative border-2 border-dashed rounded-lg p-4 cursor-default
           transition-all duration-300
           ${isUploading 
             ? "border-[#00E5FF] bg-[#00E5FF]/10 shadow-glow-blue" 
@@ -261,9 +262,17 @@ export default function ImageUploader({
             <>
               <Upload className="w-8 h-8 text-[#00E5FF]" />
               <p className="text-sm text-slate-300">{placeholder}</p>
-              {multiple && (
-                <p className="text-xs text-slate-400">可多次 Ctrl+V 粘贴追加，或点击选择多张</p>
-              )}
+              <p className="text-xs text-slate-400">点击本框后按 Ctrl+V 粘贴，或点击下方按钮选择文件</p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUploadAreaClick();
+                }}
+                className="mt-1 px-3 py-1.5 rounded-md bg-primary-500/20 border border-primary-500/50 text-primary-200 text-xs font-medium hover:bg-primary-500/30 transition"
+              >
+                选择文件
+              </button>
               <p className="text-xs text-slate-500">
                 支持格式: JPG, PNG, GIF, WebP, BMP, HEIC, HEIF, TIFF, SVG{acceptPdf ? ", PDF" : ""}
               </p>
