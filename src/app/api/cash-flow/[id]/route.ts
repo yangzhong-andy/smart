@@ -3,8 +3,11 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { CashFlowType, CashFlowStatus } from '@prisma/client'
+import { clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
+
+const CACHE_KEY_PREFIX = 'cash-flow'
 
 // PUT - 更新流水
 export async function PUT(
@@ -86,7 +89,8 @@ export async function PUT(
       transferVoucher: updated.transferVoucher ?? undefined,
       createdAt: updated.createdAt.toISOString()
     }
-    
+
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
     return NextResponse.json(transformed)
   } catch (error) {
     return NextResponse.json(
@@ -157,7 +161,8 @@ export async function PATCH(
       transferVoucher: updated.transferVoucher ?? undefined,
       createdAt: updated.createdAt.toISOString()
     }
-    
+
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
     return NextResponse.json(transformed)
   } catch (error) {
     return NextResponse.json(
@@ -188,7 +193,8 @@ export async function DELETE(
     await prisma.cashFlow.delete({
       where: { id }
     })
-    
+
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
     return NextResponse.json({ message: 'Cash flow deleted successfully' })
   } catch (error) {
     return NextResponse.json(

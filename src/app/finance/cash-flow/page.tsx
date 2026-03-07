@@ -80,14 +80,19 @@ export default function CashFlowPage() {
     dedupingInterval: 600000
   });
 
-  // 兼容 API 返回 { data, pagination } 或直接数组；并统一 description->summary、flowStatus->status（API 返回 CONFIRMED/PENDING，需转小写）
+  // 兼容 API 返回 { data, pagination } 或直接数组；并统一 description->summary、flowStatus->status、type（API 返回 INCOME/EXPENSE/TRANSFER 和 CONFIRMED/PENDING，需转小写）
   const cashFlowListRaw = useMemo(() => {
     const list = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
-    return list.map((f: any) => ({
-      ...f,
-      summary: f.summary ?? f.description,
-      status: (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending",
-    }));
+    return list.map((f: any) => {
+      const typeStr = String(f.type ?? "").toLowerCase();
+      const type = (typeStr === "income" || typeStr === "expense" || typeStr === "transfer" ? typeStr : "expense") as "income" | "expense" | "transfer";
+      return {
+        ...f,
+        summary: f.summary ?? f.description,
+        status: (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending",
+        type,
+      };
+    });
   }, [cashFlowData]);
 
   // 使用 SWR 加载账户数据（分页接口返回 { data, pagination }）
@@ -1343,7 +1348,8 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     {(() => {
-                      const payV = flow.paymentVoucher ?? flow.voucher;
+                      const rawPay = flow.paymentVoucher ?? flow.voucher;
+                      const payV = typeof rawPay === "string" && rawPay.trim() && rawPay !== "null" ? rawPay.trim() : "";
                       let payData: string | string[] | null = null;
                       if (payV) {
                         try {
@@ -1376,7 +1382,8 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     {(() => {
-                      const trV = flow.transferVoucher;
+                      const rawTr = flow.transferVoucher ?? flow.voucher;
+                      const trV = typeof rawTr === "string" && rawTr.trim() && rawTr !== "null" ? rawTr.trim() : "";
                       let trData: string | string[] | null = null;
                       if (trV) {
                         try {
@@ -1448,29 +1455,34 @@ export default function CashFlowPage() {
         try {
           const parsed = JSON.parse(voucherViewModal);
           if (Array.isArray(parsed)) {
-            voucherImages = parsed;
-          } else if (typeof parsed === 'string') {
+            voucherImages = parsed.filter((x: unknown) => typeof x === "string" && x.trim().length > 0);
+          } else if (typeof parsed === "string" && parsed.trim().length > 0) {
             voucherImages = [parsed];
           } else {
-            voucherImages = [voucherViewModal];
+            if (typeof voucherViewModal === "string" && voucherViewModal.trim().length > 0) {
+              voucherImages = [voucherViewModal];
+            }
           }
         } catch {
-          // 不是 JSON，直接使用字符串
-          voucherImages = [voucherViewModal];
+          if (typeof voucherViewModal === "string" && voucherViewModal.trim().length > 0) {
+            voucherImages = [voucherViewModal];
+          }
         }
-        
+        if (voucherImages.length === 0) voucherImages = [];
+
         const currentImage = voucherImages[currentVoucherIndex] || voucherImages[0];
-        
-        // 处理图片源
+
+        // 处理图片源（支持 data URL、http、base64 无前缀）
         const getImageSrc = (img: string): string => {
-          if (img.startsWith('data:image/') || img.startsWith('http://') || img.startsWith('https://') || img.startsWith('/')) {
-            return img;
+          if (!img || typeof img !== "string") return "";
+          const s = img.trim();
+          if (s.startsWith("data:image/") || s.startsWith("data:application/pdf") || s.startsWith("http://") || s.startsWith("https://") || s.startsWith("/")) {
+            return s;
           }
-          // 如果是纯 base64 字符串，添加 data URI 前缀
-          if (/^[A-Za-z0-9+/=]+$/.test(img) && img.length > 100) {
-            return `data:image/jpeg;base64,${img}`;
+          if (/^[A-Za-z0-9+/=]+$/.test(s) && s.length > 50) {
+            return `data:image/jpeg;base64,${s}`;
           }
-          return img;
+          return s;
         };
         
         return (
@@ -1529,23 +1541,27 @@ export default function CashFlowPage() {
               )}
               
               {/* 图片显示 */}
-              <img 
-                key={currentVoucherIndex}
-                src={getImageSrc(currentImage)} 
-                alt={`凭证 ${currentVoucherIndex + 1}`} 
-                className="max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = "none";
-                  const parent = target.parentElement;
-                  if (parent && !parent.querySelector('.error-message')) {
-                    const errorDiv = document.createElement("div");
-                    errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
-                    errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;
-                    parent.appendChild(errorDiv);
-                  }
-                }}
-              />
+              {currentImage ? (
+                <img
+                  key={currentVoucherIndex}
+                  src={getImageSrc(currentImage)}
+                  alt={`凭证 ${currentVoucherIndex + 1}`}
+                  className="max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = "none";
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector(".error-message")) {
+                      const errorDiv = document.createElement("div");
+                      errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
+                      errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;
+                      parent.appendChild(errorDiv);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="text-white/80 text-center py-12">暂无有效凭证图片</div>
+              )}
               
               {/* 缩略图导航（多图时显示） */}
               {voucherImages.length > 1 && (
