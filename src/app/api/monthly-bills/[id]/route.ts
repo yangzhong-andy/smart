@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
+
+const CACHE_KEY_PREFIX = 'monthly-bills';
 
 // GET: 根据 ID 获取月账单
 export async function GET(
@@ -138,6 +141,8 @@ export async function PUT(
       where: { id: params.id },
       data: updateData,
     });
+
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
 
     // 解析 JSON 字段返回
     return NextResponse.json({

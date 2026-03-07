@@ -48,6 +48,8 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
     accountId: "",
     currency: "CNY", // 发起审核未选账户时使用
     businessNumber: "",
+    payeeName: "",
+    payeeAccount: "",
     remark: "",
     adAccountId: "", // 广告账户ID（仅当分类为"广告费"时显示）
     voucher: "" as string | string[] // 凭证，支持多张
@@ -199,6 +201,8 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
       currency: skipAccountSelection ? form.currency : (account!.currency),
       businessNumber: finalBusinessNumber,
       relatedId: relatedId,
+      payeeName: form.payeeName.trim() || undefined,
+      payeeAccount: form.payeeAccount.trim() || undefined,
       remark: form.remark.trim() + (rebateAmount ? ` 广告充值返点：${rebateAmount.toFixed(2)}` : ""),
       voucher: form.voucher ? (Array.isArray(form.voucher) ? form.voucher : [form.voucher]) : undefined,
       status: "Pending_Approval", // 待审批
@@ -431,6 +435,25 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
                 </div>
               </label>
             )}
+            <label className="space-y-1">
+              <span className="text-slate-300">收款人</span>
+              <input
+                value={form.payeeName}
+                onChange={(e) => setForm((f) => ({ ...f, payeeName: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="收款方姓名/单位名称"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-slate-300">收款账号</span>
+              <input
+                value={form.payeeAccount}
+                onChange={(e) => setForm((f) => ({ ...f, payeeAccount: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="银行卡号/支付宝账号等"
+              />
+              <div className="text-xs text-slate-500 mt-1">便于财务打款时核对</div>
+            </label>
             {skipAccountSelection ? (
               <label className="space-y-1">
                 <span className="text-slate-300">币种</span>

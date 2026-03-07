@@ -1670,6 +1670,18 @@ export default function FinanceWorkbenchPage() {
                       <span className="text-slate-200 ml-2">{expenseDetailData.departmentName}</span>
                     </div>
                   )}
+                  {expenseDetailData.payeeName && (
+                    <div>
+                      <span className="text-slate-400">收款人：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.payeeName}</span>
+                    </div>
+                  )}
+                  {expenseDetailData.payeeAccount && (
+                    <div>
+                      <span className="text-slate-400">收款账号：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.payeeAccount}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

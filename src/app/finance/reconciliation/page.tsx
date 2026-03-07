@@ -224,10 +224,11 @@ export default function ReconciliationPage() {
     }
     // 如果是待付款标签，筛选状态为已批准且为应付款的账单（审批通过后直接推给出纳打款）
     if (activeCategory === "PendingPayment") {
-      return bills.filter((b) => 
-        b.status === "Approved" && 
-        (b.billCategory === "Payable" || (!b.billCategory && ["广告", "物流", "工厂订单"].includes(b.billType)))
-      );
+      return bills.filter((b) => {
+        const isApproved = String(b.status || "").toLowerCase() === "approved";
+        const isPayable = b.billCategory === "Payable" || (!b.billCategory && ["广告", "物流", "工厂订单"].includes(b.billType));
+        return isApproved && isPayable;
+      });
     }
     
     let result = bills;
@@ -611,10 +612,11 @@ export default function ReconciliationPage() {
   );
   // 待出纳打款的账单（主管已批准，等待出纳打款）
   const pendingPaymentBills = useMemo(() => 
-    bills.filter((b) => 
-      b.status === "Approved" && 
-      (b.billCategory === "Payable" || (!b.billCategory && ["广告", "物流", "工厂订单"].includes(b.billType)))
-    ),
+    bills.filter((b) => {
+      const isApproved = String(b.status || "").toLowerCase() === "approved";
+      const isPayable = b.billCategory === "Payable" || (!b.billCategory && ["广告", "物流", "工厂订单"].includes(b.billType));
+      return isApproved && isPayable;
+    }),
     [bills]
   );
 
@@ -743,7 +745,8 @@ export default function ReconciliationPage() {
         <button
           onClick={() => {
             setActiveCategory("PendingPayment");
-            setFilterType("all"); // 切换板块时重置类型筛选
+            setFilterType("all");
+            mutate("monthly-bills"); // 切到待出纳打款时刷新列表，避免审批后看不到
           }}
           className={`px-6 py-3 text-sm font-medium transition-all duration-200 border-b-2 relative ${
             activeCategory === "PendingPayment"

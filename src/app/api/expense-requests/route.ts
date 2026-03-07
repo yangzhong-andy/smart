@@ -80,6 +80,8 @@ export async function GET(request: NextRequest) {
         paidAt: r.paidAt?.toISOString(),
         financeAccountId: r.financeAccountId || undefined,
         financeAccountName: r.financeAccountName || undefined,
+        payeeName: r.payeeName || undefined,
+        payeeAccount: r.payeeAccount || undefined,
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
@@ -110,6 +112,8 @@ export async function POST(request: NextRequest) {
         storeId: body.storeId || null,
         storeName: body.storeName || null,
         country: body.country || null,
+        payeeName: body.payeeName ?? null,
+        payeeAccount: body.payeeAccount ?? null,
         status: body.status || "Pending_Approval",
         createdBy: body.createdBy || '系统',
         submittedAt: body.submittedAt ? new Date(body.submittedAt) : new Date(),

@@ -640,6 +640,18 @@ export function ApprovalDetailDialog({
                           "-"}
                       </div>
                     </div>
+                    {selectedExpenseRequest.payeeName && (
+                      <div>
+                        <div className="text-xs text-slate-400 mb-1">收款人</div>
+                        <div className="text-slate-100">{selectedExpenseRequest.payeeName}</div>
+                      </div>
+                    )}
+                    {selectedExpenseRequest.payeeAccount && (
+                      <div>
+                        <div className="text-xs text-slate-400 mb-1">收款账号</div>
+                        <div className="text-slate-100">{selectedExpenseRequest.payeeAccount}</div>
+                      </div>
+                    )}
                   </div>
                   {"approvalDocument" in selectedExpenseRequest &&
                     selectedExpenseRequest.approvalDocument && (

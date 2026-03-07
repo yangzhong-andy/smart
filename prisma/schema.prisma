@@ -1355,6 +1355,8 @@ model ExpenseRequest {
   businessNumber String? // 关联单号
   relatedId      String? // 关联的业务ID
   remark         String? // 备注
+  payeeName      String? // 收款人（付款时钱打给谁）
+  payeeAccount   String? // 收款账号（银行卡/支付宝等）
   voucher        String? // 凭证（JSON 字符串，支持多图）
 
   // 店铺相关字段（从 PaymentRequest 合并）

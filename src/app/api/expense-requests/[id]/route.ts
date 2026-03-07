@@ -31,6 +31,8 @@ export async function GET(
       businessNumber: expenseRequest.businessNumber || undefined,
       relatedId: expenseRequest.relatedId || undefined,
       remark: expenseRequest.remark || undefined,
+      payeeName: expenseRequest.payeeName || undefined,
+      payeeAccount: expenseRequest.payeeAccount || undefined,
       voucher: expenseRequest.voucher ? (expenseRequest.voucher.startsWith('[') ? JSON.parse(expenseRequest.voucher) : expenseRequest.voucher) : undefined,
       storeId: expenseRequest.storeId || undefined,
       storeName: expenseRequest.storeName || undefined,
@@ -84,6 +86,8 @@ export async function PUT(
         ? (Array.isArray(body.paymentVoucher) ? JSON.stringify(body.paymentVoucher) : body.paymentVoucher)
         : null;
     }
+    if (body.payeeName !== undefined) updateData.payeeName = body.payeeName || null;
+    if (body.payeeAccount !== undefined) updateData.payeeAccount = body.payeeAccount || null;
     
     const updated = await prisma.expenseRequest.update({
       where: { id: params.id },

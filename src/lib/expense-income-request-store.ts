@@ -25,6 +25,8 @@ export type ExpenseRequest = {
   businessNumber?: string; // 关联单号
   relatedId?: string; // 关联的业务ID
   remark?: string; // 备注
+  payeeName?: string; // 收款人（付款时钱打给谁）
+  payeeAccount?: string; // 收款账号（银行卡/支付宝等）
   voucher?: string | string[]; // 凭证
   
   // 店铺相关字段（从 PaymentRequest 合并）
