@@ -227,6 +227,8 @@ export type LegacyPurchaseOrder = {
   status: "待收货" | "部分收货" | "收货完成，待结清" | "已清款";
   receipts: Array<{ id: string; qty: number; tailAmount: number; dueDate: string; createdAt: string }>;
   createdAt: string;
+  /** 合同明细（多 SKU 时用于按 SKU 算待拿货货值：Σ 待拿货数量_i × 单价_i） */
+  items?: Array<{ qty: number; pickedQty: number; unitPrice: number }>;
 };
 
 const CONTRACT_STATUS_TO_LEGACY: Record<string, "待收货" | "部分收货" | "收货完成，待结清" | "已清款"> = {
@@ -254,6 +256,15 @@ export async function getLegacyPurchaseOrdersFromAPI(): Promise<LegacyPurchaseOr
       dueDate: o.tailDueDate || o.createdAt,
       createdAt: o.createdAt
     }));
+    const items =
+      c.items && c.items.length > 0
+        ? c.items.map((it: { qty: number; pickedQty: number; unitPrice: number }) => ({
+            qty: it.qty,
+            pickedQty: it.pickedQty ?? 0,
+            unitPrice: typeof it.unitPrice === "number" ? it.unitPrice : Number(it.unitPrice)
+          }))
+        : undefined;
+
     return {
       id: c.id,
       poNumber: c.contractNumber,
@@ -270,7 +281,8 @@ export async function getLegacyPurchaseOrdersFromAPI(): Promise<LegacyPurchaseOr
       receivedQty,
       status: (CONTRACT_STATUS_TO_LEGACY[c.status] || "待收货") as "待收货" | "部分收货" | "收货完成，待结清" | "已清款",
       receipts,
-      createdAt: c.createdAt
+      createdAt: c.createdAt,
+      items
     };
   });
 }
