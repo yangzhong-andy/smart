@@ -106,6 +106,8 @@ export default function PurchaseOrdersPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sourceOrder, setSourceOrder] = useState<PurchaseOrder | null>(null);
   const [detailModal, setDetailModal] = useState<{ contractId: string | null }>({ contractId: null });
+  /** 打开详情时单独拉取的合同（含 items 明细），用于展示具体 SKU */
+  const [detailContractWithItems, setDetailContractWithItems] = useState<PurchaseContract | null>(null);
   const [deliveryModal, setDeliveryModal] = useState<{
     contractId: string | null;
     qty: string;
@@ -349,6 +351,22 @@ export default function PurchaseOrdersPage() {
       })
       .catch(() => setSupplierLinkedProductIds([]));
   }, [selectedSupplier?.id]);
+
+  // 打开合同详情时拉取单个合同（含 items 明细），用于展示具体 SKU
+  useEffect(() => {
+    const id = detailModal.contractId;
+    if (!id) {
+      setDetailContractWithItems(null);
+      return;
+    }
+    fetch(`/api/purchase-contracts/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.id === id) setDetailContractWithItems(data as PurchaseContract);
+        else setDetailContractWithItems(null);
+      })
+      .catch(() => setDetailContractWithItems(null));
+  }, [detailModal.contractId, detailRefreshKey]);
 
   const spuOptions = useMemo((): SpuOption[] => {
     const list = supplierLinkedProductIds === null
@@ -952,17 +970,17 @@ export default function PurchaseOrdersPage() {
     });
   };
 
-  // 获取合同详情（包含子单列表）
-  // 使用 state 来触发刷新，确保创建拿货单后详情页能更新
+  // 获取合同详情（包含子单列表）。优先使用单独拉取的带 items 的合同，以便展示具体 SKU 明细
   const contractDetail = useMemo(() => {
     if (!detailModal.contractId) return null;
-    // 每次 detailRefreshKey 变化时重新获取数据
-    // 始终从 store 中获取最新数据（确保包含合同凭证等所有字段）
-    const contract = contracts.find((c) => c.id === detailModal.contractId);
+    const contract =
+      detailContractWithItems && detailContractWithItems.id === detailModal.contractId
+        ? detailContractWithItems
+        : contracts.find((c) => c.id === detailModal.contractId);
     if (!contract) return null;
     const orders = deliveryOrders.filter((o) => o.contractId === contract.id);
     return { contract, deliveryOrders: orders };
-  }, [detailModal.contractId, detailRefreshKey, contracts, deliveryOrders]);
+  }, [detailModal.contractId, detailRefreshKey, detailContractWithItems, contracts, deliveryOrders]);
 
   // 筛选和排序后的合同列表
   const filteredContracts = useMemo(() => {

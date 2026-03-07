@@ -5,13 +5,22 @@ import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/
 
 export const dynamic = 'force-dynamic';
 
-const STATUS_MAP: Record<string, PurchaseContractStatus> = {
+const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
   '待审批': PurchaseContractStatus.PENDING_APPROVAL,
   '待发货': PurchaseContractStatus.PENDING_SHIPMENT,
   '部分发货': PurchaseContractStatus.PARTIAL_SHIPMENT,
   '发货完成': PurchaseContractStatus.SHIPPED,
   '已结清': PurchaseContractStatus.SETTLED,
   '已取消': PurchaseContractStatus.CANCELLED,
+};
+
+const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
+  [PurchaseContractStatus.PENDING_APPROVAL]: '待审批',
+  [PurchaseContractStatus.PENDING_SHIPMENT]: '待发货',
+  [PurchaseContractStatus.PARTIAL_SHIPMENT]: '部分发货',
+  [PurchaseContractStatus.SHIPPED]: '发货完成',
+  [PurchaseContractStatus.SETTLED]: '已结清',
+  [PurchaseContractStatus.CANCELLED]: '已取消',
 };
 
 // 缓存配置
@@ -99,7 +108,7 @@ export async function GET(request: NextRequest) {
         depositPaid: Number(c.depositPaid),
         tailPeriodDays: c.tailPeriodDays,
         deliveryDate: c.deliveryDate?.toISOString(),
-        status: c.status,
+        status: STATUS_MAP_DB_TO_FRONT[c.status] ?? c.status,
         totalPaid: Number(c.totalPaid),
         totalOwed: Number(c.totalOwed),
         approvedBy: c.approvedBy || undefined,
@@ -131,7 +140,7 @@ export async function POST(request: NextRequest) {
     const v = body.contractVoucher;
     const contractVoucher =
       v == null || v === '' ? null : Array.isArray(v) ? JSON.stringify(v) : String(v).trim() || null;
-    const statusEnum = STATUS_MAP[body.status] ?? PurchaseContractStatus.PENDING_APPROVAL;
+    const statusEnum = STATUS_MAP_FRONT_TO_DB[body.status] ?? PurchaseContractStatus.PENDING_APPROVAL;
     const relatedOrderIds = Array.isArray(body.relatedOrderIds) ? body.relatedOrderIds : [];
     const relatedOrderNumbers = Array.isArray(body.relatedOrderNumbers) ? body.relatedOrderNumbers : [];
 
