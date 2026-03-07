@@ -71,13 +71,16 @@ const formatDate = (d: string) => {
   }
 };
 
+// 流水列表 API（带 noCache 避免多系统/Redis 缓存导致凭证不刷新）
+const CASH_FLOW_LIST_KEY = '/api/cash-flow?page=1&pageSize=5000&noCache=true';
+
 export default function CashFlowPage() {
   // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }，需取 data；pageSize 拉取全部）
-  const { data: cashFlowData, isLoading: cashFlowLoading } = useSWR<CashFlow[] | { data: any[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000', fetcher, {
+  const { data: cashFlowData, isLoading: cashFlowLoading } = useSWR<CashFlow[] | { data: any[]; pagination: unknown }>(CASH_FLOW_LIST_KEY, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000
+    dedupingInterval: 2000
   });
 
   // 兼容 API 返回 { data, pagination } 或直接数组；并统一 description->summary、flowStatus->status、type（API 返回 INCOME/EXPENSE/TRANSFER 和 CONFIRMED/PENDING，需转小写）
@@ -225,7 +228,7 @@ export default function CashFlowPage() {
         throw new Error(errorMessage);
       }
       
-      await swrMutate('/api/cash-flow?page=1&pageSize=5000'); // 重新获取流水列表
+      await swrMutate(CASH_FLOW_LIST_KEY); // 重新获取流水列表
       await swrMutate('/api/accounts?page=1&pageSize=500'); // 重新获取账户列表，更新余额显示
       
       // 如果是广告充值，更新广告账户余额（包括返点）
@@ -319,7 +322,7 @@ export default function CashFlowPage() {
         throw new Error(error.error || '冲销失败');
       }
       
-      await swrMutate('/api/cash-flow?page=1&pageSize=5000'); // 重新获取流水列表
+      await swrMutate(CASH_FLOW_LIST_KEY); // 重新获取流水列表
       await swrMutate('/api/accounts?page=1&pageSize=500'); // 重新获取账户列表，更新余额显示
       toast.success("冲销成功！已生成红字反冲记录。");
     } catch (error: any) {
@@ -347,7 +350,7 @@ export default function CashFlowPage() {
         const err = await res.json();
         throw new Error(err.error || "保存失败");
       }
-      await swrMutate("/api/cash-flow?page=1&pageSize=5000");
+      await swrMutate(CASH_FLOW_LIST_KEY);
       toast.success("转账凭证已保存");
       setSupplementVoucherFlow(null);
       setSupplementTransferVoucher("");
@@ -668,7 +671,7 @@ export default function CashFlowPage() {
       toast.success(`已删除 ${result.deletedCount} 条流水记录，账户余额已重置为初始资金`);
       
       // 刷新数据
-      swrMutate('/api/cash-flow?page=1&pageSize=5000');
+      swrMutate(CASH_FLOW_LIST_KEY);
       swrMutate('/api/accounts?page=1&pageSize=500');
     } catch (error: any) {
       console.error('Failed to clear cash flows:', error);

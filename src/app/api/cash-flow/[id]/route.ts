@@ -15,13 +15,14 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    // 🔐 权限检查
+    // 🔐 权限检查：ADMIN / MANAGER / SUPER_ADMIN / FINANCE 可更新流水
     const session = await getServerSession(authOptions)
     if (!session) {
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
-    const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    const userRole = session.user?.role as string | undefined
+    const canWrite = ['ADMIN', 'MANAGER', 'SUPER_ADMIN', 'FINANCE'].includes(userRole ?? '')
+    if (!canWrite) {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
@@ -106,14 +107,10 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    // 🔐 权限检查
+    // 🔐 权限检查：已登录即可补充凭证（仅更新凭证，不涉及金额/删除）
     const session = await getServerSession(authOptions)
     if (!session) {
       return NextResponse.json({ error: '未登录' }, { status: 401 })
-    }
-    const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
-      return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
     const { id } = params
