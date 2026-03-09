@@ -230,7 +230,7 @@ export default function LogisticsCostPage() {
                 </tr>
               </thead>
               <tbody>
-                {list.map((c) => (
+                {list.map((c: CostItem) => (
                   <tr key={c.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-slate-300">{batchLabel(c)}</td>
                     <td className="px-4 py-3 text-slate-300">
