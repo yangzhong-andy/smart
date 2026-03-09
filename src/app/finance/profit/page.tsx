@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { TrendingUp, FileText } from "lucide-react";
 import type { BankAccount } from "@/lib/finance-store";
 import type { Store } from "@/lib/store-store";
-import { getCountryByCode } from "@/lib/country-config";
+import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
 import type { CashFlow } from "@/lib/cash-flow-store";
 
 type CashFlowWithDefaults = CashFlow & {
