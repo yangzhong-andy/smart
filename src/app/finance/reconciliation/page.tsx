@@ -1204,11 +1204,10 @@ export default function ReconciliationPage() {
         </div>
       )}
 
-      {/* 凭证查看弹窗 */}
+      {/* 凭证查看弹窗（仅覆盖内容区域，z-index 低于侧边栏） */}
       {voucherViewModal && (
         <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
-          style={{ zIndex: 9999 }}
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-40"
           onClick={() => setVoucherViewModal(null)}
         >
           <div className="relative max-w-5xl max-h-[95vh] p-4" onClick={(e) => e.stopPropagation()}>

@@ -561,8 +561,7 @@ export default function TransferPage() {
       {/* 凭证查看弹窗 */}
       {voucherViewModal && (
         <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
-          style={{ zIndex: 9999 }}
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-40"
           onClick={() => setVoucherViewModal(null)}
         >
           <div 
