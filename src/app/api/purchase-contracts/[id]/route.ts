@@ -42,11 +42,12 @@ function parseContractVoucher(v: string | null | undefined): string | string[] |
 // GET - 获取单个采购合同
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const contract = await prisma.purchaseContract.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         items: {
           include: {
@@ -129,9 +130,10 @@ export async function GET(
 // PUT - 更新采购合同
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const body = await request.json()
 
     const updateData: any = {}
@@ -158,7 +160,7 @@ export async function PUT(
     if (body.relatedOrderNumbers !== undefined) updateData.relatedOrderNumbers = body.relatedOrderNumbers || []
 
     const contract = await prisma.purchaseContract.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData,
       include: {
         items: {
@@ -215,9 +217,10 @@ export async function PUT(
 // DELETE - 删除采购合同（仅最高管理员 SUPER_ADMIN 可操作）
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await getServerSession(authOptions)
     if (!session || session.user?.role !== 'SUPER_ADMIN') {
       return NextResponse.json(
@@ -227,7 +230,7 @@ export async function DELETE(
     }
 
     const contract = await prisma.purchaseContract.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         deliveryOrders: { take: 1 },
         generatedContracts: { take: 1 }
@@ -244,7 +247,7 @@ export async function DELETE(
     }
 
     await prisma.purchaseContract.delete({
-      where: { id: params.id }
+      where: { id }
     })
 
     return NextResponse.json({ success: true })
