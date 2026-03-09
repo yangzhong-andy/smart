@@ -153,6 +153,11 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     }
   }, [isLoginPage]);
 
+  // 路由变化时恢复 body 滚动，防止对账中心等页面的弹窗在离开后残留 overflow:hidden 导致整页卡住
+  useEffect(() => {
+    document.body.style.overflow = "";
+  }, [pathname]);
+
   useEffect(() => {
     // 如果是登录页面，不需要检查认证
     if (isLoginPage) {
