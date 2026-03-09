@@ -65,22 +65,32 @@ export default function FinanceDashboardPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     (async () => {
-    const [accRes, storesRes, productsRes, flowList, legacyPOs] = await Promise.all([
-      fetch("/api/accounts?page=1&pageSize=500"),
-      fetch("/api/stores"),
-      fetch("/api/products"),
-      getCashFlowFromAPI({ pageSize: 5000 }),
-      getLegacyPurchaseOrdersFromAPI()
-    ]);
-    const accJson = accRes.ok ? await accRes.json() : [];
-    const storesJson = storesRes.ok ? await storesRes.json() : [];
-    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
-    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-    setProducts(productsRes.ok ? await productsRes.json() : []);
-    setCashFlow(flowList);
-    setPurchaseOrders(legacyPOs);
-    // 加载待入账任务数量（API）
-    getPendingEntryCount().then(setPendingEntryCount).catch(() => setPendingEntryCount(0));
+      const results = await Promise.allSettled([
+        fetch("/api/accounts?page=1&pageSize=500"),
+        fetch("/api/stores"),
+        fetch("/api/products"),
+        getCashFlowFromAPI({ pageSize: 5000 }),
+        getLegacyPurchaseOrdersFromAPI(),
+      ]);
+      if (results[0].status === "fulfilled" && results[0].value.ok) {
+        const accJson = await results[0].value.json();
+        setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
+      }
+      if (results[1].status === "fulfilled" && results[1].value.ok) {
+        const storesJson = await results[1].value.json();
+        setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
+      }
+      if (results[2].status === "fulfilled" && results[2].value.ok) {
+        const productsJson = await results[2].value.json();
+        setProducts(Array.isArray(productsJson) ? productsJson : (productsJson?.data ?? []));
+      }
+      if (results[3].status === "fulfilled") {
+        setCashFlow(results[3].value);
+      }
+      if (results[4].status === "fulfilled") {
+        setPurchaseOrders(results[4].value);
+      }
+      getPendingEntryCount().then(setPendingEntryCount).catch(() => setPendingEntryCount(0));
     })();
   }, []);
 

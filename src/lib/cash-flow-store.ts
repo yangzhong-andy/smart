@@ -64,7 +64,7 @@ export async function getCashFlowFromAPI(params?: {
     if (params?.pageSize != null) query.set("pageSize", String(params.pageSize));
     const url = query.toString() ? `/api/cash-flow?${query}` : "/api/cash-flow";
     const res = await fetch(url);
-    if (!res.ok) return [];
+    if (!res.ok) throw new Error(`流水接口错误: ${res.status}`);
     const json = await res.json();
     const list = Array.isArray(json) ? json : (json?.data ?? []);
     return list.map((f: any) => {

@@ -40,8 +40,8 @@ export async function GET(request: NextRequest) {
       String(pageSize)
     );
 
-    // 尝试从缓存获取（仅第一页）
-    if (!noCache && page === 1 && !accountId && !type && !startDate && !endDate) {
+    // 尝试从缓存获取（仅第一页且非大分页，避免缓存超大 payload 导致超时）
+    if (!noCache && page === 1 && pageSize <= 500 && !accountId && !type && !startDate && !endDate) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
         return NextResponse.json(cached);
@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
       if (endDate) where.date.lte = new Date(endDate);
     }
 
+    const includeVoucher = pageSize <= 100;
     const [flows, total] = await prisma.$transaction([
       prisma.cashFlow.findMany({
         where,
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
           amount: true, currency: true, relatedId: true, businessNumber: true,
           summary: true, category: true, remark: true, status: true,
           isReversal: true, reversedById: true,
-          voucher: true, paymentVoucher: true, transferVoucher: true,
+          ...(includeVoucher ? { voucher: true, paymentVoucher: true, transferVoucher: true } : {}),
           createdAt: true, updatedAt: true,
         },
         orderBy: { date: 'desc' },
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     const response = {
-      data: flows.map(f => ({
+      data: flows.map((f: any) => ({
         id: f.id,
         uid: f.uid || undefined,
         accountId: f.accountId,
@@ -93,17 +94,19 @@ export async function GET(request: NextRequest) {
         notes: f.remark || undefined,
         isReversal: f.isReversal,
         reversedById: f.reversedById || undefined,
-        voucher: f.voucher || undefined,
-        paymentVoucher: f.paymentVoucher || undefined,
-        transferVoucher: f.transferVoucher || undefined,
+        ...(includeVoucher ? {
+          voucher: f.voucher || undefined,
+          paymentVoucher: f.paymentVoucher || undefined,
+          transferVoucher: f.transferVoucher || undefined,
+        } : {}),
         createdAt: f.createdAt.toISOString(),
         updatedAt: f.updatedAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 
-    // 设置缓存（仅第一页且无筛选时）
-    if (!noCache && page === 1 && !accountId && !type && !startDate && !endDate) {
+    // 设置缓存（仅第一页、非大分页且无筛选时，避免缓存过大）
+    if (!noCache && page === 1 && pageSize <= 500 && !accountId && !type && !startDate && !endDate) {
       await setCache(cacheKey, response, CACHE_TTL);
     }
 

@@ -225,6 +225,8 @@ export default function FinanceWorkbenchPage() {
   const { data: cashFlowData, error: cashFlowError } = useSWR("cash-flow", fetcher, {
     ...swrOptions,
     dedupingInterval: 300000,
+    shouldRetryOnError: true,
+    errorRetryCount: 2,
   });
   const { data: pendingBillsData, error: pendingBillsError } = useSWR("pending-bills", fetcher, {
     ...swrOptions,
