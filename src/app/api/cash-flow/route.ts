@@ -57,7 +57,10 @@ export async function GET(request: NextRequest) {
       if (endDate) where.date.lte = new Date(endDate);
     }
 
-    const includeVoucher = pageSize <= 100;
+    // 默认仅在小分页时返回凭证字段，避免缓存体积过大；
+    // 但当显式传入 noCache=true（例如流水明细使用 SWR 全量拉取并不走 Redis 缓存）时，
+    // 仍然返回付款凭证/转账凭证，保证前端能展示图片。
+    const includeVoucher = pageSize <= 100 || noCache;
     const [flows, total] = await prisma.$transaction([
       prisma.cashFlow.findMany({
         where,
