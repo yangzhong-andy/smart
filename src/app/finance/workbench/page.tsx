@@ -300,21 +300,24 @@ export default function FinanceWorkbenchPage() {
   const approvedIncomeRequests: IncomeRequest[] = Array.isArray(approvedIncomeRequestsData) ? (approvedIncomeRequestsData as IncomeRequest[]) : [];
 
   const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data ?? [];
-  const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
+  const cashFlowListRawRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
+  const cashFlowListRaw: any[] = Array.isArray(cashFlowListRawRaw) ? cashFlowListRawRaw : [];
 
   // 统一流水 status / type 为小写，兼容 API 返回的枚举值，并用于统计卡片
   const cashFlow: CashFlow[] = useMemo(
     () =>
-      cashFlowListRaw.map((f: any) => {
-        const rawType = String(f.type ?? "").toLowerCase();
-        const type = (rawType === "income" || rawType === "expense" ? rawType : "expense") as "income" | "expense";
-        const status = (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending";
-        return {
-          ...f,
-          type,
-          status,
-        };
-      }),
+      Array.isArray(cashFlowListRaw)
+        ? cashFlowListRaw.map((f: any) => {
+            const rawType = String(f.type ?? "").toLowerCase();
+            const type = (rawType === "income" || rawType === "expense" ? rawType : "expense") as "income" | "expense";
+            const status = (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending";
+            return {
+              ...f,
+              type,
+              status,
+            };
+          })
+        : [],
     [cashFlowListRaw]
   );
 
