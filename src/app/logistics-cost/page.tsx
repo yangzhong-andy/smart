@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import { DollarSign, Plus, X } from "lucide-react";
 import { PageHeader, EmptyState, ActionButton } from "@/components/ui";
@@ -84,16 +85,37 @@ function formatDate(iso: string | undefined) {
   }
 }
 
+const listFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("获取失败");
+  return r.json();
+};
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j?.data) ? j.data : (Array.isArray(j) ? j : []);
+};
+const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true };
+
 export default function LogisticsCostPage() {
-  const [list, setList] = useState<CostItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // 下拉选项
-  const [batches, setBatches] = useState<BatchOption[]>([]);
-  const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const { data: listResponse, isLoading, mutate } = useSWR(
+    `/api/logistics-cost?page=${pagination.page}&pageSize=${pagination.pageSize}`,
+    listFetcher,
+    SWR_OPT
+  );
+  const list = Array.isArray(listResponse?.data) ? listResponse.data : [];
+  useEffect(() => {
+    if (listResponse?.pagination) setPagination((p) => ({ ...p, ...listResponse.pagination }));
+  }, [listResponse?.pagination]);
+
+  const { data: batches = [] } = useSWR<BatchOption[]>("/api/outbound-batch?pageSize=200", arrayFetcher, SWR_OPT);
+  const { data: channels = [] } = useSWR<ChannelOption[]>("/api/logistics-channels?pageSize=200", arrayFetcher, SWR_OPT);
+  const loading = isLoading;
 
   // 表单
   const [outboundBatchId, setOutboundBatchId] = useState("");
@@ -104,51 +126,6 @@ export default function LogisticsCostPage() {
   const [paymentType, setPaymentType] = useState("现结");
   const [creditDays, setCreditDays] = useState("");
   const [dueDate, setDueDate] = useState("");
-
-  const fetchList = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", String(pagination.page));
-      params.set("pageSize", String(pagination.pageSize));
-      const res = await fetch(`/api/logistics-cost?${params.toString()}`);
-      if (!res.ok) throw new Error("获取失败");
-      const json = await res.json();
-      setList(Array.isArray(json.data) ? json.data : []);
-      if (json.pagination) setPagination((p) => ({ ...p, ...json.pagination }));
-    } catch {
-      setList([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [pagination.page, pagination.pageSize]);
-
-  useEffect(() => {
-    fetchList();
-  }, [fetchList]);
-
-  const fetchOptions = useCallback(async () => {
-    try {
-      const [batchRes, channelRes] = await Promise.all([
-        fetch("/api/outbound-batch?pageSize=200"),
-        fetch("/api/logistics-channels?pageSize=200"),
-      ]);
-      if (batchRes.ok) {
-        const j = await batchRes.json();
-        setBatches(Array.isArray(j.data) ? j.data : []);
-      }
-      if (channelRes.ok) {
-        const j = await channelRes.json();
-        setChannels(Array.isArray(j.data) ? j.data : []);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    if (modalOpen) fetchOptions();
-  }, [modalOpen, fetchOptions]);
 
   const openModal = () => {
     setOutboundBatchId("");
@@ -199,7 +176,7 @@ export default function LogisticsCostPage() {
       }
       toast.success("创建成功");
       closeModal();
-      fetchList();
+      mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "创建失败");
     } finally {

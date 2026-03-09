@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import useSWR from "swr";
 import {
   type Agency,
   type AdAccount,
@@ -56,15 +57,23 @@ const formatNumber = (n: number) => {
   return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 };
 
+const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
+const agenciesFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  return r.json().then(toList);
+};
+const SWR_OPT_AGENCIES = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
+
 export default function AdAgenciesPage() {
-  const [mounted, setMounted] = useState(false); // 客户端挂载状态，避免 hydration 错误
-  const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
-  const [consumptions, setConsumptions] = useState<AdConsumption[]>([]);
-  const [recharges, setRecharges] = useState<AdRecharge[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [cashFlowList, setCashFlowList] = useState<CashFlowStoreType[]>([]);
+  const [mounted, setMounted] = useState(false);
+  const { data: agencies = [], mutate: mutateAgencies } = useSWR<Agency[]>("/api/ad-agencies?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: adAccounts = [], mutate: mutateAdAccounts } = useSWR<AdAccount[]>("/api/ad-accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: consumptions = [], mutate: mutateConsumptions } = useSWR<AdConsumption[]>("/api/ad-consumptions?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: recharges = [], mutate: mutateRecharges } = useSWR<AdRecharge[]>("/api/ad-recharges?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: bankAccounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: cashFlowList = [] } = useSWR<CashFlowStoreType[]>("agencies-cash-flow", getCashFlowFromAPI, SWR_OPT_AGENCIES);
   const [activeTab, setActiveTab] = useState<"dashboard" | "agencies" | "accounts" | "consumptions" | "recharges">("dashboard");
   const [isAgencyModalOpen, setIsAgencyModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -178,62 +187,24 @@ export default function AdAgenciesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    
-    // 标记为已挂载，避免 hydration 错误
     setMounted(true);
-    
-    // 读取 URL 参数
     const urlParams = new URLSearchParams(window.location.search);
     const tab = urlParams.get("tab");
     const action = urlParams.get("action");
-    
-    // 根据 URL 参数设置标签页
     if (tab && ["dashboard", "agencies", "accounts", "consumptions", "recharges"].includes(tab)) {
       setActiveTab(tab as typeof activeTab);
     }
-    
-    // 根据 action 参数打开对应的模态框
-    if (action === "add-agency") {
-      setIsAgencyModalOpen(true);
-    } else if (action === "add-account") {
-      setIsAccountModalOpen(true);
-    } else if (action === "add-consumption") {
-      setIsConsumptionModalOpen(true);
-    } else     if (action === "add-recharge") {
-      setIsRechargeModalOpen(true);
-    }
-    
-    (async () => {
-    const [agenciesRes, accountsRes, consumptionsRes, rechargesRes, storesRes, bankRes] = await Promise.all([
-      fetch("/api/ad-agencies?page=1&pageSize=500"),
-      fetch("/api/ad-accounts?page=1&pageSize=500"),
-      fetch("/api/ad-consumptions?page=1&pageSize=5000"),
-      fetch("/api/ad-recharges?page=1&pageSize=5000"),
-      fetch("/api/stores?page=1&pageSize=500"),
-      fetch("/api/accounts?page=1&pageSize=500"),
-    ]);
-    const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
-    const loadedAgencies = agenciesRes.ok ? toList(await agenciesRes.json()) : [];
-    const loadedAccounts = accountsRes.ok ? toList(await accountsRes.json()) : [];
-    const loadedConsumptions = consumptionsRes.ok ? toList(await consumptionsRes.json()) : [];
-    const loadedRecharges = rechargesRes.ok ? toList(await rechargesRes.json()) : [];
-    const loadedStores = storesRes.ok ? toList(await storesRes.json()) : [];
-    const loadedBankAccounts = bankRes.ok ? toList(await bankRes.json()) : [];
-    setAgencies(loadedAgencies);
-    setAdAccounts(loadedAccounts);
-    setConsumptions(loadedConsumptions);
-    setRecharges(loadedRecharges);
-    setStores(loadedStores);
-    setBankAccounts(loadedBankAccounts);
-    
-    // 加载 cashFlow
-    const flowList = await getCashFlowFromAPI();
-    setCashFlowList(flowList);
-    
-    // 重新计算所有账户余额
-    await recalculateAccountBalances(loadedAccounts, loadedConsumptions, loadedRecharges);
-    })();
+    if (action === "add-agency") setIsAgencyModalOpen(true);
+    else if (action === "add-account") setIsAccountModalOpen(true);
+    else if (action === "add-consumption") setIsConsumptionModalOpen(true);
+    else if (action === "add-recharge") setIsRechargeModalOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (adAccounts.length || consumptions.length || recharges.length) {
+      recalculateAccountBalances(adAccounts, consumptions, recharges);
+    }
+  }, [adAccounts, consumptions, recharges]);
   
   // 重新计算账户余额：当前余额 = 累计实付充值 - 累计消耗（返点不计入余额）
   const recalculateAccountBalances = async (accounts: AdAccount[], consumptions: AdConsumption[], recharges: AdRecharge[]) => {
@@ -314,7 +285,7 @@ export default function AdAgenciesPage() {
     );
     if (hasChanges) {
       await saveAdAccounts(updatedAccounts);
-      setAdAccounts(updatedAccounts);
+      mutateAdAccounts();
     }
   };
 
@@ -763,7 +734,7 @@ export default function AdAgenciesPage() {
 
     setIsSubmitting(true);
     try {
-      setAgencies((prev) => [...prev, newAgency]);
+      mutateAgencies();
       await saveAgencies([...agencies, newAgency]);
     setAgencyForm(initialAgencyFormState);
     setIsAgencyModalOpen(false);
@@ -830,14 +801,14 @@ export default function AdAgenciesPage() {
 
     setIsSubmitting(true);
     try {
-      setAgencies(updatedAgencies);
+      mutateAgencies();
       await saveAgencies(updatedAgencies);
     
     // 更新关联的广告账户中的代理商名称
     const updatedAccounts = adAccounts.map((acc) =>
       acc.agencyId === editAgency.id ? { ...acc, agencyName: agencyForm.name.trim() } : acc
     );
-    setAdAccounts(updatedAccounts);
+    mutateAdAccounts();
     await saveAdAccounts(updatedAccounts);
 
     setAgencyForm(initialAgencyFormState);
@@ -857,18 +828,18 @@ export default function AdAgenciesPage() {
       onConfirm: async () => {
         try {
           const updatedAgencies = agencies.filter((a) => a.id !== id);
-          setAgencies(updatedAgencies);
+          mutateAgencies();
           await saveAgencies(updatedAgencies);
           
           // 删除关联的广告账户
           const updatedAccounts = adAccounts.filter((acc) => acc.agencyId !== id);
-          setAdAccounts(updatedAccounts);
+          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
           
           // 删除关联的消耗记录
           const accountIds = adAccounts.filter((acc) => acc.agencyId === id).map((acc) => acc.id);
           const updatedConsumptions = consumptions.filter((c) => !accountIds.includes(c.adAccountId));
-          setConsumptions(updatedConsumptions);
+          mutateConsumptions();
           await saveAdConsumptions(updatedConsumptions);
           setConfirmDialog(null);
         } catch (e) {
@@ -986,7 +957,7 @@ export default function AdAgenciesPage() {
       createdAt: new Date().toISOString()
     };
 
-    setAdAccounts((prev) => [...prev, newAccount]);
+    mutateAdAccounts();
     await saveAdAccounts([...adAccounts, newAccount]);
     setAccountForm({
       agencyId: "",
@@ -1055,14 +1026,14 @@ export default function AdAgenciesPage() {
         : a
     );
 
-    setAdAccounts(updatedAccounts);
+    mutateAdAccounts();
     await saveAdAccounts(updatedAccounts);
 
     // 更新消耗记录中的账户名称
     const updatedConsumptions = consumptions.map((c) =>
       c.adAccountId === editAccount.id ? { ...c, accountName: accountForm.accountName.trim() } : c
     );
-    setConsumptions(updatedConsumptions);
+    mutateConsumptions();
     await saveAdConsumptions(updatedConsumptions);
 
     setAccountForm({
@@ -1087,12 +1058,12 @@ export default function AdAgenciesPage() {
       onConfirm: async () => {
         try {
           const updatedAccounts = adAccounts.filter((a) => a.id !== id);
-          setAdAccounts(updatedAccounts);
+          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
           
           // 删除关联的消耗记录
           const updatedConsumptions = consumptions.filter((c) => c.adAccountId !== id);
-          setConsumptions(updatedConsumptions);
+          mutateConsumptions();
           await saveAdConsumptions(updatedConsumptions);
           setConfirmDialog(null);
         } catch (e) {
@@ -1192,7 +1163,7 @@ export default function AdAgenciesPage() {
 
     // 保存充值记录
     const updatedRecharges = [...recharges, newRecharge];
-    setRecharges(updatedRecharges);
+    mutateRecharges();
     saveAdRecharges(updatedRecharges);
 
     // 自动生成月账单并推送到对账中心
@@ -1371,7 +1342,7 @@ export default function AdAgenciesPage() {
           }
         : acc
     );
-    setAdAccounts(updatedAccounts);
+    mutateAdAccounts();
     await saveAdAccounts(updatedAccounts);
 
     // 显示成功提示
@@ -1421,12 +1392,12 @@ export default function AdAgenciesPage() {
               ? { ...acc, currentBalance: Math.max(0, acc.currentBalance - totalDeduction) }
               : acc
           );
-          setAdAccounts(updatedAccounts);
+          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
 
           // 删除充值记录
           const updatedRecharges = recharges.filter((r) => r.id !== id);
-          setRecharges(updatedRecharges);
+          mutateRecharges();
           await saveAdRecharges(updatedRecharges);
 
           // 重新计算余额
@@ -1626,9 +1597,9 @@ export default function AdAgenciesPage() {
     });
 
     try {
-      setConsumptions((prev) => [...prev, newConsumption]);
+      mutateConsumptions();
       await saveAdConsumptions([...consumptions, newConsumption]);
-      setAdAccounts(updatedAccounts);
+      mutateAdAccounts();
       await saveAdAccounts(updatedAccounts);
     } catch (e) {
       console.error("保存消耗记录失败", e);
@@ -1699,9 +1670,9 @@ export default function AdAgenciesPage() {
           });
 
           const updatedConsumptions = consumptions.filter((c) => c.id !== id);
-          setConsumptions(updatedConsumptions);
+          mutateConsumptions();
           await saveAdConsumptions(updatedConsumptions);
-          setAdAccounts(updatedAccounts);
+          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
           setConfirmDialog(null);
         } catch (e) {
@@ -1881,9 +1852,9 @@ export default function AdAgenciesPage() {
         }
         
         try {
-          setConsumptions(updatedConsumptions);
+          mutateConsumptions();
           await saveAdConsumptions(updatedConsumptions);
-          setAdAccounts(updatedAccounts);
+          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
           
           setIsSettlementModalOpen(false);

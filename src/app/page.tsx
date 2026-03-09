@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, AlertCircle, ArrowRight } from "lucide-react";
+import { useMemo } from "react";
+import useSWR from "swr";
+import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
 import type { Store } from "@/lib/store-store";
 import type { BankAccount } from "@/lib/finance-store";
-import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
+import type { CashFlow } from "@/lib/cash-flow-store";
 import { getPendingApprovalCount } from "@/lib/reconciliation-store";
 import Link from "next/link";
 
@@ -13,42 +14,20 @@ const currency = (n: number, curr: string = "CNY") =>
     Number.isFinite(n) ? n : 0
   );
 
-export default function HomePage() {
-  const [stores, setStores] = useState<Store[]>([]);
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
-  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    
-    (async () => {
-    try {
-      const [storesRes, accRes] = await Promise.all([
-        fetch("/api/stores"),
-        fetch("/api/accounts"),
-      ]);
-      const storesJson = storesRes.ok ? await storesRes.json() : [];
-      setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-      const accJson = accRes.ok ? await accRes.json() : [];
-      setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
-      const flowList = await getCashFlowFromAPI();
-      setCashFlow(Array.isArray(flowList) ? flowList : []);
-      
-      // 获取待审批账单数量
-      (async () => {
-        try {
-          const count = await getPendingApprovalCount();
-          setPendingApprovalCount(count);
-        } catch (e) {
-          console.error("Failed to get pending approval count", e);
-        }
-      })();
-    } catch (e) {
-      console.error("Failed to initialize page", e);
-    }
-    })();
-  }, []);
+const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
+
+export default function HomePage() {
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores", arrayFetcher, SWR_OPT);
+  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
+  const { data: pendingApprovalCount = 0 } = useSWR("home-pending-approval-count", () => getPendingApprovalCount(), SWR_OPT);
 
   // 计算店铺贡献排行
   const storeRanking = useMemo(() => {
@@ -57,7 +36,7 @@ export default function HomePage() {
     const flowList = Array.isArray(cashFlow) ? cashFlow : [];
     return storeList
       .map((store) => {
-        const storeIncomes = flowList.filter(
+        const storeIncomes = flowListNorm.filter(
           (flow) =>
             flow.type === "income" &&
             flow.accountId === store.accountId &&
@@ -89,11 +68,9 @@ export default function HomePage() {
       })
       .sort((a, b) => b.totalIncomeRMB - a.totalIncomeRMB)
       .slice(0, 5); // 取前5名
-  }, [stores, cashFlow, accounts]);
+  }, [storeList, flowListNorm, accountList]);
 
-  // 总资产统计（包含初始资金）
   const totalAssets = useMemo(() => {
-    const accountList = Array.isArray(accounts) ? accounts : [];
     return accountList.reduce((sum, acc) => {
       // 计算账户总余额 = 初始资金 + 当前余额
       const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
@@ -103,20 +80,18 @@ export default function HomePage() {
         : accountTotal * (acc.exchangeRate || 1);
       return sum + rmbValue;
     }, 0);
-  }, [accounts]);
+  }, [accountList]);
 
-  // 本月收支统计
   const thisMonth = new Date().getMonth();
   const thisYear = new Date().getFullYear();
-  const cashFlowList = Array.isArray(cashFlow) ? cashFlow : [];
-  const thisMonthFlow = cashFlowList.filter((f) => {
+  const thisMonthFlow = flowListNorm.filter((f) => {
     if (!f.date) return false;
     const d = new Date(f.date);
     if (isNaN(d.getTime())) return false;
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !(f as any).isReversal;
   });
-  const thisMonthIncome = thisMonthFlow.filter((f) => f.type === "income").reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
-  const thisMonthExpense = thisMonthFlow.filter((f) => f.type === "expense").reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
+  const thisMonthIncome = thisMonthFlow.filter((f: any) => f.type === "income").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
+  const thisMonthExpense = thisMonthFlow.filter((f: any) => f.type === "expense").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
 
   return (
     <div className="space-y-6">

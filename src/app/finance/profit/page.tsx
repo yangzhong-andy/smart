@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { TrendingUp, FileText } from "lucide-react";
 import type { BankAccount } from "@/lib/finance-store";
 import type { Store } from "@/lib/store-store";
-import { COUNTRIES, getCountryByCode } from "@/lib/country-config";
-import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
+import { getCountryByCode } from "@/lib/country-config";
+import type { CashFlow } from "@/lib/cash-flow-store";
 
-// 确保 CashFlow 类型完整
 type CashFlowWithDefaults = CashFlow & {
   status?: "confirmed" | "pending";
   isReversal?: boolean;
@@ -20,27 +20,21 @@ const currency = (n: number, curr: string = "CNY") =>
     Number.isFinite(n) ? n : 0
   );
 
-export default function ProfitPage() {
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [cashFlow, setCashFlow] = useState<CashFlowWithDefaults[]>([]);
-  const [filterCountry, setFilterCountry] = useState<string>("all");
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-    const [accRes, storesRes] = await Promise.all([
-      fetch("/api/accounts?page=1&pageSize=500"),
-      fetch("/api/stores?page=1&pageSize=500"),
-    ]);
-    const accJson = accRes.ok ? await accRes.json() : [];
-    const storesJson = storesRes.ok ? await storesRes.json() : [];
-    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
-    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-    const flowList = await getCashFlowFromAPI();
-    setCashFlow(flowList as CashFlowWithDefaults[]);
-    })();
-  }, []);
+const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
+
+export default function ProfitPage() {
+  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
+
+  const [filterCountry, setFilterCountry] = useState<string>("all");
 
   // 按国家汇总资产
   const assetsByCountry = useMemo(() => {

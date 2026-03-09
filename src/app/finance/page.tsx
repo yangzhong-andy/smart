@@ -5,6 +5,7 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Wallet, TrendingUp, TrendingDown, Package, DollarSign, AlertCircle } from "lucide-react";
 
 import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import type { BankAccount } from "@/lib/finance-store";
 import { calculatePrimaryAccountBalance } from "@/lib/finance-store";
@@ -39,12 +40,65 @@ const currency = (n: number, curr: string = "CNY") =>
 
 const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 
+const dashboardFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
+
+const SWR_OPTIONS = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  dedupingInterval: 600000,
+  keepPreviousData: true,
+};
+
 export default function FinanceDashboardPage() {
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [products, setProducts] = useState<Array<{ sku_id: string; name?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }>>([]);
-  const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const { data: accountsRaw, mutate: mutateAccounts } = useSWR<BankAccount[]>(
+    "/api/accounts?page=1&pageSize=500",
+    dashboardFetcher,
+    SWR_OPTIONS
+  );
+  const { data: storesRaw } = useSWR<Store[]>(
+    "/api/stores",
+    dashboardFetcher,
+    SWR_OPTIONS
+  );
+  const { data: productsRaw } = useSWR<Array<{ sku_id: string; name?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }>>(
+    "/api/products",
+    dashboardFetcher,
+    SWR_OPTIONS
+  );
+  const { data: cashFlowRaw, mutate: mutateCashFlow } = useSWR<CashFlow[]>(
+    "/api/cash-flow?page=1&pageSize=5000",
+    dashboardFetcher,
+    SWR_OPTIONS
+  );
+  const { data: purchaseOrdersRaw, mutate: mutateLegacyPO } = useSWR<PurchaseOrder[]>(
+    "finance-dashboard-legacy-po",
+    getLegacyPurchaseOrdersFromAPI,
+    SWR_OPTIONS
+  );
+
+  const accounts = accountsRaw ?? [];
+  const stores = storesRaw ?? [];
+  const products = productsRaw ?? [];
+  const purchaseOrders = purchaseOrdersRaw ?? [];
+  const cashFlow = useMemo(() => {
+    const list = cashFlowRaw ?? [];
+    return list.map((f: any) => {
+      const rawType = f.type != null ? String(f.type).toLowerCase() : "";
+      const rawStatus = f.status ?? f.flowStatus;
+      const statusStr = rawStatus != null ? String(rawStatus).toLowerCase() : "pending";
+      return {
+        ...f,
+        type: rawType === "income" || rawType === "expense" || rawType === "transfer" ? rawType : f.type,
+        status: statusStr === "confirmed" ? "confirmed" : "pending",
+      };
+    });
+  }, [cashFlowRaw]);
+
   const [paymentModal, setPaymentModal] = useState<{
     poId: string | null;
     type: "deposit" | "tail" | null;
@@ -63,35 +117,7 @@ export default function FinanceDashboardPage() {
   const [exchangeRates, setExchangeRates] = useState<FinanceRates | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-      const results = await Promise.allSettled([
-        fetch("/api/accounts?page=1&pageSize=500"),
-        fetch("/api/stores"),
-        fetch("/api/products"),
-        getCashFlowFromAPI({ pageSize: 5000 }),
-        getLegacyPurchaseOrdersFromAPI(),
-      ]);
-      if (results[0].status === "fulfilled" && results[0].value.ok) {
-        const accJson = await results[0].value.json();
-        setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
-      }
-      if (results[1].status === "fulfilled" && results[1].value.ok) {
-        const storesJson = await results[1].value.json();
-        setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-      }
-      if (results[2].status === "fulfilled" && results[2].value.ok) {
-        const productsJson = await results[2].value.json();
-        setProducts(Array.isArray(productsJson) ? productsJson : (productsJson?.data ?? []));
-      }
-      if (results[3].status === "fulfilled") {
-        setCashFlow(results[3].value);
-      }
-      if (results[4].status === "fulfilled") {
-        setPurchaseOrders(results[4].value);
-      }
-      getPendingEntryCount().then(setPendingEntryCount).catch(() => setPendingEntryCount(0));
-    })();
+    getPendingEntryCount().then(setPendingEntryCount).catch(() => setPendingEntryCount(0));
   }, []);
 
   // 获取汇率数据
@@ -480,8 +506,6 @@ export default function FinanceDashboardPage() {
 
     try {
       await createCashFlow(newFlow);
-      const updatedCashFlow = [...cashFlow, newFlow];
-      setCashFlow(updatedCashFlow);
 
       // 更新合同/发货单（API）
       const poId = paymentModal.poId!;
@@ -499,9 +523,6 @@ export default function FinanceDashboardPage() {
         await updateContractPayment(poId, paymentModal.amount, "tail");
       }
 
-      const refreshedPOs = await getLegacyPurchaseOrdersFromAPI();
-      setPurchaseOrders(refreshedPOs);
-
       // 更新账户余额（API）
       const updatedAccounts = accounts.map((acc) => {
         if (acc.id === accountId) {
@@ -514,11 +535,13 @@ export default function FinanceDashboardPage() {
         }
         return acc;
       });
-      setAccounts(updatedAccounts);
       await saveAccounts(updatedAccounts);
 
       setPaymentModal({ poId: null, type: null, amount: 0, supplierName: "", poNumber: "" });
       toast.success("付款成功！");
+      mutateCashFlow();
+      mutateLegacyPO();
+      mutateAccounts();
     } catch (e) {
       console.error("付款记录保存失败", e);
       toast.error("付款记录保存失败，请重试");

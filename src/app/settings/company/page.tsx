@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { Building2, Save } from "lucide-react";
 import { toast } from "sonner";
 
@@ -28,25 +29,36 @@ const emptyForm: CompanyForm = {
   taxId: "",
 };
 
+const companyFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("未登录");
+  return r.json();
+};
+
 export default function CompanySettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [form, setForm] = useState<CompanyForm>(emptyForm);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const { data, error, isLoading, mutate } = useSWR<CompanyForm>(
+    session ? "/api/company" : null,
+    companyFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true }
+  );
+
   useEffect(() => {
-    if (status === "loading") return;
-    if (!session) {
-      router.push("/login");
-      return;
-    }
-    fetch("/api/company")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("未登录"))))
-      .then((data: CompanyForm) => setForm({ ...emptyForm, ...data }))
-      .catch(() => toast.error("加载公司信息失败"))
-      .finally(() => setLoading(false));
-  }, [session, status, router]);
+    if (data) setForm({ ...emptyForm, ...data });
+  }, [data]);
+
+  if (status === "loading") return null;
+  if (!session) {
+    router.push("/login");
+    return null;
+  }
+
+  const loading = isLoading && !data;
+  if (error && !data) toast.error("加载公司信息失败");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,8 +72,9 @@ export default function CompanySettingsPage() {
         if (!r.ok) return r.json().then((j) => Promise.reject(new Error(j?.error || "保存失败")));
         return r.json();
       })
-      .then(() => {
+      .then((saved) => {
         toast.success("公司信息已保存，生成合同时将使用以上甲方信息。");
+        mutate({ ...emptyForm, ...saved }, false);
       })
       .catch((err) => toast.error(err?.message || "保存失败"))
       .finally(() => setSaving(false));

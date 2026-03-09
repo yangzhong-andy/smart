@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Package, Plus, Search, X, Eye, Clock, CheckCircle2, XCircle, AlertCircle, Download } from "lucide-react";
@@ -39,22 +40,25 @@ const STATUS_COLORS: Record<PurchaseOrderStatus, { bg: string; text: string }> =
   "已取消": { bg: "bg-slate-700/50", text: "text-slate-400" }
 };
 
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
+const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
+
 export default function PurchaseOrdersNewPage() {
-  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [initialized, setInitialized] = useState(false);
-  
-  // 搜索和筛选
+  const { data: orders = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>("purchase-orders-new-orders", getPurchaseOrdersFromAPI, SWR_OPT);
+  const { data: products = [] } = useSWR<Product[]>("purchase-orders-new-products", getProductsFromAPI, SWR_OPT);
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<PurchaseOrderStatus | "all">("all");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
-  
-  // 模态框状态
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
-  
   const [form, setForm] = useState({
     createdBy: "",
     platform: "TikTok" as "TikTok" | "Amazon" | "其他",
@@ -66,20 +70,6 @@ export default function PurchaseOrdersNewPage() {
     urgency: "普通" as "普通" | "紧急" | "加急",
     notes: ""
   });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-    const ords = await getPurchaseOrdersFromAPI();
-    setOrders(ords);
-    const prods = await getProductsFromAPI();
-    setProducts(prods);
-    const storesRes = await fetch("/api/stores?page=1&pageSize=500");
-    const storesJson = storesRes.ok ? await storesRes.json() : [];
-    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-    setInitialized(true);
-    })();
-  }, []);
 
   // 统计信息
   const stats = useMemo(() => {
@@ -171,8 +161,7 @@ export default function PurchaseOrdersNewPage() {
         urgency: form.urgency,
         notes: form.notes.trim() || undefined
       });
-      const ords = await getPurchaseOrdersFromAPI();
-      setOrders(ords);
+      mutateOrders();
       toast.success("采购订单已创建，等待风控评估");
     } catch (err) {
       console.error("创建订单失败", err);
@@ -221,8 +210,7 @@ export default function PurchaseOrdersNewPage() {
     
     try {
       await upsertPurchaseOrder(updatedOrder);
-      const ords = await getPurchaseOrdersFromAPI();
-      setOrders(ords);
+      mutateOrders();
       toast.success("订单已取消");
     } catch (err) {
       console.error("取消订单失败", err);

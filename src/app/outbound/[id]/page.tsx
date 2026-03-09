@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import useSWR from "swr";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, Save } from "lucide-react";
@@ -64,13 +65,22 @@ function isoToDateStr(iso: string | undefined): string {
   }
 }
 
+const batchFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("加载失败");
+  return r.json();
+};
+
 export default function OutboundBatchDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
 
-  const [batch, setBatch] = useState<BatchDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: batch, isLoading, mutate } = useSWR<BatchDetail | null>(
+    id ? `/api/outbound-batch/${id}` : null,
+    batchFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
+  );
   const [saving, setSaving] = useState(false);
 
   // 表单：运输信息
@@ -82,37 +92,14 @@ export default function OutboundBatchDetailPage() {
   const [status, setStatus] = useState("待发货");
 
   useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/outbound-batch/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("获取失败");
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setBatch(data);
-        setShippingMethod(data.shippingMethod ?? "");
-        setVesselName(data.vesselName ?? data.vesselVoyage ?? "");
-        setPortOfLoading(data.portOfLoading ?? "");
-        setPortOfDischarge(data.portOfDischarge ?? "");
-        setEta(isoToDateStr(data.eta));
-        setStatus(data.status ?? "待发货");
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBatch(null);
-          toast.error("加载批次失败");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+    if (!batch) return;
+    setShippingMethod(batch.shippingMethod ?? "");
+    setVesselName(batch.vesselName ?? batch.vesselVoyage ?? "");
+    setPortOfLoading(batch.portOfLoading ?? "");
+    setPortOfDischarge(batch.portOfDischarge ?? "");
+    setEta(isoToDateStr(batch.eta));
+    setStatus(batch.status ?? "待发货");
+  }, [batch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,7 +125,7 @@ export default function OutboundBatchDetailPage() {
         throw new Error(err?.error ?? "更新失败");
       }
       const updated = await res.json();
-      setBatch(updated);
+      mutate(updated, false);
       setEta(isoToDateStr(updated.eta));
       toast.success("保存成功");
     } catch (err) {
@@ -148,7 +135,7 @@ export default function OutboundBatchDetailPage() {
     }
   };
 
-  if (loading) {
+  if (isLoading && !batch) {
     return (
       <div className="p-6">
         <div className="h-10 w-48 rounded-lg bg-slate-800 animate-pulse mb-6" />

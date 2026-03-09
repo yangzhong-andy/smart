@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import type { BankAccount } from "@/lib/finance-store";
 import { getOrderTracking, getBatchReceipts, getDocuments, type OrderTracking, type BatchReceipt, type Document } from "@/lib/supply-chain-store";
@@ -27,11 +28,20 @@ const currency = (n: number, curr: string = "CNY") =>
 
 const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
 
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
+const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
+
 export default function FactoriesPage() {
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("factories-cash-flow", getCashFlowFromAPI, SWR_OPT);
+  const { data: purchaseOrders = [] } = useSWR<PurchaseOrder[]>("factories-legacy-po", getLegacyPurchaseOrdersFromAPI, SWR_OPT);
+
   const [orderTracking, setOrderTracking] = useState<OrderTracking[]>([]);
   const [batchReceipts, setBatchReceipts] = useState<BatchReceipt[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -39,23 +49,9 @@ export default function FactoriesPage() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "tracking" | "restock" | "documents">("dashboard");
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-    const [accRes, storesRes] = await Promise.all([
-      fetch("/api/accounts?page=1&pageSize=500"),
-      fetch("/api/stores?page=1&pageSize=500"),
-    ]);
-    const accJson = accRes.ok ? await accRes.json() : [];
-    const storesJson = storesRes.ok ? await storesRes.json() : [];
-    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
-    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-    const [flowList, legacyPOs] = await Promise.all([getCashFlowFromAPI(), getLegacyPurchaseOrdersFromAPI()]);
-    setCashFlow(flowList as CashFlow[]);
-    setPurchaseOrders(legacyPOs);
     setOrderTracking(getOrderTracking());
     setBatchReceipts(getBatchReceipts());
     setDocuments(getDocuments());
-    })();
   }, []);
 
   // 获取所有供应商列表

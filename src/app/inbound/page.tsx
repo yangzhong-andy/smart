@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import { Package, Truck, X } from "lucide-react";
 import { PageHeader, EmptyState, ActionButton } from "@/components/ui";
@@ -47,43 +48,30 @@ function getStatusStyle(status?: string) {
   return "bg-slate-500/20 text-slate-400";
 }
 
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => ({}));
+  return Array.isArray(j?.data) ? j.data : (Array.isArray(j) ? j : []);
+};
+
+const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true };
+
 export default function InboundBatchListPage() {
-  const [batches, setBatches] = useState<InboundBatchItem[]>([]);
-  const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: batches = [], mutate: mutateBatches } = useSWR<InboundBatchItem[]>(
+    "/api/inbound-batches?pageSize=200",
+    arrayFetcher,
+    SWR_OPT
+  );
+  const { data: warehouses = [] } = useSWR<WarehouseItem[]>(
+    "/api/warehouses?page=1&pageSize=500",
+    arrayFetcher,
+    SWR_OPT
+  );
   const [modalBatch, setModalBatch] = useState<InboundBatchItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ warehouseId: "", destination: "", qty: "" });
-
-  const fetchBatches = useCallback(async () => {
-    try {
-      const res = await fetch("/api/inbound-batches?pageSize=200&noCache=true");
-      const data = await res.json().catch(() => ({}));
-      setBatches(Array.isArray(data?.data) ? data.data : []);
-    } catch {
-      setBatches([]);
-    }
-  }, []);
-
-  const fetchWarehouses = useCallback(async () => {
-    try {
-      const res = await fetch("/api/warehouses?page=1&pageSize=500");
-      const data = await res.json().catch(() => ({}));
-      const list = Array.isArray(data?.data) ? data.data : [];
-      setWarehouses(list);
-      if (list.length > 0 && !form.warehouseId) {
-        const domestic = list.find((w: WarehouseItem) => w.type === "DOMESTIC");
-        setForm((f) => ({ ...f, warehouseId: domestic?.id ?? list[0].id }));
-      }
-    } catch {
-      setWarehouses([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchBatches(), fetchWarehouses()]).finally(() => setLoading(false));
-  }, [fetchBatches, fetchWarehouses]);
+  const loading = false;
 
   const openModal = (batch: InboundBatchItem) => {
     setModalBatch(batch);
@@ -138,7 +126,7 @@ export default function InboundBatchListPage() {
           : "出库单与出库批次已生成，库存已扣减"
       );
       closeModal();
-      fetchBatches();
+      mutateBatches();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "生成失败");
     } finally {

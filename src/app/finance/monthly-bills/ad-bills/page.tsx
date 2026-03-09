@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { Megaphone, Plus, X, Save, ArrowLeft, FileText, Zap, CheckCircle } from "lucide-react";
@@ -50,9 +51,6 @@ type OtherFee = {
 };
 
 export default function AdBillsPage() {
-  const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [consumptions, setConsumptions] = useState<AdConsumption[]>([]);
-  const [recharges, setRecharges] = useState<AdRecharge[]>([]);
   const [selectedAgencyId, setSelectedAgencyId] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
@@ -78,19 +76,15 @@ export default function AdBillsPage() {
   } | null>(null);
 
   const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-      const [a, c, r] = await Promise.all([
-        fetch("/api/ad-agencies?page=1&pageSize=500").then((res) => (res.ok ? res.json() : {})).then(toList),
-        fetch("/api/ad-consumptions?page=1&pageSize=5000").then((res) => (res.ok ? res.json() : {})).then(toList),
-        fetch("/api/ad-recharges?page=1&pageSize=5000").then((res) => (res.ok ? res.json() : {})).then(toList),
-      ]);
-      setAgencies(a);
-      setConsumptions(c);
-      setRecharges(r);
-    })();
-  }, []);
+  const arrayFetcher = async (url: string) => {
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    return r.json().then(toList);
+  };
+  const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
+  const { data: agencies = [] } = useSWR<Agency[]>("/api/ad-agencies?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: consumptions = [] } = useSWR<AdConsumption[]>("/api/ad-consumptions?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
+  const { data: recharges = [] } = useSWR<AdRecharge[]>("/api/ad-recharges?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
 
   // 自动汇总账单明细
   const handleAutoCalculate = () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
@@ -28,17 +28,26 @@ const formatDate = (dateString?: string) => {
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+const ordersFetcher = () => getPurchaseOrdersFromAPI().then((os) => os.filter((o) => o.status === "已推送采购"));
+const suppliersFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
+const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true };
 
 export default function ProcurementOrdersPage() {
-  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const { data: orders = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>("procurement-orders-list", ordersFetcher, SWR_OPT);
   const { data: contractsRaw, mutate: mutateContracts } = useSWR<any>(
     "/api/purchase-contracts?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
   const contracts = (Array.isArray(contractsRaw) ? contractsRaw : (contractsRaw?.data ?? [])) as PurchaseContract[];
-  const [products, setProducts] = useState<any[]>([]);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const { data: products = [] } = useSWR<any[]>("procurement-orders-products", getProductsFromAPI, SWR_OPT);
+  const { data: suppliers = [] } = useSWR<any[]>("/api/suppliers?page=1&pageSize=500", suppliersFetcher, SWR_OPT);
+
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -55,26 +64,10 @@ export default function ProcurementOrdersPage() {
     unitPrice: number;
   }>>([]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    const ords = await getPurchaseOrdersFromAPI().then((os) => os.filter((o) => o.status === "已推送采购"));
-    setOrders(ords);
+  const loadData = useCallback(() => {
+    mutateOrders();
     mutateContracts();
-    getProductsFromAPI().then(setProducts);
-    try {
-      const res = await fetch("/api/suppliers?page=1&pageSize=500");
-      if (res.ok) {
-        const json = await res.json();
-        setSuppliers(Array.isArray(json) ? json : (json?.data ?? []));
-      }
-    } catch (e) {
-      console.error("Failed to load suppliers", e);
-    }
-  };
+  }, [mutateOrders, mutateContracts]);
 
   // 筛选订单
   const filteredOrders = useMemo(() => {

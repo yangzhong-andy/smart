@@ -1,40 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import type { Store } from "@/lib/store-store";
 import type { BankAccount } from "@/lib/finance-store";
-import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
+import type { CashFlow } from "@/lib/cash-flow-store";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
     Number.isFinite(n) ? n : 0
   );
 
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
+
+const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
+
 export default function StoreReportPage() {
-  const [stores, setStores] = useState<Store[]>([]);
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores", arrayFetcher, SWR_OPT);
+  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
+
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
   const [filterYear, setFilterYear] = useState<string>("");
   const [filterMonth, setFilterMonth] = useState<string>("");
   const [quickFilter, setQuickFilter] = useState<string>("");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    (async () => {
-    const [storesRes, accRes] = await Promise.all([
-      fetch("/api/stores"),
-      fetch("/api/accounts"),
-    ]);
-    const storesJson = storesRes.ok ? await storesRes.json() : [];
-    const accJson = accRes.ok ? await accRes.json() : [];
-    setStores(Array.isArray(storesJson) ? storesJson : (storesJson?.data ?? []));
-    setAccounts(Array.isArray(accJson) ? accJson : (accJson?.data ?? []));
-    const flowList = await getCashFlowFromAPI();
-    setCashFlow(flowList);
-    })();
-  }, []);
 
   // 根据时间筛选条件过滤流水记录
   const filteredCashFlow = useMemo(() => {

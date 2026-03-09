@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import useSWR from "swr";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle, XCircle } from "lucide-react";
 
@@ -58,43 +59,35 @@ const currency = (n: number, curr: string = "CNY") =>
     Number.isFinite(n) ? n : 0
   );
 
+const balanceFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("查询失败");
+  return r.json();
+};
+
 export default function AccountBalanceDetailPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const accountId = searchParams.get("accountId");
   const accountName = searchParams.get("name") || "账户";
-  
-  const [detail, setDetail] = useState<AccountBalanceDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  const { data: detail, error, isLoading } = useSWR<AccountBalanceDetail | null>(
+    accountId ? `/api/accounts/${accountId}/balance` : null,
+    balanceFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
+  );
 
   useEffect(() => {
+    if (accountId === null || accountId === undefined) return;
     if (!accountId) {
       toast.error("缺少账户ID");
       router.back();
-      return;
     }
-
-    const fetchDetail = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/accounts/${accountId}/balance`);
-        if (!response.ok) {
-          throw new Error("查询失败");
-        }
-        const data = await response.json();
-        setDetail(data);
-      } catch (error: any) {
-        console.error("Failed to fetch balance detail:", error);
-        toast.error(error.message || "查询失败");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDetail();
   }, [accountId, router]);
 
-  if (loading) {
+  if (error && !detail) toast.error("查询失败");
+
+  if (isLoading && !detail) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950">
         <div className="text-slate-400">加载中...</div>
@@ -102,13 +95,14 @@ export default function AccountBalanceDetailPage() {
     );
   }
 
-  if (!detail) {
+  if (!accountId || (!detail && !isLoading)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950">
-        <div className="text-slate-400">未找到账户信息</div>
+        <div className="text-slate-400">{!accountId ? "缺少账户ID" : "未找到账户信息"}</div>
       </div>
     );
   }
+  if (!detail) return null;
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">

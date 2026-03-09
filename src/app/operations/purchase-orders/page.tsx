@@ -64,11 +64,18 @@ export default function PurchaseOrdersNewPage() {
   });
   const ordersData = (Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? [])) as PurchaseOrder[];
 
-  const [spuList, setSpuList] = useState<SpuListItem[]>([]);
+  const { data: spuList = [] } = useSWR<SpuListItem[]>("operations-po-spu-list", () => getSpuListFromAPI(), {
+    revalidateOnFocus: false,
+    dedupingInterval: 600000,
+    keepPreviousData: true
+  });
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
   const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [initialized, setInitialized] = useState(false);
+  const { data: stores = [] } = useSWR<Store[]>(
+    "/api/stores?page=1&pageSize=500",
+    (url: string) => fetch(url).then((r) => (r.ok ? r.json() : [])).then((j) => (Array.isArray(j) ? j : (j?.data ?? []))),
+    { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true }
+  );
   
   // 搜索和筛选
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -108,14 +115,6 @@ export default function PurchaseOrdersNewPage() {
     if (!form.productId) return null;
     return spuOptions.find((s) => s.productId === form.productId) ?? null;
   }, [form.productId, spuOptions]);
-
-  // 一次性只拉 SPU 列表；变体在用户选中该规格时再按需拉取并缓存，切换颜色/改数量零请求
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getSpuListFromAPI().then(setSpuList);
-    fetch("/api/stores?page=1&pageSize=500").then((res) => (res.ok ? res.json() : [])).then((json) => setStores(Array.isArray(json) ? json : (json?.data ?? [])));
-    setInitialized(true);
-  }, []);
 
   // 当用户选中规格/型号时，按需拉取该 SPU 下全部变体并缓存（仅此一次请求）
   useEffect(() => {

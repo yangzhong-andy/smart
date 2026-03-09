@@ -94,7 +94,17 @@ export default function PurchaseOrdersPage() {
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
   const contracts = Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []);
-  const [accounts, setAccounts] = useState<Array<{ id: string; name: string; originalBalance: number; balance?: number; currency: string }>>([]);
+  const { data: accountsRaw, mutate: mutateAccounts } = useSWR(
+    "procurement-po-accounts",
+    () => getAccountsFromAPI().then((parsed) =>
+      parsed.map((a: any) => ({
+        ...a,
+        originalBalance: a.originalBalance !== undefined ? a.originalBalance : a.balance || 0
+      }))
+    ),
+    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
+  );
+  const accounts = accountsRaw ?? [];
   const { data: deliveryOrdersData, mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[] | { data: DeliveryOrder[]; pagination: unknown }>(
     "/api/delivery-orders?page=1&pageSize=500",
     fetcher,
@@ -309,23 +319,11 @@ export default function PurchaseOrdersPage() {
 
   const products = productsForResolve;
 
-  // Load accounts
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    getAccountsFromAPI()
-      .then((parsed) => {
-        setAccounts(
-          parsed.map((a: any) => ({
-            ...a,
-            originalBalance: a.originalBalance !== undefined ? a.originalBalance : a.balance || 0
-          }))
-        );
-        if (parsed.length && !paymentModal.accountId) {
-          setPaymentModal((m) => ({ ...m, accountId: parsed[0].id }));
-        }
-      })
-      .catch((e) => console.error("Failed to load accounts", e));
-  }, []);
+    if (accounts.length && !paymentModal.accountId) {
+      setPaymentModal((m) => ({ ...m, accountId: accounts[0].id }));
+    }
+  }, [accounts.length, paymentModal.accountId]);
 
   const selectedSupplier = useMemo(() => {
     const supplierId = form.supplierId || suppliers[0]?.id;
@@ -927,8 +925,8 @@ export default function PurchaseOrdersPage() {
       }
       return acc;
     });
-    setAccounts(updatedAccounts);
     await saveAccounts(updatedAccounts as BankAccount[]);
+    mutateAccounts();
 
     // 生成收支明细（API）
     const paymentType = paymentModal.type === "deposit" ? "支付定金" : "支付尾款";
