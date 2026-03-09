@@ -32,7 +32,7 @@ export default function FactoriesPage() {
   const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: cashFlow = [] } = useSWR<CashFlow[]>("factories-cash-flow", cashFlowFetcher, SWR_OPT);
-  const { data: purchaseOrders = [] } = useSWR<PurchaseOrder[]>("factories-legacy-po", getLegacyPurchaseOrdersFromAPI, SWR_OPT);
+  const { data: purchaseOrders = [], mutate: mutatePurchaseOrders } = useSWR<PurchaseOrder[]>("factories-legacy-po", getLegacyPurchaseOrdersFromAPI, SWR_OPT);
 
   const [orderTracking, setOrderTracking] = useState<OrderTracking[]>([]);
   const [batchReceipts, setBatchReceipts] = useState<BatchReceipt[]>([]);
@@ -644,7 +644,7 @@ export default function FactoriesPage() {
                               const updatedPOs = purchaseOrders.map((p) =>
                                 p.id === po.id ? { ...p, receivedQty: (p.receivedQty || 0) + qty } : p
                               );
-                              setPurchaseOrders(updatedPOs);
+                              mutatePurchaseOrders(updatedPOs, false);
                               
                               alert("分批拿货记录已创建");
                             }}
