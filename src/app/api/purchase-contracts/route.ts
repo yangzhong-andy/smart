@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
               unitPrice: true,
               qty: true,
               pickedQty: true,
+              finishedQty: true,
               totalAmount: true,
             },
             orderBy: { sortOrder: 'asc' },
@@ -147,7 +148,7 @@ export async function GET(request: NextRequest) {
         itemCount: c._count.items,
         deliveryOrderCount: c._count.deliveryOrders,
         syncedDeposit: depositByContract[c.contractNumber] || 0,
-        items: (c as any).items?.map((it: { id: string; sku: string; skuName: string | null; spec: string | null; unitPrice: unknown; qty: number; pickedQty: number; totalAmount: unknown }) => ({
+        items: (c as any).items?.map((it: { id: string; sku: string; skuName: string | null; spec: string | null; unitPrice: unknown; qty: number; pickedQty: number; finishedQty?: number | null; totalAmount: unknown }) => ({
           id: it.id,
           sku: it.sku,
           skuName: it.skuName ?? undefined,
@@ -155,6 +156,7 @@ export async function GET(request: NextRequest) {
           unitPrice: Number(it.unitPrice),
           qty: it.qty,
           pickedQty: it.pickedQty,
+          finishedQty: it.finishedQty ?? 0,
           totalAmount: Number(it.totalAmount),
         })) ?? [],
       })),

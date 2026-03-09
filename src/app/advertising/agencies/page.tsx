@@ -71,7 +71,7 @@ export default function AdAgenciesPage() {
   const { data: adAccounts = [], mutate: mutateAdAccounts } = useSWR<AdAccount[]>("/api/ad-accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
   const { data: consumptions = [], mutate: mutateConsumptions } = useSWR<AdConsumption[]>("/api/ad-consumptions?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
   const { data: recharges = [], mutate: mutateRecharges } = useSWR<AdRecharge[]>("/api/ad-recharges?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: bankAccounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: bankAccounts = [], mutate: mutateBankAccounts } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
   const { data: cashFlowList = [], mutate: mutateCashFlow } = useSWR<CashFlowStoreType[]>("agencies-cash-flow", getCashFlowFromAPI, SWR_OPT_AGENCIES);
   const [activeTab, setActiveTab] = useState<"dashboard" | "agencies" | "accounts" | "consumptions" | "recharges">("dashboard");
@@ -1763,7 +1763,7 @@ export default function AdAgenciesPage() {
               return b;
             });
             await saveAccounts(updatedBankAccounts);
-            setBankAccounts(updatedBankAccounts);
+            await mutateBankAccounts();
             
             console.log(`✅ 广告返点结算成功：${settlementFlow.summary}`);
           }
