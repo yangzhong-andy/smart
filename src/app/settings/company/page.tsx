@@ -80,7 +80,7 @@ export default function CompanySettingsPage() {
       .finally(() => setSaving(false));
   };
 
-  if (status === "loading" || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[200px] text-slate-400">
         加载中…
