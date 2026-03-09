@@ -1017,6 +1017,14 @@ export default function PurchaseOrdersPage() {
 
   // 合同统计摘要
   const contractSummary = useMemo(() => {
+    const contractIdSet = new Set(filteredContracts.map((c) => c.id));
+    // 计算所有已拿货但未支付的尾款（按拿货单 tailAmount - tailPaid 累加）
+    const unpaidTailAmount = deliveryOrders.reduce((sum, order) => {
+      if (!contractIdSet.has(order.contractId)) return sum;
+      const remaining = (order.tailAmount || 0) - (order.tailPaid || 0);
+      return remaining > 0 ? sum + remaining : sum;
+    }, 0);
+
     const totalCount = filteredContracts.length;
     const totalAmount = filteredContracts.reduce((sum, c) => sum + c.totalAmount, 0);
     const totalPaid = filteredContracts.reduce((sum, c) => sum + (c.totalPaid || 0), 0);
@@ -1034,9 +1042,10 @@ export default function PurchaseOrdersPage() {
       totalDepositPaid,
       totalQty,
       totalPickedQty,
-      avgProgress
+      avgProgress,
+      unpaidTailAmount,
     };
-  }, [filteredContracts]);
+  }, [filteredContracts, deliveryOrders]);
 
   // 处理工厂完工
   const handleFactoryFinished = async (contractId: string) => {

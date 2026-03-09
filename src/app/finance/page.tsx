@@ -673,6 +673,7 @@ export default function FinanceDashboardPage() {
             <Wallet className="h-8 w-8 text-emerald-300 opacity-50" />
           </div>
         </div>
+
         <div
           className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
           style={{
@@ -691,6 +692,30 @@ export default function FinanceDashboardPage() {
             <DollarSign className="h-8 w-8 text-primary-300 opacity-50" />
           </div>
         </div>
+
+        {/* 拿货未付款金额（待付定金 + 尾款） */}
+        <div
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          style={{
+            background: "linear-gradient(135deg, #9a3412 0%, #0f172a 100%)",
+            border: "1px solid rgba(248, 250, 252, 0.12)"
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-300 mb-1">拿货未付款金额</p>
+              <p
+                className="text-2xl font-bold text-amber-200"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {currency(totalPendingPayments)}
+              </p>
+              <p className="text-[10px] text-slate-500 mt-2">包含待付定金 + 待付尾款</p>
+            </div>
+            <AlertCircle className="h-8 w-8 text-amber-300 opacity-60" />
+          </div>
+        </div>
+
         <div
           className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
           style={{

@@ -31,6 +31,8 @@ export type ContractSummary = {
   totalQty: number;
   totalPickedQty: number;
   avgProgress: number;
+  /** 已拿货但仍未支付的尾款总额（所有拿货单 tailAmount - tailPaid 之和） */
+  unpaidTailAmount: number;
 };
 
 /** 详情弹窗用的拿货单（仅展示与支付尾款） */
