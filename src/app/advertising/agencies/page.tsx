@@ -73,7 +73,7 @@ export default function AdAgenciesPage() {
   const { data: recharges = [], mutate: mutateRecharges } = useSWR<AdRecharge[]>("/api/ad-recharges?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
   const { data: bankAccounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: cashFlowList = [] } = useSWR<CashFlowStoreType[]>("agencies-cash-flow", getCashFlowFromAPI, SWR_OPT_AGENCIES);
+  const { data: cashFlowList = [], mutate: mutateCashFlow } = useSWR<CashFlowStoreType[]>("agencies-cash-flow", getCashFlowFromAPI, SWR_OPT_AGENCIES);
   const [activeTab, setActiveTab] = useState<"dashboard" | "agencies" | "accounts" | "consumptions" | "recharges">("dashboard");
   const [isAgencyModalOpen, setIsAgencyModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -1625,9 +1625,8 @@ export default function AdAgenciesPage() {
         isReversal: false
       };
       await createCashFlow(settlementFlow);
-      // 刷新 cashFlowList
-      const updatedFlow = await getCashFlowFromAPI();
-      setCashFlowList(updatedFlow);
+      // 刷新广告流水 SWR 缓存
+      await mutateCashFlow();
       console.log(`✅ 已生成财务流水待结算记录：${settlementFlow.summary}`);
     } catch (e) {
       console.error("Failed to create settlement flow", e);
@@ -1750,8 +1749,7 @@ export default function AdAgenciesPage() {
             };
             
             await createCashFlow(settlementFlow);
-            const updatedFlow = await getCashFlowFromAPI();
-            setCashFlowList(updatedFlow);
+            await mutateCashFlow();
             
             // 更新银行账户余额
             const updatedBankAccounts = bankAccounts.map((b) => {
