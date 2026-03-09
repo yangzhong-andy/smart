@@ -277,7 +277,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative ${
+      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative z-50 ${
         isCollapsed ? "w-20" : "w-72"
       }`}
       style={{ 
