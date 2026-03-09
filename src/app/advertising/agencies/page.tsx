@@ -3930,8 +3930,9 @@ export default function AdAgenciesPage() {
 
       {/* 凭证查看弹窗 */}
       {voucherViewModal && (
-        <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-40"
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+          style={{ zIndex: 9999 }}
           onClick={() => setVoucherViewModal(null)}
         >
           <div className="relative max-w-5xl max-h-[95vh] p-4" onClick={(e) => e.stopPropagation()}>

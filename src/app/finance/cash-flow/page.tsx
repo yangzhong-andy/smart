@@ -1502,7 +1502,8 @@ export default function CashFlowPage() {
         
         return (
           <div 
-            className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-40"
+            className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+            style={{ zIndex: 9999 }}
             onClick={() => {
               setVoucherViewModal(null);
               setCurrentVoucherIndex(0);

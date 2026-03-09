@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { usePathname } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { FileText } from "lucide-react";
@@ -39,10 +38,7 @@ import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-sto
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { createPaymentNotification, markNotificationAsRead, findNotificationsByRelated } from "@/lib/notification-store";
 
-const RECONCILIATION_PATH = "/finance/reconciliation";
-
 export default function ReconciliationPage() {
-  const pathname = usePathname();
   const [filterStatus, setFilterStatus] = useState<BillStatus | "all">("all");
   const [filterType, setFilterType] = useState<BillType | "all">("all");
   const [activeCategory, setActiveCategory] = useState<BillCategory | "PendingEntry" | "PendingFinanceReview" | "PendingPayment">(() => {
@@ -209,25 +205,6 @@ export default function ReconciliationPage() {
     setPendingEntries(pendingEntriesFromSWR);
     setBankAccounts(bankAccountsFromSWR);
   }, [pendingEntriesFromSWR, bankAccountsFromSWR]);
-
-  // 离开对账中心时关闭所有弹窗，避免全屏遮罩残留导致侧栏/其他区域点击无反应
-  useEffect(() => {
-    if (pathname !== RECONCILIATION_PATH) {
-      setIsDetailModalOpen(false);
-      setSelectedBill(null);
-      setIsEntryModalOpen(false);
-      setSelectedPendingEntry(null);
-      setIsPaymentModalOpen(false);
-      setSelectedPendingPaymentBill(null);
-      setVoucherViewModal(null);
-      setRejectModal({ open: false, id: null });
-      setSubmitApprovalModal({ open: false, billId: null });
-      setConfirmDialog(null);
-      setIsRebateDetailModalOpen(false);
-      setSelectedRebateReceivable(null);
-      setIsAdjustmentModalOpen(false);
-    }
-  }, [pathname]);
 
   // 使用本地状态变量（从 SWR 数据同步）
   const pendingEntries = pendingEntriesState;
@@ -1204,10 +1181,11 @@ export default function ReconciliationPage() {
         </div>
       )}
 
-      {/* 凭证查看弹窗（仅覆盖内容区域，z-index 低于侧边栏） */}
+      {/* 凭证查看弹窗 */}
       {voucherViewModal && (
         <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-40"
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+          style={{ zIndex: 9999 }}
           onClick={() => setVoucherViewModal(null)}
         >
           <div className="relative max-w-5xl max-h-[95vh] p-4" onClick={(e) => e.stopPropagation()}>

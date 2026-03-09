@@ -57,9 +57,7 @@ export async function GET(request: NextRequest) {
       if (endDate) where.date.lte = new Date(endDate);
     }
 
-    // 当 pageSize 很大时默认不返回凭证字段以减小缓存体积，但对于显式带 noCache=true 的请求（如流水明细全量查看）
-    // 仍然返回凭证字段，保证「付款凭证 / 转账凭证」能正常显示
-    const includeVoucher = pageSize <= 100 || noCache;
+    const includeVoucher = pageSize <= 100;
     const [flows, total] = await prisma.$transaction([
       prisma.cashFlow.findMany({
         where,

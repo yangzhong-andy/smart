@@ -332,8 +332,9 @@ export default function ImageUploader({
 
       {/* 图片查看弹窗 */}
       {imageViewModal && (
-        <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-40"
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+          style={{ zIndex: 9999 }}
           onClick={() => setImageViewModal(null)}
         >
           <div 

@@ -20,47 +20,19 @@ const currency = (n: number, curr: string = "CNY") =>
     Number.isFinite(n) ? n : 0
   );
 
-// 统一 fetcher：返回原始 JSON，由页面自行兼容 { data, pagination } 或数组
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
 
-const SWR_OPT = {
-  revalidateOnFocus: false,
-  revalidateOnReconnect: false,
-  dedupingInterval: 600000,
-  keepPreviousData: true,
-} as const;
+const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
 
 export default function ProfitPage() {
-  // 使用与账户/流水页面相同的返回结构：可能是数组，也可能是 { data, pagination }
-  const { data: accountsData } = useSWR<BankAccount[] | { data: BankAccount[]; pagination: unknown }>(
-    "/api/accounts?page=1&pageSize=500",
-    fetcher,
-    SWR_OPT
-  );
-  const { data: storesData } = useSWR<Store[] | { data: Store[]; pagination: unknown }>(
-    "/api/stores?page=1&pageSize=500",
-    fetcher,
-    SWR_OPT
-  );
-  const { data: cashFlowData } = useSWR<CashFlow[] | { data: CashFlow[]; pagination: unknown }>(
-    "/api/cash-flow?page=1&pageSize=5000",
-    fetcher,
-    SWR_OPT
-  );
-
-  // 兼容数组或 { data, pagination } 结构，确保后续一定拿到数组，避免 forEach/map 报错
-  const accounts: BankAccount[] = useMemo(
-    () => (Array.isArray(accountsData) ? accountsData : accountsData?.data ?? []),
-    [accountsData]
-  );
-  const stores: Store[] = useMemo(
-    () => (Array.isArray(storesData) ? storesData : storesData?.data ?? []),
-    [storesData]
-  );
-  const rawCashFlow: CashFlow[] = useMemo(
-    () => (Array.isArray(cashFlowData) ? cashFlowData : cashFlowData?.data ?? []),
-    [cashFlowData]
-  );
+  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
 
   const [filterCountry, setFilterCountry] = useState<string>("all");
 
@@ -100,9 +72,9 @@ export default function ProfitPage() {
 
   // 按国家筛选的收入
   const filteredIncomes = useMemo(() => {
-    let filtered = rawCashFlow.filter(
-      (flow) => flow.type === "income" && !(flow as CashFlowWithDefaults).isReversal && ((flow as CashFlowWithDefaults).status === "confirmed" || !(flow as CashFlowWithDefaults).status)
-    ) as CashFlowWithDefaults[];
+    let filtered = cashFlow.filter(
+      (flow) => flow.type === "income" && !(flow.isReversal) && (flow.status === "confirmed" || !flow.status)
+    );
     
     if (filterCountry !== "all") {
       const storeAccountIds = stores
@@ -115,7 +87,7 @@ export default function ProfitPage() {
     }
     
     return filtered;
-  }, [rawCashFlow, stores, filterCountry]);
+  }, [cashFlow, stores, filterCountry]);
 
   // 本月收入
   const thisMonth = new Date().getMonth();

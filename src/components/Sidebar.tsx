@@ -277,7 +277,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative z-[200] ${
+      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative ${
         isCollapsed ? "w-20" : "w-72"
       }`}
       style={{ 
@@ -485,11 +485,7 @@ export default function Sidebar() {
                                   onClick={(e) => {
                                     if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                                       e.preventDefault();
-                                      if (typeof window !== "undefined") {
-                                        window.location.href = child.href;
-                                      } else {
-                                        router.push(child.href);
-                                      }
+                                      router.push(child.href);
                                     }
                                   }}
                                   className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
@@ -563,11 +559,7 @@ export default function Sidebar() {
                           onClick={(e) => {
                             if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                               e.preventDefault();
-                              if (typeof window !== "undefined") {
-                                window.location.href = child.href;
-                              } else {
-                                router.push(child.href);
-                              }
+                              router.push(child.href);
                             }
                           }}
                           className={`block px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
