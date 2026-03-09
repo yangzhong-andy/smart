@@ -7,6 +7,7 @@ import { Wallet, TrendingUp, TrendingDown, Package, DollarSign, AlertCircle } fr
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { BankAccount } from "@/lib/finance-store";
+import { calculatePrimaryAccountBalance } from "@/lib/finance-store";
 import type { Store } from "@/lib/store-store";
 import { getPaymentRequests } from "@/lib/payment-request-store";
 import { getPendingEntryCount } from "@/lib/pending-entry-store";
@@ -65,10 +66,10 @@ export default function FinanceDashboardPage() {
     if (typeof window === "undefined") return;
     (async () => {
     const [accRes, storesRes, productsRes, flowList, legacyPOs] = await Promise.all([
-      fetch("/api/accounts"),
+      fetch("/api/accounts?page=1&pageSize=500"),
       fetch("/api/stores"),
       fetch("/api/products"),
-      getCashFlowFromAPI(),
+      getCashFlowFromAPI({ pageSize: 5000 }),
       getLegacyPurchaseOrdersFromAPI()
     ]);
     const accJson = accRes.ok ? await accRes.json() : [];
@@ -105,21 +106,49 @@ export default function FinanceDashboardPage() {
     return () => {}; // 无需清理
   }, []);
 
+  // 从流水重算账户余额（与账户管理页一致），避免依赖 DB 未更新的 balance 导致看板为 0
+  const accountsWithBalance = useMemo(() => {
+    if (!accounts.length) return [];
+    let list: BankAccount[] = accounts.map((acc) => {
+      const hasChildren = accounts.some((a) => a.parentId === acc.id);
+      if (acc.accountCategory === "PRIMARY" && hasChildren) {
+        return { ...acc, originalBalance: 0, rmbBalance: 0 };
+      }
+      const initialCapital = acc.initialCapital || 0;
+      let balance = initialCapital;
+      cashFlow.forEach((flow) => {
+        if (flow.status !== "confirmed" || flow.accountId !== acc.id) return;
+        balance += Number(flow.amount);
+      });
+      const rmb = acc.currency === "RMB" || acc.currency === "CNY"
+        ? balance
+        : balance * (acc.exchangeRate || 1);
+      return { ...acc, originalBalance: balance, rmbBalance: rmb };
+    });
+    list = list.map((acc) => {
+      if (acc.accountCategory !== "PRIMARY") return acc;
+      const hasChildren = list.some((a) => a.parentId === acc.id);
+      if (!hasChildren) return acc;
+      const { originalBalance, rmbBalance } = calculatePrimaryAccountBalance(acc, list);
+      return { ...acc, originalBalance, rmbBalance };
+    });
+    return list;
+  }, [accounts, cashFlow]);
+
   const totalAssets = useMemo(() => {
-    return accounts.reduce((sum, acc) => {
-      // originalBalance 已经包含了 initialCapital + 所有流水
-      // 优先使用 rmbBalance（如果已计算），否则根据汇率计算
-      if (acc.rmbBalance !== undefined) {
-        // rmbBalance 已经包含了 initialCapital + 所有流水
+    return accountsWithBalance.reduce((sum, acc) => {
+      if (acc.rmbBalance !== undefined && acc.accountCategory !== "PRIMARY") {
         return sum + (acc.rmbBalance || 0);
       }
-      // 如果没有 rmbBalance，根据汇率计算
-      const rmbValue = acc.currency === "RMB" 
+      if (acc.accountCategory === "PRIMARY" && accountsWithBalance.some((a) => a.parentId === acc.id)) {
+        return sum; // 主账户有子账户时已由子账户汇总，不重复加
+      }
+      const rmbValue = acc.currency === "RMB" || acc.currency === "CNY"
         ? (acc.originalBalance || 0)
         : (acc.originalBalance || 0) * (acc.exchangeRate || 1);
       return sum + rmbValue;
     }, 0);
-  }, [accounts]);
+  }, [accountsWithBalance]);
 
   // 计算所有待付款项（定金+尾款）的RMB总额
   const totalPendingPayments = useMemo(() => {

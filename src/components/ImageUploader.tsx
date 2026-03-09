@@ -77,6 +77,11 @@ export default function ImageUploader({
 
       for (const file of filesToProcess) {
         if (acceptPdf && file.type === "application/pdf") {
+          const pdfMaxKB = 1024; // PDF 不压缩，限制单文件约 1MB，避免请求体过大导致保存失败
+          if (file.size > pdfMaxKB * 1024) {
+            onError?.(`PDF「${file.name}」超过 ${pdfMaxKB}KB，请压缩后上传或改用图片`);
+            continue;
+          }
           try {
             const dataUrl = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();

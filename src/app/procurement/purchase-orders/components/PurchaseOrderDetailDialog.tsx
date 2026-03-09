@@ -469,7 +469,8 @@ export function PurchaseOrderDetailDialog({
                 label=""
                 multiple
                 maxImages={10}
-                placeholder="点击上传或 Ctrl+V 粘贴，支持 JPG、PDF，最多10张"
+                maxSizeKB={250}
+                placeholder="点击上传或 Ctrl+V 粘贴，支持 JPG、PDF，最多10张（单张约 250KB 内更易保存）"
                 acceptPdf
               />
               <button
@@ -492,7 +493,8 @@ export function PurchaseOrderDetailDialog({
                     });
                     if (!res.ok) {
                       const err = await res.json().catch(() => ({}));
-                      throw new Error(err?.error || "保存失败");
+                      const msg = [err?.error, err?.details].filter(Boolean).join("：") || "保存失败";
+                      throw new Error(msg);
                     }
                     const data = await res.json();
                     const next = data.contractVoucher ?? null;

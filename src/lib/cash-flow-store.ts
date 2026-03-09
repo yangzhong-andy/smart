@@ -50,6 +50,8 @@ export async function getCashFlowFromAPI(params?: {
   type?: CashFlowType;
   dateFrom?: string;
   dateTo?: string;
+  page?: number;
+  pageSize?: number;
 }): Promise<CashFlow[]> {
   if (typeof window === "undefined") return [];
   try {
@@ -58,16 +60,24 @@ export async function getCashFlowFromAPI(params?: {
     if (params?.type) query.set("type", params.type);
     if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
     if (params?.dateTo) query.set("dateTo", params.dateTo);
+    if (params?.page != null) query.set("page", String(params.page));
+    if (params?.pageSize != null) query.set("pageSize", String(params.pageSize));
     const url = query.toString() ? `/api/cash-flow?${query}` : "/api/cash-flow";
     const res = await fetch(url);
     if (!res.ok) return [];
     const json = await res.json();
     const list = Array.isArray(json) ? json : (json?.data ?? []);
-    return list.map((f: any) => ({
-      ...f,
-      summary: f.summary ?? f.description,
-      status: f.status ?? f.flowStatus,
-    }));
+    return list.map((f: any) => {
+      const rawType = f.type != null ? String(f.type).toLowerCase() : "";
+      const rawStatus = f.status ?? f.flowStatus;
+      const statusStr = rawStatus != null ? String(rawStatus).toLowerCase() : "pending";
+      return {
+        ...f,
+        summary: f.summary ?? f.description,
+        type: rawType === "income" || rawType === "expense" || rawType === "transfer" ? rawType : f.type,
+        status: statusStr === "confirmed" ? "confirmed" : "pending",
+      };
+    });
   } catch (e) {
     console.error("Failed to fetch cash flow", e);
     return [];
