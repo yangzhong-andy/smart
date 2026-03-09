@@ -6,18 +6,8 @@ import Link from "next/link";
 import type { BankAccount } from "@/lib/finance-store";
 import { getOrderTracking, getBatchReceipts, getDocuments, type OrderTracking, type BatchReceipt, type Document } from "@/lib/supply-chain-store";
 import type { Store } from "@/lib/store-store";
-import { getCashFlowFromAPI } from "@/lib/cash-flow-store";
+import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
 import { getLegacyPurchaseOrdersFromAPI, type LegacyPurchaseOrder } from "@/lib/purchase-contracts-store";
-
-type CashFlow = {
-  id: string;
-  date: string;
-  type: "income" | "expense";
-  amount: number;
-  relatedId?: string;
-  accountId?: string;
-  currency?: string;
-};
 
 type PurchaseOrder = LegacyPurchaseOrder;
 
@@ -36,10 +26,12 @@ const arrayFetcher = async (url: string) => {
 };
 const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
 
+const cashFlowFetcher = () => getCashFlowFromAPI();
+
 export default function FactoriesPage() {
   const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
-  const { data: cashFlow = [] } = useSWR<CashFlow[]>("factories-cash-flow", getCashFlowFromAPI, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("factories-cash-flow", cashFlowFetcher, SWR_OPT);
   const { data: purchaseOrders = [] } = useSWR<PurchaseOrder[]>("factories-legacy-po", getLegacyPurchaseOrdersFromAPI, SWR_OPT);
 
   const [orderTracking, setOrderTracking] = useState<OrderTracking[]>([]);
