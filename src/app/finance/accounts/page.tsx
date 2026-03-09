@@ -54,13 +54,19 @@ export default function BankAccountsPage() {
   // 兼容 API 返回 { data, pagination } 或直接数组
   const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
   const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
-  // 统一流水 status 为小写，兼容 API 返回的 CONFIRMED / flowStatus
+  // 统一流水 status / type 为小写，兼容 API 返回的枚举值（INCOME/EXPENSE/TRANSFER、CONFIRMED 等）
   const cashFlowList = useMemo(
     () =>
-      cashFlowListRaw.map((f: any) => ({
-        ...f,
-        status: (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending"
-      })),
+      cashFlowListRaw.map((f: any) => {
+        const rawType = String(f.type ?? "").toLowerCase();
+        const type = (rawType === "income" || rawType === "expense" ? rawType : "expense") as "income" | "expense";
+        const status = (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending";
+        return {
+          ...f,
+          type,
+          status
+        };
+      }),
     [cashFlowListRaw]
   );
 

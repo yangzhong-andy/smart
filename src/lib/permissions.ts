@@ -19,18 +19,22 @@ export const DEPARTMENT_CODES = {
  * 若某部门在此配置中，则只显示列出的菜单；未配置的部门或 null 表示显示全部
  */
 export const SIDEBAR_NAV_BY_DEPARTMENT: Record<string, string[]> = {
-  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['控制台', '产品中心', '供应链'],
+  // 全球供应链部：只看到「供应链」和「物流中心」两个一级菜单
+  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['供应链', '物流中心'],
 };
 
 /** 部门仅能访问的路径前缀（用于路由保护）。空数组表示不限制。 */
 export const ALLOWED_PATH_PREFIXES_BY_DEPARTMENT: Record<string, string[]> = {
   [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: [
-    '/',
-    '/approval',
-    '/product-center',
+    // 供应链相关
     '/procurement',
     '/supply-chain',
     '/inventory',
+    // 物流中心相关
+    '/logistics',
+    '/logistics-cost',
+    '/inbound',
+    '/outbound',
   ],
 };
 
@@ -59,6 +63,20 @@ export function getEffectiveDepartmentCode(
   const name = (departmentName || '').trim();
   if (name === '全球供应链部' || name === '全球供应链部门') return DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN;
   return departmentCode;
+}
+
+/** 各部门登录或越权跳转时的默认落地页 */
+const DEFAULT_ROUTE_BY_DEPARTMENT: Record<string, string> = {
+  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: '/procurement',
+};
+
+export function getDefaultRouteForDepartment(
+  departmentCode: string | null,
+  departmentName?: string | null
+): string | null {
+  const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
+  if (!effective) return null;
+  return DEFAULT_ROUTE_BY_DEPARTMENT[effective] ?? null;
 }
 
 /** 获取该部门在侧栏可见的一级菜单 label 列表；返回 null 表示全部可见 */

@@ -7,7 +7,7 @@ import { useSWRConfig } from "swr";
 import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
-import { isPathAllowedForDepartment } from "@/lib/permissions";
+import { isPathAllowedForDepartment, getDefaultRouteForDepartment } from "@/lib/permissions";
 
 /** 路由切换时顶部细进度条，点击子菜单后立即有反馈，减轻“卡住”体感 */
 function RouteChangeProgress() {
@@ -196,8 +196,11 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     const departmentCode = (session?.user as any)?.departmentCode ?? null;
     const departmentName = (session?.user as any)?.departmentName ?? null;
     if ((departmentCode || departmentName) && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName)) {
+      const fallback =
+        getDefaultRouteForDepartment(departmentCode, departmentName) ||
+        "/"; // 默认回到首页
       setIsChecking(false);
-      router.replace("/product-center/products");
+      router.replace(fallback);
       return;
     }
     setIsChecking(false);
