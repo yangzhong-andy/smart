@@ -14,7 +14,7 @@ import Link from "next/link";
 import type { PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { type BankAccount, getAccountStats } from "@/lib/finance-store";
-import { getCashFlowFromAPI, type CashFlow as CashFlowType } from "@/lib/cash-flow-store";
+import type { CashFlow as CashFlowType } from "@/lib/cash-flow-store";
 import { type FinanceRates } from "@/lib/exchange";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { formatCurrency as formatCurrencyUtil, formatCurrencyString } from "@/lib/currency-utils";
@@ -112,8 +112,6 @@ function getCurrentUserDisplayName(session: { user?: { name?: string | null; ema
 
 export default function FinanceWorkbenchPage() {
   const { data: session } = useSession();
-  const [cashFlow, setCashFlow] = useState<CashFlow[]>([]);
-  const [initialized, setInitialized] = useState(false);
   const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
   const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
   const [expenseAccountModal, setExpenseAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
@@ -304,6 +302,22 @@ export default function FinanceWorkbenchPage() {
   const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data ?? [];
   const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
 
+  // 统一流水 status / type 为小写，兼容 API 返回的枚举值，并用于统计卡片
+  const cashFlow: CashFlow[] = useMemo(
+    () =>
+      cashFlowListRaw.map((f: any) => {
+        const rawType = String(f.type ?? "").toLowerCase();
+        const type = (rawType === "income" || rawType === "expense" ? rawType : "expense") as "income" | "expense";
+        const status = (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending";
+        return {
+          ...f,
+          type,
+          status,
+        };
+      }),
+    [cashFlowListRaw]
+  );
+
   // 重新计算账户余额（包含 initialCapital 和流水记录）
   const accounts: BankAccount[] = useMemo(() => {
     if (!accountsListRaw.length) return [];
@@ -423,21 +437,6 @@ export default function FinanceWorkbenchPage() {
       }
     }
   }, [incomeAccountModal.open, incomeAccountModal.requestId, selectedIncomeRequest, approvedIncomeRequests, stores, accounts]);
-
-  // 加载现金流数据
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    getCashFlowFromAPI()
-      .then((data) => {
-        setCashFlow(Array.isArray(data) ? (data as unknown as CashFlow[]) : []);
-        setInitialized(true);
-      })
-      .catch((e) => {
-        console.error("Failed to fetch cash flow", e);
-        setCashFlow([]);
-        setInitialized(true);
-      });
-  }, []);
 
   // 刷新审批数据（修复：添加 mutate 到依赖项，避免无限循环）
   const refreshApprovalData = useCallback(() => {
