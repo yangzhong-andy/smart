@@ -43,13 +43,18 @@ export default function ProfitPage() {
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
 
+  // 二次兜底：即使上游缓存/回填出现非数组，也不允许进入 forEach/filter/reduce
+  const accountsArr = useMemo(() => (Array.isArray(accounts) ? accounts : toArray(accounts)), [accounts]);
+  const storesArr = useMemo(() => (Array.isArray(stores) ? stores : toArray(stores)), [stores]);
+  const cashFlowArr = useMemo(() => (Array.isArray(cashFlow) ? cashFlow : toArray(cashFlow)), [cashFlow]);
+
   const [filterCountry, setFilterCountry] = useState<string>("all");
 
   // 按国家汇总资产
   const assetsByCountry = useMemo(() => {
     const grouped: Record<string, { accounts: BankAccount[]; totalRMB: number }> = {};
     
-    accounts.forEach((acc) => {
+    accountsArr.forEach((acc) => {
       const country = (acc as any).country || "CN";
       if (!grouped[country]) {
         grouped[country] = { accounts: [], totalRMB: 0 };
@@ -66,27 +71,27 @@ export default function ProfitPage() {
         ...data
       };
     }).sort((a, b) => b.totalRMB - a.totalRMB);
-  }, [accounts]);
+  }, [accountsArr]);
 
   // 全球总资产
   const globalTotalAssets = useMemo(() => {
-    return accounts.reduce((sum, acc) => sum + (acc.rmbBalance || 0), 0);
-  }, [accounts]);
+    return accountsArr.reduce((sum, acc) => sum + (acc.rmbBalance || 0), 0);
+  }, [accountsArr]);
 
   // 按国家筛选的店铺
   const filteredStores = useMemo(() => {
-    if (filterCountry === "all") return stores;
-    return stores.filter((s) => s.country === filterCountry);
-  }, [stores, filterCountry]);
+    if (filterCountry === "all") return storesArr;
+    return storesArr.filter((s) => s.country === filterCountry);
+  }, [storesArr, filterCountry]);
 
   // 按国家筛选的收入
   const filteredIncomes = useMemo(() => {
-    let filtered = cashFlow.filter(
+    let filtered = cashFlowArr.filter(
       (flow) => flow.type === "income" && !(flow.isReversal) && (flow.status === "confirmed" || !flow.status)
     );
     
     if (filterCountry !== "all") {
-      const storeAccountIds = stores
+      const storeAccountIds = storesArr
         .filter((s) => s.country === filterCountry && s.accountId)
         .map((s) => s.accountId)
         .filter(Boolean);
@@ -96,7 +101,7 @@ export default function ProfitPage() {
     }
     
     return filtered;
-  }, [cashFlow, stores, filterCountry]);
+  }, [cashFlowArr, storesArr, filterCountry]);
 
   // 本月收入
   const thisMonth = new Date().getMonth();
@@ -108,7 +113,7 @@ export default function ProfitPage() {
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
   });
   const thisMonthTotal = thisMonthIncomes.reduce((sum, flow) => {
-    const account = flow.accountId ? accounts.find((a) => a.id === flow.accountId) : null;
+    const account = flow.accountId ? accountsArr.find((a) => a.id === flow.accountId) : null;
     const amount = Math.abs(flow.amount || 0);
     if (account) {
       const currency = flow.currency || account.currency || "RMB";
@@ -120,7 +125,7 @@ export default function ProfitPage() {
 
   // 累计收入
   const totalIncome = filteredIncomes.reduce((sum, flow) => {
-    const account = flow.accountId ? accounts.find((a) => a.id === flow.accountId) : null;
+    const account = flow.accountId ? accountsArr.find((a) => a.id === flow.accountId) : null;
     const amount = Math.abs(flow.amount || 0);
     if (account) {
       const currency = flow.currency || account.currency || "RMB";
@@ -160,7 +165,7 @@ export default function ProfitPage() {
               {currency(globalTotalAssets, "CNY")}
             </div>
             <div className="text-xs text-slate-500 mt-1">
-              {accounts.length} 个账户
+              {accountsArr.length} 个账户
             </div>
           </div>
         </div>
