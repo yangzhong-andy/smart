@@ -20,11 +20,20 @@ const currency = (n: number, curr: string = "CNY") =>
     Number.isFinite(n) ? n : 0
   );
 
+function toArray<T = any>(j: any): T[] {
+  if (Array.isArray(j)) return j as T[];
+  // 常见分页包装：{ data: [] } 或 { data: { data: [] } }
+  if (Array.isArray(j?.data)) return j.data as T[];
+  if (Array.isArray(j?.data?.data)) return j.data.data as T[];
+  // 兜底：不是数组一律返回空数组，避免 forEach 崩溃
+  return [];
+}
+
 const arrayFetcher = async (url: string) => {
   const r = await fetch(url);
   if (!r.ok) throw new Error(String(r.status));
   const j = await r.json();
-  return Array.isArray(j) ? j : (j?.data ?? []);
+  return toArray(j);
 };
 
 const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
