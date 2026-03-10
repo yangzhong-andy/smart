@@ -35,19 +35,20 @@ function RouteChangeProgress() {
   );
 }
 
-// 动态导入 Sidebar，禁用 SSR，避免初始化错误
+// 动态导入 Sidebar：ssr:false 防止水合错误导致页面崩溃，loading 占位保持布局稳定
 const Sidebar = dynamic(() => import("@/components/Sidebar"), {
   ssr: false,
   loading: () => (
-    <aside className="w-64 border-r border-slate-800 bg-slate-900/50 p-4">
-      <div className="h-full animate-pulse">
-        <div className="h-8 bg-slate-800 rounded mb-4"></div>
+    <aside className="flex flex-col w-72 border-r border-slate-800 bg-slate-900/50 p-4 flex-shrink-0" aria-label="侧栏加载中">
+      <div className="h-full animate-pulse flex flex-col gap-4">
+        <div className="h-8 bg-slate-800 rounded mb-4" />
         <div className="space-y-2">
-          <div className="h-6 bg-slate-800 rounded"></div>
-          <div className="h-6 bg-slate-800 rounded"></div>
-          <div className="h-6 bg-slate-800 rounded"></div>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-6 bg-slate-800 rounded" />
+          ))}
         </div>
       </div>
+      <div className="mt-auto text-xs text-slate-500 text-center py-2">加载中…</div>
     </aside>
   ),
 });
@@ -229,8 +230,8 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       <RouteChangeRefresher />
       <RouteChangeProgress />
       <div className="flex h-full relative">
-        {/* 侧栏容器：必须包一层并设 z-[10000]，否则 dynamic(Sidebar) 的外层无 z-index，会被 main(z-0) 盖住导致对账中心等页无法点击菜单 */}
-        <div className="relative z-[10000] flex-shrink-0">
+        {/* 侧栏容器：position:relative + z-index:50，确保永远在 main(z-0) 之上，避免 dynamic 加载顺序导致被遮挡 */}
+        <div className="relative z-50 flex-shrink-0">
           <Sidebar />
         </div>
 

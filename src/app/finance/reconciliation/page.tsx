@@ -36,6 +36,7 @@ import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-sto
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { createPaymentNotification, markNotificationAsRead, findNotificationsByRelated } from "@/lib/notification-store";
 
+// 数据均通过 useSWR 异步拉取，无大循环/同步请求，不阻塞侧栏加载与点击
 export default function ReconciliationPage() {
   const [filterStatus, setFilterStatus] = useState<BillStatus | "all">("all");
   const [filterType, setFilterType] = useState<BillType | "all">("all");
