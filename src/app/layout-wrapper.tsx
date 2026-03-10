@@ -134,12 +134,31 @@ function RouteChangeRefresher() {
   return null;
 }
 
+const CHECKING_TIMEOUT_MS = 8000;
+
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
   const isLoginPage = pathname === "/login";
+  const checkingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 加载锁超时：防止 isChecking 永远不解除导致右侧一直“加载中”
+  useEffect(() => {
+    if (!isLoginPage && isChecking) {
+      checkingTimeoutRef.current = setTimeout(() => {
+        checkingTimeoutRef.current = null;
+        setIsChecking(false);
+      }, CHECKING_TIMEOUT_MS);
+    }
+    return () => {
+      if (checkingTimeoutRef.current) {
+        clearTimeout(checkingTimeoutRef.current);
+        checkingTimeoutRef.current = null;
+      }
+    };
+  }, [isLoginPage, isChecking]);
 
   // 为登录页面添加特殊标识的 useEffect（必须在顶层）
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { FileText } from "lucide-react";
@@ -207,8 +207,12 @@ export default function ReconciliationPage() {
   const bankAccountsFromSWR: BankAccount[] = Array.isArray(bankAccountsData) ? (bankAccountsData as BankAccount[]) : [];
   const products: Array<{ sku_id?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }> = Array.isArray(productsData) ? productsData : [];
 
-  // 更新本地状态（用于兼容现有代码）
+  // 更新本地状态（用于兼容现有代码）：仅当数据实际变化时 setState，避免依赖引用导致重复触发
+  const prevSyncRef = useRef<string>("");
   useEffect(() => {
+    const key = `${pendingEntriesFromSWR.length}-${bankAccountsFromSWR.length}-${pendingEntriesFromSWR[0]?.id ?? ""}-${bankAccountsFromSWR[0]?.id ?? ""}`;
+    if (prevSyncRef.current === key) return;
+    prevSyncRef.current = key;
     setPendingEntries(pendingEntriesFromSWR);
     setBankAccounts(bankAccountsFromSWR);
   }, [pendingEntriesFromSWR, bankAccountsFromSWR]);

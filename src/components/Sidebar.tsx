@@ -488,6 +488,8 @@ export default function Sidebar() {
                                       console.log("[Sidebar] nav click →", child.href);
                                       if (pathname === "/finance/reconciliation" && child.href !== pathname) {
                                         window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+                                        window.location.href = child.href;
+                                        return;
                                       }
                                       router.push(child.href);
                                     }
@@ -566,6 +568,8 @@ export default function Sidebar() {
                               console.log("[Sidebar] nav click (collapsed) →", child.href);
                               if (pathname === "/finance/reconciliation" && child.href !== pathname) {
                                 window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+                                window.location.href = child.href;
+                                return;
                               }
                               router.push(child.href);
                             }
@@ -605,10 +609,12 @@ export default function Sidebar() {
               key={item.href}
               href={item.href || "#"}
               prefetch
-              onClick={() => {
+              onClick={(e) => {
                 if (item.href) console.log("[Sidebar] nav click (top-level) →", item.href);
                 if (pathname === "/finance/reconciliation" && item.href && item.href !== pathname) {
+                  e.preventDefault();
                   window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+                  window.location.href = item.href;
                 }
               }}
               className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
