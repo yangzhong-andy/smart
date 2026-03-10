@@ -10,8 +10,6 @@ import { ReconciliationFilters } from "./components/ReconciliationFilters";
 import { ReconciliationTable } from "./components/ReconciliationTable";
 import { ReconciliationDetailDialog } from "./components/ReconciliationDetailDialog";
 import { ReconciliationMatchDialog } from "./components/ReconciliationMatchDialog";
-import { getAgencies } from "@/lib/ad-agency-store";
-import { getAdConsumptions, getAdRecharges } from "@/lib/ad-agency-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ImageUploader from "@/components/ImageUploader";
@@ -102,11 +100,49 @@ export default function ReconciliationPage() {
   // "dept" = 部门同事, "finance" = 财务, "boss" = 公司主管, "cashier" = 出纳
   const [userRole] = useState<"dept" | "finance" | "boss" | "cashier">("dept");
 
+  // 离开对账中心（组件卸载）时恢复 body 滚动，避免弹窗锁滚动影响其他页面
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  // 监听侧栏「离开对账中心」事件，立即关闭所有弹窗并恢复 body，避免遮罩/锁滚动导致无法切换页面
+  useEffect(() => {
+    const closeAllModals = () => {
+      document.body.style.overflow = "";
+      setSelectedBill(null);
+      setIsDetailModalOpen(false);
+      setSelectedPendingEntry(null);
+      setIsEntryModalOpen(false);
+      setSelectedPendingPaymentBill(null);
+      setIsPaymentModalOpen(false);
+      setVoucherViewModal(null);
+      setRejectModal({ open: false, id: null });
+      setRejectReason("");
+      setSubmitApprovalModal({ open: false, billId: null });
+      setPaymentApplicationVoucher("");
+      setConfirmDialog(null);
+      setSelectedRebateReceivable(null);
+      setIsRebateDetailModalOpen(false);
+      setIsAdjustmentModalOpen(false);
+    };
+    const handler = () => closeAllModals();
+    window.addEventListener("reconciliation-close-modals", handler);
+    return () => window.removeEventListener("reconciliation-close-modals", handler);
+  }, []);
+
+  // 延迟加载「库存统计」用到的 products，减轻首屏请求
+  const [deferProducts, setDeferProducts] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDeferProducts(true), 500);
+    return () => clearTimeout(t);
+  }, []);
+
   // SWR fetcher 函数
   const fetcher = useCallback(async (key: string) => {
     if (typeof window === "undefined") return null;
     const apiMap: Record<string, string> = {
-      agencies: "/api/ad-agencies",
       recharges: "/api/ad-recharges",
       consumptions: "/api/ad-consumptions",
       "rebate-receivables": "/api/rebate-receivables",
@@ -136,61 +172,31 @@ export default function ReconciliationPage() {
     return null;
   }, []);
 
-  // 使用 SWR 获取数据（优化：关闭焦点刷新，增加去重间隔以减少数据库访问）
-  const { data: billsData } = useSWR("monthly-bills", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 优化：增加到10分钟内去重
-  });
-  const { data: agenciesData } = useSWR("agencies", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
-  const { data: rechargesData } = useSWR("recharges", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
-  const { data: consumptionsData } = useSWR("consumptions", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
-  const { data: deliveryOrdersData } = useSWR("delivery-orders", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
-  const { data: contractsData } = useSWR("contracts", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
-  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 优化：增加到10分钟内去重
-  });
-  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, { 
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 优化：增加到5分钟内去重
-  });
-  const { data: bankAccountsData } = useSWR("bank-accounts", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
-  const { data: productsData } = useSWR("products", fetcher, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10分钟内去重
-  });
+  const swrOpt = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000 };
+  const swrOpt5m = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 300000 };
+
+  // 首屏必拉：月账单、待入账、银行账户
+  const { data: billsData } = useSWR("monthly-bills", fetcher, swrOpt);
+  const { data: pendingEntriesData } = useSWR("pending-entries", fetcher, swrOpt5m);
+  const { data: bankAccountsData } = useSWR("bank-accounts", fetcher, swrOpt);
+
+  // 仅打开账单详情弹窗时再拉：充值/消耗/发货单/合同
+  const detailOpen = isDetailModalOpen && !!selectedBill;
+  const { data: rechargesData, isLoading: rechargesLoading } = useSWR(detailOpen ? "recharges" : null, fetcher, swrOpt);
+  const { data: consumptionsData, isLoading: consumptionsLoading } = useSWR(detailOpen ? "consumptions" : null, fetcher, swrOpt);
+  const { data: deliveryOrdersData, isLoading: deliveryOrdersLoading } = useSWR(detailOpen ? "delivery-orders" : null, fetcher, swrOpt);
+  const { data: contractsData, isLoading: contractsLoading } = useSWR(detailOpen ? "contracts" : null, fetcher, swrOpt);
+  const isDetailDataLoading = rechargesLoading || consumptionsLoading || deliveryOrdersLoading || contractsLoading;
+
+  // 仅切到应收款或打开返点明细弹窗时再拉
+  const needRebates = activeCategory === "Receivable" || isRebateDetailModalOpen;
+  const { data: rebateReceivablesData } = useSWR(needRebates ? "rebate-receivables" : null, fetcher, swrOpt);
+
+  // 库存统计延迟 500ms 再拉，减轻首屏压力
+  const { data: productsData } = useSWR(deferProducts ? "products" : null, fetcher, swrOpt);
 
   // 确保数据是数组并指定类型
   const bills: MonthlyBill[] = Array.isArray(billsData) ? (billsData as MonthlyBill[]) : [];
-  const agencies: any[] = Array.isArray(agenciesData) ? agenciesData : [];
   const recharges: any[] = Array.isArray(rechargesData) ? rechargesData : [];
   const consumptions: any[] = Array.isArray(consumptionsData) ? consumptionsData : [];
   const deliveryOrders: DeliveryOrder[] = Array.isArray(deliveryOrdersData) ? (deliveryOrdersData as DeliveryOrder[]) : [];
@@ -1077,6 +1083,7 @@ export default function ReconciliationPage() {
         deliveryOrders={deliveryOrders}
         contracts={contracts}
         consumptions={consumptions}
+        isDetailDataLoading={isDetailDataLoading}
         onClose={() => setIsDetailModalOpen(false)}
         onViewVoucher={setVoucherViewModal}
       />
@@ -1181,11 +1188,10 @@ export default function ReconciliationPage() {
         </div>
       )}
 
-      {/* 凭证查看弹窗 */}
+      {/* 凭证查看弹窗（z 低于侧栏 10000，侧栏仍可点击以离开页面） */}
       {voucherViewModal && (
         <div 
-          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
-          style={{ zIndex: 9999 }}
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm z-[9998]"
           onClick={() => setVoucherViewModal(null)}
         >
           <div className="relative max-w-5xl max-h-[95vh] p-4" onClick={(e) => e.stopPropagation()}>

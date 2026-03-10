@@ -40,6 +40,7 @@ interface ReconciliationDetailDialogProps {
   deliveryOrders: DeliveryOrderLike[];
   contracts: PurchaseContractLike[];
   consumptions: ConsumptionLike[];
+  isDetailDataLoading?: boolean;
   onClose: () => void;
   onViewVoucher: (voucher: string | null) => void;
 }
@@ -52,6 +53,7 @@ export function ReconciliationDetailDialog({
   deliveryOrders,
   contracts,
   consumptions,
+  isDetailDataLoading = false,
   onClose,
   onViewVoucher,
 }: ReconciliationDetailDialogProps) {
@@ -66,6 +68,13 @@ export function ReconciliationDetailDialog({
           <h2 className="text-xl font-semibold">账单详情 - {selectedBill.month}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200">✕</button>
         </div>
+
+        {isDetailDataLoading && (
+          <div className="mb-4 rounded-lg bg-slate-800/60 border border-slate-700 px-4 py-2 text-sm text-slate-400 flex items-center gap-2">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent" />
+            加载充值/消耗/发货单等明细…
+          </div>
+        )}
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">

@@ -49,10 +49,15 @@ export async function GET(request: NextRequest) {
           agencyId: true, agencyName: true, adAccountId: true, accountName: true,
           supplierId: true, supplierName: true, factoryId: true, factoryName: true,
           totalAmount: true, currency: true, rebateAmount: true, netAmount: true,
-          status: true, createdBy: true, createdAt: true, submittedAt: true,
-          approvedAt: true, rejectionReason: true, paidBy: true, paidAt: true,
+          consumptionIds: true, rechargeIds: true,
+          status: true, createdBy: true, createdAt: true,
+          submittedToFinanceAt: true, paymentApplicationVoucher: true,
+          financeReviewedBy: true, financeReviewedAt: true,
+          submittedAt: true, approvedAt: true, cashierApprovedBy: true, cashierApprovedAt: true,
+          rejectionReason: true, paidBy: true, paidAt: true,
           paymentMethod: true, paymentAccountId: true, paymentAccountName: true,
-          paymentFlowId: true, paymentVoucherNumber: true, paymentRemarks: true, notes: true,
+          paymentVoucher: true, paymentFlowId: true, paymentVoucherNumber: true, paymentRemarks: true,
+          notes: true,
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -60,6 +65,16 @@ export async function GET(request: NextRequest) {
       }),
       prisma.monthlyBill.count({ where }),
     ]);
+
+    const parseIds = (raw: string | null): string[] => {
+      if (!raw) return [];
+      try {
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    };
 
     const response = {
       data: bills.map(b => ({
@@ -80,17 +95,26 @@ export async function GET(request: NextRequest) {
         currency: b.currency,
         rebateAmount: Number(b.rebateAmount),
         netAmount: Number(b.netAmount),
+        consumptionIds: parseIds(b.consumptionIds),
+        rechargeIds: parseIds(b.rechargeIds),
         status: b.status,
         createdBy: b.createdBy,
         createdAt: b.createdAt.toISOString(),
+        submittedToFinanceAt: b.submittedToFinanceAt?.toISOString(),
+        paymentApplicationVoucher: b.paymentApplicationVoucher ?? undefined,
+        financeReviewedBy: b.financeReviewedBy ?? undefined,
+        financeReviewedAt: b.financeReviewedAt?.toISOString(),
         submittedAt: b.submittedAt?.toISOString(),
         approvedAt: b.approvedAt?.toISOString(),
+        cashierApprovedBy: b.cashierApprovedBy ?? undefined,
+        cashierApprovedAt: b.cashierApprovedAt?.toISOString(),
         rejectionReason: b.rejectionReason || undefined,
         paidBy: b.paidBy || undefined,
         paidAt: b.paidAt?.toISOString(),
         paymentMethod: b.paymentMethod || undefined,
         paymentAccountId: b.paymentAccountId || undefined,
         paymentAccountName: b.paymentAccountName || undefined,
+        paymentVoucher: b.paymentVoucher ?? undefined,
         paymentFlowId: b.paymentFlowId || undefined,
         paymentVoucherNumber: b.paymentVoucherNumber || undefined,
         paymentRemarks: b.paymentRemarks || undefined,

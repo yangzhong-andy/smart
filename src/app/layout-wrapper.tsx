@@ -138,10 +138,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [isChecking, setIsChecking] = useState(true);
-  const [showLoginLink, setShowLoginLink] = useState(false);
   const isLoginPage = pathname === "/login";
-  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const loginLinkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 为登录页面添加特殊标识的 useEffect（必须在顶层）
   useEffect(() => {
@@ -153,52 +150,38 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     }
   }, [isLoginPage]);
 
+  // 路由切换时恢复 body 滚动，避免对账中心等页面的弹窗遮罩残留导致后续页面无法滚动
   useEffect(() => {
-    // 如果是登录页面，不需要检查认证
+    document.body.style.overflow = "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [pathname]);
+
+  useEffect(() => {
     if (isLoginPage) {
       setIsChecking(false);
       return;
     }
 
+    // session 加载中：不阻塞界面，直接显示正常布局，避免切换页面时反复出现「验证身份」
     if (status === "loading") {
-      if (!loadingTimeoutRef.current) {
-        // 超时后使用整页跳转，避免 SPA 路由不生效
-        loadingTimeoutRef.current = setTimeout(() => {
-          console.warn("Session 加载超时（3s），重定向到登录页");
-          loadingTimeoutRef.current = null;
-          window.location.href = "/login";
-        }, 3000);
-      }
-      if (!loginLinkTimeoutRef.current) {
-        loginLinkTimeoutRef.current = setTimeout(() => setShowLoginLink(true), 2000);
-      }
-      return () => {};
+      setIsChecking(false);
+      return;
     }
 
-    if (loadingTimeoutRef.current) {
-      clearTimeout(loadingTimeoutRef.current);
-      loadingTimeoutRef.current = null;
-    }
-    if (loginLinkTimeoutRef.current) {
-      clearTimeout(loginLinkTimeoutRef.current);
-      loginLinkTimeoutRef.current = null;
-    }
-    setShowLoginLink(false);
-
-    // 检查用户是否已登录
     if (status === "unauthenticated" || !session) {
       setIsChecking(false);
       router.replace("/login");
       return;
     }
 
-    // 已登录：按部门校验路径权限
     const departmentCode = (session?.user as any)?.departmentCode ?? null;
     const departmentName = (session?.user as any)?.departmentName ?? null;
     if ((departmentCode || departmentName) && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName)) {
       const fallback =
         getDefaultRouteForDepartment(departmentCode, departmentName) ||
-        "/"; // 默认回到首页
+        "/";
       setIsChecking(false);
       router.replace(fallback);
       return;
@@ -206,38 +189,13 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     setIsChecking(false);
   }, [pathname, router, isLoginPage, session, status]);
 
-  useEffect(() => {
-    return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
-      if (loginLinkTimeoutRef.current) {
-        clearTimeout(loginLinkTimeoutRef.current);
-        loginLinkTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
+  // 仅在实际未登录时显示「跳转登录」；session 加载中不挡屏，不显示「验证身份」
   if (isChecking && !isLoginPage) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent text-primary-500"></div>
-          <p className="mt-4 text-slate-400">正在验证身份...</p>
-          <p className="mt-2 text-xs text-slate-500">若长时间无响应，将自动跳转登录页</p>
-          {showLoginLink && (
-            <a
-              href="/login"
-              onClick={(e) => {
-                e.preventDefault();
-                window.location.href = "/login";
-              }}
-              className="mt-6 inline-block px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium transition-colors"
-            >
-              前往登录
-            </a>
-          )}
+          <p className="mt-4 text-slate-400">加载中...</p>
         </div>
       </div>
     );
@@ -270,12 +228,14 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     <SWRProvider>
       <RouteChangeRefresher />
       <RouteChangeProgress />
-      <div className="flex h-full">
-        {/* Sidebar */}
-        <Sidebar />
+      <div className="flex h-full relative">
+        {/* 侧栏容器：必须包一层并设 z-[10000]，否则 dynamic(Sidebar) 的外层无 z-index，会被 main(z-0) 盖住导致对账中心等页无法点击菜单 */}
+        <div className="relative z-[10000] flex-shrink-0">
+          <Sidebar />
+        </div>
 
         {/* Main Content */}
-        <main className="flex-1 text-slate-100 overflow-y-auto relative z-0 scrollbar-thin">
+        <main className="flex-1 text-slate-100 overflow-y-auto relative z-0 scrollbar-thin min-w-0">
           <div className="min-h-full">
             {children}
           </div>

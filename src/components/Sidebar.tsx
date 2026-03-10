@@ -277,7 +277,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative ${
+      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative z-[10000] ${
         isCollapsed ? "w-20" : "w-72"
       }`}
       style={{ 
@@ -485,6 +485,9 @@ export default function Sidebar() {
                                   onClick={(e) => {
                                     if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                                       e.preventDefault();
+                                      if (pathname === "/finance/reconciliation" && child.href !== pathname) {
+                                        window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+                                      }
                                       router.push(child.href);
                                     }
                                   }}
@@ -559,6 +562,9 @@ export default function Sidebar() {
                           onClick={(e) => {
                             if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                               e.preventDefault();
+                              if (pathname === "/finance/reconciliation" && child.href !== pathname) {
+                                window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+                              }
                               router.push(child.href);
                             }
                           }}
@@ -597,6 +603,11 @@ export default function Sidebar() {
               key={item.href}
               href={item.href || "#"}
               prefetch
+              onClick={() => {
+                if (pathname === "/finance/reconciliation" && item.href && item.href !== pathname) {
+                  window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+                }
+              }}
               className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
                 active
                   ? "text-white font-bold"
