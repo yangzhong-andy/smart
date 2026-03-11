@@ -19,8 +19,10 @@ export const DEPARTMENT_CODES = {
  * 若某部门在此配置中，则只显示列出的菜单；未配置的部门或 null 表示显示全部
  */
 export const SIDEBAR_NAV_BY_DEPARTMENT: Record<string, string[]> = {
-  // 全球供应链部：只看到「供应链」和「物流中心」两个一级菜单
-  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['供应链', '物流中心'],
+  // 全球供应链部：供应链/物流中心/产品中心
+  [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['供应链', '物流中心', '产品中心'],
+  // 履约物流中心：与全球供应链部一致（供应链/物流中心/产品中心）
+  [DEPARTMENT_CODES.FULFILLMENT_LOGISTICS]: ['供应链', '物流中心', '产品中心'],
 };
 
 /** 部门仅能访问的路径前缀（用于路由保护）。空数组表示不限制。 */
@@ -30,6 +32,23 @@ export const ALLOWED_PATH_PREFIXES_BY_DEPARTMENT: Record<string, string[]> = {
     '/procurement',
     '/supply-chain',
     '/inventory',
+    // 产品中心相关
+    '/product-center',
+    '/products',
+    // 物流中心相关
+    '/logistics',
+    '/logistics-cost',
+    '/inbound',
+    '/outbound',
+  ],
+  [DEPARTMENT_CODES.FULFILLMENT_LOGISTICS]: [
+    // 供应链相关
+    '/procurement',
+    '/supply-chain',
+    '/inventory',
+    // 产品中心相关
+    '/product-center',
+    '/products',
     // 物流中心相关
     '/logistics',
     '/logistics-cost',
@@ -62,12 +81,14 @@ export function getEffectiveDepartmentCode(
   if (departmentCode && SIDEBAR_NAV_BY_DEPARTMENT[departmentCode]) return departmentCode;
   const name = (departmentName || '').trim();
   if (name === '全球供应链部' || name === '全球供应链部门') return DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN;
+  if (name === '履约物流中心' || name === '履约物流部门') return DEPARTMENT_CODES.FULFILLMENT_LOGISTICS;
   return departmentCode;
 }
 
 /** 各部门登录或越权跳转时的默认落地页 */
 const DEFAULT_ROUTE_BY_DEPARTMENT: Record<string, string> = {
   [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: '/procurement',
+  [DEPARTMENT_CODES.FULFILLMENT_LOGISTICS]: '/procurement',
 };
 
 export function getDefaultRouteForDepartment(
