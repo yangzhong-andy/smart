@@ -39,6 +39,13 @@ import { AgenciesTable } from "./components/AgenciesTable";
 import { AgencyFormDialog } from "./components/AgencyFormDialog";
 import { AgencyDetailDialog } from "./components/AgencyDetailDialog";
 import { initialAgencyFormState } from "./components/types";
+import { AccountsTable } from "./components/AccountsTable";
+import { AccountsFormDialog } from "./components/AccountsFormDialog";
+import { ConsumptionsTable } from "./components/ConsumptionsTable";
+import { ConsumptionsFormDialog } from "./components/ConsumptionsFormDialog";
+import { RechargesTable } from "./components/RechargesTable";
+import { RechargesFormDialog } from "./components/RechargesFormDialog";
+import { SettlementDialog } from "./components/SettlementDialog";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -47,7 +54,6 @@ const currency = (n: number, curr: string = "CNY") =>
 
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
-import ImageUploader from "@/components/ImageUploader";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
@@ -2479,654 +2485,103 @@ export default function AdAgenciesPage() {
         </div>
       )}
 
-      {/* 广告账户 */}
       {activeTab === "accounts" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-100">广告账户列表</h2>
-              <p className="text-sm text-slate-400 mt-1">管理广告账户余额、授信额度和账户信息</p>
-            </div>
-            <button
-              onClick={() => {
-                setEditAccount(null);
-                setAccountForm({
-                  agencyId: "",
-                  accountName: "",
-                  currentBalance: "",
-                  creditLimit: "",
-                  currency: "USD",
-                  country: "",
-                  notes: ""
-                });
-                setIsAccountModalOpen(true);
-              }}
-              className="flex items-center gap-2 rounded-md bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px transition-colors"
-            >
-              + 新增广告账户
-            </button>
-          </div>
-
-          {adAccounts.length === 0 ? (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-12 text-center">
-              <p className="text-slate-400">
-                暂无广告账户，请点击右上角「新增广告账户」开始添加
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800/60">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">账户名称</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">代理商</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">国家</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">币种</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">可用余额</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">待结返点</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">授信额度</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {adAccounts.map((account) => {
-                    // 计算该账户的统计信息
-                    const accountConsumptions = consumptions.filter((c) => c.adAccountId === account.id);
-                    const totalConsumption = accountConsumptions.reduce((sum, c) => sum + c.amount, 0);
-                    const totalEstimatedRebate = accountConsumptions.reduce((sum, c) => sum + (c.estimatedRebate || 0), 0);
-                    const settledRebates = accountConsumptions
-                      .filter((c) => c.isSettled)
-                      .reduce((sum, c) => sum + (c.estimatedRebate || 0), 0);
-                    const pendingRebates = totalEstimatedRebate - settledRebates;
-                    
-                    // 从充值记录中统计该账户的实付充值（不含返点）
-                    const accountRecharges = recharges.filter((r) => r.adAccountId === account.id);
-                    const totalRecharge = accountRecharges.reduce((sum, r) => sum + r.amount, 0);
-                    
-                    // 从财务流水中统计该账户的已结算返点（用于余额计算）
-                    let totalSettledRebate = 0;
-                    cashFlowList.forEach((flow) => {
-                      if (
-                        flow.category === "运营-广告-已结算" &&
-                        flow.type === "income" &&
-                        !flow.isReversal &&
-                        (flow.status === "confirmed" || !flow.status) &&
-                        flow.relatedId
-                      ) {
-                        const consumption = accountConsumptions.find((c) => c.id === flow.relatedId);
-                        if (consumption && consumption.isSettled) {
-                          totalSettledRebate += Math.abs(flow.amount);
-                        }
-                      }
-                    });
-                    
-                    // 计算当前余额：累计实付充值 - 累计消耗 + 已结算返点（返点不计入余额，但已结算的返点会回到账户）
-                    const calculatedBalance = totalRecharge - totalConsumption + totalSettledRebate;
-                    // 待结返点 = 账户的应收返点字段
-                    const rebateReceivable = account.rebateReceivable || 0;
-                    
-                    // 按月份分组未结算的消耗记录
-                    const consumptionsByMonth: Record<string, AdConsumption[]> = {};
-                    accountConsumptions
-                      .filter((c) => !c.isSettled)
-                      .forEach((c) => {
-                        if (!consumptionsByMonth[c.month]) {
-                          consumptionsByMonth[c.month] = [];
-                        }
-                        consumptionsByMonth[c.month].push(c);
-                      });
-                    
-                    return (
-                      <tr key={account.id} className="hover:bg-slate-800/40">
-                        <td className="px-4 py-3 text-slate-100 font-medium">{account.accountName}</td>
-                        <td className="px-4 py-3 text-slate-300">{account.agencyName}</td>
-                        <td className="px-4 py-3 text-slate-300">
-                          {account.country ? (getCountryByCode(account.country)?.name || account.country) : <span className="text-slate-500">-</span>}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">{account.currency}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className={`font-medium ${calculatedBalance >= 0 ? "text-blue-300" : "text-rose-400"}`}>
-                            {formatCurrency(calculatedBalance, account.currency, "balance")}
-                            {calculatedBalance < 0 && (
-                              <span className="ml-1 text-xs text-rose-400/70" title="账户已透支">
-                                (透支)
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {rebateReceivable > 0 ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <span className="font-medium text-amber-400">
-                                {formatCurrency(rebateReceivable, account.currency, "balance")}
-                              </span>
-                              <span 
-                                className="cursor-help text-amber-400 text-xs" 
-                                title="返点为应收账款，后续需独立收回，不计入账户现金余额"
-                              >
-                                ℹ️
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-500">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-300">
-                          {formatCurrency(account.creditLimit, account.currency, "balance")}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => {
-                                setRechargeAccount(account);
-                                setRechargeForm({
-                                  amount: "",
-                                  currency: "USD", // 默认美元
-                                  date: new Date().toISOString().slice(0, 10),
-                                  voucher: "", // 充值凭证
-                                  notes: ""
-                                });
-                                setAmountError(false);
-                                setPreviewKey(0);
-                                setIsRechargeModalOpen(true);
-                              }}
-                              className="px-2 py-1 rounded border border-blue-500/40 bg-blue-500/10 text-xs text-blue-100 hover:bg-blue-500/20"
-                              title="充值"
-                            >
-                              💵 充值
-                            </button>
-                            {Object.keys(consumptionsByMonth).length > 0 && (
-                              <button
-                                onClick={() => {
-                                  // 显示月份选择弹窗
-                                  const months = Object.keys(consumptionsByMonth).sort().reverse();
-                                  const selectedMonth = months[0]; // 默认选择最早的未结算月份
-                                  setSettlementData({
-                                    month: selectedMonth,
-                                    accountId: account.id,
-                                    consumptions: consumptionsByMonth[selectedMonth]
-                                  });
-                                  setIsSettlementModalOpen(true);
-                                }}
-                                className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-100 hover:bg-emerald-500/20"
-                                title="一键结算"
-                              >
-                                💰 结算
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleEditAccount(account)}
-                              className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20"
-                            >
-                              编辑
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAccount(account.id)}
-                              className="px-2 py-1 rounded border border-rose-500/40 bg-rose-500/10 text-xs text-rose-100 hover:bg-rose-500/20"
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <AccountsTable
+          adAccounts={adAccounts}
+          consumptions={consumptions}
+          recharges={recharges}
+          cashFlowList={cashFlowList}
+          onAddAccount={() => {
+            setEditAccount(null);
+            setAccountForm({
+              agencyId: "",
+              accountName: "",
+              currentBalance: "",
+              creditLimit: "",
+              currency: "USD",
+              country: "",
+              notes: ""
+            });
+            setIsAccountModalOpen(true);
+          }}
+          onRecharge={(account) => {
+            setRechargeAccount(account);
+            setRechargeForm({
+              amount: "",
+              currency: "USD",
+              date: new Date().toISOString().slice(0, 10),
+              voucher: "",
+              notes: ""
+            });
+            setAmountError(false);
+            setPreviewKey(0);
+            setIsRechargeModalOpen(true);
+          }}
+          onSettlement={(accountId, month, consumptionsList) => {
+            setSettlementData({ month, accountId, consumptions: consumptionsList });
+            setIsSettlementModalOpen(true);
+          }}
+          onEditAccount={handleEditAccount}
+          onDeleteAccount={handleDeleteAccount}
+        />
       )}
 
-      {/* 消耗记录 */}
       {activeTab === "consumptions" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-100">消耗记录</h2>
-              <p className="text-sm text-slate-400 mt-1">记录和管理广告账户的消耗明细</p>
-            </div>
-            <button
-              onClick={() => {
-                  setConsumptionForm({
-                    adAccountId: "",
-                    storeId: "",
-                    month: new Date().toISOString().slice(0, 7),
-                    date: new Date().toISOString().slice(0, 10),
-                    amount: "",
-                    currency: "USD",
-                    campaignName: "",
-                    voucher: "",
-                    notes: ""
-                  });
-                setIsConsumptionModalOpen(true);
-              }}
-              className="flex items-center gap-2 rounded-md bg-primary-500 px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px transition-colors"
-            >
-              + 新增消耗记录
-            </button>
-          </div>
-
-          {consumptions.length === 0 ? (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-12 text-center">
-              <p className="text-slate-400">
-                暂无消耗记录，请点击右上角「新增消耗记录」开始添加
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800/60">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">月份</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">日期</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">账户名称</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">关联店铺</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">消耗金额</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">预估返点</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">预计付款日期</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">返点到账日期</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">币种</th>
-                    <th className="px-4 py-3 text-center font-medium text-slate-300">结算状态</th>
-                    <th className="px-4 py-3 text-center font-medium text-slate-300">凭证</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {consumptions
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map((consumption) => (
-                      <tr key={consumption.id} className="hover:bg-slate-800/40">
-                        <td className="px-4 py-3 text-slate-300">{consumption.month || "-"}</td>
-                        <td className="px-4 py-3 text-slate-300">{consumption.date}</td>
-                        <td className="px-4 py-3 text-slate-100">{consumption.accountName}</td>
-                        <td className="px-4 py-3 text-slate-300">{consumption.storeName || "-"}</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatCurrency(consumption.amount, consumption.currency || "USD", "expense")}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {consumption.estimatedRebate ? formatCurrency(consumption.estimatedRebate, consumption.currency || "USD", "income") : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300 text-xs">
-                          {consumption.dueDate || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300 text-xs">
-                          {consumption.rebateDueDate || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">{consumption.currency}</td>
-                        <td className="px-4 py-3 text-center">
-                          {consumption.isSettled ? (
-                            <span className="px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                              已结算
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                              待结算
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {consumption.voucher && consumption.voucher.length > 10 ? (
-                            <button
-                              onClick={() => setVoucherViewModal(consumption.voucher || null)}
-                              className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
-                            >
-                              查看
-                            </button>
-                          ) : (
-                            <span className="text-slate-500 text-xs">无</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => handleDeleteConsumption(consumption.id)}
-                            className="px-2 py-1 rounded border border-rose-500/40 bg-rose-500/10 text-xs text-rose-100 hover:bg-rose-500/20"
-                          >
-                            删除
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <ConsumptionsTable
+          consumptions={consumptions}
+          onAdd={() => {
+            setConsumptionForm({
+              adAccountId: "",
+              storeId: "",
+              month: new Date().toISOString().slice(0, 7),
+              date: new Date().toISOString().slice(0, 10),
+              amount: "",
+              currency: "USD",
+              campaignName: "",
+              voucher: "",
+              notes: ""
+            });
+            setIsConsumptionModalOpen(true);
+          }}
+          onDelete={handleDeleteConsumption}
+          onViewVoucher={setVoucherViewModal}
+        />
       )}
 
-      {/* 充值历史 */}
       {activeTab === "recharges" && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-100">充值历史</h2>
-            <p className="text-sm text-slate-400 mt-1">查看所有广告账户的充值记录和返点明细</p>
-          </div>
-          {recharges.length === 0 ? (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-12 text-center">
-              <p className="text-slate-400">暂无充值记录</p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800/60">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">日期</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">月份</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">账户名称</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">国家</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">代理商</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">充值金额</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">返点金额</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">币种</th>
-                    <th className="px-4 py-3 text-center font-medium text-slate-300">付款状态</th>
-                    <th className="px-4 py-3 text-center font-medium text-slate-300">凭证</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-300">备注</th>
-                    <th className="px-4 py-3 text-right font-medium text-slate-300">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {recharges
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map((recharge) => (
-                      <tr key={recharge.id} className="hover:bg-slate-800/40">
-                        <td className="px-4 py-3 text-slate-300">{recharge.date}</td>
-                        <td className="px-4 py-3 text-slate-300">{recharge.month || "-"}</td>
-                        <td className="px-4 py-3 text-slate-100 font-medium">{recharge.accountName}</td>
-                        <td className="px-4 py-3 text-slate-300">
-                          {(() => {
-                            const account = adAccounts.find((a) => a.id === recharge.adAccountId);
-                            return account?.country ? getCountryByCode(account.country)?.name || account.country : "-";
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">{recharge.agencyName || "-"}</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatCurrency(recharge.amount, recharge.currency, "income")}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {recharge.rebateAmount ? formatCurrency(recharge.rebateAmount, recharge.currency, "income") : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-300">{recharge.currency}</td>
-                        <td className="px-4 py-3 text-center">
-                          {recharge.paymentStatus === "Pending" ? (
-                            <span className="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                              待付款
-                            </span>
-                          ) : recharge.paymentStatus === "Paid" ? (
-                            <span className="px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                              已付款
-                            </span>
-                          ) : (
-                            <span className="px-2 py-1 rounded text-xs bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                              已取消
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {recharge.voucher ? (
-                            <button
-                              onClick={() => setVoucherViewModal(recharge.voucher || null)}
-                              className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
-                            >
-                              查看
-                            </button>
-                          ) : (
-                            <span className="text-slate-500 text-xs">无</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-slate-400 text-xs max-w-xs truncate">
-                          {recharge.notes || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => handleDeleteRecharge(recharge.id)}
-                            className="px-2 py-1 rounded border border-rose-500/40 bg-rose-500/10 text-xs text-rose-100 hover:bg-rose-500/20"
-                          >
-                            删除
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <RechargesTable
+          recharges={recharges}
+          adAccounts={adAccounts}
+          onDelete={handleDeleteRecharge}
+          onViewVoucher={setVoucherViewModal}
+        />
       )}
 
-      {/* 充值表单弹窗 */}
-      {isRechargeModalOpen && rechargeAccount && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm" style={{ zIndex: 50 }}>
-          <div className="bg-[#0B0C10]/90 backdrop-blur-xl rounded-xl border border-cyan-500/20 p-6 w-full max-w-md shadow-[0_0_40px_rgba(6,182,212,0.2)] modal-enter" style={{ position: "relative", zIndex: 51 }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">充值 - {rechargeAccount.accountName}</h2>
-              <button
-                onClick={() => {
-                  setIsRechargeModalOpen(false);
-                  setRechargeAccount(null);
-                  setRechargeForm({
-                    amount: "",
-                    currency: "USD",
-                    date: new Date().toISOString().slice(0, 10),
-                    voucher: "",
-                    notes: ""
-                  });
-                  setAmountError(false);
-                  setPreviewKey(0);
-                }}
-                className="text-slate-400 hover:text-slate-200 transition-colors duration-200"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateRecharge} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">充值货币 *</label>
-                <select
-                  value={rechargeForm.currency}
-                  onChange={(e) => setRechargeForm((f) => ({ ...f, currency: e.target.value as "USD" | "CNY" | "HKD" }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                >
-                  <option value="USD">USD (美元)</option>
-                  <option value="CNY">CNY (人民币)</option>
-                  <option value="HKD">HKD (港币)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">充值金额 *</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-                    {rechargeForm.currency === "USD" ? "$" : rechargeForm.currency === "CNY" ? "¥" : "HK$"}
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={rechargeForm.amount}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setRechargeForm((f) => ({ ...f, amount: value }));
-                      const numValue = Number(value);
-                      const hasError = value !== "" && (isNaN(numValue) || numValue <= 0);
-                      setAmountError(hasError);
-                      if (!hasError && value !== "") {
-                        setPreviewKey((prev) => prev + 1); // 触发数值跳动
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const numValue = Number(e.target.value);
-                      const hasError = e.target.value !== "" && (isNaN(numValue) || numValue <= 0);
-                      setAmountError(hasError);
-                    }}
-                    className={`w-full rounded-md border pl-8 pr-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300 ${
-                      amountError 
-                        ? "border-rose-500 bg-slate-900/50 error" 
-                        : "border-white/10 bg-slate-900/50"
-                    }`}
-                    placeholder="0.00"
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">充值日期 *</label>
-                <input
-                  type="date"
-                  lang="zh-CN"
-                  value={rechargeForm.date}
-                  onChange={(e) => setRechargeForm((f) => ({ ...f, date: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300 cursor-pointer"
-                  style={{
-                    colorScheme: "dark",
-                    position: "relative",
-                    zIndex: 10
-                  }}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">充值凭证 *</label>
-                <ImageUploader
-                  value={rechargeForm.voucher || ""}
-                  onChange={(value) => {
-                    // ImageUploader 在单图模式下（maxImages=1, multiple=false）返回字符串
-                    // 在多图模式下返回数组
-                    const voucherValue = typeof value === "string" ? value : (Array.isArray(value) ? value[0] || "" : "");
-                    console.log("凭证更新:", voucherValue ? `${voucherValue.substring(0, 50)}...` : "空");
-                    setRechargeForm((f) => ({ ...f, voucher: voucherValue }));
-                  }}
-                  maxImages={1}
-                  multiple={false}
-                />
-                <p className="text-xs text-slate-400 mt-1">请上传充值凭证（如转账截图、支付凭证等）</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">备注</label>
-                <textarea
-                  value={rechargeForm.notes}
-                  onChange={(e) => setRechargeForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  placeholder="可选备注信息"
-                />
-              </div>
-              {(() => {
-                const agency = agencies.find((a) => a.id === rechargeAccount.agencyId);
-                const rebateRate = agency?.rebateConfig?.rate || agency?.rebateRate || 0;
-                const amount = Number(rechargeForm.amount) || 0;
-                const rebateAmount = rebateRate > 0 ? (amount * rebateRate) / 100 : 0;
-                const currentBalance = rechargeAccount.currentBalance || 0;
-                const currentRebateReceivable = rechargeAccount.rebateReceivable || 0;
-                const newBalance = currentBalance + amount; // 只增加实付金额，返点不计入余额
-                const newRebateReceivable = currentRebateReceivable + rebateAmount; // 返点计入应收
-                
-                if (amount <= 0) return null;
-                
-                // 格式化金额函数（避免显示 [object Object]）
-                const formatAmount = (val: number, curr: string) => {
-                  const symbol = curr === "USD" ? "$" : curr === "CNY" ? "¥" : "HK$";
-                  return `${symbol}${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                };
-                
-                return (
-                  <div key={previewKey} className="rounded-lg bg-slate-900/40 backdrop-blur-md border border-white/10 p-5 space-y-3 shadow-glow-blue">
-                    {/* 实付金额 */}
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-300 text-sm">实付金额（本金）：</span>
-                      <span className={`text-[#00E5FF] font-bold text-lg number-preview`}>
-                        {formatAmount(amount, rechargeForm.currency)}
-                      </span>
-                    </div>
-                    
-                    {/* 返点信息 */}
-                    {rebateRate > 0 && rebateAmount > 0 && (
-                      <>
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-slate-300 text-sm flex items-center gap-1">
-                              待结返点（应收账款）
-                              <span className="text-xs text-amber-400/80">ℹ️</span>
-                            </span>
-                            <span className="text-xs text-slate-500 leading-tight">
-                              返点不计入账户余额，将作为应收账款独立核算
-                            </span>
-                          </div>
-                          <span className={`text-amber-400 font-bold text-base number-preview`}>
-                            {formatAmount(rebateAmount, rechargeForm.currency)}
-                          </span>
-                        </div>
-                        <div className="border-t border-white/10 pt-3"></div>
-                      </>
-                    )}
-                    
-                    {/* 当前状态 */}
-                    <div className="space-y-2 pt-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 text-xs">当前可用余额：</span>
-                        <span className="text-slate-100 font-medium text-sm">
-                          {formatAmount(currentBalance, rechargeAccount.currency)}
-                        </span>
-                      </div>
-                      {currentRebateReceivable > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-400 text-xs">当前待结返点：</span>
-                          <span className="text-amber-400 font-medium text-sm">
-                            {formatAmount(currentRebateReceivable, rechargeAccount.currency)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* 充值后状态 */}
-                    <div className="border-t border-cyan-500/20 pt-3 mt-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-300 font-medium text-sm">充值后可用余额：</span>
-                        <span className={`text-[#00E5FF] font-bold text-xl number-preview`}>
-                          {formatAmount(newBalance, rechargeAccount.currency)}
-                        </span>
-                      </div>
-                      {rebateRate > 0 && rebateAmount > 0 && (
-                        <div className="flex justify-between items-center mt-2">
-                          <span className="text-slate-300 font-medium text-sm">充值后待结返点：</span>
-                          <span className={`text-amber-400 font-bold text-base number-preview`}>
-                            {formatAmount(newRebateReceivable, rechargeAccount.currency)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsRechargeModalOpen(false);
-                    setRechargeAccount(null);
-                    setRechargeForm({
-                      amount: "",
-                      currency: "USD",
-                      date: new Date().toISOString().slice(0, 10),
-                      voucher: "",
-                      notes: ""
-                    });
-                  }}
-                  className="px-4 py-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={amountError || !rechargeForm.amount || Number(rechargeForm.amount) <= 0}
-                  className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#00E5FF] via-[#3D5AFE] to-[#00E5FF] text-slate-900 font-bold hover:shadow-[0_0_20px_rgba(0,150,255,0.4)] transition-all duration-300 shadow-[0_0_20px_rgba(0,150,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-[0_0_20px_rgba(0,150,255,0.3)]"
-                >
-                  确认充值
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <RechargesFormDialog
+        isOpen={isRechargeModalOpen}
+        rechargeAccount={rechargeAccount}
+        onClose={() => {
+          setIsRechargeModalOpen(false);
+          setRechargeAccount(null);
+          setRechargeForm({
+            amount: "",
+            currency: "USD",
+            date: new Date().toISOString().slice(0, 10),
+            voucher: "",
+            notes: ""
+          });
+          setAmountError(false);
+          setPreviewKey(0);
+        }}
+        form={rechargeForm}
+        setForm={setRechargeForm}
+        amountError={amountError}
+        setAmountError={setAmountError}
+        previewKey={previewKey}
+        setPreviewKey={setPreviewKey}
+        agencies={agencies}
+        onSubmit={handleCreateRecharge}
+      />
 
       <AgencyFormDialog
         isOpen={isAgencyModalOpen}
@@ -3142,154 +2597,27 @@ export default function AdAgenciesPage() {
         onSubmit={editAgency ? handleUpdateAgency : handleCreateAgency}
       />
 
-      {/* 广告账户表单弹窗 */}
-      {isAccountModalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">{editAccount ? "编辑广告账户" : "新增广告账户"}</h2>
-              <button
-                onClick={() => {
-                  setIsAccountModalOpen(false);
-                  setEditAccount(null);
-                  setAccountForm({
-                    agencyId: "",
-                    accountName: "",
-                    currentBalance: "",
-                    creditLimit: "",
-                    currency: "USD",
-                    country: "",
-                    notes: ""
-                  });
-                }}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={editAccount ? handleUpdateAccount : handleCreateAccount} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">代理商 *</label>
-                <select
-                  value={accountForm.agencyId}
-                  onChange={(e) => setAccountForm((f) => ({ ...f, agencyId: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                  disabled={!!editAccount}
-                >
-                  <option value="">请选择代理商</option>
-                  {agencies.map((agency) => (
-                    <option key={agency.id} value={agency.id}>
-                      {agency.name} ({agency.platform})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">账户名称 *</label>
-                <input
-                  type="text"
-                  value={accountForm.accountName}
-                  onChange={(e) => setAccountForm((f) => ({ ...f, accountName: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">币种 *</label>
-                  <select
-                    value={accountForm.currency}
-                    onChange={(e) => setAccountForm((f) => ({ ...f, currency: e.target.value as AdAccount["currency"] }))}
-                    className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  >
-                    <option value="USD">USD</option>
-                    <option value="RMB">RMB</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="JPY">JPY</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">所属国家</label>
-                  <select
-                    value={accountForm.country}
-                    onChange={(e) => setAccountForm((f) => ({ ...f, country: e.target.value }))}
-                    className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  >
-                    <option value="">不指定</option>
-                    {COUNTRIES.filter((c) => c.code !== "GLOBAL").map((country) => (
-                      <option key={country.code} value={country.code}>
-                        {country.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">当前余额</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={accountForm.currentBalance}
-                  onChange={(e) => setAccountForm((f) => ({ ...f, currentBalance: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">账期授信额度</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={accountForm.creditLimit}
-                  onChange={(e) => setAccountForm((f) => ({ ...f, creditLimit: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">备注</label>
-                <textarea
-                  value={accountForm.notes}
-                  onChange={(e) => setAccountForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                />
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAccountModalOpen(false);
-                    setEditAccount(null);
-                    setAccountForm({
-                      agencyId: "",
-                      accountName: "",
-                      currentBalance: "",
-                      creditLimit: "",
-                      currency: "USD",
-                      country: "",
-                      notes: ""
-                    });
-                  }}
-                  className="px-4 py-2 rounded-md border border-white/10 text-slate-300 hover:bg-white/5 hover:border-white/20 transition-all duration-200"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-md bg-[#00E5FF] text-slate-900 font-semibold hover:bg-[#00B8CC] transition-all duration-200 shadow-lg shadow-[#00E5FF]/20"
-                >
-                  {editAccount ? "更新" : "创建"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AccountsFormDialog
+        isOpen={isAccountModalOpen}
+        onClose={() => {
+          setIsAccountModalOpen(false);
+          setEditAccount(null);
+          setAccountForm({
+            agencyId: "",
+            accountName: "",
+            currentBalance: "",
+            creditLimit: "",
+            currency: "USD",
+            country: "",
+            notes: ""
+          });
+        }}
+        editAccount={editAccount}
+        form={accountForm}
+        setForm={setAccountForm}
+        agencies={agencies}
+        onSubmit={editAccount ? handleUpdateAccount : handleCreateAccount}
+      />
 
       {/* 消耗记录确认框 */}
       {confirmConsumptionModal && (
@@ -3545,280 +2873,42 @@ export default function AdAgenciesPage() {
         </div>
       )}
 
-      {/* 消耗记录表单弹窗 */}
-      {isConsumptionModalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm" style={{ zIndex: 50 }}>
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 w-full max-w-md" style={{ position: "relative", zIndex: 51 }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">新增消耗记录</h2>
-              <button
-                onClick={() => {
-                  setIsConsumptionModalOpen(false);
-                  setConsumptionForm({
-                    adAccountId: "",
-                    storeId: "",
-                    month: new Date().toISOString().slice(0, 7),
-                    date: new Date().toISOString().slice(0, 10),
-                    amount: "",
-                    currency: "USD",
-                    campaignName: "",
-                    voucher: "",
-                    notes: ""
-                  });
-                }}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateConsumption} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">广告账户 *</label>
-                <select
-                  value={consumptionForm.adAccountId}
-                  onChange={(e) => {
-                    const account = adAccounts.find((a) => a.id === e.target.value);
-                    const agency = account ? agencies.find((a) => a.id === account.agencyId) : null;
-                    setConsumptionForm((f) => ({
-                      ...f,
-                      adAccountId: e.target.value,
-                      currency: account?.currency || "USD",
-                      month: f.month || new Date().toISOString().slice(0, 7)
-                    }));
-                  }}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                >
-                  <option value="">请选择广告账户</option>
-                  {adAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.accountName} ({account.agencyName}) - 余额: {currency(account.currentBalance, account.currency)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">月份 *</label>
-                <input
-                  type="month"
-                  value={consumptionForm.month}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, month: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">关联店铺</label>
-                <select
-                  value={consumptionForm.storeId}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, storeId: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                >
-                  <option value="">请选择店铺（可选）</option>
-                  {stores.map((store) => (
-                    <option key={store.id} value={store.id}>
-                      {store.name} ({store.platform}) - {store.country}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">消耗日期 *</label>
-                <input
-                  type="date"
-                  lang="zh-CN"
-                  value={consumptionForm.date}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, date: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300 cursor-pointer"
-                  style={{
-                    colorScheme: "dark",
-                    position: "relative",
-                    zIndex: 10
-                  }}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">消耗金额 *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={consumptionForm.amount}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, amount: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                />
-                {consumptionForm.adAccountId && consumptionForm.amount && (() => {
-                  const account = adAccounts.find((a) => a.id === consumptionForm.adAccountId);
-                  const agency = account ? agencies.find((a) => a.id === account.agencyId) : null;
-                  const estimatedRebate = agency && consumptionForm.amount ? (Number(consumptionForm.amount) * agency.rebateRate) / 100 : 0;
-                  return estimatedRebate > 0 ? (
-                    <div className="text-xs text-emerald-400 mt-1">
-                      预估返点：{currency(estimatedRebate, consumptionForm.currency || account?.currency || "USD")} ({agency?.rebateRate || 0}%)
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">币种 *</label>
-                <select
-                  value={consumptionForm.currency}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, currency: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                  required
-                >
-                  <option value="USD">USD</option>
-                  <option value="RMB">RMB</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="JPY">JPY</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">广告系列名称</label>
-                <input
-                  type="text"
-                  value={consumptionForm.campaignName}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, campaignName: e.target.value }))}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">消耗凭证</label>
-                <ImageUploader
-                  value={consumptionForm.voucher || ""}
-                  onChange={(value) => {
-                    const voucherValue = typeof value === "string" ? value : (Array.isArray(value) ? value[0] || "" : "");
-                    setConsumptionForm((f) => ({ ...f, voucher: voucherValue }));
-                  }}
-                  maxImages={1}
-                  multiple={false}
-                />
-                <p className="text-xs text-slate-400 mt-1">请上传消耗凭证（如广告截图、账单等）</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">备注</label>
-                <textarea
-                  value={consumptionForm.notes}
-                  onChange={(e) => setConsumptionForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-                />
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsConsumptionModalOpen(false);
-                    setConsumptionForm({
-                      adAccountId: "",
-                      storeId: "",
-                      month: new Date().toISOString().slice(0, 7),
-                      date: new Date().toISOString().slice(0, 10),
-                      amount: "",
-                      currency: "USD",
-                      campaignName: "",
-                      voucher: "",
-                      notes: ""
-                    });
-                  }}
-                  className="px-4 py-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
-                >
-                  取消
-                </button>
-                <button type="submit" className="px-4 py-2 rounded-md bg-[#00E5FF] text-slate-900 font-semibold hover:bg-[#00B8CC] transition-all duration-200 shadow-lg shadow-[#00E5FF]/20">
-                  创建
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ConsumptionsFormDialog
+        isOpen={isConsumptionModalOpen}
+        onClose={() => {
+          setIsConsumptionModalOpen(false);
+          setConsumptionForm({
+            adAccountId: "",
+            storeId: "",
+            month: new Date().toISOString().slice(0, 7),
+            date: new Date().toISOString().slice(0, 10),
+            amount: "",
+            currency: "USD",
+            campaignName: "",
+            voucher: "",
+            notes: ""
+          });
+        }}
+        form={consumptionForm}
+        setForm={setConsumptionForm}
+        adAccounts={adAccounts}
+        agencies={agencies}
+        stores={stores}
+        currencyFormat={currency}
+        onSubmit={handleCreateConsumption}
+      />
 
-      {/* 结算弹窗 */}
-      {isSettlementModalOpen && settlementData && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 w-full max-w-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">一键结算返点</h2>
-              <button
-                onClick={() => {
-                  setIsSettlementModalOpen(false);
-                  setSettlementData(null);
-                }}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleSettlement} className="space-y-4">
-              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-                <div className="text-sm text-slate-300 mb-2">
-                  <span className="font-medium">结算月份：</span>
-                  <span className="text-emerald-300">{settlementData.month}</span>
-                </div>
-                <div className="text-sm text-slate-300 mb-2">
-                  <span className="font-medium">广告账户：</span>
-                  <span className="text-emerald-300">
-                    {adAccounts.find((a) => a.id === settlementData.accountId)?.accountName || "-"}
-                  </span>
-                </div>
-                <div className="text-sm text-slate-300 mb-2">
-                  <span className="font-medium">消耗记录数：</span>
-                  <span className="text-blue-300">{settlementData.consumptions.length} 条</span>
-                </div>
-                <div className="text-sm text-slate-300">
-                  <span className="font-medium">结算返点总额：</span>
-                  <span className="text-2xl font-semibold text-emerald-300 ml-2">
-                    {currency(
-                      settlementData.consumptions.reduce((sum, c) => sum + (c.estimatedRebate || 0), 0),
-                      adAccounts.find((a) => a.id === settlementData.accountId)?.currency || "USD"
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 max-h-60 overflow-y-auto">
-                <div className="text-sm font-medium text-slate-300 mb-2">消耗记录明细：</div>
-                <div className="space-y-2">
-                  {settlementData.consumptions.map((c) => (
-                    <div key={c.id} className="flex items-center justify-between text-xs text-slate-400 py-1 border-b border-slate-800">
-                      <div>
-                        <span>{c.date}</span>
-                        {c.storeName && <span className="ml-2">| {c.storeName}</span>}
-                      </div>
-                      <div className="text-right">
-                        <div>消耗：{currency(c.amount, c.currency)}</div>
-                        <div className="text-emerald-400">返点：{currency(c.estimatedRebate || 0, c.currency)}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsSettlementModalOpen(false);
-                    setSettlementData(null);
-                  }}
-                  className="px-4 py-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-md bg-emerald-500 text-white hover:bg-emerald-600"
-                >
-                  确认结算
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <SettlementDialog
+        isOpen={isSettlementModalOpen}
+        settlementData={settlementData}
+        adAccounts={adAccounts}
+        currencyFormat={currency}
+        onClose={() => {
+          setIsSettlementModalOpen(false);
+          setSettlementData(null);
+        }}
+        onSubmit={handleSettlement}
+      />
 
       {/* 消耗记录确认框 */}
       {confirmConsumptionModal && (
