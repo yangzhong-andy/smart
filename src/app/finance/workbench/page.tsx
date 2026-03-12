@@ -6,11 +6,10 @@ import useSWR, { mutate } from "swr";
 import useSWRMutation from "swr/mutation";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
-import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
-import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
+import { Wallet } from "lucide-react";
+import { PageHeader } from "@/components/ui";
 import MaintenanceView from "@/components/MaintenanceView";
 import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
-import Link from "next/link";
 import type { PendingEntry } from "@/lib/pending-entry-store";
 import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { type BankAccount, getAccountStats } from "@/lib/finance-store";
@@ -39,6 +38,7 @@ import ExpenseEntry from "../cash-flow/components/ExpenseEntry";
 import IncomeEntry from "../cash-flow/components/IncomeEntry";
 import TransferEntry from "../cash-flow/components/TransferEntry";
 import { enrichWithUID } from "@/lib/business-utils";
+import { ActionButtons, FinanceStats, PendingBills, PendingEntries, PendingExpenseRequests, PendingIncomeRequests } from "./components";
 
 type CashFlow = {
   id: string;
@@ -857,422 +857,59 @@ export default function FinanceWorkbenchPage() {
         title="财务工作台"
         description="待审批事项、待入账任务、财务指标"
         actions={
-          <>
-            <div className="flex items-center gap-2">
-              <InteractiveButton
-                onClick={() => setActiveModal("expense")}
-                variant="danger"
-                size="md"
-                className="rounded-lg bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-rose-500/20 hover:from-rose-600 hover:to-rose-700"
-              >
-                登记支出
-              </InteractiveButton>
-              <InteractiveButton
-                onClick={() => setActiveModal("income")}
-                variant="success"
-                size="md"
-                className="rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 hover:from-emerald-600 hover:to-emerald-700"
-              >
-                登记收入
-              </InteractiveButton>
-              <InteractiveButton
-                onClick={() => setActiveModal("transfer")}
-                variant="primary"
-                size="md"
-                className="rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-blue-700"
-              >
-                内部划拨
-              </InteractiveButton>
-            </div>
-            <InteractiveButton
-              onClick={async () => {
-                // 强制重新验证所有数据，忽略缓存
-                await Promise.all([
-                  mutate("pending-entries", undefined, { revalidate: true }),
-                  mutate("monthly-bills", undefined, { revalidate: true }),
-                  mutate("pending-bills", undefined, { revalidate: true }),
-                  mutate("bank-accounts", undefined, { revalidate: true }),
-                  mutate("cash-flow", undefined, { revalidate: true }),
-                  mutate("approved-expense-requests", undefined, { revalidate: true }),
-                  mutate("approved-income-requests", undefined, { revalidate: true }),
-                ]);
-                refreshApprovalData();
-                toast.success("数据已刷新");
-              }}
-              variant="secondary"
-              size="md"
-              className="rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 text-cyan-300 hover:from-cyan-500/30 hover:to-blue-500/30 hover:border-cyan-400/50"
-              title="刷新数据"
-            >
-              <span>🔄</span>
-              <span>刷新数据</span>
-            </InteractiveButton>
-            <Link href="/finance/reconciliation">
-              <ActionButton variant="secondary" icon={FileText}>
-                对账中心
-              </ActionButton>
-            </Link>
-            <Link href="/finance/cash-flow">
-              <ActionButton variant="secondary" icon={DollarSign}>
-                流水明细
-              </ActionButton>
-            </Link>
-          </>
+          <ActionButtons
+            onOpenExpense={() => setActiveModal("expense")}
+            onOpenIncome={() => setActiveModal("income")}
+            onOpenTransfer={() => setActiveModal("transfer")}
+            onRefreshAll={async () => {
+              await Promise.all([
+                mutate("pending-entries", undefined, { revalidate: true }),
+                mutate("monthly-bills", undefined, { revalidate: true }),
+                mutate("pending-bills", undefined, { revalidate: true }),
+                mutate("bank-accounts", undefined, { revalidate: true }),
+                mutate("cash-flow", undefined, { revalidate: true }),
+                mutate("approved-expense-requests", undefined, { revalidate: true }),
+                mutate("approved-income-requests", undefined, { revalidate: true }),
+              ]);
+              refreshApprovalData();
+            }}
+          />
         }
       />
 
       {/* 统计面板 - 优化样式 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-5 backdrop-blur-sm hover:border-emerald-500/50 transition-all duration-300 shadow-lg shadow-emerald-500/5">
-          <div className="flex items-center justify-between mb-3">
-            <TrendingUp className="h-5 w-5 text-emerald-400" />
-            <div className="text-xs text-slate-400">本月收入</div>
-          </div>
-          <div className="text-2xl font-bold text-slate-100">{formatCurrency(stats.finance.thisMonthIncome)}</div>
-        </div>
-        
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-rose-500/10 to-rose-600/5 p-5 backdrop-blur-sm hover:border-rose-500/50 transition-all duration-300 shadow-lg shadow-rose-500/5">
-          <div className="flex items-center justify-between mb-3">
-            <TrendingDown className="h-5 w-5 text-rose-400" />
-            <div className="text-xs text-slate-400">本月支出</div>
-          </div>
-          <div className="text-2xl font-bold text-slate-100">{formatCurrency(stats.finance.thisMonthExpense)}</div>
-        </div>
-        
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-5 backdrop-blur-sm hover:border-amber-500/50 transition-all duration-300 shadow-lg shadow-amber-500/5">
-          <div className="flex items-center justify-between mb-3">
-            <Clock className="h-5 w-5 text-amber-400" />
-            <div className="text-xs text-slate-400">待处理支出申请</div>
-          </div>
-          <div className="text-2xl font-bold text-slate-100">{stats.expense.pending}</div>
-        </div>
-        
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-purple-500/10 to-purple-600/5 p-5 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 shadow-lg shadow-purple-500/5">
-          <div className="flex items-center justify-between mb-3">
-            <FileText className="h-5 w-5 text-purple-400" />
-            <div className="text-xs text-slate-400">待入账任务</div>
-          </div>
-          <div className="text-2xl font-bold text-slate-100">{stats.entry.pending}</div>
-        </div>
-        
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-orange-500/10 to-orange-600/5 p-5 backdrop-blur-sm hover:border-orange-500/50 transition-all duration-300 shadow-lg shadow-orange-500/5">
-          <div className="flex items-center justify-between mb-3">
-            <AlertCircle className="h-5 w-5 text-orange-400" />
-            <div className="text-xs text-slate-400">待审批账单</div>
-          </div>
-          <div className="text-2xl font-bold text-slate-100">{stats.bill.pending}</div>
-        </div>
-      </div>
+      <FinanceStats stats={stats} formatCurrency={formatCurrency} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* 待审批支付申请 */}
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
-          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-amber-500/20 p-2">
-                <DollarSign className="h-5 w-5 text-amber-400" />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-100">待处理支出申请</h2>
-              {approvedExpenseRequests.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-300 font-medium">
-                  {approvedExpenseRequests.length}
-                </span>
-              )}
-            </div>
-            <Link href="/finance/approval">
-              <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
-                查看全部
-              </ActionButton>
-            </Link>
-          </div>
+        <PendingExpenseRequests
+          approvedExpenseRequests={approvedExpenseRequests}
+          getStatusColor={getStatusColor}
+          formatCurrency={formatCurrency}
+          formatDate={formatDate}
+          onOpenDetail={(requestId) => setExpenseDetailModal({ open: true, requestId })}
+        />
 
-          {approvedExpenseRequests.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">
-              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
-                <DollarSign className="h-8 w-8 opacity-30" />
-              </div>
-              <p className="text-sm">暂无待处理申请</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {approvedExpenseRequests.slice(0, 5).map((request) => {
-                const colors = getStatusColor(request.status);
-                return (
-                  <Link key={request.id} href="/finance/approval">
-                    <div className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-amber-500/50 hover:bg-slate-900/60 transition-all duration-200 group cursor-pointer">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
-                              {colors.label}
-                            </span>
-                          </div>
-                          <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-amber-300 transition-colors">
-                            {request.summary}
-                          </div>
-                          <div className="text-xs text-slate-400 mb-1">
-                            <span className="font-medium text-slate-300">{formatCurrency(request.amount, request.currency)}</span>
-                            {request.storeName && <span className="ml-2">· {request.storeName}</span>}
-                          </div>
-                          <div className="text-xs text-slate-500 mt-2">
-                            创建：{formatDate(request.createdAt)}
-                          </div>
-                        </div>
-                        <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="rounded-lg bg-amber-500/10 p-2">
-                            <Eye className="h-4 w-4 text-amber-400" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <PendingEntries
+          pendingEntriesData={pendingEntriesData}
+          urgentPendingEntries={urgentPendingEntries}
+          getStatusColor={getStatusColor}
+          formatCurrency={formatCurrency}
+          formatDate={formatDate}
+        />
 
-        {/* 待入账任务 */}
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
-          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-purple-500/20 p-2">
-                <FileText className="h-5 w-5 text-purple-400" />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-100">待入账任务</h2>
-              {urgentPendingEntries.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/20 text-purple-300 font-medium">
-                  {urgentPendingEntries.length}
-                </span>
-              )}
-            </div>
-            <Link href="/finance/reconciliation">
-              <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
-                查看全部
-              </ActionButton>
-            </Link>
-          </div>
+        <PendingIncomeRequests
+          approvedIncomeRequests={approvedIncomeRequests}
+          formatCurrency={formatCurrency}
+          formatDate={formatDate}
+          onOpenDetail={(requestId) => setIncomeDetailModal({ open: true, requestId })}
+        />
 
-          {!pendingEntriesData ? (
-            <SkeletonTable rows={3} cols={2} />
-          ) : urgentPendingEntries.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">
-              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
-                <FileText className="h-8 w-8 opacity-30" />
-              </div>
-              <p className="text-sm">暂无待入账任务</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {urgentPendingEntries.map((entry) => {
-                const colors = getStatusColor(entry.status);
-                return (
-                  <Link key={entry.id} href="/finance/reconciliation">
-                    <div className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-purple-500/50 hover:bg-slate-900/60 transition-all duration-200 group cursor-pointer">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
-                              {colors.label}
-                            </span>
-                          </div>
-                          <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-purple-300 transition-colors">
-                            {entry.type === "Bill" ? entry.agencyName || entry.supplierName : entry.expenseItem}
-                          </div>
-                          <div className="text-xs text-slate-400 mb-1">
-                            <span className="font-medium text-slate-300">{formatCurrency(entry.netAmount, entry.currency)}</span>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-2">
-                            审批：{formatDate(entry.approvedAt)}
-                          </div>
-                        </div>
-                        <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="rounded-lg bg-purple-500/10 p-2">
-                            <Eye className="h-4 w-4 text-purple-400" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* 已审批的支出申请 */}
-        {approvedExpenseRequests.length > 0 && (
-          <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
-            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-rose-500/20 p-2">
-                  <TrendingDown className="h-5 w-5 text-rose-400" />
-                </div>
-                <h2 className="text-lg font-semibold text-slate-100">已审批支出申请</h2>
-                <span className="px-2 py-0.5 rounded-full text-xs bg-rose-500/20 text-rose-300 font-medium">
-                  {approvedExpenseRequests.length}
-                </span>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {approvedExpenseRequests.slice(0, 5).map((request) => (
-                <div
-                  key={request.id}
-                  className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-rose-500/50 hover:bg-slate-900/60 transition-all duration-200"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-200 mb-2">
-                        {request.summary}
-                      </div>
-                      <div className="text-xs text-slate-400 mb-1">
-                        <span className="font-medium text-rose-300">{formatCurrency(request.amount, request.currency)}</span>
-                        <span className="ml-2">· {request.category}</span>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-2">
-                        审批：{formatDate(request.approvedAt)}
-                      </div>
-                    </div>
-                    <div className="ml-3">
-                      <button
-                        onClick={() => {
-                          setExpenseDetailModal({ open: true, requestId: request.id });
-                        }}
-                        className="px-3 py-2 rounded-lg bg-slate-700/50 text-slate-300 hover:bg-slate-700 font-medium text-sm transition flex items-center gap-1"
-                      >
-                        <Eye className="h-4 w-4" />
-                        查看详情
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 已审批的收入申请 */}
-        {approvedIncomeRequests.length > 0 && (
-          <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
-            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-emerald-500/20 p-2">
-                  <TrendingUp className="h-5 w-5 text-emerald-400" />
-                </div>
-                <h2 className="text-lg font-semibold text-slate-100">已审批收入申请</h2>
-                <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-300 font-medium">
-                  {approvedIncomeRequests.length}
-                </span>
-                <span className="text-xs text-slate-500 ml-1">（选择账户入账后将从本列表移除）</span>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {approvedIncomeRequests.slice(0, 5).map((request) => (
-                <div
-                  key={request.id}
-                  className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-emerald-500/50 hover:bg-slate-900/60 transition-all duration-200"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-200 mb-2">
-                        {request.summary}
-                      </div>
-                      <div className="text-xs text-slate-400 mb-1">
-                        <span className="font-medium text-emerald-300">{formatCurrency(request.amount, request.currency)}</span>
-                        <span className="ml-2">· {request.category}</span>
-                        {request.storeName && <span className="ml-2">· {request.storeName}</span>}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-2">
-                        审批：{formatDate(request.approvedAt)}
-                      </div>
-                    </div>
-                    <div className="ml-3 flex gap-2">
-                      <button
-                        onClick={() => {
-                          setIncomeDetailModal({ open: true, requestId: request.id });
-                        }}
-                        className="px-3 py-2 rounded-lg bg-slate-700/50 text-slate-300 hover:bg-slate-700 font-medium text-sm transition flex items-center gap-1"
-                      >
-                        <Eye className="h-4 w-4" />
-                        查看详情
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 待审批账单 */}
-        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
-          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-orange-500/20 p-2">
-                <AlertCircle className="h-5 w-5 text-orange-400" />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-100">待审批账单</h2>
-              {urgentBills.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-xs bg-orange-500/20 text-orange-300 font-medium">
-                  {urgentBills.length}
-                </span>
-              )}
-            </div>
-            <Link href="/finance/reconciliation">
-              <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
-                查看全部
-              </ActionButton>
-            </Link>
-          </div>
-
-          {!pendingBillsData ? (
-            <SkeletonTable rows={3} cols={2} />
-          ) : urgentBills.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">
-              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
-                <AlertCircle className="h-8 w-8 opacity-30" />
-              </div>
-              <p className="text-sm">暂无待审批账单</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {urgentBills.map((bill) => {
-                const colors = getStatusColor(bill.status);
-                return (
-                  <Link key={bill.id} href="/finance/reconciliation">
-                    <div className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-orange-500/50 hover:bg-slate-900/60 transition-all duration-200 group cursor-pointer">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
-                              {colors.label}
-                            </span>
-                          </div>
-                          <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-orange-300 transition-colors">
-                            {bill.agencyName || bill.supplierName || bill.factoryName}
-                          </div>
-                          <div className="text-xs text-slate-400 mb-1">
-                            <span className="font-medium text-slate-300">{bill.billType}</span>
-                            <span className="mx-2">·</span>
-                            <span className="font-medium text-slate-300">{formatCurrency(bill.netAmount, bill.currency)}</span>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-2">
-                            {bill.month}
-                          </div>
-                        </div>
-                        <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="rounded-lg bg-orange-500/10 p-2">
-                            <Eye className="h-4 w-4 text-orange-400" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <PendingBills
+          pendingBillsData={pendingBillsData}
+          urgentBills={urgentBills}
+          getStatusColor={getStatusColor}
+          formatCurrency={formatCurrency}
+        />
       </div>
 
       {/* 快速操作 */}
