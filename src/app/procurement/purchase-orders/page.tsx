@@ -539,6 +539,7 @@ export default function PurchaseOrdersPage() {
       return {
         sku: sku || "未填",
         skuId: product?.sku_id || product?.id || undefined,
+        variantId: product?.id || undefined,
         skuName: skuName || undefined,
         spec: row.spec?.trim() || undefined,
         quantity: qty,

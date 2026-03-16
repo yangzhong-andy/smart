@@ -245,12 +245,12 @@ export async function POST(request: NextRequest) {
         ...(itemsInput.length > 0
           ? {
               items: {
-                create: itemsInput.map((item: { sku?: string; skuId?: string; skuName?: string; spec?: string; quantity?: number; unitPrice?: number }, i: number) => {
+                create: itemsInput.map((item: { sku?: string; skuId?: string; variantId?: string; skuName?: string; spec?: string; quantity?: number; unitPrice?: number }, i: number) => {
                   const qty = Number(item.quantity) || 0;
                   const up = Number(item.unitPrice) || 0;
                   return {
                     sku: (item.sku || item.skuName || "未填").toString().trim() || "未填",
-                    variantId: null,
+                    variantId: item.variantId || null,
                     skuName: item.skuName != null ? String(item.skuName).trim() : null,
                     spec: item.spec != null ? String(item.spec).trim() : null,
                     unitPrice: up,
