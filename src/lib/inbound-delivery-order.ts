@@ -7,11 +7,10 @@
 import { prisma } from "@/lib/prisma";
 import { createOutboundOrderFromPendingInbound } from "@/lib/create-outbound-from-inbound";
 import { DeliveryOrderStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
-import { PrismaClient } from "@prisma/client";
 
 // 处理库存入库的辅助函数
 async function processStockInbound(
-  tx: PrismaClient | typeof prisma,
+  tx: any,
   variantId: string,
   warehouseId: string,
   receivedQty: number,
