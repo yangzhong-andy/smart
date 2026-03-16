@@ -1332,14 +1332,15 @@ export default function CashFlowPage() {
                         {flow.type === "income" ? "+" : "-"}
                       </span>
                       {flow.currency === "CNY" || flow.currency === "RMB" ? (
-                        <MoneyDisplay 
-                          amount={Math.abs(flow.amount)} 
-                          currency="CNY" 
+                        <MoneyDisplay
+                          amount={Math.abs(flow.amount)}
+                          currency="CNY"
                           variant="highlight"
                           className="font-semibold"
+                          amountClassName={flow.isReversal ? "text-rose-400" : flow.type === "income" ? "text-emerald-300" : "text-rose-300"}
                         />
                       ) : (
-                        <span className="text-cyan-300 font-semibold">
+                        <span className={flow.type === "income" ? "text-emerald-300" : "text-rose-300"}>
                           {currency(Math.abs(flow.amount), flow.currency)}
                         </span>
                       )}
