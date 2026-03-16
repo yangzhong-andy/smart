@@ -198,15 +198,33 @@ export async function createDeliveryOrder(
     }
   }
 
-  const tailBase = contract.totalAmount - contract.depositAmount;
-  const tailAmount = tailBase * (totalQty / contract.totalQty);
-  const dueDate = new Date();
-  dueDate.setDate(dueDate.getDate() + contract.tailPeriodDays);
-
   const itemQtysRecord: Record<string, number> | undefined =
     items && items.length > 0
       ? Object.fromEntries(items.map((i) => [i.itemId, Number(i.qty) || 0]))
       : undefined;
+
+  // 尾款金额：按「拿货数量 × 单价」逐行求和（不在此处扣定金）。定金可在最后一次拿货付款时扣除或支付时调整金额。
+  let tailAmount: number;
+  if (contract.items && contract.items.length > 0) {
+    const firstItemId = contract.items[0]?.id;
+    tailAmount = contract.items.reduce((sum, item) => {
+      const thisQty = itemQtysRecord
+        ? Number(itemQtysRecord[item.id]) || 0
+        : contract.items!.length === 1
+          ? totalQty
+          : item.id === firstItemId
+            ? totalQty
+            : 0;
+      const unitPrice = Number((item as { unitPrice?: number }).unitPrice) || 0;
+      return sum + thisQty * unitPrice;
+    }, 0);
+  } else {
+    const unitPrice = Number((contract as { unitPrice?: number }).unitPrice) || 0;
+    tailAmount = totalQty * unitPrice;
+  }
+
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + contract.tailPeriodDays);
 
   const newOrder: DeliveryOrder = {
     id: crypto.randomUUID(),
@@ -227,6 +245,33 @@ export async function createDeliveryOrder(
 
   await upsertDeliveryOrder(newOrder);
   return { success: true, order: newOrder };
+}
+
+/**
+ * 根据合同与拿货数量计算本单尾款金额：按「拿货数量 × 单价」逐行求和。
+ * 用于列表展示、支付时应付金额等，与创建拿货单时逻辑一致。
+ */
+export function computeDeliveryOrderTailAmount(
+  contract: { totalQty: number; unitPrice?: number; items?: Array<{ id: string; qty: number; unitPrice?: number }> },
+  order: { qty: number; itemQtys?: Record<string, number> }
+): number {
+  if (!contract || contract.totalQty <= 0) return 0;
+  if (contract.items && contract.items.length > 0) {
+    const firstItemId = contract.items[0]?.id;
+    return contract.items.reduce((sum, item) => {
+      const thisQty = order.itemQtys
+        ? Number(order.itemQtys[item.id]) || 0
+        : contract.items!.length === 1
+          ? order.qty
+          : item.id === firstItemId
+            ? order.qty
+            : 0;
+      const unitPrice = Number(item.unitPrice) || 0;
+      return sum + thisQty * unitPrice;
+    }, 0);
+  }
+  const unitPrice = Number(contract.unitPrice) || 0;
+  return order.qty * unitPrice;
 }
 
 /**
