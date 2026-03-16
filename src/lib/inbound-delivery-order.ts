@@ -115,9 +115,11 @@ export async function executeDeliveryOrderInbound(
   }
 
   let outboundParams: { pendingInboundId: string; sku: string; qty: number; variantId?: string } | null = null;
-  
-  // 获取单个 SKU 入库时的 variantId（用于后续创建 pendingInbound）
   let singleSkuVariantId: string | null = null;
+  
+  // 记录入库的 SKU 列表（用于多 SKU 时创建批次）
+  const inboundBatchData: { variantId: string; sku: string; qty: number }[] = [];
+  let pendingInboundIdForBatch: string | null = null;
   
   await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -129,6 +131,12 @@ export async function executeDeliveryOrderInbound(
         const receivedQty = itemQtys[item.id] || 0;
         if (receivedQty <= 0) continue;
         await processStockInbound(tx, variantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
+        // 记录每个 SKU 的入库信息
+        inboundBatchData.push({
+          variantId,
+          sku: item.sku || item.skuName || '未知',
+          qty: receivedQty
+        });
       }
       // 多 SKU 入库时不需要后续的 pendingInbound 创建逻辑
     } else {
@@ -207,18 +215,37 @@ export async function executeDeliveryOrderInbound(
       outboundParams = { pendingInboundId: newPending.id, sku: skuDisplay, qty: order.qty, variantId: singleSkuVariantId! };
     }
 
-    // 同步创建一条入库批次，使「入库批次列表」有数据
-    await tx.inboundBatch.create({
-      data: {
-        pendingInboundId: pendingInboundIdForBatch,
-        batchNumber: batchNum,
-        warehouseId,
-        warehouseName: warehouse.name,
-        qty: receivedQty,
-        receivedDate: now,
-        notes: `拿货单 ${order.deliveryNumber} 入库`,
-      },
-    });
+    // 同步创建入库批次，使「入库批次列表」有数据
+    if (inboundBatchData.length > 0) {
+      // 多 SKU 入库：为每个 SKU 创建一条批次
+      for (let i = 0; i < inboundBatchData.length; i++) {
+        const item = inboundBatchData[i];
+        await tx.inboundBatch.create({
+          data: {
+            pendingInboundId: pendingInboundIdForBatch || '',
+            batchNumber: `${batchNum}-${i + 1}`,
+            warehouseId,
+            warehouseName: warehouse.name,
+            qty: item.qty,
+            receivedDate: now,
+            notes: `拿货单 ${order.deliveryNumber} 入库 - ${item.sku} x${item.qty}`,
+          },
+        });
+      }
+    } else if (pendingInboundIdForBatch) {
+      // 单 SKU 入库：创建一条批次
+      await tx.inboundBatch.create({
+        data: {
+          pendingInboundId: pendingInboundIdForBatch,
+          batchNumber: batchNum,
+          warehouseId,
+          warehouseName: warehouse.name,
+          qty: receivedQty,
+          receivedDate: now,
+          notes: `拿货单 ${order.deliveryNumber} 入库`,
+        },
+      });
+    }
 
     // 只有单 SKU 入库时才创建 inventoryLog（多 SKU 情况较复杂，暂不处理）
     if (singleSkuVariantId) {
