@@ -6,9 +6,70 @@
 
 import { prisma } from "@/lib/prisma";
 import { createOutboundOrderFromPendingInbound } from "@/lib/create-outbound-from-inbound";
-import { DeliveryOrderStatus } from "@prisma/client";
-import { StockLogReason } from "@prisma/client";
-import { InventoryMovementType } from "@prisma/client";
+import { DeliveryOrderStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+
+// 处理库存入库的辅助函数
+async function processStockInbound(
+  tx: PrismaClient | typeof prisma,
+  variantId: string,
+  warehouseId: string,
+  receivedQty: number,
+  deliveryOrderId: string,
+  deliveryNumber: string
+) {
+  const now = new Date();
+
+  const existing = await tx.stock.findUnique({
+    where: {
+      variantId_warehouseId: { variantId, warehouseId },
+    },
+  });
+
+  let qtyBefore: number;
+  let qtyAfter: number;
+  if (existing) {
+    qtyBefore = existing.qty;
+    qtyAfter = qtyBefore + receivedQty;
+    await tx.stock.update({
+      where: { id: existing.id },
+      data: {
+        qty: qtyAfter,
+        availableQty: existing.availableQty + receivedQty,
+        updatedAt: now,
+      },
+    });
+  } else {
+    qtyBefore = 0;
+    qtyAfter = receivedQty;
+    await tx.stock.create({
+      data: {
+        variantId,
+        warehouseId,
+        qty: receivedQty,
+        reservedQty: 0,
+        availableQty: receivedQty,
+      },
+    });
+  }
+
+  await tx.stockLog.create({
+    data: {
+      variantId,
+      warehouseId,
+      reason: StockLogReason.PURCHASE_INBOUND,
+      movementType: InventoryMovementType.DOMESTIC_INBOUND,
+      qty: receivedQty,
+      qtyBefore,
+      qtyAfter,
+      operationDate: now,
+      relatedOrderId: deliveryOrderId,
+      relatedOrderType: "DeliveryOrder",
+      relatedOrderNumber: deliveryNumber,
+      notes: `拿货单入库：${deliveryNumber}，实收 ${receivedQty}`,
+    },
+  });
+}
 
 export async function executeDeliveryOrderInbound(
   deliveryOrderId: string,
@@ -42,29 +103,11 @@ export async function executeDeliveryOrderInbound(
   }
 
   const contract = order.contract;
-  let variantId: string | null = null;
-  if (contract.items?.length) {
-    variantId = contract.items[0].variantId ?? null;
-  }
-  if (!variantId && contract.skuId) {
-    const byId = await prisma.productVariant.findUnique({
-      where: { id: contract.skuId },
-    });
-    if (byId) variantId = byId.id;
-  }
-  if (!variantId && contract.sku) {
-    const bySku = await prisma.productVariant.findUnique({
-      where: { skuId: contract.sku },
-    });
-    if (bySku) variantId = bySku.id;
-  }
-  if (!variantId) {
-    return {
-      success: false,
-      error: "无法解析该合同对应的 SKU（variantId），请确认合同已关联产品",
-    };
-  }
-
+  const itemQtys = order.itemQtys as Record<string, number> | null;
+  
+  // 获取所有有 variantId 的 items
+  const itemsWithVariant = (contract.items || []).filter((item) => item.variantId);
+  
   const warehouse = await prisma.warehouse.findUnique({
     where: { id: warehouseId },
   });
@@ -73,59 +116,43 @@ export async function executeDeliveryOrderInbound(
   }
 
   let outboundParams: { pendingInboundId: string; sku: string; qty: number } | null = null;
+  
   await prisma.$transaction(async (tx) => {
     const now = new Date();
 
-    const existing = await tx.stock.findUnique({
-      where: {
-        variantId_warehouseId: { variantId, warehouseId },
-      },
-    });
-
-    let qtyBefore: number;
-    let qtyAfter: number;
-    if (existing) {
-      qtyBefore = existing.qty;
-      qtyAfter = qtyBefore + receivedQty;
-      await tx.stock.update({
-        where: { id: existing.id },
-        data: {
-          qty: qtyAfter,
-          availableQty: existing.availableQty + receivedQty,
-          updatedAt: now,
-        },
-      });
+    // 如果有 itemQtys 且有带 variantId 的 items，遍历每个 SKU 入库
+    if (itemQtys && Object.keys(itemQtys).length > 0 && itemsWithVariant.length > 0) {
+      for (const item of itemsWithVariant) {
+        const variantId = item.variantId!;
+        const receivedQty = itemQtys[item.id] || 0;
+        if (receivedQty <= 0) continue;
+        await processStockInbound(tx, variantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
+      }
     } else {
-      qtyBefore = 0;
-      qtyAfter = receivedQty;
-      await tx.stock.create({
-        data: {
-          variantId,
-          warehouseId,
-          qty: receivedQty,
-          reservedQty: 0,
-          availableQty: receivedQty,
-        },
-      });
+      // 兼容旧逻辑：单个 SKU 入库
+      let variantId: string | null = null;
+      if (contract.items?.length) {
+        variantId = contract.items[0].variantId ?? null;
+      }
+      if (!variantId && contract.skuId) {
+        const byId = await tx.productVariant.findUnique({
+          where: { id: contract.skuId },
+        });
+        if (byId) variantId = byId.id;
+      }
+      if (!variantId && contract.sku) {
+        const bySku = await tx.productVariant.findUnique({
+          where: { skuId: contract.sku },
+        });
+        if (bySku) variantId = bySku.id;
+      }
+      if (!variantId) {
+        throw new Error("无法解析该合同对应的 SKU（variantId），请确认合同已关联产品");
+      }
+      await processStockInbound(tx, variantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
     }
 
-    await tx.stockLog.create({
-      data: {
-        variantId,
-        warehouseId,
-        reason: StockLogReason.PURCHASE_INBOUND,
-        movementType: InventoryMovementType.DOMESTIC_INBOUND,
-        qty: receivedQty,
-        qtyBefore,
-        qtyAfter,
-        operationDate: now,
-        relatedOrderId: deliveryOrderId,
-        relatedOrderType: "DeliveryOrder",
-        relatedOrderNumber: order.deliveryNumber,
-        notes: `拿货单入库：${order.deliveryNumber}，实收 ${receivedQty}`,
-      },
-    });
-
+    // 更新拿货单状态
     await tx.deliveryOrder.update({
       where: { id: deliveryOrderId },
       data: { status: DeliveryOrderStatus.RECEIVED, updatedAt: now },
