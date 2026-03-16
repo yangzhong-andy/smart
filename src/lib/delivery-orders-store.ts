@@ -252,10 +252,11 @@ export async function createDeliveryOrder(
  * 用于列表展示、支付时应付金额等，与创建拿货单时逻辑一致。
  */
 export function computeDeliveryOrderTailAmount(
-  contract: { totalQty: number; unitPrice?: number; items?: Array<{ id: string; qty: number; unitPrice?: number }> },
+  contract: { totalQty?: number; unitPrice?: number; items?: Array<{ id: string; qty: number; unitPrice?: number }> },
   order: { qty: number; itemQtys?: Record<string, number> }
 ): number {
-  if (!contract || contract.totalQty <= 0) return 0;
+  const totalQty = contract?.totalQty ?? 0;
+  if (!contract || totalQty <= 0) return 0;
   if (contract.items && contract.items.length > 0) {
     const firstItemId = contract.items[0]?.id;
     return contract.items.reduce((sum, item) => {
