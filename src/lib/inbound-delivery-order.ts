@@ -114,7 +114,10 @@ export async function executeDeliveryOrderInbound(
     return { success: false, error: "所选仓库不存在" };
   }
 
-  let outboundParams: { pendingInboundId: string; sku: string; qty: number } | null = null;
+  let outboundParams: { pendingInboundId: string; sku: string; qty: number; variantId?: string } | null = null;
+  
+  // 获取单个 SKU 入库时的 variantId（用于后续创建 pendingInbound）
+  let singleSkuVariantId: string | null = null;
   
   await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -127,28 +130,28 @@ export async function executeDeliveryOrderInbound(
         if (receivedQty <= 0) continue;
         await processStockInbound(tx, variantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
       }
+      // 多 SKU 入库时不需要后续的 pendingInbound 创建逻辑
     } else {
       // 兼容旧逻辑：单个 SKU 入库
-      let variantId: string | null = null;
       if (contract.items?.length) {
-        variantId = contract.items[0].variantId ?? null;
+        singleSkuVariantId = contract.items[0].variantId ?? null;
       }
-      if (!variantId && contract.skuId) {
+      if (!singleSkuVariantId && contract.skuId) {
         const byId = await tx.productVariant.findUnique({
           where: { id: contract.skuId },
         });
-        if (byId) variantId = byId.id;
+        if (byId) singleSkuVariantId = byId.id;
       }
-      if (!variantId && contract.sku) {
+      if (!singleSkuVariantId && contract.sku) {
         const bySku = await tx.productVariant.findUnique({
           where: { skuId: contract.sku },
         });
-        if (bySku) variantId = bySku.id;
+        if (bySku) singleSkuVariantId = bySku.id;
       }
-      if (!variantId) {
+      if (!singleSkuVariantId) {
         throw new Error("无法解析该合同对应的 SKU（variantId），请确认合同已关联产品");
       }
-      await processStockInbound(tx, variantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
+      await processStockInbound(tx, singleSkuVariantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
     }
 
     // 更新拿货单状态
@@ -191,7 +194,7 @@ export async function executeDeliveryOrderInbound(
           contractId: contract.id,
           contractNumber: contract.contractNumber ?? "",
           sku: skuDisplay,
-          variantId,
+          variantId: singleSkuVariantId!,
           qty: order.qty,
           receivedQty,
           status: "已入库",
@@ -201,7 +204,7 @@ export async function executeDeliveryOrderInbound(
         },
       });
       pendingInboundIdForBatch = newPending.id;
-      outboundParams = { pendingInboundId: newPending.id, sku: skuDisplay, qty: order.qty };
+      outboundParams = { pendingInboundId: newPending.id, sku: skuDisplay, qty: order.qty, variantId: singleSkuVariantId! };
     }
 
     // 同步创建一条入库批次，使「入库批次列表」有数据
@@ -232,12 +235,12 @@ export async function executeDeliveryOrderInbound(
   });
 
   // 入库完成后自动创建出库单（事务外执行，避免循环依赖）
-  const params = outboundParams as { pendingInboundId: string; sku: string; qty: number } | null;
+  const params = outboundParams as { pendingInboundId: string; sku: string; qty: number; variantId?: string } | null;
   if (params) {
     try {
       await createOutboundOrderFromPendingInbound({
         pendingInboundId: params.pendingInboundId,
-        variantId: variantId!,
+        variantId: params.variantId || '',
         sku: params.sku,
         qty: params.qty,
         warehouseId,
