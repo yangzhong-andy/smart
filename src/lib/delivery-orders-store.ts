@@ -250,9 +250,14 @@ export async function createDeliveryOrder(
 /**
  * 根据合同与拿货数量计算本单尾款金额：按「拿货数量 × 单价」逐行求和。
  * 用于列表展示、支付时应付金额等，与创建拿货单时逻辑一致。
+ * 兼容 items 为 qty 或 quantity 的合同类型（PurchaseContractItem / ContractItem）。
  */
 export function computeDeliveryOrderTailAmount(
-  contract: { totalQty?: number; unitPrice?: number; items?: Array<{ id: string; qty: number; unitPrice?: number }> },
+  contract: {
+    totalQty?: number;
+    unitPrice?: number;
+    items?: Array<{ id: string; qty?: number; quantity?: number; unitPrice?: number }>;
+  },
   order: { qty: number; itemQtys?: Record<string, number> }
 ): number {
   const totalQty = contract?.totalQty ?? 0;
