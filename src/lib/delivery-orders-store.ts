@@ -250,7 +250,7 @@ export async function createDeliveryOrder(
 /**
  * 根据合同与拿货数量计算本单尾款金额：按「拿货数量 × 单价」逐行求和。
  * 用于列表展示、支付时应付金额等，与创建拿货单时逻辑一致。
- * 兼容 items 为 qty 或 quantity 的合同类型（PurchaseContractItem / ContractItem）。
+ * 兼容 contract.items 为 qty/quantity、order 为 qty/itemQtys 或无 qty 的多种类型。
  */
 export function computeDeliveryOrderTailAmount(
   contract: {
@@ -258,26 +258,28 @@ export function computeDeliveryOrderTailAmount(
     unitPrice?: number;
     items?: Array<{ id: string; qty?: number; quantity?: number; unitPrice?: number }>;
   },
-  order: { qty: number; itemQtys?: Record<string, number> }
+  order: { qty?: number; itemQtys?: Record<string, number> }
 ): number {
   const totalQty = contract?.totalQty ?? 0;
   if (!contract || totalQty <= 0) return 0;
+  const orderQty = Number(order.qty) || 0;
+  const orderItemQtys = order.itemQtys;
   if (contract.items && contract.items.length > 0) {
     const firstItemId = contract.items[0]?.id;
     return contract.items.reduce((sum, item) => {
-      const thisQty = order.itemQtys
-        ? Number(order.itemQtys[item.id]) || 0
+      const thisQty = orderItemQtys
+        ? Number(orderItemQtys[item.id]) || 0
         : contract.items!.length === 1
-          ? order.qty
+          ? orderQty
           : item.id === firstItemId
-            ? order.qty
+            ? orderQty
             : 0;
       const unitPrice = Number(item.unitPrice) || 0;
       return sum + thisQty * unitPrice;
     }, 0);
   }
   const unitPrice = Number(contract.unitPrice) || 0;
-  return order.qty * unitPrice;
+  return orderQty * unitPrice;
 }
 
 /**
