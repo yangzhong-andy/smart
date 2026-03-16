@@ -580,6 +580,19 @@ export default function DeliveryOrdersPage() {
                               入库
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const url = new URL(window.location.origin + "/procurement/purchase-orders");
+                              url.searchParams.set("payTailContractId", order.contractId);
+                              url.searchParams.set("payTailDeliveryOrderId", order.id);
+                              window.location.href = url.toString();
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors"
+                          >
+                            <Wallet className="h-3 w-3" />
+                            发起付款
+                          </button>
                           <Link
                             href={`/procurement/purchase-orders`}
                             className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"

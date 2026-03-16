@@ -23,7 +23,7 @@ import { PurchaseOrderCreateDialog } from "./components/PurchaseOrderCreateDialo
 import { currency, formatDate } from "./components/types";
 import type { Supplier as SupplierType } from "./components/types";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ImageUploader from "@/components/ImageUploader";
 import DateInput from "@/components/DateInput";
 import InventoryDistribution from "@/components/InventoryDistribution";
@@ -156,6 +156,20 @@ export default function PurchaseOrdersPage() {
     setContractNumberFormat(value);
     if (typeof window !== "undefined") localStorage.setItem("tk_erp_contract_number_format", value);
   };
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const contractIdFromParam = searchParams?.get("payTailContractId");
+    const deliveryOrderIdFromParam = searchParams?.get("payTailDeliveryOrderId");
+    if (!contractIdFromParam || !deliveryOrderIdFromParam) return;
+    // 仅在数据加载完成后触发一次
+    const contractExists = contracts.some((c) => c.id === contractIdFromParam);
+    const orderExists = deliveryOrders.some((o) => o.id === deliveryOrderIdFromParam);
+    if (!contractExists || !orderExists) return;
+    // 打开尾款付款弹窗
+    handlePayment(contractIdFromParam, "tail", deliveryOrderIdFromParam);
+  }, [searchParams, contracts, deliveryOrders]);  
+
   const generateContractNumber = () => {
     const prefix = contractNumberFormat.trim() || "PC-";
     const now = new Date();
