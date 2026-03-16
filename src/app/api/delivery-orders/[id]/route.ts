@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { clearCacheByPrefix } from '@/lib/redis'
 import { DeliveryOrderStatus } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+
+const CACHE_KEY_PREFIX = 'delivery-orders'
 
 const STATUS_MAP_DB_TO_FRONT: Record<DeliveryOrderStatus, string> = {
   PENDING: '待发货',
@@ -96,6 +99,9 @@ export async function PUT(
       where: { id: params.id },
       data: updateData
     })
+
+    // 清除缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
 
     return NextResponse.json({
       id: order.id,

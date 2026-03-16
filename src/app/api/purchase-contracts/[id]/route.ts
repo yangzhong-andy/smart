@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { clearCacheByPrefix } from '@/lib/redis'
 import { PurchaseContractStatus } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+
+const CACHE_KEY_PREFIX = 'purchase-contracts'
 
 // 状态映射
 const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
@@ -174,6 +177,9 @@ export async function PUT(
         }
       }
     })
+
+    // 清除缓存，确保列表/看板拿到最新合同金额与状态
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
 
     const totalQty = contract.items.reduce((sum, item) => sum + item.qty, 0)
     const pickedQty = contract.items.reduce((sum, item) => sum + item.pickedQty, 0)
