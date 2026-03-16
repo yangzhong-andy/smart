@@ -220,18 +220,21 @@ export async function executeDeliveryOrderInbound(
       },
     });
 
-    await tx.inventoryLog.create({
-      data: {
-        type: "IN",
-        status: "INBOUNDED",
-        variantId,
-        qty: receivedQty,
-        warehouseId,
-        deliveryOrderId,
-        relatedOrderNo: order.deliveryNumber,
-        notes: `拿货单入库：${order.deliveryNumber}，实收 ${receivedQty}`,
-      },
-    });
+    // 只有单 SKU 入库时才创建 inventoryLog（多 SKU 情况较复杂，暂不处理）
+    if (singleSkuVariantId) {
+      await tx.inventoryLog.create({
+        data: {
+          type: "IN",
+          status: "INBOUNDED",
+          variantId: singleSkuVariantId,
+          qty: receivedQty,
+          warehouseId,
+          deliveryOrderId,
+          relatedOrderNo: order.deliveryNumber,
+          notes: `拿货单入库：${order.deliveryNumber}，实收 ${receivedQty}`,
+        },
+      });
+    }
   });
 
   // 入库完成后自动创建出库单（事务外执行，避免循环依赖）
