@@ -2,32 +2,15 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import useSWR from "swr";
-import { Factory, FileText, Package, Truck, ClipboardList, Boxes, ArrowRight, TrendingUp, Wallet } from "lucide-react";
+import { Factory, FileText, Package, Truck, ClipboardList, Boxes, ArrowRight, TrendingUp } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { useSuppliers, useContracts, useDeliveryOrders, usePendingInbound } from "@/procurement/hooks";
-import { computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
-import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
 
 export default function ProcurementDashboardPage() {
   const { suppliers, isLoading: suppliersLoading } = useSuppliers();
   const { contracts, isLoading: contractsLoading } = useContracts({ pageSize: 500 });
   const { deliveryOrders, isLoading: deliveryLoading } = useDeliveryOrders({ pageSize: 500 });
   const { inboundOrders, isLoading: inboundLoading } = usePendingInbound({ pageSize: 500 });
-
-  // 当月时间范围（用于月度统计）
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const dateFrom = monthStart.toISOString().slice(0, 10);
-  const dateTo = monthEnd.toISOString().slice(0, 10);
-
-  // 本月采购支出流水（支出方向）
-  const { data: monthlyCashFlow = [] } = useSWR<CashFlow[]>(
-    ["procurement-monthly-cash", dateFrom, dateTo],
-    () => getCashFlowFromAPI({ type: "expense", dateFrom, dateTo, pageSize: 500 }),
-    { revalidateOnFocus: false, dedupingInterval: 60000 }
-  );
 
   const isLoading = suppliersLoading || contractsLoading || deliveryLoading || inboundLoading;
 
@@ -36,7 +19,6 @@ export default function ProcurementDashboardPage() {
     const cts = Array.isArray(contracts) ? contracts : [];
     const dos = Array.isArray(deliveryOrders) ? deliveryOrders : [];
     const ins = Array.isArray(inboundOrders) ? inboundOrders : [];
-    const flows = Array.isArray(monthlyCashFlow) ? monthlyCashFlow : [];
 
     const supplierCount = s.length;
     const contractCount = cts.length;
@@ -48,31 +30,6 @@ export default function ProcurementDashboardPage() {
       ["PENDING", "SHIPPED", "IN_TRANSIT", "待发货", "已发货", "运输中"].includes(String(o.status))
     ).length;
     const pendingInboundCount = ins.length;
-    // 本月拿货金额（按拿货单创建时间 + 变体数量×单价求和）
-    let monthlyDeliveryAmount = 0;
-    for (const o of dos) {
-      if (!o?.createdAt) continue;
-      const d = new Date(o.createdAt);
-      if (Number.isNaN(d.getTime())) continue;
-      if (d < monthStart || d > monthEnd) continue;
-      const contract = cts.find((c: any) => c.id === o.contractId);
-      if (!contract) continue;
-      try {
-        monthlyDeliveryAmount += computeDeliveryOrderTailAmount(contract, o);
-      } catch {
-        // 忽略单条异常，避免影响整体看板
-      }
-    }
-    // 本月采购支出金额（现金流），仅统计采购相关的支出
-    const monthlyPaidAmount = flows.reduce((sum, f) => {
-      if (!f?.date) return sum;
-      const d = new Date(f.date);
-      if (Number.isNaN(d.getTime())) return sum;
-      if (d < monthStart || d > monthEnd) return sum;
-      // 仅统计类别中包含“采购”的支出
-      if (!String(f.category || "").includes("采购")) return sum;
-      return sum + (Number(f.amount) || 0);
-    }, 0);
 
     return {
       supplierCount,
@@ -80,11 +37,9 @@ export default function ProcurementDashboardPage() {
       activeContracts,
       deliveryCount,
       inTransit,
-      pendingInboundCount,
-      monthlyDeliveryAmount,
-      monthlyPaidAmount
+      pendingInboundCount
     };
-  }, [suppliers, contracts, deliveryOrders, inboundOrders, monthlyCashFlow, monthStart, monthEnd]);
+  }, [suppliers, contracts, deliveryOrders, inboundOrders]);
 
   return (
     <div className="space-y-6 p-6">
@@ -108,22 +63,6 @@ export default function ProcurementDashboardPage() {
         <StatCard title="采购合同" value={stats.contractCount} icon={FileText} />
         <StatCard title="进行中合同" value={stats.activeContracts} icon={TrendingUp} />
         <StatCard title="运输/待发货" value={stats.inTransit} icon={Truck} />
-      </div>
-
-      {/* 采购月度统计 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          title="本月拿货金额"
-          value={stats.monthlyDeliveryAmount}
-          icon={Package}
-          hint="按拿货单数量×单价汇总"
-        />
-        <StatCard
-          title="本月采购支出"
-          value={stats.monthlyPaidAmount}
-          icon={Wallet}
-          hint="来自收支明细中的采购支出"
-        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

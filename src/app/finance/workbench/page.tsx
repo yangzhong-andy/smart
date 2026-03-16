@@ -706,6 +706,25 @@ export default function FinanceWorkbenchPage() {
         paidAt: new Date().toISOString(),
         paymentFlowId: cashFlowResult.id
       });
+
+      // 采购尾款：同步更新拿货单已付尾款与合同已付总额
+      if ((request.summary || "").includes("采购尾款 - ") && request.relatedId) {
+        try {
+          const payTailRes = await fetch(`/api/delivery-orders/${request.relatedId}/pay-tail`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: request.amount }),
+          });
+          if (!payTailRes.ok) {
+            const err = await payTailRes.json().catch(() => ({}));
+            console.error("同步拿货单尾款失败:", err);
+            toast.error("流水已生成，但同步拿货单/合同失败，请手动核对");
+          }
+        } catch (e) {
+          console.error("同步拿货单尾款异常:", e);
+          toast.error("流水已生成，但同步拿货单/合同失败，请手动核对");
+        }
+      }
       
       // 立即从「待处理/已审批」列表中移除该条，并重新拉取
       mutate(

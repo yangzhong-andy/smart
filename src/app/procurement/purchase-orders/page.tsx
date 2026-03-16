@@ -134,7 +134,7 @@ export default function PurchaseOrdersPage() {
     type: null,
     accountId: ""
   });
-  const [successModal, setSuccessModal] = useState<{ open: boolean; type: "deposit" | "delivery" | null; data?: any }>({
+  const [successModal, setSuccessModal] = useState<{ open: boolean; type: "deposit" | "delivery" | "tail" | null; data?: any }>({
     open: false,
     type: null
   });
@@ -864,24 +864,78 @@ export default function PurchaseOrdersPage() {
       return;
     }
 
-    // 尾款支付：直接支付（不需要审批），支持调整金额（如最后一次扣除定金）
+    // 尾款：发起付款申请（审批通过后由财务选账户付款），不弹账户
     if (type === "tail" && deliveryOrderId) {
       const contract = contracts.find((c) => c.id === contractId);
       const order = deliveryOrders.find((o) => o.contractId === contractId && o.id === deliveryOrderId);
-      if (!order) return;
-      const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : (order.tailAmount || 0);
-      const remaining = displayTail - (order.tailPaid || 0);
+      if (!contract || !order) return;
+      const displayTail = computeDeliveryOrderTailAmount(contract, order);
+      const remaining = displayTail - (Number((order as { tailPaid?: number }).tailPaid) || 0);
       if (remaining <= 0) {
         toast.error("该笔尾款已付清", { icon: "⚠️" });
         return;
       }
-      setPaymentModal({
-        contractId,
-        type,
-        deliveryOrderId,
-        accountId: accounts[0]?.id || "",
-        tailPaymentAmount: remaining
+      const existingTailRequest = expenseRequestsList.find(
+        (r) =>
+          r.relatedId === deliveryOrderId &&
+          (r.summary || "").includes("采购尾款") &&
+          ["Pending_Approval", "Approved", "Paid"].includes(r.status)
+      );
+      if (existingTailRequest) {
+        const statusText =
+          existingTailRequest.status === "Pending_Approval"
+            ? "待审批"
+            : existingTailRequest.status === "Approved"
+              ? "已审批"
+              : "已支付";
+        toast.error(`该拿货单的尾款付款申请已存在，当前状态：${statusText}`, { icon: "⚠️" });
+        return;
+      }
+      const supplier = suppliers.find((s) => s.id === contract.supplierId) as
+        | { id: string; name: string; bankAccount?: string; bankName?: string }
+        | undefined;
+      const payeeName = supplier?.name ?? contract.supplierName ?? undefined;
+      const payeeAccount = supplier?.bankAccount?.trim() ? supplier.bankAccount : undefined;
+      const deliveryNumber = (order as { deliveryNumber?: string }).deliveryNumber || order.id;
+      const newExpenseRequest: ExpenseRequest = {
+        id: `temp_${Date.now()}`,
+        summary: `采购尾款 - ${contract.contractNumber} - ${deliveryNumber}`,
+        date: new Date().toISOString().slice(0, 10),
+        category: "采购/采购尾款",
+        amount: remaining,
+        currency: "CNY",
+        status: "Pending_Approval",
+        createdBy: "系统",
+        createdAt: new Date().toISOString(),
+        submittedAt: new Date().toISOString(),
+        remark: `拿货单：${deliveryNumber}\n合同：${contract.contractNumber}\n供应商：${contract.supplierName}\n应付尾款：${remaining.toFixed(2)}`,
+        departmentId: undefined,
+        departmentName: "全球供应链部",
+        payeeName,
+        payeeAccount,
+        businessNumber: contract.contractNumber,
+        relatedId: deliveryOrderId,
+      };
+      const created = await createExpenseRequest(newExpenseRequest);
+      const updatedRequests = await getExpenseRequests();
+      setExpenseRequests(Array.isArray(updatedRequests) ? updatedRequests : (updatedRequests as any)?.data ?? []);
+      setSuccessModal({
+        open: true,
+        type: "tail",
+        data: {
+          contractNumber: contract.contractNumber,
+          supplierName: contract.supplierName,
+          amount: remaining,
+          requestId: created.id,
+          deliveryNumber,
+        },
       });
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("payTailContractId");
+        url.searchParams.delete("payTailDeliveryOrderId");
+        window.history.replaceState({}, "", url.pathname + (url.search || ""));
+      }
     }
   };
 
@@ -1732,12 +1786,16 @@ export default function PurchaseOrdersPage() {
               {/* 成功图标 */}
               <div className="flex justify-center mb-4">
                 <div className={`p-4 rounded-full ${
-                  successModal.type === "deposit" 
-                    ? "bg-amber-500/20 border-2 border-amber-500/40" 
-                    : "bg-emerald-500/20 border-2 border-emerald-500/40"
+                  successModal.type === "deposit"
+                    ? "bg-amber-500/20 border-2 border-amber-500/40"
+                    : successModal.type === "tail"
+                      ? "bg-primary-500/20 border-2 border-primary-500/40"
+                      : "bg-emerald-500/20 border-2 border-emerald-500/40"
                 }`}>
                   {successModal.type === "deposit" ? (
                     <CheckCircle2 className="h-12 w-12 text-amber-300" />
+                  ) : successModal.type === "tail" ? (
+                    <CheckCircle2 className="h-12 w-12 text-primary-300" />
                   ) : (
                     <CheckCircle2 className="h-12 w-12 text-emerald-300" />
                   )}
@@ -1746,7 +1804,11 @@ export default function PurchaseOrdersPage() {
 
               {/* 标题 */}
               <h2 className="text-2xl font-bold text-slate-100 mb-2">
-                {successModal.type === "deposit" ? "付款申请已创建" : "拿货单创建成功"}
+                {successModal.type === "deposit"
+                  ? "付款申请已创建"
+                  : successModal.type === "tail"
+                    ? "尾款付款申请已发起"
+                    : "拿货单创建成功"}
               </h2>
 
               {/* 内容 */}
@@ -1768,6 +1830,34 @@ export default function PurchaseOrdersPage() {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-400">申请金额</span>
                         <span className="text-amber-300 font-bold text-lg">{currency(successModal.data.amount)}</span>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-blue-500/40 bg-blue-500/10 p-3">
+                      <p className="text-blue-200 text-xs flex items-center gap-2 justify-center">
+                        <ArrowRight className="h-4 w-4" />
+                        请前往审批中心进行审批
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {successModal.type === "tail" && successModal.data && (
+                  <>
+                    <p className="text-slate-300 text-sm">
+                      审批通过后将推送到财务工作台，由财务选择账户完成付款。
+                    </p>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-400">合同编号</span>
+                        <span className="text-slate-100 font-medium">{successModal.data.contractNumber}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-400">拿货单号</span>
+                        <span className="text-slate-100 font-mono text-xs">{successModal.data.deliveryNumber}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-400">申请金额</span>
+                        <span className="text-primary-300 font-bold">{currency(successModal.data.amount)}</span>
                       </div>
                     </div>
                     <div className="rounded-lg border border-blue-500/40 bg-blue-500/10 p-3">
@@ -1808,7 +1898,9 @@ export default function PurchaseOrdersPage() {
                 className={`w-full rounded-lg px-6 py-3 font-medium text-white shadow-lg transition-all ${
                   successModal.type === "deposit"
                     ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
-                    : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700"
+                    : successModal.type === "tail"
+                      ? "bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700"
+                      : "bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700"
                 } active:translate-y-px`}
               >
                 确定
