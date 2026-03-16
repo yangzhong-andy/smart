@@ -11,7 +11,7 @@ import {
   linkPurchaseContract,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
-import { createDeliveryOrder, type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { createDeliveryOrder, type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
 import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
 import { Package, Plus, Download, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Factory, FileText } from "lucide-react";
@@ -129,7 +129,7 @@ export default function PurchaseOrdersPage() {
     trackingNumber: "",
     itemQtys: {}
   });
-  const [paymentModal, setPaymentModal] = useState<{ contractId: string | null; type: "deposit" | "tail" | null; deliveryOrderId?: string; accountId: string }>({
+  const [paymentModal, setPaymentModal] = useState<{ contractId: string | null; type: "deposit" | "tail" | null; deliveryOrderId?: string; accountId: string; tailPaymentAmount?: number }>({
     contractId: null,
     type: null,
     accountId: ""
@@ -850,24 +850,24 @@ export default function PurchaseOrdersPage() {
       return;
     }
 
-    // 尾款支付：直接支付（不需要审批）
+    // 尾款支付：直接支付（不需要审批），支持调整金额（如最后一次扣除定金）
     if (type === "tail" && deliveryOrderId) {
-      const contractOrders = deliveryOrders.filter((o) => o.contractId === contractId);
-      const order = deliveryOrders.find((o) => o.id === deliveryOrderId);
+      const contract = contracts.find((c) => c.id === contractId);
+      const order = deliveryOrders.find((o) => o.contractId === contractId && o.id === deliveryOrderId);
       if (!order) return;
-      // 检查是否已支付
-      getCashFlowFromAPI()
-        .then((flow) => {
-          const isPaid = flow.some(
-            (f) => f.relatedId === deliveryOrderId && Math.abs(Math.abs(f.amount) - order.tailAmount) < 0.01
-          );
-          if (isPaid) {
-            toast.error("该笔尾款已支付", { icon: "⚠️" });
-            return;
-          }
-          setPaymentModal({ contractId, type, deliveryOrderId, accountId: accounts[0]?.id || "" });
-        })
-        .catch((e) => console.error("Failed to check payment", e));
+      const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : (order.tailAmount || 0);
+      const remaining = displayTail - (order.tailPaid || 0);
+      if (remaining <= 0) {
+        toast.error("该笔尾款已付清", { icon: "⚠️" });
+        return;
+      }
+      setPaymentModal({
+        contractId,
+        type,
+        deliveryOrderId,
+        accountId: accounts[0]?.id || "",
+        tailPaymentAmount: remaining
+      });
     }
   };
 
@@ -896,7 +896,11 @@ export default function PurchaseOrdersPage() {
         toast.error("拿货单不存在", { icon: "❌" });
         return;
       }
-      amount = order.tailAmount;
+      const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : (order.tailAmount || 0);
+      const remaining = displayTail - (order.tailPaid || 0);
+      amount = Number(paymentModal.tailPaymentAmount);
+      if (!Number.isFinite(amount) || amount <= 0) amount = remaining;
+      if (amount > remaining) amount = remaining;
       category = "采购货款";
       relatedId = paymentModal.deliveryOrderId;
     }
@@ -1021,7 +1025,9 @@ export default function PurchaseOrdersPage() {
     // 计算所有已拿货但未支付的尾款（按拿货单 tailAmount - tailPaid 累加）
     const unpaidTailAmount = deliveryOrders.reduce((sum, order) => {
       if (!contractIdSet.has(order.contractId)) return sum;
-      const remaining = (order.tailAmount || 0) - (order.tailPaid || 0);
+      const contract = contracts.find((c) => c.id === order.contractId);
+      const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : order.tailAmount || 0;
+      const remaining = displayTail - (order.tailPaid || 0);
       return remaining > 0 ? sum + remaining : sum;
     }, 0);
 
@@ -1456,12 +1462,15 @@ export default function PurchaseOrdersPage() {
                 const contract = contracts.find((c) => c.id === paymentModal.contractId);
                 if (!contract) return null;
                 let amount = 0;
+                const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
+                const tailOrder = paymentModal.deliveryOrderId ? contractOrders.find((o) => o.id === paymentModal.deliveryOrderId) : null;
+                const displayTailAmountForOrder = tailOrder && contract ? computeDeliveryOrderTailAmount(contract, tailOrder) : (tailOrder?.tailAmount ?? 0);
+                const tailRemaining = tailOrder ? displayTailAmountForOrder - (tailOrder.tailPaid || 0) : 0;
                 if (paymentModal.type === "deposit") {
                   amount = contract.depositAmount - (contract.depositPaid || 0);
-                } else if (paymentModal.type === "tail" && paymentModal.deliveryOrderId) {
-                  const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
-                  const order = contractOrders.find((o) => o.id === paymentModal.deliveryOrderId);
-                  if (order) amount = order.tailAmount;
+                } else if (paymentModal.type === "tail" && tailOrder) {
+                  const raw = paymentModal.tailPaymentAmount;
+                  amount = Number.isFinite(raw) && raw !== undefined ? Math.min(Math.max(0, raw), tailRemaining) : tailRemaining;
                 }
                 const account = accounts.find((a) => a.id === paymentModal.accountId);
                 
@@ -1527,6 +1536,31 @@ export default function PurchaseOrdersPage() {
                         <div className="mt-2 text-xs text-slate-400">
                           已付：<span className="text-emerald-300 font-medium">{currency(contract.depositPaid)}</span>
                         </div>
+                      )}
+                      {paymentModal.type === "tail" && tailOrder && (
+                        <>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                            <span>应付尾款：<span className="text-slate-200">{currency(displayTailAmountForOrder)}</span></span>
+                            {(tailOrder.tailPaid || 0) > 0 && (
+                              <span>已付：<span className="text-emerald-300">{currency(tailOrder.tailPaid)}</span></span>
+                            )}
+                          </div>
+                          <div className="mt-3">
+                            <label className="block text-xs font-medium text-slate-400 mb-1">本次支付金额（可调整，如最后一次可扣除已付定金）</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={tailRemaining}
+                              step={0.01}
+                              value={paymentModal.tailPaymentAmount ?? tailRemaining}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                setPaymentModal((m) => ({ ...m, tailPaymentAmount: Number.isFinite(v) ? v : undefined }));
+                              }}
+                              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                            />
+                          </div>
+                        </>
                       )}
                     </div>
 

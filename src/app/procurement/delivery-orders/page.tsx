@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import { type DeliveryOrder } from "@/lib/delivery-orders-store";
+import { type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
@@ -463,7 +463,10 @@ export default function DeliveryOrdersPage() {
                 filteredOrders.map((order) => {
                   const contract = contracts.find((c) => c.id === order.contractId);
                   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待发货"];
-                  const isTailPaid = order.tailPaid >= order.tailAmount;
+                  const displayTailAmount = contract
+                    ? computeDeliveryOrderTailAmount(contract, order)
+                    : order.tailAmount;
+                  const isTailPaid = (order.tailPaid || 0) >= displayTailAmount;
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-800/50 transition-colors">
@@ -492,29 +495,55 @@ export default function DeliveryOrdersPage() {
                       <td className="px-4 py-3 align-top">
                         {contract?.items?.length ? (
                           <div className="space-y-1">
-                            {contract.items.map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
+                            {contract.items.map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number; unitPrice?: number }) => {
                               const sku = it.variantSkuId || it.sku || "";
                               const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
                                 ? Number(order.itemQtys[it.id]) || 0
                                 : Number(it.qty) || 0;
+                              const unitPrice = Number(it.unitPrice) || 0;
+                              const lineAmount = qty * unitPrice;
                               return (
                                 <div key={sku} className="flex items-center justify-between gap-3 text-xs">
-                                  <span className="font-mono text-slate-200">{sku}</span>
-                                  <span className="text-slate-100">{qty.toLocaleString("zh-CN")}</span>
+                                  <div className="flex flex-col">
+                                    <span className="font-mono text-slate-200">{sku}</span>
+                                    <span className="text-slate-400">
+                                      数量 {qty.toLocaleString("zh-CN")} × 单价 {unitPrice.toLocaleString("zh-CN")}
+                                    </span>
+                                  </div>
+                                  <span className="text-slate-100 whitespace-nowrap">
+                                    {formatCurrency(lineAmount, "CNY")}
+                                  </span>
                                 </div>
                               );
                             })}
                             <div className="pt-1 mt-1 border-t border-slate-700/50 text-slate-500 text-xs">
-                              合计（拿货数量之和） {contract.items.reduce((sum: number, it: { id?: string; qty?: number }) => {
-                                const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
-                                  ? Number(order.itemQtys[it.id]) || 0
-                                  : Number(it.qty) || 0;
-                                return sum + qty;
-                              }, 0).toLocaleString("zh-CN")}
+                              {(() => {
+                                const totalQty = contract.items.reduce((sum: number, it: { id?: string; qty?: number }) => {
+                                  const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
+                                    ? Number(order.itemQtys[it.id]) || 0
+                                    : Number(it.qty) || 0;
+                                  return sum + qty;
+                                }, 0);
+                                const totalAmount = contract.items.reduce((sum: number, it: { id?: string; qty?: number; unitPrice?: number }) => {
+                                  const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
+                                    ? Number(order.itemQtys[it.id]) || 0
+                                    : Number(it.qty) || 0;
+                                  const unitPrice = Number(it.unitPrice) || 0;
+                                  return sum + qty * unitPrice;
+                                }, 0);
+                                return (
+                                  <div className="flex items-center justify-between">
+                                    <span>合计数量 {totalQty.toLocaleString("zh-CN")}</span>
+                                    <span>合计金额 {formatCurrency(totalAmount, "CNY")}</span>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         ) : (
-                          <span className="text-slate-100">{order.qty.toLocaleString("zh-CN")}</span>
+                          <div className="space-y-1 text-xs text-slate-100">
+                            <span>数量 {order.qty.toLocaleString("zh-CN")}</span>
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -523,7 +552,7 @@ export default function DeliveryOrdersPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <MoneyDisplay amount={order.tailAmount} currency="CNY" variant="highlight" />
+                        <MoneyDisplay amount={displayTailAmount} currency="CNY" variant="highlight" />
                       </td>
                       <td className="px-4 py-3 text-right">
                         {isTailPaid ? (

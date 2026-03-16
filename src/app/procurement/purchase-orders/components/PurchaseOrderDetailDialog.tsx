@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import InventoryDistribution from "@/components/InventoryDistribution";
+import { computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import { currency, formatDate } from "./types";
 import type { ContractDetail } from "./types";
 
@@ -583,7 +584,8 @@ export function PurchaseOrderDetailDialog({
             ) : (
               <div className="space-y-2">
                 {deliveryOrders.map((order) => {
-                  const isPaid = order.tailPaid >= order.tailAmount;
+                  const displayTail = computeDeliveryOrderTailAmount(contract, order as { qty: number; itemQtys?: Record<string, number> });
+                  const isPaid = (order.tailPaid || 0) >= displayTail;
                   return (
                     <div
                       key={order.id}
@@ -601,7 +603,7 @@ export function PurchaseOrderDetailDialog({
                             )}
                           </div>
                           <div className="text-xs text-slate-400">
-                            尾款：{currency(order.tailAmount)}
+                            尾款：{currency(displayTail)}
                             {isPaid ? (
                               <span className="text-emerald-300 ml-2">（已付）</span>
                             ) : (
