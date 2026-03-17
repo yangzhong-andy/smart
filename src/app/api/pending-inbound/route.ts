@@ -53,6 +53,19 @@ export async function GET(request: NextRequest) {
             select: { warehouseName: true },
           },
           variant: { select: { product: { select: { name: true } } } },
+          items: {
+            select: {
+              id: true,
+              variantId: true,
+              sku: true,
+              skuName: true,
+              spec: true,
+              qty: true,
+              receivedQty: true,
+              unitPrice: true,
+            },
+            orderBy: { sku: 'asc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -81,6 +94,17 @@ export async function GET(request: NextRequest) {
         batchCount: item._count.batches,
         warehouseName: item.batches?.[0]?.warehouseName ?? undefined,
         productName: item.variant?.product?.name ?? "",
+        // 多SKU明细
+        items: item.items.map(i => ({
+          id: i.id,
+          variantId: i.variantId || undefined,
+          sku: i.sku,
+          skuName: i.skuName || undefined,
+          spec: i.spec || undefined,
+          qty: i.qty,
+          receivedQty: i.receivedQty,
+          unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+        })),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };

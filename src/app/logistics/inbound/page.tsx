@@ -23,6 +23,19 @@ interface InboundItem extends InboundOrder {
   deliveryNumber: string;      // 拿货单号
   contractNumber?: string;     // 合同编号
   skuId?: string;             // SKU ID
+  items?: InboundItemSKU[];    // 多SKU明细
+}
+
+// 多SKU明细类型
+interface InboundItemSKU {
+  id: string;
+  variantId?: string;
+  sku: string;
+  skuName?: string;
+  spec?: string;
+  qty: number;
+  receivedQty: number;
+  unitPrice?: number;
 }
 
 // 表单数据类型
@@ -359,7 +372,21 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
             </div>
             <div>
               <span className="text-xs text-slate-500 block">SKU</span>
-              <span className="text-sm text-slate-300">{order.sku}</span>
+              {order.items && order.items.length > 0 ? (
+                <div className="text-xs text-slate-300 space-y-0.5">
+                  {order.items.slice(0, 3).map((item) => (
+                    <div key={item.id} className="font-mono">
+                      {item.sku} × {item.receivedQty || item.qty}
+                      {item.spec && <span className="text-slate-500">({item.spec})</span>}
+                    </div>
+                  ))}
+                  {order.items.length > 3 && (
+                    <div className="text-slate-500">+{order.items.length - 3} more</div>
+                  )}
+                </div>
+              ) : (
+                <span className="text-sm text-slate-300">{order.sku}</span>
+              )}
             </div>
             <div>
               <span className="text-xs text-slate-500 block">仓库</span>

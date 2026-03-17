@@ -1,64 +1,52 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { clearCacheByPrefix } from '@/lib/redis'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { syncProductVariantInventory } from "@/lib/inventory-sync";
 
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
 
-// 与列表接口保持一致的缓存前缀
-const CACHE_KEY_PREFIX = 'purchase-contracts'
-
-/**
- * POST - 提交生产完成：将合同下所有明细的完工数设为合同数量
- */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+// POST /api/purchase-contracts/[id]/complete-production
+// 一键完成生产（将完工数量设为合同总数），并自动同步库存
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const contractId = params.id
+    const { id: contractId } = await params;
 
+    // 获取采购合同
     const contract = await prisma.purchaseContract.findUnique({
       where: { id: contractId },
       include: {
-        items: true
-      }
-    })
+        items: true,
+      },
+    });
+
     if (!contract) {
-      return NextResponse.json({ error: '合同不存在' }, { status: 404 })
+      return NextResponse.json({ error: "采购合同不存在" }, { status: 404 });
     }
 
-    const now = new Date()
+    // 获取受影响的 variantId 列表
+    const affectedVariantIds: string[] = [];
 
-    // 在事务中更新明细 + 合同完工数
-    await prisma.$transaction(async (tx) => {
-      // 1. 明细全部设为合同数量
-      await Promise.all(
-        contract.items.map((item) =>
-          tx.purchaseContractItem.update({
-            where: { id: item.id },
-            data: { finishedQty: item.qty, updatedAt: now }
-          })
-        )
-      )
+    // 更新每个 item 的 finishedQty 为合同数量
+    for (const item of contract.items) {
+      if (item.variantId) {
+        await prisma.purchaseContractItem.update({
+          where: { id: item.id },
+          data: { finishedQty: item.qty },
+        });
 
-      // 2. 合同层面的完工数量更新为总数，便于统计
-      await tx.purchaseContract.update({
-        where: { id: contractId },
-        data: {
-          finishedQty: contract.totalQty,
-          updatedAt: now
+        if (item.variantId && !affectedVariantIds.includes(item.variantId)) {
+          affectedVariantIds.push(item.variantId);
         }
-      })
-    })
+      }
+    }
 
-    // 3. 清理采购合同列表缓存，确保生产进度页面能看到最新完工数量
-    await clearCacheByPrefix(CACHE_KEY_PREFIX)
+    // 自动同步库存到 ProductVariant
+    for (const variantId of affectedVariantIds) {
+      await syncProductVariantInventory(variantId);
+    }
 
-    return NextResponse.json({ ok: true, message: '已提交生产完成' })
+    return NextResponse.json({ success: true, message: "生产已完成，库存已同步" });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: '提交生产完成失败', details: error.message },
-      { status: 500 }
-    )
+    console.error("完成生产失败:", error);
+    return NextResponse.json({ error: error.message || "操作失败" }, { status: 500 });
   }
 }

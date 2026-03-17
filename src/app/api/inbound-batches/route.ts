@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 import { InventoryLogType, InventoryLogStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
+import { syncProductVariantInventory } from "@/lib/inventory-sync";
 
 export const dynamic = 'force-dynamic';
 
@@ -214,6 +215,11 @@ export async function POST(request: NextRequest) {
 
     // 清除入库批次缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    // 自动同步 ProductVariant 库存
+    if (variantId) {
+      await syncProductVariantInventory(variantId);
+    }
 
     return NextResponse.json({
       id: batch.id,

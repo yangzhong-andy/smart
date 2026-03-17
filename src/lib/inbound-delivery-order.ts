@@ -190,6 +190,20 @@ export async function executeDeliveryOrderInbound(
           updatedAt: now,
         },
       });
+      
+      // 更新 PendingInboundItem 的已入库数量
+      if (itemQtys && Object.keys(itemQtys).length > 0 && itemsWithVariant.length > 0) {
+        for (const item of itemsWithVariant) {
+          const received = itemQtys[item.id] || 0;
+          if (received > 0) {
+            await tx.pendingInboundItem.updateMany({
+              where: { pendingInboundId: order.pendingInbound.id, variantId: item.variantId },
+              data: { receivedQty: received, updatedAt: now }
+            });
+          }
+        }
+      }
+      
       pendingInboundIdForBatch = order.pendingInbound.id;
     } else {
       // 拿货单无关联待入库单时（如直接从拿货单页入库），补建待入库单并建批次，保证「入库批次列表」有数据
@@ -211,6 +225,41 @@ export async function executeDeliveryOrderInbound(
           updatedAt: now,
         },
       });
+      
+      // 为每个SKU创建 PendingInboundItem 明细
+      if (itemQtys && Object.keys(itemQtys).length > 0 && itemsWithVariant.length > 0) {
+        // 多SKU情况：为每个SKU创建明细
+        for (const item of itemsWithVariant) {
+          const received = itemQtys[item.id] || 0;
+          await tx.pendingInboundItem.create({
+            data: {
+              pendingInboundId: newPending.id,
+              variantId: item.variantId ?? null,
+              sku: item.sku || item.skuName || '',
+              skuName: contract.supplierName || null,
+              spec: item.spec ?? null,
+              qty: item.qty || 0,
+              receivedQty: received,
+              unitPrice: item.unitPrice ?? null,
+            }
+          });
+        }
+      } else if (singleSkuVariantId) {
+        // 单SKU情况：创建一条明细
+        await tx.pendingInboundItem.create({
+          data: {
+            pendingInboundId: newPending.id,
+            variantId: singleSkuVariantId,
+            sku: skuDisplay,
+            skuName: contract.supplierName || null,
+            spec: null,
+            qty: order.qty,
+            receivedQty: receivedQty,
+            unitPrice: contract.unitPrice ?? null,
+          }
+        });
+      }
+      
       pendingInboundIdForBatch = newPending.id;
       outboundParams = { pendingInboundId: newPending.id, sku: skuDisplay, qty: order.qty, variantId: singleSkuVariantId! };
     }

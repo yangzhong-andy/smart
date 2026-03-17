@@ -122,10 +122,25 @@ export interface InboundOrder {
   expectedDate?: string;    // 预计到货日期
   receivedDate?: string;    // 实际收货日期
   
+  // 多SKU明细
+  items?: InboundOrderItem[];
+  
   notes?: string;
   
   createdAt: string;
   updatedAt: string;
+}
+
+// 入库订单SKU明细
+export interface InboundOrderItem {
+  id: string;
+  variantId?: string;
+  sku: string;
+  skuName?: string;
+  spec?: string;
+  qty: number;
+  receivedQty: number;
+  unitPrice?: number;
 }
 
 // 待入库类型（兼容旧代码）

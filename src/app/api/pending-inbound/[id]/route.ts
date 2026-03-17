@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { syncProductVariantInventory } from '@/lib/inventory-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,6 +96,11 @@ export async function PUT(
         batches: true
       }
     })
+
+    // 当状态变为"已入库"时，自动同步 ProductVariant 库存
+    if (body.status === "已入库" && pendingInbound.variantId) {
+      await syncProductVariantInventory(pendingInbound.variantId);
+    }
 
     return NextResponse.json({
       id: pendingInbound.id,
