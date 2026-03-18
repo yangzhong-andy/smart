@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Package, Warehouse as WarehouseIcon, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Package, Warehouse as WarehouseIcon, X, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { toast } from "sonner";
 
 type StockItem = {
@@ -77,7 +78,6 @@ export default function WarehouseInventoryPage() {
       items: StockItem[];
     }>();
 
-    // 先添加所有仓库
     warehouses.forEach((w: Warehouse) => {
       map.set(w.id, { 
         warehouse: w, 
@@ -88,7 +88,6 @@ export default function WarehouseInventoryPage() {
       });
     });
 
-    // 累加库存
     stocks.forEach((item: StockItem) => {
       const key = item.warehouseId;
       if (map.has(key)) {
@@ -103,7 +102,21 @@ export default function WarehouseInventoryPage() {
     return Array.from(map.values()).filter(w => w.totalQty > 0);
   }, [stocks, warehouses]);
 
-  // 当前选中的仓库详情
+  // 总体统计
+  const totalStats = useMemo(() => {
+    const domestic = warehouseStats.filter(w => w.warehouse.type === "DOMESTIC");
+    const overseas = warehouseStats.filter(w => w.warehouse.type === "OVERSEAS");
+    return {
+      totalWarehouses: warehouseStats.length,
+      domesticWarehouses: domestic.length,
+      overseasWarehouses: overseas.length,
+      totalQty: warehouseStats.reduce((sum, w) => sum + w.totalQty, 0),
+      availableQty: warehouseStats.reduce((sum, w) => sum + w.availableQty, 0),
+      totalSku: warehouseStats.reduce((sum, w) => sum + w.skuCount, 0),
+    };
+  }, [warehouseStats]);
+
+  // 当前选中的仓库
   const selectedWarehouse = warehouses.find((w: Warehouse) => w.id === selectedWarehouseId);
   const selectedWarehouseStocks = selectedWarehouseId === "all" 
     ? stocks 
@@ -114,37 +127,97 @@ export default function WarehouseInventoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
-      <div className="mx-auto max-w-7xl p-6">
-        {/* 页面头部 */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-3">
-              <WarehouseIcon className="h-8 w-8 text-primary-400" />
-              仓库库存
-            </h1>
-            <p className="text-slate-400 mt-1">按仓库查看库存明细</p>
-          </div>
-          
-          {/* 仓库筛选 */}
-          <div className="flex items-center gap-3">
-            <select
-              value={selectedWarehouseId}
-              onChange={(e) => setSelectedWarehouseId(e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200"
-            >
-              <option value="all">全部仓库</option>
-              {warehouses.map((w: Warehouse) => (
-                <option key={w.id} value={w.id}>
-                  {w.name} ({w.type === "DOMESTIC" ? "国内" : w.type === "OVERSEAS" ? "海外" : w.type})
-                </option>
-              ))}
-            </select>
-          </div>
+    <div className="min-h-screen bg-slate-950">
+      <PageHeader
+        title="仓库库存"
+        subtitle="按仓库查看库存明细"
+        actions={
+          <ActionButton
+            icon={Download}
+            onClick={() => {
+              const headers = ["仓库", "SKU", "产品名称", "规格", "总库存", "可用", "锁定"];
+              const rows = selectedWarehouseStocks.map((item: StockItem) => [
+                item.warehouseName,
+                item.skuId,
+                item.productName,
+                [item.color, item.size].filter(Boolean).join("/") || "-",
+                String(item.qty || 0),
+                String(item.availableQty || 0),
+                String(item.lockedQty || 0),
+              ]);
+              const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+              const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `仓库库存_${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+            }}
+          >
+            导出CSV
+          </ActionButton>
+        }
+      />
+
+      <div className="p-6 space-y-6">
+        {/* 统计卡片 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <StatCard
+            label="仓库数量"
+            value={totalStats.totalWarehouses}
+            icon={WarehouseIcon}
+            variant="default"
+          />
+          <StatCard
+            label="国内仓"
+            value={totalStats.domesticWarehouses}
+            icon={WarehouseIcon}
+            variant="blue"
+          />
+          <StatCard
+            label="海外仓"
+            value={totalStats.overseasWarehouses}
+            icon={WarehouseIcon}
+            variant="purple"
+          />
+          <StatCard
+            label="SKU种类"
+            value={totalStats.totalSku}
+            icon={Package}
+            variant="default"
+          />
+          <StatCard
+            label="总库存"
+            value={totalStats.totalQty.toLocaleString()}
+            icon={Package}
+            variant="emerald"
+          />
+          <StatCard
+            label="可用库存"
+            value={totalStats.availableQty.toLocaleString()}
+            icon={Package}
+            variant="green"
+          />
         </div>
 
-        {/* 仓库汇总卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {/* 仓库筛选 */}
+        <div className="flex items-center gap-4">
+          <select
+            value={selectedWarehouseId}
+            onChange={(e) => setSelectedWarehouseId(e.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200"
+          >
+            <option value="all">全部仓库</option>
+            {warehouses.map((w: Warehouse) => (
+              <option key={w.id} value={w.id}>
+                {w.name} ({w.type === "DOMESTIC" ? "国内" : w.type === "OVERSEAS" ? "海外" : w.type})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 仓库卡片 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {warehouseStats.map((stat) => {
             const isExpanded = expandedWarehouse === stat.warehouse.id;
             return (
@@ -202,7 +275,11 @@ export default function WarehouseInventoryPage() {
           {isLoading ? (
             <div className="p-8 text-center text-slate-400">加载中...</div>
           ) : selectedWarehouseStocks.length === 0 ? (
-            <div className="p-8 text-center text-slate-400">暂无库存数据</div>
+            <EmptyState
+              icon={Package}
+              title="暂无库存数据"
+              description="该仓库暂无库存记录"
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
