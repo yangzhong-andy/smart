@@ -130,7 +130,7 @@ export default function WarehouseInventoryPage() {
     <div className="min-h-screen bg-slate-950">
       <PageHeader
         title="仓库库存"
-        subtitle="按仓库查看库存明细"
+        description="按仓库查看库存明细"
         actions={
           <ActionButton
             icon={Download}
