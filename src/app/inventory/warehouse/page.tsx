@@ -163,40 +163,40 @@ export default function WarehouseInventoryPage() {
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
           <StatCard
-            label="仓库数量"
+            title="仓库数量"
             value={totalStats.totalWarehouses}
             icon={WarehouseIcon}
-            variant="default"
+            iconColor="text-blue-400"
           />
           <StatCard
-            label="国内仓"
+            title="国内仓"
             value={totalStats.domesticWarehouses}
             icon={WarehouseIcon}
-            variant="blue"
+            iconColor="text-emerald-400"
           />
           <StatCard
-            label="海外仓"
+            title="海外仓"
             value={totalStats.overseasWarehouses}
             icon={WarehouseIcon}
-            variant="purple"
+            iconColor="text-purple-400"
           />
           <StatCard
-            label="SKU种类"
+            title="SKU种类"
             value={totalStats.totalSku}
             icon={Package}
-            variant="default"
+            iconColor="text-amber-400"
           />
           <StatCard
-            label="总库存"
+            title="总库存"
             value={totalStats.totalQty.toLocaleString()}
             icon={Package}
-            variant="emerald"
+            iconColor="text-green-400"
           />
           <StatCard
-            label="可用库存"
+            title="可用库存"
             value={totalStats.availableQty.toLocaleString()}
             icon={Package}
-            variant="green"
+            iconColor="text-cyan-400"
           />
         </div>
 
