@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
       barcode: stock.variant.barcode ?? undefined,
       warehouseCode: stock.warehouse.code,
       warehouseName: stock.warehouse.name,
+      warehouseType: stock.warehouse.type,
       location: stock.warehouse.location,
       qty: stock.qty,
       reservedQty: stock.reservedQty,
