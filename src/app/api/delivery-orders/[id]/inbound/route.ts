@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * POST 拿货单入库
- * Body: { warehouseId: string, receivedQty: number }
+ * Body: { warehouseId: string, itemQtys?: Record<string, number>, receivedQty?: number }
+ * - itemQtys: 多SKU时每个SKU的实收数量，key是item id，value是数量
+ * - receivedQty: 单SKU时的实收数量（兼容旧版本）
  */
 export async function POST(
   request: NextRequest,
@@ -16,16 +18,29 @@ export async function POST(
   try {
     const body = await request.json();
     const warehouseId = body.warehouseId as string | undefined;
+    const itemQtys = body.itemQtys as Record<string, number> | undefined;
     const receivedQty = body.receivedQty != null ? Number(body.receivedQty) : undefined;
 
-    if (!warehouseId || receivedQty == null || receivedQty < 0) {
+    if (!warehouseId) {
       return NextResponse.json(
-        { error: '请提供有效的 warehouseId 和实收数量（receivedQty ≥ 0）' },
+        { error: '请提供有效的 warehouseId' },
         { status: 400 }
       );
     }
 
-    const result = await executeDeliveryOrderInbound(deliveryOrderId, warehouseId, receivedQty);
+    // 校验：需要提供 itemQtys（多SKU）或 receivedQty（单SKU）之一
+    const hasItemQtys = itemQtys && Object.keys(itemQtys).length > 0;
+    const hasReceivedQty = receivedQty != null && receivedQty >= 0;
+
+    if (!hasItemQtys && !hasReceivedQty) {
+      return NextResponse.json(
+        { error: '请提供实收数量（多SKU用 itemQtys，单SKU用 receivedQty）' },
+        { status: 400 }
+      );
+    }
+
+    // 优先使用 itemQtys（多SKU模式），否则使用 receivedQty（单SKU兼容模式）
+    const result = await executeDeliveryOrderInbound(deliveryOrderId, warehouseId, hasItemQtys ? itemQtys : receivedQty!);
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });

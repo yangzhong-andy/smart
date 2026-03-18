@@ -73,9 +73,15 @@ async function processStockInbound(
 export async function executeDeliveryOrderInbound(
   deliveryOrderId: string,
   warehouseId: string,
-  receivedQty: number
+  // 支持两种模式：number（单SKU兼容）或 Record<string, number>（多SKU）
+  receivedQtyOrItemQtys: number | Record<string, number>
 ): Promise<{ success: true } | { success: false; error: string }> {
-  if (receivedQty == null || receivedQty < 0) {
+  // 判断是多SKU模式还是单SKU模式
+  const isMultiSku = typeof receivedQtyOrItemQtys === 'object' && receivedQtyOrItemQtys !== null;
+  const itemQtysFromRequest = isMultiSku ? receivedQtyOrItemQtys as Record<string, number> : null;
+  const singleReceivedQty = isMultiSku ? 0 : (receivedQtyOrItemQtys as number);
+
+  if (!isMultiSku && (singleReceivedQty == null || singleReceivedQty < 0)) {
     return { success: false, error: "实收数量需 ≥ 0" };
   }
 
@@ -102,7 +108,8 @@ export async function executeDeliveryOrderInbound(
   }
 
   const contract = order.contract;
-  const itemQtys = order.itemQtys as Record<string, number> | null;
+  // 优先使用请求中的 itemQtys，否则使用数据库中的 itemQtys
+  const itemQtys = itemQtysFromRequest || (order.itemQtys as Record<string, number> | null);
   
   // 获取所有有 variantId 的 items
   const itemsWithVariant = (contract.items || []).filter((item) => item.variantId);
@@ -159,7 +166,7 @@ export async function executeDeliveryOrderInbound(
       if (!singleSkuVariantId) {
         throw new Error("无法解析该合同对应的 SKU（variantId），请确认合同已关联产品");
       }
-      await processStockInbound(tx, singleSkuVariantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
+      await processStockInbound(tx, singleSkuVariantId, warehouseId, singleReceivedQty, deliveryOrderId, order.deliveryNumber);
     }
 
     // 更新拿货单状态
@@ -172,7 +179,11 @@ export async function executeDeliveryOrderInbound(
     const batchNum = `IB-${now.toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
     if (order.pendingInbound) {
-      const newReceivedQty = order.pendingInbound.receivedQty + receivedQty;
+      // 计算总实收数量：多SKU时用 itemQtys 之和，单SKU时用 singleReceivedQty
+      const totalReceived = isMultiSku
+        ? Object.values(itemQtys || {}).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
+        : singleReceivedQty;
+      const newReceivedQty = order.pendingInbound.receivedQty + totalReceived;
       const newStatus =
         newReceivedQty >= order.pendingInbound.qty ? "已入库" : "部分入库";
       if (newStatus === "已入库") {
@@ -218,7 +229,7 @@ export async function executeDeliveryOrderInbound(
           sku: skuDisplay,
           variantId: singleSkuVariantId!,
           qty: order.qty,
-          receivedQty,
+          receivedQty: singleReceivedQty,
           status: "已入库",
           domesticTrackingNumber: order.domesticTrackingNumber ?? null,
           shippedDate: order.shippedDate ?? null,
@@ -254,7 +265,7 @@ export async function executeDeliveryOrderInbound(
             skuName: contract.supplierName || null,
             spec: null,
             qty: order.qty,
-            receivedQty: receivedQty,
+            receivedQty: singleReceivedQty,
             unitPrice: contract.unitPrice ?? null,
           }
         });
@@ -289,7 +300,7 @@ export async function executeDeliveryOrderInbound(
           batchNumber: batchNum,
           warehouseId,
           warehouseName: warehouse.name,
-          qty: receivedQty,
+          qty: singleReceivedQty,
           receivedDate: now,
           notes: `拿货单 ${order.deliveryNumber} 入库`,
         },
@@ -303,11 +314,11 @@ export async function executeDeliveryOrderInbound(
           type: "IN",
           status: "INBOUNDED",
           variantId: singleSkuVariantId,
-          qty: receivedQty,
+          qty: singleReceivedQty,
           warehouseId,
           deliveryOrderId,
           relatedOrderNo: order.deliveryNumber,
-          notes: `拿货单入库：${order.deliveryNumber}，实收 ${receivedQty}`,
+          notes: `拿货单入库：${order.deliveryNumber}，实收 ${singleReceivedQty}`,
         },
       });
     }

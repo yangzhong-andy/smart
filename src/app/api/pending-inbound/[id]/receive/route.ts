@@ -11,7 +11,9 @@ const INBOUND_BATCHES_CACHE_PREFIX = "inbound-batches";
 
 /**
  * POST 待入库单入库（物流页「入库」按钮）
- * Body: { receivedQty: number, warehouseId?: string }
+ * Body: { itemQtys?: Record<string, number>, receivedQty?: number, warehouseId?: string }
+ * - itemQtys: 多SKU时每个SKU的实收数量，key是item id，value是数量
+ * - receivedQty: 单SKU时的实收数量（兼容旧版本）
  * 若未传 warehouseId，使用系统第一个仓库
  */
 export async function POST(
@@ -21,12 +23,17 @@ export async function POST(
   try {
     const { id: pendingInboundId } = await params;
     const body = await request.json();
+    const itemQtys = body.itemQtys as Record<string, number> | undefined;
     const receivedQty = body.receivedQty != null ? Number(body.receivedQty) : undefined;
     let warehouseId = (body.warehouseId as string) || undefined;
 
-    if (receivedQty == null || receivedQty < 0) {
+    // 校验：需要提供 itemQtys（多SKU）或 receivedQty（单SKU）之一
+    const hasItemQtys = itemQtys && Object.keys(itemQtys).length > 0;
+    const hasReceivedQty = receivedQty != null && receivedQty >= 0;
+
+    if (!hasItemQtys && !hasReceivedQty) {
       return NextResponse.json(
-        { error: "请提供有效的实收数量（receivedQty ≥ 0）" },
+        { error: "请提供实收数量（多SKU用 itemQtys，单SKU用 receivedQty）" },
         { status: 400 }
       );
     }
@@ -54,10 +61,11 @@ export async function POST(
       warehouseId = first.id;
     }
 
+    // 优先使用 itemQtys（多SKU模式），否则使用 receivedQty（单SKU兼容模式）
     const result = await executeDeliveryOrderInbound(
       pending.deliveryOrderId,
       warehouseId,
-      receivedQty
+      hasItemQtys ? itemQtys! : receivedQty!
     );
 
     if (!result.success) {

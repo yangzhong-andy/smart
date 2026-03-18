@@ -149,6 +149,9 @@ export async function POST(request: NextRequest) {
 
       const batch = await prisma.$transaction(async (tx) => {
       // 1. 获取当前仓库该 SKU 的库存
+      if (!variantId) {
+        throw new Error("SKU 不能为空");
+      }
       const stock = await tx.stock.findUnique({
         where: {
           variantId_warehouseId: { variantId, warehouseId },

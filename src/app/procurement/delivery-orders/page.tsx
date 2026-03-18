@@ -43,7 +43,7 @@ export default function DeliveryOrdersPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [inboundOrder, setInboundOrder] = useState<DeliveryOrder | null>(null);
-  const [inboundReceivedQty, setInboundReceivedQty] = useState<number>(0);
+  const [inboundItemQtys, setInboundItemQtys] = useState<Record<string, number>>({});
   const [inboundWarehouseId, setInboundWarehouseId] = useState<string>("");
   const [inboundSubmitting, setInboundSubmitting] = useState(false);
   const [generatingBills, setGeneratingBills] = useState(false);
@@ -126,25 +126,43 @@ export default function DeliveryOrdersPage() {
 
   const openInboundDialog = (order: DeliveryOrder) => {
     setInboundOrder(order);
-    setInboundReceivedQty(order.qty);
+    // 初始化每个SKU的实收数量
+    const contract = contracts.find((c) => c.id === order.contractId);
+    const itemQtys: Record<string, number> = {};
+    if (contract?.items?.length) {
+      // 多SKU情况：初始化每个SKU的数量为拿货数量
+      for (const item of contract.items) {
+        const itemId = item.id;
+        const qty = order.itemQtys && itemId && order.itemQtys[itemId] !== undefined
+          ? Number(order.itemQtys[itemId]) || 0
+          : Number(item.qty) || 0;
+        itemQtys[itemId] = qty;
+      }
+    } else {
+      // 单SKU情况
+      itemQtys['single'] = order.qty;
+    }
+    setInboundItemQtys(itemQtys);
     setInboundWarehouseId(warehouses[0]?.id ?? "");
   };
 
   const closeInboundDialog = () => {
     setInboundOrder(null);
-    setInboundReceivedQty(0);
+    setInboundItemQtys({});
     setInboundWarehouseId("");
     setInboundSubmitting(false);
   };
 
   const handleInboundConfirm = async () => {
     if (!inboundOrder) return;
-    if (inboundReceivedQty < 0) {
-      toast.error("实收数量不能为负数");
-      return;
-    }
     if (!inboundWarehouseId) {
       toast.error("请选择入库仓库");
+      return;
+    }
+    // 检查是否填写了实收数量
+    const hasValidQty = Object.values(inboundItemQtys).some(qty => qty > 0);
+    if (!hasValidQty) {
+      toast.error("请填写至少一个SKU的实收数量");
       return;
     }
     setInboundSubmitting(true);
@@ -154,7 +172,7 @@ export default function DeliveryOrdersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           warehouseId: inboundWarehouseId,
-          receivedQty: inboundReceivedQty
+          itemQtys: inboundItemQtys
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -675,14 +693,67 @@ export default function DeliveryOrdersPage() {
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300">实收数量</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={inboundReceivedQty}
-                  onChange={(e) => setInboundReceivedQty(Number(e.target.value) || 0)}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                />
+                <label className="mb-2 block text-sm font-medium text-slate-300">实收数量（按SKU分别填写）</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {(() => {
+                    const contract = contracts.find((c) => c.id === inboundOrder.contractId);
+                    if (contract?.items?.length) {
+                      // 多SKU：每个SKU显示输入框
+                      return contract.items.map((item: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
+                        const itemId = item.id || '';
+                        const sku = item.variantSkuId || item.sku || '';
+                        const planQty = inboundOrder.itemQtys && itemId && inboundOrder.itemQtys[itemId] !== undefined
+                          ? Number(inboundOrder.itemQtys[itemId]) || 0
+                          : Number(item.qty) || 0;
+                        return (
+                          <div key={itemId} className="flex items-center gap-2">
+                            <span className="flex-1 font-mono text-sm text-slate-200 truncate" title={sku}>{sku}</span>
+                            <span className="text-xs text-slate-500 w-12 text-right">计划: {planQty}</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={planQty}
+                              value={inboundItemQtys[itemId] || 0}
+                              onChange={(e) => {
+                                const val = Math.min(Math.max(0, Number(e.target.value) || 0), planQty);
+                                setInboundItemQtys(prev => ({ ...prev, [itemId]: val }));
+                              }}
+                              className="w-20 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-right text-sm text-slate-100 outline-none focus:border-primary-500"
+                              placeholder="实收"
+                            />
+                          </div>
+                        );
+                      });
+                    } else {
+                      // 单SKU：显示单个输入框
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1 text-sm text-slate-200">实收数量</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={inboundItemQtys['single'] || 0}
+                            onChange={(e) => setInboundItemQtys({ single: Math.max(0, Number(e.target.value) || 0) })}
+                            className="w-32 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-right text-slate-100 outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                          />
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
+                {/* 显示合计 */}
+                <div className="mt-2 pt-2 border-t border-slate-700 text-sm">
+                  <span className="text-slate-400">实收合计：</span>
+                  <span className="font-medium text-emerald-400">
+                    {(() => {
+                      const contract = contracts.find((c) => c.id === inboundOrder.contractId);
+                      if (contract?.items?.length) {
+                        return Object.values(inboundItemQtys).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+                      }
+                      return inboundItemQtys['single'] || 0;
+                    })()}
+                  </span>
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-300">入库仓库</label>

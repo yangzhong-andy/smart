@@ -45,7 +45,7 @@ interface InboundFormData {
   sku: string;
   skuId?: string;
   qty: string;
-  receivedQty: string;
+  itemQtys: Record<string, number>;  // 多SKU实收数量
   warehouseId: string;
   warehouseName: string;
   expectedDate: string;
@@ -59,7 +59,7 @@ const initialFormData: InboundFormData = {
   sku: "",
   skuId: "",
   qty: "",
-  receivedQty: "0",
+  itemQtys: {},
   warehouseId: "",
   warehouseName: "",
   expectedDate: "",
@@ -134,23 +134,55 @@ export default function InboundPage() {
     setDetailModal(null);
   };
 
-  // 处理入库
-  const handleReceive = async (order: InboundOrder) => {
-    const remaining = order.qty - order.receivedQty;
-    const confirmQty = prompt(`当前待入库数量: ${remaining}\n请输入入库数量:`, remaining.toString());
+  // 处理入库 - 打开入库弹窗
+  const handleReceive = (order: InboundOrder) => {
+    const orderItems = (order as InboundItem).items;
+    const itemQtys: Record<string, number> = {};
+    
+    if (orderItems && orderItems.length > 0) {
+      // 多SKU：初始化每个SKU的数量为待入库数量
+      for (const item of orderItems) {
+        const remaining = item.qty - item.receivedQty;
+        itemQtys[item.id] = remaining;
+      }
+    } else {
+      // 单SKU
+      const remaining = order.qty - order.receivedQty;
+      itemQtys['single'] = remaining;
+    }
+    
+    setForm({
+      ...initialFormData,
+      inboundNumber: order.inboundNumber,
+      deliveryNumber: order.deliveryNumber || "",
+      sku: order.sku,
+      skuId: (order as any).skuId,
+      qty: String(order.qty),
+      itemQtys,
+      warehouseId: warehouses[0]?.id ?? "",
+      warehouseName: warehouses[0]?.name ?? "",
+    });
+    setIsModalOpen(true);
+  };
 
-    if (!confirmQty || isNaN(Number(confirmQty))) return;
+  // 提交入库
+  const handleReceiveSubmit = async () => {
+    const order = inboundOrders.find((i: InboundOrder) => i.id === form.inboundNumber);
+    if (!order) return;
 
-    const qty = Math.min(Math.max(0, Number(confirmQty)), remaining);
-    if (qty <= 0) {
-      toast.error("入库数量需大于 0");
+    // 检查是否填写了实收数量
+    const hasValidQty = Object.values(form.itemQtys).some(qty => qty > 0);
+    if (!hasValidQty) {
+      toast.error("请填写至少一个SKU的实收数量");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const body: { receivedQty: number; warehouseId?: string } = { receivedQty: qty };
-      if (warehouses.length > 0) body.warehouseId = warehouses[0].id;
+      const body: { itemQtys: Record<string, number>; warehouseId?: string } = { 
+        itemQtys: form.itemQtys 
+      };
+      if (form.warehouseId) body.warehouseId = form.warehouseId;
 
       const response = await fetch(`/api/pending-inbound/${order.id}/receive`, {
         method: "POST",
@@ -159,12 +191,12 @@ export default function InboundPage() {
       });
 
       const data = await response.json().catch(() => ({}));
-
       if (!response.ok) {
         throw new Error((data as { error?: string }).error || "入库失败");
       }
 
-      toast.success(`入库成功，入库数量: ${qty}。库存已增加，待入库单已更新。`);
+      toast.success(`入库成功，库存已增加，待入库单已更新。`);
+      setIsModalOpen(false);
       mutate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "入库失败，请重试");
@@ -304,6 +336,126 @@ export default function InboundPage() {
               onCreateOutbound={() => handleCreateOutbound(order)}
             />
           ))}
+        </div>
+      )}
+
+      {/* 入库弹窗 */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+              <h3 className="text-lg font-semibold text-slate-100">入库</h3>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4 p-4">
+              <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-slate-400">入库单号</span>
+                  <span className="font-medium text-slate-100">{form.inboundNumber}</span>
+                  <span className="text-slate-400">拿货单号</span>
+                  <span className="font-medium text-slate-100">{form.deliveryNumber || "-"}</span>
+                </div>
+              </div>
+              
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">实收数量（按SKU分别填写）</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {(() => {
+                    const order = inboundOrders.find((i: InboundOrder) => i.id === form.inboundNumber);
+                    const orderItems = (order as InboundItem)?.items;
+                    if (orderItems && orderItems.length > 0) {
+                      // 多SKU：每个SKU显示输入框
+                      return orderItems.map((item) => {
+                        const planQty = item.qty - item.receivedQty;
+                        return (
+                          <div key={item.id} className="flex items-center gap-2">
+                            <span className="flex-1 font-mono text-sm text-slate-200 truncate" title={item.sku}>{item.sku}</span>
+                            <span className="text-xs text-slate-500 w-12 text-right">待入库: {planQty}</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={planQty}
+                              value={form.itemQtys[item.id] || 0}
+                              onChange={(e) => {
+                                const val = Math.min(Math.max(0, Number(e.target.value) || 0), planQty);
+                                setForm(prev => ({ ...prev, itemQtys: { ...prev.itemQtys, [item.id]: val } }));
+                              }}
+                              className="w-20 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-right text-sm text-slate-100 outline-none focus:border-primary-500"
+                            />
+                          </div>
+                        );
+                      });
+                    } else {
+                      // 单SKU：显示单个输入框
+                      const remaining = Number(form.qty);
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1 text-sm text-slate-200">实收数量</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={form.itemQtys['single'] || 0}
+                            onChange={(e) => setForm(prev => ({ ...prev, itemQtys: { single: Math.max(0, Number(e.target.value) || 0) } }))}
+                            className="w-32 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-right text-slate-100 outline-none focus:border-primary-500"
+                          />
+                        </div>
+                      );
+                    }
+                  })()}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-700 text-sm">
+                  <span className="text-slate-400">实收合计：</span>
+                  <span className="font-medium text-emerald-400">
+                    {(() => {
+                      const order = inboundOrders.find((i: InboundOrder) => i.id === form.inboundNumber);
+                      const orderItems = (order as InboundItem)?.items;
+                      if (orderItems && orderItems.length > 0) {
+                        return Object.values(form.itemQtys).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+                      }
+                      return form.itemQtys['single'] || 0;
+                    })()}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">入库仓库</label>
+                <select
+                  value={form.warehouseId}
+                  onChange={(e) => setForm(prev => ({ ...prev, warehouseId: e.target.value, warehouseName: warehouses.find((w: WarehouseType) => w.id === e.target.value)?.name || '' }))}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 outline-none focus:border-primary-500"
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouses.map((w: WarehouseType) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-700 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleReceiveSubmit}
+                disabled={isSubmitting}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {isSubmitting ? "处理中…" : "确认入库"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

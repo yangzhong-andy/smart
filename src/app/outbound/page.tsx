@@ -83,10 +83,13 @@ export default function OutboundListPage() {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [skus, setSkus] = useState<SkuOption[]>([]);
+  const [createItems, setCreateItems] = useState<Array<{
+    variantId: string;
+    sku: string;
+    skuName?: string;
+    qty: number;
+  }>>([]);
   const [createForm, setCreateForm] = useState({
-    variantId: "",
-    sku: "",
-    qty: "",
     warehouseId: "",
     destination: "",
   });
@@ -163,7 +166,8 @@ export default function OutboundListPage() {
 
   const openCreateModal = () => {
     setCreateModalOpen(true);
-    setCreateForm({ variantId: "", sku: "", qty: "", warehouseId: "", destination: "" });
+    setCreateItems([{ variantId: "", sku: "", skuName: "", qty: 0 }]);
+    setCreateForm({ warehouseId: "", destination: "" });
     fetchSkus();
     fetchWarehouses();
     fetchContainers();
@@ -171,18 +175,33 @@ export default function OutboundListPage() {
 
   const closeCreateModal = () => {
     setCreateModalOpen(false);
-    setCreateForm({ variantId: "", sku: "", qty: "", warehouseId: "", destination: "" });
+    setCreateItems([]);
+    setCreateForm({ warehouseId: "", destination: "" });
+  };
+
+  const addSkuItem = () => {
+    setCreateItems([...createItems, { variantId: "", sku: "", skuName: "", qty: 0 }]);
+  };
+
+  const removeSkuItem = (index: number) => {
+    if (createItems.length > 1) {
+      setCreateItems(createItems.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateSkuItem = (index: number, field: string, value: any) => {
+    const newItems = [...createItems];
+    (newItems[index] as any)[field] = value;
+    setCreateItems(newItems);
   };
 
   const handleCreateOutbound = async (e: React.FormEvent) => {
     e.preventDefault();
-    const qty = Number(createForm.qty);
-    if (!createForm.variantId || !createForm.sku.trim()) {
-      toast.error("请选择 SKU");
-      return;
-    }
-    if (!Number.isFinite(qty) || qty <= 0) {
-      toast.error("请填写有效的出库数量");
+    
+    // 过滤有效的SKU项
+    const validItems = createItems.filter(item => item.variantId && item.qty > 0);
+    if (validItems.length === 0) {
+      toast.error("请至少添加一个有效的SKU");
       return;
     }
     if (!createForm.warehouseId) {
@@ -199,14 +218,24 @@ export default function OutboundListPage() {
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
       const r = Math.random().toString(36).slice(2, 6).toUpperCase();
       const outboundNumber = `OB-${date}-${r}`;
+      
+      // 准备items数据
+      const items = validItems.map(item => {
+        const skuInfo = skus.find(s => s.variant_id === item.variantId);
+        return {
+          variantId: item.variantId,
+          sku: item.sku,
+          skuName: skuInfo?.name || "",
+          qty: item.qty,
+        };
+      });
+
       const res = await fetch("/api/outbound-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           outboundNumber,
-          variantId: createForm.variantId,
-          sku: createForm.sku.trim(),
-          qty,
+          items,
           warehouseId: createForm.warehouseId,
           warehouseName: warehouse.name,
           destination: createForm.destination.trim() || null,
@@ -435,40 +464,62 @@ export default function OutboundListPage() {
               </button>
             </div>
             <form onSubmit={handleCreateOutbound} className="p-4 space-y-4">
+              {/* SKU明细 */}
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">SKU</label>
-                <select
-                  value={createForm.variantId}
-                  onChange={(e) => {
-                    const opt = skus.find((s) => s.variant_id === e.target.value);
-                    setCreateForm((f) => ({
-                      ...f,
-                      variantId: e.target.value,
-                      sku: opt ? opt.sku_id : "",
-                    }));
-                  }}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
-                  required
-                >
-                  <option value="">请选择 SKU</option>
-                  {skus.map((s) => (
-                    <option key={s.variant_id} value={s.variant_id}>
-                      {s.sku_id} {s.name ? ` · ${s.name}` : ""}
-                    </option>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-400">SKU明细</label>
+                  <button
+                    type="button"
+                    onClick={addSkuItem}
+                    className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> 添加SKU
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {createItems.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2 p-2 rounded-lg border border-slate-700 bg-slate-800/50">
+                      <select
+                        value={item.variantId}
+                        onChange={(e) => {
+                          const opt = skus.find((s) => s.variant_id === e.target.value);
+                          updateSkuItem(index, 'variantId', e.target.value);
+                          updateSkuItem(index, 'sku', opt?.sku_id || '');
+                          updateSkuItem(index, 'skuName', opt?.name || '');
+                        }}
+                        className="flex-1 rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+                        required
+                      >
+                        <option value="">选择SKU</option>
+                        {skus.map((s) => (
+                          <option key={s.variant_id} value={s.variant_id}>
+                            {s.sku_id} {s.name ? `·${s.name}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.qty || ''}
+                        onChange={(e) => updateSkuItem(index, 'qty', Number(e.target.value) || 0)}
+                        className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-200 text-right"
+                        placeholder="数量"
+                      />
+                      {createItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeSkuItem(index)}
+                          className="p-1 text-slate-400 hover:text-red-400"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">出库数量</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={createForm.qty}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, qty: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
-                  placeholder="请输入数量"
-                  required
-                />
+                </div>
+                <div className="mt-2 text-sm text-slate-400">
+                  合计: {createItems.reduce((sum, item) => sum + (item.qty || 0), 0)} 件
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">仓库</label>

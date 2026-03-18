@@ -32,11 +32,12 @@ export async function DELETE(
 
     if (outboundOrder) {
       const newShippedQty = Math.max(0, outboundOrder.shippedQty - batch.qty)
+      const totalQty = outboundOrder.qty || 0
       let newStatus = outboundOrder.status
 
       if (newShippedQty === 0) {
         newStatus = '待出库'
-      } else if (newShippedQty < outboundOrder.qty) {
+      } else if (newShippedQty < totalQty) {
         newStatus = '部分出库'
       } else {
         newStatus = '已出库'

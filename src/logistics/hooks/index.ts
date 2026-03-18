@@ -156,7 +156,9 @@ export function useOutboundOrders(params?: {
     }
   );
 
-  const outboundOrders = Array.isArray(data) ? data : [];
+  // API返回 { data: [...], pagination: {...} }，需要取 data 字段
+  const rawData = data as any;
+  const outboundOrders = Array.isArray(rawData) ? rawData : (rawData?.data || []);
   return {
     outboundOrders,
     isLoading,

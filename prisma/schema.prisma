@@ -339,6 +339,7 @@ model ProductVariant {
   pendingInbound PendingInbound[] // 待入库单
   pendingInboundItems PendingInboundItem[] // 入库单明细
   outboundOrders OutboundOrder[] // 出库单
+  outboundOrderItems OutboundOrderItem[] // 出库单明细
   inventoryLogs  InventoryLog[] // 库存流水（国内中转-海外分发）
 
   @@index([productId])
@@ -826,9 +827,10 @@ model InboundBatch {
 model OutboundOrder {
   id                String   @id @default(uuid())
   outboundNumber    String   @unique // 出库单号
-  variantId         String // SKU ID
-  sku               String // SKU名称（冗余字段）
-  qty               Int // 出库数量
+  // 单SKU字段（兼容旧数据）
+  variantId         String? // SKU ID
+  sku               String? // SKU名称（冗余字段）
+  qty               Int? // 出库数量
   shippedQty        Int      @default(0) // 已出库数量
   warehouseId       String // 出库仓库ID
   warehouseName     String // 出库仓库名称（冗余字段）
@@ -840,15 +842,36 @@ model OutboundOrder {
   updatedAt         DateTime @updatedAt
 
   // 关联关系
-  variant        ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variant        ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   pendingInbound PendingInbound? @relation(fields: [pendingInboundId], references: [id], onDelete: SetNull)
   batches        OutboundBatch[] // 出库批次
+  items          OutboundOrderItem[] // 多SKU明细
 
   @@index([variantId])
   @@index([warehouseId])
-  @@index([status])
-  @@index([pendingInboundId])
+}
+
+// 出库单明细（支持多SKU）
+model OutboundOrderItem {
+  id                String   @id @default(uuid())
+  outboundOrderId   String   // 出库单ID
+  variantId         String?  // 产品SKU ID
+  sku               String   // SKU名称
+  skuName           String?  // SKU别名（产品名称）
+  spec              String?  // 规格/颜色
+  qty               Int      // 出库数量
+  shippedQty        Int      @default(0) // 已出库数量
+  unitPrice         Decimal? @db.Decimal(18, 2) // 单价
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // 关联关系
+  outboundOrder OutboundOrder @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([outboundOrderId])
+  @@index([variantId])
 }
 
 // 柜子：用于按柜管理在途货物、海运信息
