@@ -101,7 +101,7 @@ export default function PreRecordsPage() {
   const { data: overseasCompaniesData } = useSWR<{ data: any[] }>("/api/overseas-companies?pageSize=100", fetcher);
   const { data: warehousesData } = useSWR<{ data: any[] }>("/api/warehouses?pageSize=100", fetcher);
   const { data: storesData } = useSWR<{ data: any[] }>("/api/stores?pageSize=100", fetcher);
-  const { data: productsData } = useSWR<{ data: any[] }>("/api/products?pageSize=500", fetcher);
+  const { data: productsData } = useSWR<{ data: any[] }>("/api/products/all?pageSize=500", fetcher);
 
   const exporters = exportersData?.data || [];
   const overseasCompanies = overseasCompaniesData?.data || [];
@@ -155,20 +155,24 @@ export default function PreRecordsPage() {
       const newItems = [...f.items];
       (newItems[index] as any)[field] = value;
 
-      // 如果选择了产品，自动填充体积
+      // 如果选择了产品，自动填充第一个SKU的体积
       if (field === "variantId" && value) {
         const product = products.find((p: any) => p.id === value);
-        if (product?.variants?.[0]) {
-          const variant = product.variants[0];
-          const length = parseFloat(variant.lengthCm) || 0;
-          const width = parseFloat(variant.widthCm) || 0;
-          const height = parseFloat(variant.heightCm) || 0;
-          const volume = (length * width * height) / 1000000; // 转换为CBM
-          newItems[index].unitVolumeCBM = volume;
-          newItems[index].unitWeightKG = parseFloat(variant.weightKg) || 0;
-          newItems[index].sku = variant.skuId;
-          newItems[index].skuName = product.name;
-          newItems[index].spec = variant.color || "";
+        if (product) {
+          // 取第一个variant
+          const variant = product.variants?.[0];
+          if (variant) {
+            const volume = variant.volumeCBM || 0;
+            newItems[index].unitVolumeCBM = volume;
+            newItems[index].unitWeightKG = parseFloat(variant.weightKg) || 0;
+            newItems[index].sku = variant.skuId;
+            newItems[index].skuName = product.name;
+            newItems[index].spec = variant.color || "";
+          } else {
+            // 如果没有variant，只显示产品名
+            newItems[index].sku = product.name;
+            newItems[index].skuName = product.name;
+          }
         }
       }
 

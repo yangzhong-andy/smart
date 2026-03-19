@@ -439,7 +439,7 @@ export default function TransferPage() {
               <option value="all">全部账户</option>
               {Array.isArray(accounts) && accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.currency})
+                  {acc.name} {acc.currency} ¥{acc.originalBalance || 0}
                 </option>
               ))}
             </select>
@@ -454,7 +454,7 @@ export default function TransferPage() {
               <option value="all">全部账户</option>
               {Array.isArray(accounts) && accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.currency})
+                  {acc.name} {acc.currency} ¥{acc.originalBalance || 0}
                 </option>
               ))}
             </select>
