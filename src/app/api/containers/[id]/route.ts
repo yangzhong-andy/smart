@@ -40,11 +40,40 @@ export async function GET(
       voyageNo: container.voyageNo ?? undefined,
       originPort: container.originPort ?? undefined,
       destinationPort: container.destinationPort ?? undefined,
+      destinationCountry: container.destinationCountry ?? undefined,
       etd: container.etd?.toISOString() ?? undefined,
       eta: container.eta?.toISOString() ?? undefined,
       actualDeparture: container.actualDeparture?.toISOString() ?? undefined,
       actualArrival: container.actualArrival?.toISOString() ?? undefined,
       status: container.status,
+      // 出口模式
+      exportMode: container.exportMode ?? undefined,
+      serviceMode: container.serviceMode ?? undefined,
+      // 主体
+      exporterId: container.exporterId ?? undefined,
+      exporterName: container.exporterName ?? undefined,
+      overseasCompanyId: container.overseasCompanyId ?? undefined,
+      overseasCompanyName: container.overseasCompanyName ?? undefined,
+      // 申报
+      declaredValue: container.declaredValue ? container.declaredValue.toString() : undefined,
+      declaredCurrency: container.declaredCurrency ?? undefined,
+      // 关税
+      dutyAmount: container.dutyAmount ? container.dutyAmount.toString() : undefined,
+      dutyPayer: container.dutyPayer ?? undefined,
+      dutyCurrency: container.dutyCurrency ?? undefined,
+      dutyPaidAmount: container.dutyPaidAmount ? container.dutyPaidAmount.toString() : undefined,
+      // 回款
+      returnAmount: container.returnAmount ? container.returnAmount.toString() : undefined,
+      returnDate: container.returnDate?.toISOString() ?? undefined,
+      returnCurrency: container.returnCurrency ?? undefined,
+      // 仓库
+      warehouseId: container.warehouseId ?? undefined,
+      warehouseName: container.warehouseName ?? undefined,
+      // 销售
+      platform: container.platform ?? undefined,
+      storeId: container.storeId ?? undefined,
+      storeName: container.storeName ?? undefined,
+      // 汇总
       totalVolumeCBM: container.totalVolumeCBM ? container.totalVolumeCBM.toString() : undefined,
       totalWeightKG: container.totalWeightKG ? container.totalWeightKG.toString() : undefined,
       createdAt: container.createdAt.toISOString(),
@@ -95,6 +124,7 @@ export async function PUT(
     if (body.voyageNo !== undefined) data.voyageNo = body.voyageNo || null;
     if (body.originPort !== undefined) data.originPort = body.originPort || null;
     if (body.destinationPort !== undefined) data.destinationPort = body.destinationPort || null;
+    if (body.destinationCountry !== undefined) data.destinationCountry = body.destinationCountry || null;
     if (body.etd !== undefined) data.etd = body.etd ? new Date(body.etd) : null;
     if (body.eta !== undefined) data.eta = body.eta ? new Date(body.eta) : null;
     if (body.actualDeparture !== undefined)
@@ -102,6 +132,39 @@ export async function PUT(
     if (body.actualArrival !== undefined)
       data.actualArrival = body.actualArrival ? new Date(body.actualArrival) : null;
     if (body.status) data.status = body.status;
+    // 出口模式
+    if (body.exportMode !== undefined) data.exportMode = body.exportMode || null;
+    if (body.serviceMode !== undefined) data.serviceMode = body.serviceMode || null;
+    // 主体
+    if (body.exporterId !== undefined) data.exporterId = body.exporterId || null;
+    if (body.exporterName !== undefined) data.exporterName = body.exporterName || null;
+    if (body.overseasCompanyId !== undefined) data.overseasCompanyId = body.overseasCompanyId || null;
+    if (body.overseasCompanyName !== undefined) data.overseasCompanyName = body.overseasCompanyName || null;
+    // 申报
+    if (body.declaredValue !== undefined)
+      data.declaredValue = body.declaredValue != null ? Number(body.declaredValue) : null;
+    if (body.declaredCurrency !== undefined) data.declaredCurrency = body.declaredCurrency || null;
+    // 关税
+    if (body.dutyAmount !== undefined)
+      data.dutyAmount = body.dutyAmount != null ? Number(body.dutyAmount) : null;
+    if (body.dutyPayer !== undefined) data.dutyPayer = body.dutyPayer || null;
+    if (body.dutyCurrency !== undefined) data.dutyCurrency = body.dutyCurrency || null;
+    if (body.dutyPaidAmount !== undefined)
+      data.dutyPaidAmount = body.dutyPaidAmount != null ? Number(body.dutyPaidAmount) : null;
+    // 回款
+    if (body.returnAmount !== undefined)
+      data.returnAmount = body.returnAmount != null ? Number(body.returnAmount) : null;
+    if (body.returnDate !== undefined)
+      data.returnDate = body.returnDate ? new Date(body.returnDate) : null;
+    if (body.returnCurrency !== undefined) data.returnCurrency = body.returnCurrency || null;
+    // 仓库
+    if (body.warehouseId !== undefined) data.warehouseId = body.warehouseId || null;
+    if (body.warehouseName !== undefined) data.warehouseName = body.warehouseName || null;
+    // 销售
+    if (body.platform !== undefined) data.platform = body.platform || null;
+    if (body.storeId !== undefined) data.storeId = body.storeId || null;
+    if (body.storeName !== undefined) data.storeName = body.storeName || null;
+    // 汇总
     if (body.totalVolumeCBM !== undefined)
       data.totalVolumeCBM = body.totalVolumeCBM != null ? Number(body.totalVolumeCBM) : null;
     if (body.totalWeightKG !== undefined)

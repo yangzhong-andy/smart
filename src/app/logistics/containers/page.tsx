@@ -60,19 +60,126 @@ function getProgressBarColor(status: string): string {
   }
 }
 
+// 柜子表单类型
+type ContainerForm = {
+  // 基本信息
+  containerNo: string;
+  containerType: string;
+  sealNo: string;
+  shippingMethod: string;
+  // 船运信息
+  shipCompany: string;
+  vesselName: string;
+  voyageNo: string;
+  // 港口信息
+  originPort: string;
+  destinationPort: string;
+  destinationCountry: string;
+  // 日期
+  etd: string;
+  eta: string;
+  actualDeparture: string;
+  actualArrival: string;
+  // 状态
+  status: string;
+  // 物流模式
+  exportMode: string;
+  serviceMode: string;
+  // 主体
+  exporterId: string;
+  exporterName: string;
+  overseasCompanyId: string;
+  overseasCompanyName: string;
+  // 申报
+  declaredValue: string;
+  declaredCurrency: string;
+  // 关税
+  dutyAmount: string;
+  dutyPayer: string;
+  dutyCurrency: string;
+  dutyPaidAmount: string;
+  // 回款
+  returnAmount: string;
+  returnDate: string;
+  returnCurrency: string;
+  // 仓库
+  warehouseId: string;
+  warehouseName: string;
+  // 销售
+  platform: string;
+  storeId: string;
+  storeName: string;
+  // 汇总
+  totalVolumeCBM: string;
+  totalWeightKG: string;
+};
+
+const emptyForm: ContainerForm = {
+  containerNo: "",
+  containerType: "40HQ",
+  sealNo: "",
+  shippingMethod: "SEA",
+  shipCompany: "",
+  vesselName: "",
+  voyageNo: "",
+  originPort: "",
+  destinationPort: "",
+  destinationCountry: "",
+  etd: "",
+  eta: "",
+  actualDeparture: "",
+  actualArrival: "",
+  status: "PLANNED",
+  exportMode: "",
+  serviceMode: "",
+  exporterId: "",
+  exporterName: "",
+  overseasCompanyId: "",
+  overseasCompanyName: "",
+  declaredValue: "",
+  declaredCurrency: "USD",
+  dutyAmount: "",
+  dutyPayer: "",
+  dutyCurrency: "USD",
+  dutyPaidAmount: "",
+  returnAmount: "",
+  returnDate: "",
+  returnCurrency: "USD",
+  warehouseId: "",
+  warehouseName: "",
+  platform: "",
+  storeId: "",
+  storeName: "",
+  totalVolumeCBM: "",
+  totalWeightKG: "",
+};
+
 export default function ContainersPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterMethod, setFilterMethod] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    containerNo: "",
-    containerType: "40HQ",
-    shippingMethod: "SEA",
-  });
+  const [createForm, setCreateForm] = useState<ContainerForm>(emptyForm);
 
+  // 获取柜子列表
   const { data, isLoading, mutate } = useSWR("/api/containers?page=1&pageSize=200", fetcher);
   const containers: Container[] = Array.isArray(data?.data) ? data.data : [];
+
+  // 获取出口公司列表
+  const { data: exportersData } = useSWR<{ data: any[] }>("/api/exporters?pageSize=100", fetcher);
+  const exporters = exportersData?.data || [];
+  
+  // 获取海外公司列表
+  const { data: overseasCompaniesData } = useSWR<{ data: any[] }>("/api/overseas-companies?pageSize=100", fetcher);
+  const overseasCompanies = overseasCompaniesData?.data || [];
+  
+  // 获取仓库列表
+  const { data: warehousesData } = useSWR<{ data: any[] }>("/api/warehouses?pageSize=100", fetcher);
+  const warehouses = warehousesData?.data || [];
+  
+  // 获取店铺列表
+  const { data: storesData } = useSWR<{ data: any[] }>("/api/stores?pageSize=100", fetcher);
+  const stores = storesData?.data || [];
 
   const stats = useMemo(() => {
     const total = containers.length;
@@ -116,6 +223,13 @@ export default function ContainersPage() {
       toast.error("运输方式仅支持 SEA / AIR / EXPRESS");
       return;
     }
+    
+    // 获取选中的出口公司名称
+    const selectedExporter = exporters.find(e => e.id === createForm.exporterId);
+    const selectedOverseasCompany = overseasCompanies.find(c => c.id === createForm.overseasCompanyId);
+    const selectedWarehouse = warehouses.find(w => w.id === createForm.warehouseId);
+    const selectedStore = stores.find(s => s.id === createForm.storeId);
+    
     try {
       const res = await fetch("/api/containers", {
         method: "POST",
@@ -124,6 +238,40 @@ export default function ContainersPage() {
           containerNo: no,
           containerType: createForm.containerType.trim() || "40HQ",
           shippingMethod: createForm.shippingMethod,
+          sealNo: createForm.sealNo || null,
+          shipCompany: createForm.shipCompany || null,
+          vesselName: createForm.vesselName || null,
+          voyageNo: createForm.voyageNo || null,
+          originPort: createForm.originPort || null,
+          destinationPort: createForm.destinationPort || null,
+          destinationCountry: createForm.destinationCountry || null,
+          etd: createForm.etd || null,
+          eta: createForm.eta || null,
+          actualDeparture: createForm.actualDeparture || null,
+          actualArrival: createForm.actualArrival || null,
+          status: createForm.status,
+          exportMode: createForm.exportMode || null,
+          serviceMode: createForm.serviceMode || null,
+          exporterId: createForm.exporterId || null,
+          exporterName: selectedExporter?.name || null,
+          overseasCompanyId: createForm.overseasCompanyId || null,
+          overseasCompanyName: selectedOverseasCompany?.name || null,
+          declaredValue: createForm.declaredValue || null,
+          declaredCurrency: createForm.declaredCurrency || null,
+          dutyAmount: createForm.dutyAmount || null,
+          dutyPayer: createForm.dutyPayer || null,
+          dutyCurrency: createForm.dutyCurrency || null,
+          dutyPaidAmount: createForm.dutyPaidAmount || null,
+          returnAmount: createForm.returnAmount || null,
+          returnDate: createForm.returnDate || null,
+          returnCurrency: createForm.returnCurrency || null,
+          warehouseId: createForm.warehouseId || null,
+          warehouseName: selectedWarehouse?.name || null,
+          platform: createForm.platform || null,
+          storeId: createForm.storeId || null,
+          storeName: selectedStore?.name || null,
+          totalVolumeCBM: createForm.totalVolumeCBM || null,
+          totalWeightKG: createForm.totalWeightKG || null,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -133,7 +281,7 @@ export default function ContainersPage() {
       }
       toast.success("柜子已创建");
       setIsCreateOpen(false);
-      setCreateForm({ containerNo: "", containerType: "40HQ", shippingMethod: "SEA" });
+      setCreateForm(emptyForm);
       mutate();
     } catch (e) {
       console.error(e);
@@ -205,19 +353,18 @@ export default function ContainersPage() {
         </select>
       </div>
 
-      {/* 新建柜子表单（简易版） */}
+      {/* 新建柜子表单（完整版） */}
       {isCreateOpen && (
-        <div className="rounded-xl border border-primary-500/40 bg-slate-900/80 p-4 space-y-3">
+        <div className="rounded-xl border border-primary-500/40 bg-slate-900/80 p-4 space-y-4">
           <div className="text-sm font-medium text-slate-100">新建柜子</div>
           <form className="grid grid-cols-1 md:grid-cols-4 gap-4" onSubmit={handleCreate}>
+            {/* 基本信息 */}
             <label className="space-y-1">
               <span className="text-xs text-slate-300">柜号 *</span>
               <input
                 value={createForm.containerNo}
-                onChange={(e) =>
-                  setCreateForm((f) => ({ ...f, containerNo: e.target.value }))
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                onChange={(e) => setCreateForm((f) => ({ ...f, containerNo: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
                 placeholder="例如 MSKU1234567"
               />
             </label>
@@ -225,35 +372,358 @@ export default function ContainersPage() {
               <span className="text-xs text-slate-300">柜型</span>
               <input
                 value={createForm.containerType}
-                onChange={(e) =>
-                  setCreateForm((f) => ({ ...f, containerType: e.target.value }))
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                onChange={(e) => setCreateForm((f) => ({ ...f, containerType: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
                 placeholder="如 40HQ / 20GP"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">封条号</span>
+              <input
+                value={createForm.sealNo}
+                onChange={(e) => setCreateForm((f) => ({ ...f, sealNo: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
               />
             </label>
             <label className="space-y-1">
               <span className="text-xs text-slate-300">运输方式</span>
               <select
                 value={createForm.shippingMethod}
-                onChange={(e) =>
-                  setCreateForm((f) => ({ ...f, shippingMethod: e.target.value }))
-                }
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                onChange={(e) => setCreateForm((f) => ({ ...f, shippingMethod: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
               >
                 <option value="SEA">SEA（海运）</option>
                 <option value="AIR">AIR（空运）</option>
                 <option value="EXPRESS">EXPRESS（快递）</option>
               </select>
             </label>
-            <div className="flex items-end gap-2">
+            
+            {/* 船运信息 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">船公司</span>
+              <input
+                value={createForm.shipCompany}
+                onChange={(e) => setCreateForm((f) => ({ ...f, shipCompany: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">船名</span>
+              <input
+                value={createForm.vesselName}
+                onChange={(e) => setCreateForm((f) => ({ ...f, vesselName: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">航次</span>
+              <input
+                value={createForm.voyageNo}
+                onChange={(e) => setCreateForm((f) => ({ ...f, voyageNo: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">状态</span>
+              <select
+                value={createForm.status}
+                onChange={(e) => setCreateForm((f) => ({ ...f, status: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="PLANNED">已计划</option>
+                <option value="LOADING">装柜中</option>
+                <option value="IN_TRANSIT">在途</option>
+                <option value="ARRIVED_PORT">已到港</option>
+                <option value="CUSTOMS_CLEAR">清关完成</option>
+                <option value="IN_WAREHOUSE">已入仓</option>
+                <option value="CLOSED">已完结</option>
+              </select>
+            </label>
+            
+            {/* 港口信息 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">起运港</span>
+              <input
+                value={createForm.originPort}
+                onChange={(e) => setCreateForm((f) => ({ ...f, originPort: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">目的港</span>
+              <input
+                value={createForm.destinationPort}
+                onChange={(e) => setCreateForm((f) => ({ ...f, destinationPort: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">目的国家</span>
+              <input
+                value={createForm.destinationCountry}
+                onChange={(e) => setCreateForm((f) => ({ ...f, destinationCountry: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">出口模式</span>
+              <select
+                value={createForm.exportMode}
+                onChange={(e) => setCreateForm((f) => ({ ...f, exportMode: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                <option value="EXW">EXW</option>
+                <option value="FOB">FOB</option>
+                <option value="CIF">CIF</option>
+                <option value="DAP">DAP</option>
+                <option value="DDP">DDP</option>
+              </select>
+            </label>
+            
+            {/* 日期 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">预计开船(ETD)</span>
+              <input
+                type="date"
+                value={createForm.etd}
+                onChange={(e) => setCreateForm((f) => ({ ...f, etd: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">预计到港(ETA)</span>
+              <input
+                type="date"
+                value={createForm.eta}
+                onChange={(e) => setCreateForm((f) => ({ ...f, eta: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">实际开船</span>
+              <input
+                type="date"
+                value={createForm.actualDeparture}
+                onChange={(e) => setCreateForm((f) => ({ ...f, actualDeparture: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">实际到港</span>
+              <input
+                type="date"
+                value={createForm.actualArrival}
+                onChange={(e) => setCreateForm((f) => ({ ...f, actualArrival: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            
+            {/* 主体 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">出口公司</span>
+              <select
+                value={createForm.exporterId}
+                onChange={(e) => setCreateForm((f) => ({ ...f, exporterId: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                {exporters.map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">海外公司</span>
+              <select
+                value={createForm.overseasCompanyId}
+                onChange={(e) => setCreateForm((f) => ({ ...f, overseasCompanyId: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                {overseasCompanies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">目的仓库</span>
+              <select
+                value={createForm.warehouseId}
+                onChange={(e) => setCreateForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                {warehouses.filter((w: any) => w.type === "OVERSEAS" || w.location === "OVERSEAS").map((w: any) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">销售平台</span>
+              <select
+                value={createForm.platform}
+                onChange={(e) => setCreateForm((f) => ({ ...f, platform: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Amazon">Amazon</option>
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Other">其他</option>
+              </select>
+            </label>
+            
+            {/* 店铺 */}
+            <label className="space-y-1 md:col-span-2">
+              <span className="text-xs text-slate-300">店铺</span>
+              <select
+                value={createForm.storeId}
+                onChange={(e) => setCreateForm((f) => ({ ...f, storeId: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                {stores.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </label>
+            
+            {/* 申报 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">申报金额</span>
+              <input
+                type="number"
+                value={createForm.declaredValue}
+                onChange={(e) => setCreateForm((f) => ({ ...f, declaredValue: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">申报币种</span>
+              <select
+                value={createForm.declaredCurrency}
+                onChange={(e) => setCreateForm((f) => ({ ...f, declaredCurrency: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </label>
+            
+            {/* 关税 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">关税金额</span>
+              <input
+                type="number"
+                value={createForm.dutyAmount}
+                onChange={(e) => setCreateForm((f) => ({ ...f, dutyAmount: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">付款主体</span>
+              <select
+                value={createForm.dutyPayer}
+                onChange={(e) => setCreateForm((f) => ({ ...f, dutyPayer: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="">请选择</option>
+                <option value="国内">国内</option>
+                <option value="海外">海外</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">关税币种</span>
+              <select
+                value={createForm.dutyCurrency}
+                onChange={(e) => setCreateForm((f) => ({ ...f, dutyCurrency: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">已付关税</span>
+              <input
+                type="number"
+                value={createForm.dutyPaidAmount}
+                onChange={(e) => setCreateForm((f) => ({ ...f, dutyPaidAmount: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            
+            {/* 回款 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">回款金额</span>
+              <input
+                type="number"
+                value={createForm.returnAmount}
+                onChange={(e) => setCreateForm((f) => ({ ...f, returnAmount: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">回款日期</span>
+              <input
+                type="date"
+                value={createForm.returnDate}
+                onChange={(e) => setCreateForm((f) => ({ ...f, returnDate: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">回款币种</span>
+              <select
+                value={createForm.returnCurrency}
+                onChange={(e) => setCreateForm((f) => ({ ...f, returnCurrency: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              >
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </label>
+            
+            {/* 汇总 */}
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">总体积(CBM)</span>
+              <input
+                type="number"
+                value={createForm.totalVolumeCBM}
+                onChange={(e) => setCreateForm((f) => ({ ...f, totalVolumeCBM: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">总重量(KG)</span>
+              <input
+                type="number"
+                value={createForm.totalWeightKG}
+                onChange={(e) => setCreateForm((f) => ({ ...f, totalWeightKG: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            
+            {/* 提交按钮 */}
+            <div className="flex items-end gap-2 md:col-span-4">
               <ActionButton type="submit" variant="primary">
                 保存
               </ActionButton>
               <ActionButton
                 type="button"
                 variant="ghost"
-                onClick={() => setIsCreateOpen(false)}
+                onClick={() => {
+                  setIsCreateOpen(false);
+                  setCreateForm(emptyForm);
+                }}
               >
                 取消
               </ActionButton>

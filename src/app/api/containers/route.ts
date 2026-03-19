@@ -66,11 +66,40 @@ export async function GET(request: NextRequest) {
       voyageNo: c.voyageNo ?? undefined,
       originPort: c.originPort ?? undefined,
       destinationPort: c.destinationPort ?? undefined,
+      destinationCountry: c.destinationCountry ?? undefined,
       etd: c.etd?.toISOString() ?? undefined,
       eta: c.eta?.toISOString() ?? undefined,
       actualDeparture: c.actualDeparture?.toISOString() ?? undefined,
       actualArrival: c.actualArrival?.toISOString() ?? undefined,
       status: c.status,
+      // 出口模式
+      exportMode: c.exportMode ?? undefined,
+      serviceMode: c.serviceMode ?? undefined,
+      // 主体
+      exporterId: c.exporterId ?? undefined,
+      exporterName: c.exporterName ?? undefined,
+      overseasCompanyId: c.overseasCompanyId ?? undefined,
+      overseasCompanyName: c.overseasCompanyName ?? undefined,
+      // 申报
+      declaredValue: c.declaredValue ? c.declaredValue.toString() : undefined,
+      declaredCurrency: c.declaredCurrency ?? undefined,
+      // 关税
+      dutyAmount: c.dutyAmount ? c.dutyAmount.toString() : undefined,
+      dutyPayer: c.dutyPayer ?? undefined,
+      dutyCurrency: c.dutyCurrency ?? undefined,
+      dutyPaidAmount: c.dutyPaidAmount ? c.dutyPaidAmount.toString() : undefined,
+      // 回款
+      returnAmount: c.returnAmount ? c.returnAmount.toString() : undefined,
+      returnDate: c.returnDate?.toISOString() ?? undefined,
+      returnCurrency: c.returnCurrency ?? undefined,
+      // 仓库
+      warehouseId: c.warehouseId ?? undefined,
+      warehouseName: c.warehouseName ?? undefined,
+      // 销售
+      platform: c.platform ?? undefined,
+      storeId: c.storeId ?? undefined,
+      storeName: c.storeName ?? undefined,
+      // 汇总
       totalVolumeCBM: c.totalVolumeCBM ? c.totalVolumeCBM.toString() : undefined,
       totalWeightKG: c.totalWeightKG ? c.totalWeightKG.toString() : undefined,
       createdAt: c.createdAt.toISOString(),
@@ -133,11 +162,40 @@ export async function POST(request: NextRequest) {
         voyageNo: body.voyageNo ?? null,
         originPort: body.originPort ?? null,
         destinationPort: body.destinationPort ?? null,
+        destinationCountry: body.destinationCountry ?? null,
         etd: body.etd ? new Date(body.etd) : null,
         eta: body.eta ? new Date(body.eta) : null,
         actualDeparture: body.actualDeparture ? new Date(body.actualDeparture) : null,
         actualArrival: body.actualArrival ? new Date(body.actualArrival) : null,
         status: normalizedStatus,
+        // 出口模式
+        exportMode: body.exportMode ?? null,
+        serviceMode: body.serviceMode ?? null,
+        // 主体
+        exporterId: body.exporterId ?? null,
+        exporterName: body.exporterName ?? null,
+        overseasCompanyId: body.overseasCompanyId ?? null,
+        overseasCompanyName: body.overseasCompanyName ?? null,
+        // 申报
+        declaredValue: body.declaredValue != null ? Number(body.declaredValue) : null,
+        declaredCurrency: body.declaredCurrency ?? null,
+        // 关税
+        dutyAmount: body.dutyAmount != null ? Number(body.dutyAmount) : null,
+        dutyPayer: body.dutyPayer ?? null,
+        dutyCurrency: body.dutyCurrency ?? null,
+        dutyPaidAmount: body.dutyPaidAmount != null ? Number(body.dutyPaidAmount) : null,
+        // 回款
+        returnAmount: body.returnAmount != null ? Number(body.returnAmount) : null,
+        returnDate: body.returnDate ? new Date(body.returnDate) : null,
+        returnCurrency: body.returnCurrency ?? null,
+        // 仓库
+        warehouseId: body.warehouseId ?? null,
+        warehouseName: body.warehouseName ?? null,
+        // 销售
+        platform: body.platform ?? null,
+        storeId: body.storeId ?? null,
+        storeName: body.storeName ?? null,
+        // 汇总
         totalVolumeCBM: body.totalVolumeCBM != null ? Number(body.totalVolumeCBM) : null,
         totalWeightKG: body.totalWeightKG != null ? Number(body.totalWeightKG) : null,
       },

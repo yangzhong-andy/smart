@@ -197,11 +197,40 @@ export interface Container {
   voyageNo?: string;
   originPort?: string;
   destinationPort?: string;
+  destinationCountry?: string;
   etd?: string;
   eta?: string;
   actualDeparture?: string;
   actualArrival?: string;
   status: ContainerStatus;
+  // 出口模式
+  exportMode?: string;
+  serviceMode?: string;
+  // 主体
+  exporterId?: string;
+  exporterName?: string;
+  overseasCompanyId?: string;
+  overseasCompanyName?: string;
+  // 申报
+  declaredValue?: string;
+  declaredCurrency?: string;
+  // 关税
+  dutyAmount?: string;
+  dutyPayer?: string;
+  dutyCurrency?: string;
+  dutyPaidAmount?: string;
+  // 回款
+  returnAmount?: string;
+  returnDate?: string;
+  returnCurrency?: string;
+  // 仓库
+  warehouseId?: string;
+  warehouseName?: string;
+  // 销售
+  platform?: string;
+  storeId?: string;
+  storeName?: string;
+  // 汇总
   totalVolumeCBM?: string;
   totalWeightKG?: string;
   outboundBatchCount?: number;

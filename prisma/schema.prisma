@@ -356,6 +356,9 @@ model Store {
   accountName String
   vatNumber   String?
   taxId       String?
+  // 海外公司关联
+  overseasCompanyId   String?
+  overseasCompanyName String?
   createdAt   DateTime @default(now())
 
   inventoryStocks InventoryStock[]
@@ -899,6 +902,44 @@ model Container {
   totalVolumeCBM  Decimal?         @db.Decimal(18, 3)      // 柜内总体积
   totalWeightKG   Decimal?         @db.Decimal(18, 3)      // 柜内总重量
 
+  // 目的国家
+  destinationCountry String?
+
+  // 出口模式：EXW/FOB/CIF/DAP/DDP
+  exportMode String?
+  // 服务模式：双清包税/双清不包税/FOB/其他
+  serviceMode String?
+
+  // 主体
+  exporterId String? // 国内出口公司
+  exporterName String?
+  overseasCompanyId String? // 海外进口公司
+  overseasCompanyName String?
+
+  // 申报
+  declaredValue Decimal? @db.Decimal(18, 2) // 申报金额
+  declaredCurrency String? // 申报币种
+
+  // 关税
+  dutyAmount Decimal? @db.Decimal(18, 2) // 关税金额
+  dutyPayer String? // 付款主体：国内/海外
+  dutyCurrency String? // 付款币种
+  dutyPaidAmount Decimal? @db.Decimal(18, 2) // 已付金额
+
+  // 回款
+  returnAmount Decimal? @db.Decimal(18, 2) // 回款金额
+  returnDate DateTime? // 回款日期
+  returnCurrency String? // 回款币种
+
+  // 仓库
+  warehouseId String? // 目的仓库（海外仓）
+  warehouseName String?
+
+  // 销售
+  platform String? // 销售平台：TikTok/Amazon/Instagram/YouTube/其他
+  storeId String? // 店铺
+  storeName String?
+
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -1411,6 +1452,12 @@ model ExpenseRequest {
   storeName String? // 所属店铺名称（冗余）
   country   String? // 所属国家
 
+  // 海外公司和柜子关联
+  overseasCompanyId   String? // 海外公司ID
+  overseasCompanyName String? // 海外公司名称
+  containerId         String? // 柜子ID
+  containerNo         String? // 柜号
+
   // 部门权限控制
   departmentId   String? // 发起部门ID（用于权限控制）
   departmentName String? // 发起部门名称（冗余）
@@ -1460,6 +1507,13 @@ model IncomeRequest {
   currency  String   @default("CNY") // 币种
   storeId   String? // 所属店铺ID
   storeName String? // 所属店铺名称（冗余）
+
+  // 海外公司和柜子关联
+  overseasCompanyId   String? // 海外公司ID
+  overseasCompanyName String? // 海外公司名称
+  containerId         String? // 柜子ID
+  containerNo         String? // 柜号
+
   remark    String? // 备注
   voucher   String? // 凭证（JSON 字符串，支持多图）
 
@@ -1991,4 +2045,48 @@ model LogisticsCost {
 
   @@index([outboundBatchId])
   @@index([logisticsChannelId])
+}
+
+// 国内出口公司
+model Exporter {
+  id          String   @id @default(uuid())
+  name        String // 公司名
+  country     String   @default("CN")
+  companyType String   @default("exporter")
+  contact     String? // 联系人
+  phone       String?
+  email       String?
+  address     String?
+  taxId       String? // 税号
+  bankName    String? // 银行名称
+  bankAccount String? // 银行账号
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([country])
+}
+
+// 海外公司
+model OverseasCompany {
+  id          String   @id @default(uuid())
+  name        String // 公司名
+  country     String // 国家
+  companyType String // 公司类型
+  contact     String?
+  phone       String?
+  email       String?
+  address     String?
+  taxId       String? // 税号
+  bankName    String? // 银行名称
+  bankAccount String? // 银行账号
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([country])
 }
