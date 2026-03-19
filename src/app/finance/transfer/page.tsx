@@ -102,8 +102,11 @@ export default function TransferPage() {
   const accountsWithBalance = useMemo(() => {
     if (!accounts.length) return [];
     return accounts.map((acc: any) => {
-      // 初始资金
-      let balance = Number(acc.initialCapital) || 0;
+      // 初始资金 - 如果没有initialCapital字段或为0，使用originalBalance
+      let balance = Number(acc.initialCapital);
+      if (!balance && acc.originalBalance) {
+        balance = Number(acc.originalBalance);
+      }
       // 加上收入，减去支出
       cashFlowListRaw.forEach((flow: any) => {
         if (flow.accountId === acc.id && flow.status === "confirmed") {
