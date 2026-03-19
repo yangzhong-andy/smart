@@ -97,6 +97,22 @@ export default function TransferPage() {
   });
 
   const accounts = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
+  
+  // 根据流水计算实时余额（与账户列表页面一致）
+  const accountsWithBalance = useMemo(() => {
+    if (!accounts.length) return [];
+    return accounts.map((acc: any) => {
+      // 初始资金
+      let balance = Number(acc.initialCapital) || 0;
+      // 加上收入，减去支出
+      cashFlowListRaw.forEach((flow: any) => {
+        if (flow.accountId === acc.id && flow.status === "confirmed") {
+          balance += Number(flow.amount);
+        }
+      });
+      return { ...acc, originalBalance: balance };
+    });
+  }, [accounts, cashFlowListRaw]);
   const [activeModal, setActiveModal] = useState<"transfer" | null>(null);
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
@@ -437,7 +453,7 @@ export default function TransferPage() {
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             >
               <option value="all">全部账户</option>
-              {Array.isArray(accounts) && accounts.map((acc) => (
+              {Array.isArray(accountsWithBalance) && accountsWithBalance.map((acc: any) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} {acc.currency} ¥{acc.originalBalance || 0}
                 </option>
@@ -452,7 +468,7 @@ export default function TransferPage() {
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
             >
               <option value="all">全部账户</option>
-              {Array.isArray(accounts) && accounts.map((acc) => (
+              {Array.isArray(accountsWithBalance) && accountsWithBalance.map((acc: any) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} {acc.currency} ¥{acc.originalBalance || 0}
                 </option>
