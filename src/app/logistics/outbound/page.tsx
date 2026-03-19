@@ -248,11 +248,17 @@ export default function OutboundPage() {
     
     const qty = Math.min(Number(confirmQty), remaining);
     
+    // 让用户输入物流渠道名称（简化版，可后续改为下拉选择）
+    const channelName = prompt("请输入物流渠道名称（选填）:", "");
+    
     try {
       const response = await fetch(`/api/outbound-orders/${order.id}/ship`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shippedQty: qty })
+        body: JSON.stringify({ 
+          shippedQty: qty,
+          logisticsChannelName: channelName || null
+        })
       });
 
       if (!response.ok) throw new Error("出库失败");

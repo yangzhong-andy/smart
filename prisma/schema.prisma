@@ -970,6 +970,10 @@ model OutboundBatch {
   actualArrivalDate   DateTime? // 实际到达时间
   status              String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达
 
+  // 物流渠道
+  logisticsChannelId   String? // 物流渠道ID
+  logisticsChannelName String? // 物流渠道名称
+
   // 柜子信息：一个批次可选择所属柜子
   containerId         String?
 

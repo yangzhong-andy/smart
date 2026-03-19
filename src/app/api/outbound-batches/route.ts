@@ -96,6 +96,8 @@ export async function POST(request: NextRequest) {
         shippedDate: new Date(body.shippedDate),
         destination: body.destination || null,
         trackingNumber: body.trackingNumber || null,
+        logisticsChannelId: body.logisticsChannelId || null,
+        logisticsChannelName: body.logisticsChannelName || null,
         notes: body.notes || null,
       },
     });
