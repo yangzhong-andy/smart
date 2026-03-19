@@ -48,6 +48,9 @@ const ROUTE_PREFETCH_API: Record<string, string> = {
   "/inventory": "/api/stock",
   "/logistics/channels": "/api/logistics-channels",
   "/logistics/containers": "/api/containers",
+  "/logistics/duty-stats": "/api/containers",
+  "/settings/exporters": "/api/exporters",
+  "/settings/overseas-companies": "/api/overseas-companies",
 };
 
 type NavItem = {
@@ -113,7 +116,8 @@ const navItems: NavItem[] = [
       { label: "出库批次管理", labelEn: "", icon: Truck, href: "/outbound" },
       { label: "物流费用管理", labelEn: "", icon: Truck, href: "/logistics-cost" },
       { label: "柜子管理", labelEn: "", icon: Truck, href: "/logistics/containers" },
-      { label: "仓储管理", labelEn: "", icon: Truck, href: "/logistics/warehouse" }
+      { label: "仓储管理", labelEn: "", icon: Truck, href: "/logistics/warehouse" },
+      { label: "关税统计", labelEn: "", icon: Truck, href: "/logistics/duty-stats" }
     ]
   },
   {
@@ -159,6 +163,8 @@ const navItems: NavItem[] = [
     children: [
       { label: "员工档案管理", labelEn: "User Management", icon: Users, href: "/settings/users" },
       { label: "本公司信息", labelEn: "Company (Party A)", icon: Building2, href: "/settings/company" },
+      { label: "出口公司管理", labelEn: "", icon: Building2, href: "/settings/exporters" },
+      { label: "海外公司管理", labelEn: "", icon: Building2, href: "/settings/overseas-companies" },
       { label: "生成测试数据", labelEn: "", icon: Database, href: "/settings/generate-test-data" },
       { label: "清空系统数据", labelEn: "", icon: Trash2, href: "/settings/clear-data" }
     ]
