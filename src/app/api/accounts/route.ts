@@ -44,14 +44,13 @@ export async function GET(request: NextRequest) {
     const [accounts, total] = await prisma.$transaction([
       prisma.bankAccount.findMany({
         where,
-        select: {
-          id: true, name: true, accountNumber: true, accountType: true,
-          accountCategory: true, accountPurpose: true, currency: true, country: true,
-          originalBalance: true, initialCapital: true, exchangeRate: true, rmbBalance: true,
-          parentId: true, storeId: true, companyEntity: true, owner: true,
-          notes: true, platformAccount: true, platformPassword: true, platformUrl: true,
-          createdAt: true, updatedAt: true,
-          _count: { select: { children: true, cashFlows: true } },
+        include: {
+          cashFlows: {
+            select: { amount: true, type: true },
+          },
+          children: {
+            select: { id: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -61,32 +60,45 @@ export async function GET(request: NextRequest) {
     ])
     
     const response = {
-      data: accounts.map(acc => ({
-        id: acc.id,
-        name: acc.name,
-        accountNumber: acc.accountNumber,
-        accountType: acc.accountType === 'CORPORATE' ? '对公' as const : acc.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
-        accountCategory: acc.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
-        accountPurpose: acc.accountPurpose,
-        currency: (acc.currency === 'RMB' ? 'CNY' : acc.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
-        country: acc.country,
-        originalBalance: Number(acc.originalBalance),
-        initialCapital: acc.initialCapital ? Number(acc.initialCapital) : undefined,
-        exchangeRate: Number(acc.exchangeRate),
-        rmbBalance: Number(acc.rmbBalance),
-        parentId: acc.parentId || undefined,
-        storeId: acc.storeId || undefined,
-        companyEntity: acc.companyEntity || undefined,
-        owner: acc.owner || undefined,
-        notes: acc.notes,
-        platformAccount: acc.platformAccount || undefined,
-        platformPassword: acc.platformPassword || undefined,
-        platformUrl: acc.platformUrl || undefined,
-        createdAt: acc.createdAt.toISOString(),
-        updatedAt: acc.updatedAt.toISOString(),
-        childCount: acc._count.children,
-        cashFlowCount: acc._count.cashFlows,
-      })),
+      data: accounts.map(acc => {
+        // 根据流水计算实时余额：初始资金 + 收入 - 支出
+        const initialCapital = Number(acc.initialCapital) || 0;
+        let balance = initialCapital;
+        acc.cashFlows.forEach((flow: any) => {
+          if (flow.type === 'income') {
+            balance += Number(flow.amount);
+          } else if (flow.type === 'expense') {
+            balance -= Number(flow.amount);
+          }
+        });
+        
+        return {
+          id: acc.id,
+          name: acc.name,
+          accountNumber: acc.accountNumber,
+          accountType: acc.accountType === 'CORPORATE' ? '对公' as const : acc.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
+          accountCategory: acc.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
+          accountPurpose: acc.accountPurpose,
+          currency: (acc.currency === 'RMB' ? 'CNY' : acc.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
+          country: acc.country,
+          originalBalance: balance, // 使用计算后的余额
+          initialCapital: acc.initialCapital ? Number(acc.initialCapital) : undefined,
+          exchangeRate: Number(acc.exchangeRate),
+          rmbBalance: Number(acc.rmbBalance),
+          parentId: acc.parentId || undefined,
+          storeId: acc.storeId || undefined,
+          companyEntity: acc.companyEntity || undefined,
+          owner: acc.owner || undefined,
+          notes: acc.notes,
+          platformAccount: acc.platformAccount || undefined,
+          platformPassword: acc.platformPassword || undefined,
+          platformUrl: acc.platformUrl || undefined,
+          createdAt: acc.createdAt.toISOString(),
+          updatedAt: acc.updatedAt.toISOString(),
+          childCount: acc.children?.length || 0,
+          cashFlowCount: acc.cashFlows?.length || 0,
+        };
+      }),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     }
 
