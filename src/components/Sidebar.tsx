@@ -49,6 +49,7 @@ const ROUTE_PREFETCH_API: Record<string, string> = {
   "/logistics/channels": "/api/logistics-channels",
   "/logistics/containers": "/api/containers",
   "/logistics/duty-stats": "/api/containers",
+  "/logistics/pre-records": "/api/container-pre-records",
   "/settings/exporters": "/api/exporters",
   "/settings/overseas-companies": "/api/overseas-companies",
 };
@@ -116,6 +117,7 @@ const navItems: NavItem[] = [
       { label: "出库批次管理", labelEn: "", icon: Truck, href: "/outbound" },
       { label: "物流费用管理", labelEn: "", icon: Truck, href: "/logistics-cost" },
       { label: "柜子管理", labelEn: "", icon: Truck, href: "/logistics/containers" },
+      { label: "柜子预录单", labelEn: "", icon: Truck, href: "/logistics/pre-records" },
       { label: "仓储管理", labelEn: "", icon: Truck, href: "/logistics/warehouse" },
       { label: "关税统计", labelEn: "", icon: Truck, href: "/logistics/duty-stats" }
     ]
