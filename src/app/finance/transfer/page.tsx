@@ -99,22 +99,24 @@ export default function TransferPage() {
   const accounts = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
   
   // 根据流水计算实时余额（与账户列表页面一致）
+  // 优先使用 initialCapital（初始资金），没有则用 originalBalance
   const accountsWithBalance = useMemo(() => {
     if (!accounts.length) return [];
     return accounts.map((acc: any) => {
-      // 初始资金
+      // 优先用 initialCapital 作为基础余额，确保是数字
       let balance = Number(acc.initialCapital) || 0;
-      // 如果初始资金为0但有originalBalance（来自API），使用它作为基础
+      // 如果 initialCapital 为0，用 originalBalance
       if (balance === 0 && acc.originalBalance) {
-        balance = Number(acc.originalBalance);
+        balance = Number(acc.originalBalance) || 0;
       }
       // 加上收入，减去支出
       cashFlowListRaw.forEach((flow: any) => {
         if (flow.accountId === acc.id && flow.status === "confirmed") {
-          balance += Number(flow.amount);
+          balance += Number(flow.amount) || 0;
         }
       });
-      return { ...acc, originalBalance: balance };
+      // 把 initialCapital 也设为0，这样 TransferEntry 里 (initialCapital||0) + originalBalance 只会用 originalBalance
+      return { ...acc, originalBalance: balance, initialCapital: 0 };
     });
   }, [accounts, cashFlowListRaw]);
   const [activeModal, setActiveModal] = useState<"transfer" | null>(null);
