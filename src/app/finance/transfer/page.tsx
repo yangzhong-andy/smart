@@ -102,9 +102,10 @@ export default function TransferPage() {
   const accountsWithBalance = useMemo(() => {
     if (!accounts.length) return [];
     return accounts.map((acc: any) => {
-      // 初始资金 - 如果没有initialCapital字段或为0，使用originalBalance
-      let balance = Number(acc.initialCapital);
-      if (!balance && acc.originalBalance) {
+      // 初始资金
+      let balance = Number(acc.initialCapital) || 0;
+      // 如果初始资金为0但有originalBalance（来自API），使用它作为基础
+      if (balance === 0 && acc.originalBalance) {
         balance = Number(acc.originalBalance);
       }
       // 加上收入，减去支出
@@ -637,7 +638,7 @@ export default function TransferPage() {
       {/* 新增划拨弹窗 */}
       {activeModal === "transfer" && (
         <TransferEntry
-          accounts={accounts}
+          accounts={accountsWithBalance}
           onClose={() => setActiveModal(null)}
           onSave={async (flow: CashFlow) => {
             // TransferEntry 会调用两次 onSave（转出和转入）
