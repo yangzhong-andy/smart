@@ -109,9 +109,10 @@ export default function TransferPage() {
       if (balance === 0 && acc.originalBalance) {
         balance = Number(acc.originalBalance) || 0;
       }
-      // 加上收入，减去支出
+      // 加上收入，减去支出（仅统计已确认流水，兼容后端枚举大小写/flowStatus 字段）
       cashFlowListRaw.forEach((flow: any) => {
-        if (flow.accountId === acc.id && flow.status === "confirmed") {
+        const status = String(flow.flowStatus ?? flow.status ?? "").toLowerCase();
+        if (flow.accountId === acc.id && status === "confirmed") {
           balance += Number(flow.amount) || 0;
         }
       });
