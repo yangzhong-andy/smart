@@ -79,7 +79,8 @@ export default function CashFlowPage() {
   const { data: cashFlowData, isLoading: cashFlowLoading } = useSWR<CashFlow[] | { data: any[]; pagination: unknown }>(CASH_FLOW_LIST_KEY, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    keepPreviousData: true,
+    // 避免刷新时先渲染旧缓存（如先显示 3 条再补齐）
+    keepPreviousData: false,
     dedupingInterval: 2000
   });
 
