@@ -76,13 +76,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
+    // 验证必填字段
+    if (!body.name?.trim() || !body.channelCode?.trim()) {
+      return NextResponse.json(
+        { error: '请填写物流商名称和渠道代码' },
+        { status: 400 }
+      );
+    }
+
     const channel = await prisma.logisticsChannel.create({
       data: {
-        name: body.name,
-        channelCode: body.channelCode,
-        contact: body.contact || null,
-        phone: body.phone || null,
-        queryUrl: body.queryUrl || null,
+        name: body.name.trim(),
+        channelCode: body.channelCode.trim(),
+        contact: body.contact?.trim() || '',
+        phone: body.phone?.trim() || '',
+        queryUrl: body.queryUrl?.trim() || '',
       }
     })
 
@@ -95,9 +103,10 @@ export async function POST(request: NextRequest) {
       channelCode: channel.channelCode,
       createdAt: channel.createdAt.toISOString()
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Create logistics channel error:', error);
     return NextResponse.json(
-      { error: 'Failed to create logistics channel' },
+      { error: error.message || 'Failed to create logistics channel' },
       { status: 500 }
     );
   }
