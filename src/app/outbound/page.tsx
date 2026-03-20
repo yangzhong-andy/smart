@@ -96,6 +96,13 @@ export default function OutboundListPage() {
   const [createForm, setCreateForm] = useState({
     warehouseId: "",
     destination: "",
+    destinationCountry: "",
+    destinationPlatform: "",
+    destinationStoreId: "",
+    destinationStoreName: "",
+    ownerType: "",
+    ownerId: "",
+    ownerName: "",
   });
   // 海外入库预报选项
   const [createForecast, setCreateForecast] = useState(false);
@@ -174,7 +181,17 @@ export default function OutboundListPage() {
   const openCreateModal = () => {
     setCreateModalOpen(true);
     setCreateItems([{ variantId: "", sku: "", skuName: "", qty: 0 }]);
-    setCreateForm({ warehouseId: "", destination: "" });
+    setCreateForm({
+      warehouseId: "",
+      destination: "",
+      destinationCountry: "",
+      destinationPlatform: "",
+      destinationStoreId: "",
+      destinationStoreName: "",
+      ownerType: "",
+      ownerId: "",
+      ownerName: "",
+    });
     fetchSkus();
     fetchWarehouses();
     fetchContainers();
@@ -183,7 +200,17 @@ export default function OutboundListPage() {
   const closeCreateModal = () => {
     setCreateModalOpen(false);
     setCreateItems([]);
-    setCreateForm({ warehouseId: "", destination: "" });
+    setCreateForm({
+      warehouseId: "",
+      destination: "",
+      destinationCountry: "",
+      destinationPlatform: "",
+      destinationStoreId: "",
+      destinationStoreName: "",
+      ownerType: "",
+      ownerId: "",
+      ownerName: "",
+    });
     setCreateForecast(false);
     setForecastWarehouseId("");
   };
@@ -248,6 +275,13 @@ export default function OutboundListPage() {
           warehouseId: createForm.warehouseId,
           warehouseName: warehouse.name,
           destination: createForm.destination.trim() || null,
+          destinationCountry: createForm.destinationCountry.trim() || null,
+          destinationPlatform: createForm.destinationPlatform.trim() || null,
+          destinationStoreId: createForm.destinationStoreId.trim() || null,
+          destinationStoreName: createForm.destinationStoreName.trim() || null,
+          ownerType: createForm.ownerType.trim() || null,
+          ownerId: createForm.ownerId.trim() || null,
+          ownerName: createForm.ownerName.trim() || null,
           status: "待出库",
           // 海外入库预报参数
           createOverseasForecast: createForecast,
@@ -577,6 +611,57 @@ export default function OutboundListPage() {
                   onChange={(e) => setCreateForm((f) => ({ ...f, destination: e.target.value }))}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
                   placeholder="如：巴西圣保罗、某仓库（选填）"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={createForm.destinationCountry}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, destinationCountry: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="目的国家（如 BR）"
+                />
+                <input
+                  type="text"
+                  value={createForm.destinationPlatform}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, destinationPlatform: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="目的平台（如 TikTok）"
+                />
+                <input
+                  type="text"
+                  value={createForm.destinationStoreId}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, destinationStoreId: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="店铺ID"
+                />
+                <input
+                  type="text"
+                  value={createForm.destinationStoreName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, destinationStoreName: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="店铺名称"
+                />
+                <input
+                  type="text"
+                  value={createForm.ownerType}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, ownerType: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="货权主体类型（STORE/TEAM）"
+                />
+                <input
+                  type="text"
+                  value={createForm.ownerId}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, ownerId: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="货权主体ID"
+                />
+                <input
+                  type="text"
+                  value={createForm.ownerName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, ownerName: e.target.value }))}
+                  className="md:col-span-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="货权主体名称"
                 />
               </div>
               {/* 海外入库预报选项 */}

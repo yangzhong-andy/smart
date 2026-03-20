@@ -604,7 +604,7 @@ export default function OutboundPage() {
                 {Array.isArray(shipModalOrder.items) && shipModalOrder.items.length > 0 ? (
                   <div className="space-y-2">
                     <label className="block text-xs text-slate-400">请选择 SKU 并填写出库数量</label>
-                    {shipModalOrder.items.map((it) => {
+                    {shipModalOrder.items.filter((it) => (it.qty || 0) > 0).map((it) => {
                       const remaining = Math.max(0, (it.qty || 0) - (it.shippedQty || 0));
                       return (
                         <div key={it.id} className="grid grid-cols-[1fr_120px] gap-2 items-center">
@@ -749,14 +749,15 @@ function OutboundCard({ order, onView, onShip }: OutboundCardProps) {
               <span className="text-xs text-slate-500 block">SKU</span>
               {(order as any).items && (order as any).items.length > 0 ? (
                 <div className="text-xs text-slate-300 space-y-0.5">
-                  {(order as any).items.slice(0, 3).map((item: OutboundItemSKU) => (
+                  {(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).slice(0, 3).map((item: OutboundItemSKU) => (
                     <div key={item.id} className="font-mono">
-                      {item.sku} × {item.shippedQty || item.qty}
+                      {item.sku} × {item.qty}
+                      <span className="text-slate-500">（已出 {item.shippedQty || 0}）</span>
                       {item.spec && <span className="text-slate-500">({item.spec})</span>}
                     </div>
                   ))}
-                  {(order as any).items.length > 3 && (
-                    <div className="text-slate-500">+{(order as any).items.length - 3} more</div>
+                  {(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).length > 3 && (
+                    <div className="text-slate-500">+{(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).length - 3} more</div>
                   )}
                 </div>
               ) : (
@@ -867,7 +868,7 @@ function OutboundDetailModal({ order, warehouses, onClose, onShip }: OutboundDet
             <span className="text-xs text-slate-500 block">SKU</span>
             {(order as any).items && (order as any).items.length > 0 ? (
               <div className="text-xs text-slate-200 space-y-0.5">
-                {(order as any).items.map((item: OutboundItemSKU) => (
+                {(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).map((item: OutboundItemSKU) => (
                   <div key={item.id} className="font-mono">
                     {item.sku} × {item.qty}
                     {item.spec && <span className="text-slate-500">({item.spec})</span>}

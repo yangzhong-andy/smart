@@ -47,6 +47,11 @@ export async function GET(request: NextRequest) {
           pendingInbound: {
             include: {
               variant: { include: { product: true } },
+              items: {
+                include: {
+                  variant: { include: { product: true } },
+                },
+              },
             },
           },
         },
@@ -57,24 +62,52 @@ export async function GET(request: NextRequest) {
       prisma.inboundBatch.count({ where }),
     ]);
 
+    // 为多SKU待入库单做“批次 -> SKU明细”的就近匹配，避免列表里显示“多款”
+    const usedInboundItemIds = new Set<string>();
     const response = {
-      data: batches.map(b => ({
-        id: b.id,
-        inboundId: b.pendingInboundId,
-        batchNumber: b.batchNumber,
-        warehouseId: b.warehouseId,
-        warehouseName: b.warehouseName ?? "",
-        qty: b.qty,
-        receivedDate: b.receivedDate.toISOString(),
-        notes: b.notes || undefined,
-        createdAt: b.createdAt.toISOString(),
-        inboundNumber: b.pendingInbound?.inboundNumber ?? undefined,
-        sku: b.pendingInbound?.sku ?? undefined,
-        contractNumber: b.pendingInbound?.contractNumber ?? "",
-        deliveryNumber: b.pendingInbound?.deliveryNumber ?? "",
-        status: b.pendingInbound?.status ?? undefined,
-        productName: b.pendingInbound?.variant?.product?.name ?? "",
-      })),
+      data: batches.map(b => {
+        const inboundItems = b.pendingInbound?.items || [];
+        const availableItems = inboundItems.filter((it) => !usedInboundItemIds.has(it.id));
+        const qtyMatchedItem =
+          availableItems.find((it) => Number(it.receivedQty || 0) === Number(b.qty || 0)) ||
+          availableItems.find((it) => Number(it.qty || 0) === Number(b.qty || 0)) ||
+          availableItems.find((it) => Number(it.receivedQty || 0) > 0 || Number(it.qty || 0) > 0) ||
+          null;
+        if (qtyMatchedItem) {
+          usedInboundItemIds.add(qtyMatchedItem.id);
+        }
+
+        const itemProductName =
+          inboundItems
+            .map((it) => it?.variant?.product?.name || "")
+            .find((name) => name.trim().length > 0) || "";
+        const skuDisplay =
+          qtyMatchedItem?.sku ||
+          inboundItems.find((it) => (it?.sku || "").trim().length > 0)?.sku ||
+          b.pendingInbound?.sku ||
+          "";
+        const productName =
+          b.pendingInbound?.variant?.product?.name ||
+          itemProductName ||
+          "";
+        return {
+          id: b.id,
+          inboundId: b.pendingInboundId,
+          batchNumber: b.batchNumber,
+          warehouseId: b.warehouseId,
+          warehouseName: b.warehouseName ?? "",
+          qty: b.qty,
+          receivedDate: b.receivedDate.toISOString(),
+          notes: b.notes || undefined,
+          createdAt: b.createdAt.toISOString(),
+          inboundNumber: b.pendingInbound?.inboundNumber ?? undefined,
+          sku: skuDisplay || undefined,
+          contractNumber: b.pendingInbound?.contractNumber ?? "",
+          deliveryNumber: b.pendingInbound?.deliveryNumber ?? "",
+          status: b.pendingInbound?.status ?? undefined,
+          productName,
+        };
+      }),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 

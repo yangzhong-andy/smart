@@ -63,9 +63,24 @@ export async function createOutboundOrderFromPendingInbound(
   const hasItems = pending.items && pending.items.length > 0;
   
   if (hasItems) {
-    // 多SKU模式：从items创建
-    const totalQty = pending.items.reduce((sum, item) => sum + (item.receivedQty || item.qty), 0);
-    const firstItem = pending.items[0];
+    // 多SKU模式：只基于“实际已入库数量”创建出库明细，避免把计划数量误带入出库单
+    const shippedItems = pending.items
+      .filter((item) => Number(item.receivedQty) > 0)
+      .map((item) => ({
+        variantId: item.variantId || null,
+        sku: item.sku,
+        skuName: item.skuName || null,
+        spec: item.spec || null,
+        qty: Number(item.receivedQty) || 0,
+        shippedQty: 0,
+        unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
+      }));
+
+    const totalQty = shippedItems.reduce((sum, item) => sum + item.qty, 0);
+    if (totalQty <= 0) {
+      throw new Error("待入库单尚无实际入库数量，无法自动创建出库单");
+    }
+    const firstItem = shippedItems[0];
     
     const order = await prisma.outboundOrder.create({
       data: {
@@ -82,15 +97,7 @@ export async function createOutboundOrderFromPendingInbound(
         reason: "入库完成后自动创建",
         pendingInboundId,
         items: {
-          create: pending.items.map(item => ({
-            variantId: item.variantId || null,
-            sku: item.sku,
-            skuName: item.skuName || null,
-            spec: item.spec || null,
-            qty: item.receivedQty || item.qty,
-            shippedQty: 0,
-            unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
-          }))
+          create: shippedItems
         }
       },
       select: { id: true, outboundNumber: true, createdAt: true },
