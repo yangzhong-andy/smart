@@ -696,7 +696,13 @@ export default function DeliveryOrdersPage() {
                       if (c?.items?.length) {
                         return (
                           <div className="space-y-1">
-                            {c.items.map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
+                            {c.items.filter((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
+                              // 只显示实际拿货的 SKU
+                              const qty = inboundOrder.itemQtys && it.id && inboundOrder.itemQtys[it.id] !== undefined
+                                ? Number(inboundOrder.itemQtys[it.id]) || 0
+                                : 0;
+                              return qty > 0;
+                            }).map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number }) => {
                               const sku = it.variantSkuId || it.sku || "";
                               const qty = inboundOrder.itemQtys && it.id && inboundOrder.itemQtys[it.id] !== undefined
                                 ? Number(inboundOrder.itemQtys[it.id]) || 0
@@ -713,7 +719,7 @@ export default function DeliveryOrdersPage() {
                                 const qty = inboundOrder.itemQtys && it.id && inboundOrder.itemQtys[it.id] !== undefined
                                   ? Number(inboundOrder.itemQtys[it.id]) || 0
                                   : Number(it.qty) || 0;
-                                return s + qty;
+                                return s + (qty > 0 ? qty : 0);
                               }, 0).toLocaleString("zh-CN")}
                             </div>
                           </div>
