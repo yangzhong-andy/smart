@@ -11,7 +11,19 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { shippedQty, logisticsChannelId, logisticsChannelName } = body;
+    const {
+      shippedQty,
+      itemShippings,
+      logisticsChannelId,
+      logisticsChannelName,
+      destinationCountry,
+      destinationPlatform,
+      destinationStoreId,
+      destinationStoreName,
+      ownerType,
+      ownerId,
+      ownerName,
+    } = body;
 
     // 获取出库单
     const order = await prisma.outboundOrder.findUnique({
@@ -22,52 +34,126 @@ export async function POST(
       return NextResponse.json({ error: "出库单不存在" }, { status: 404 });
     }
 
-    // 创建批次
-    const batch = await prisma.outboundBatch.create({
-      data: {
-        outboundOrderId: id,
-        batchNumber: `BATCH-${Date.now()}`,
-        warehouseId: order.warehouseId,
-        warehouseName: order.warehouseName,
-        qty: shippedQty,
-        shippedDate: new Date(),
-        logisticsChannelId: logisticsChannelId || null,
-        logisticsChannelName: logisticsChannelName || null,
-      },
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const orderWithItems = await tx.outboundOrder.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      if (!orderWithItems) throw new Error("出库单不存在");
 
-    // 更新出库单的已出库数量和状态
-    const newShippedQty = order.shippedQty + shippedQty;
-    const newStatus =
-      newShippedQty >= (order.qty || 0) ? "已出库" : "部分出库";
+      const hasItems = Array.isArray(orderWithItems.items) && orderWithItems.items.length > 0;
+      let totalShipQty = 0;
 
-    await prisma.outboundOrder.update({
-      where: { id },
-      data: {
-        shippedQty: newShippedQty,
-        status: newStatus,
-      },
-    });
+      if (hasItems) {
+        if (!Array.isArray(itemShippings) || itemShippings.length === 0) {
+          throw new Error("请选择 SKU 并填写出库数量");
+        }
+        // 规范化并过滤无效项
+        const normalized = itemShippings
+          .map((it: any) => ({
+            itemId: String(it.itemId || ""),
+            qty: Number(it.qty || 0),
+          }))
+          .filter((it: { itemId: string; qty: number }) => it.itemId && Number.isFinite(it.qty) && it.qty > 0);
+        if (normalized.length === 0) throw new Error("请输入有效的 SKU 出库数量");
 
-    // 更新库存（减少出库仓库的库存）
-    if (order.variantId && order.warehouseId) {
-      await prisma.stock.updateMany({
-        where: {
-          variantId: order.variantId,
-          warehouseId: order.warehouseId,
-        },
+        // 合并重复 itemId
+        const shipMap = new Map<string, number>();
+        for (const it of normalized) {
+          shipMap.set(it.itemId, (shipMap.get(it.itemId) || 0) + Math.floor(it.qty));
+        }
+
+        for (const item of orderWithItems.items) {
+          const ship = shipMap.get(item.id) || 0;
+          if (ship <= 0) continue;
+          const remaining = (item.qty || 0) - (item.shippedQty || 0);
+          if (ship > remaining) {
+            throw new Error(`SKU ${item.sku} 出库数量超出待出库（最多 ${remaining}）`);
+          }
+          totalShipQty += ship;
+        }
+        if (totalShipQty <= 0) throw new Error("至少有一个 SKU 出库数量大于 0");
+
+        // 更新 item shippedQty + 扣库存
+        for (const item of orderWithItems.items) {
+          const ship = shipMap.get(item.id) || 0;
+          if (ship <= 0) continue;
+          await tx.outboundOrderItem.update({
+            where: { id: item.id },
+            data: { shippedQty: { increment: ship } },
+          });
+          if (item.variantId && orderWithItems.warehouseId) {
+            await tx.stock.updateMany({
+              where: { variantId: item.variantId, warehouseId: orderWithItems.warehouseId },
+              data: {
+                qty: { decrement: ship },
+                availableQty: { decrement: ship },
+              },
+            });
+          }
+        }
+      } else {
+        const qty = Number(shippedQty || 0);
+        if (!Number.isFinite(qty) || qty <= 0) throw new Error("请输入有效的出库数量");
+        const remain = (orderWithItems.qty || 0) - (orderWithItems.shippedQty || 0);
+        if (qty > remain) throw new Error(`出库数量超出待出库（最多 ${remain}）`);
+        totalShipQty = Math.floor(qty);
+        if (orderWithItems.variantId && orderWithItems.warehouseId) {
+          await tx.stock.updateMany({
+            where: { variantId: orderWithItems.variantId, warehouseId: orderWithItems.warehouseId },
+            data: {
+              qty: { decrement: totalShipQty },
+              availableQty: { decrement: totalShipQty },
+            },
+          });
+        }
+      }
+
+      // 创建批次
+      const batch = await tx.outboundBatch.create({
         data: {
-          qty: {
-            decrement: shippedQty,
-          },
+          outboundOrderId: id,
+          batchNumber: `BATCH-${Date.now()}`,
+          warehouseId: orderWithItems.warehouseId,
+          warehouseName: orderWithItems.warehouseName,
+          qty: totalShipQty,
+          shippedDate: new Date(),
+          logisticsChannelId: logisticsChannelId || null,
+          logisticsChannelName: logisticsChannelName || null,
+          destinationCountry: destinationCountry || null,
+          destinationPlatform: destinationPlatform || null,
+          destinationStoreId: destinationStoreId || null,
+          destinationStoreName: destinationStoreName || null,
+          ownerType: ownerType || null,
+          ownerId: ownerId || null,
+          ownerName: ownerName || null,
         },
       });
-    }
+
+      // 汇总已出库数量并更新出库单状态
+      const refreshed = await tx.outboundOrder.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      const totalPlanned = refreshed?.items?.length
+        ? refreshed.items.reduce((s: number, it: any) => s + (it.qty || 0), 0)
+        : (refreshed?.qty || 0);
+      const totalShipped = refreshed?.items?.length
+        ? refreshed.items.reduce((s: number, it: any) => s + (it.shippedQty || 0), 0)
+        : ((refreshed?.shippedQty || 0) + totalShipQty);
+      const newStatus = totalShipped >= totalPlanned ? "已出库" : "部分出库";
+      await tx.outboundOrder.update({
+        where: { id },
+        data: { shippedQty: totalShipped, status: newStatus },
+      });
+
+      return { batch, newStatus };
+    });
 
     return NextResponse.json({
-      id: batch.id,
-      batchNumber: batch.batchNumber,
-      status: newStatus,
+      id: result.batch.id,
+      batchNumber: result.batch.batchNumber,
+      status: result.newStatus,
     });
   } catch (error: any) {
     console.error("出库失败:", error);
