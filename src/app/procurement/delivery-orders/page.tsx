@@ -106,8 +106,25 @@ export default function DeliveryOrdersPage() {
     const pendingCount = deliveryOrders.filter((o) => o.status === "待发货").length;
     const inTransitCount = deliveryOrders.filter((o) => o.status === "运输中").length;
     const completedCount = deliveryOrders.filter((o) => o.status === "已入库").length;
-    const totalQty = deliveryOrders.reduce((sum, o) => sum + o.qty, 0);
-    const totalTailAmount = deliveryOrders.reduce((sum, o) => sum + o.tailAmount, 0);
+    const totalQty = deliveryOrders.reduce((sum, o) => {
+      // 只计算有实际拿货数量的 SKU
+      let orderTotal = 0;
+      if (o.itemQtys && typeof o.itemQtys === 'object') {
+        orderTotal = Object.values(o.itemQtys).reduce((s: number, v: unknown) => s + (Number(v) || 0), 0);
+      }
+      return sum + (orderTotal > 0 ? orderTotal : o.qty);
+    }, 0);
+    const totalTailAmount = deliveryOrders.reduce((sum, o) => {
+      // 只计算有实际拿货数量的 SKU 的尾款
+      let orderTotal = 0;
+      if (o.itemQtys && typeof o.itemQtys === 'object' && o.items) {
+        orderTotal = o.items.reduce((s: number, item: { id: string; unitPrice?: number }) => {
+          const qty = Number(o.itemQtys?.[item.id]) || 0;
+          return s + qty * (Number(item.unitPrice) || 0);
+        }, 0);
+      }
+      return sum + (orderTotal > 0 ? orderTotal : o.tailAmount);
+    }, 0);
     const totalTailPaid = deliveryOrders.reduce((sum, o) => sum + (o.tailPaid || 0), 0);
 
     return {
