@@ -209,7 +209,10 @@ export async function executeDeliveryOrderInbound(
           if (received > 0) {
             await tx.pendingInboundItem.updateMany({
               where: { pendingInboundId: order.pendingInbound.id, variantId: item.variantId },
-              data: { receivedQty: received, updatedAt: now }
+              data: {
+                receivedQty: { increment: received },
+                updatedAt: now
+              }
             });
           }
         }
@@ -242,14 +245,18 @@ export async function executeDeliveryOrderInbound(
         // 多SKU情况：为每个SKU创建明细
         for (const item of itemsWithVariant) {
           const received = itemQtys[item.id] || 0;
+          const plannedQty = Number(itemQtys[item.id]) || 0;
+          // 只为本次实际拿货的 SKU 创建明细，避免混入合同全量数量
+          if (plannedQty <= 0) continue;
           await tx.pendingInboundItem.create({
             data: {
               pendingInboundId: newPending.id,
               variantId: item.variantId ?? null,
               sku: item.sku || item.skuName || '',
-              skuName: contract.supplierName || null,
+              // skuName 应为产品/规格展示名，不能写供应商名
+              skuName: item.skuName || item.sku || null,
               spec: item.spec ?? null,
-              qty: item.qty || 0,
+              qty: plannedQty,
               receivedQty: received,
               unitPrice: item.unitPrice ?? null,
             }
@@ -262,7 +269,8 @@ export async function executeDeliveryOrderInbound(
             pendingInboundId: newPending.id,
             variantId: singleSkuVariantId,
             sku: skuDisplay,
-            skuName: contract.supplierName || null,
+            // 单SKU兜底也使用 SKU 本身，避免污染为供应商名
+            skuName: skuDisplay || null,
             spec: null,
             qty: order.qty,
             receivedQty: singleReceivedQty,

@@ -494,6 +494,10 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
   const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
+  const displayProductName =
+    order.productName ||
+    order.items?.[0]?.sku ||
+    "-";
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
@@ -520,22 +524,38 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
             </div>
             <div>
               <span className="text-xs text-slate-500 block">产品名称</span>
-              <span className="text-sm text-slate-300">{order.productName || "-"}</span>
+              <span className="text-sm text-slate-300">{displayProductName}</span>
             </div>
             <div>
               <span className="text-xs text-slate-500 block">SKU</span>
               {order.items && order.items.length > 0 ? (
-                <div className="text-xs text-slate-300 space-y-0.5">
-                  {order.items.slice(0, 3).map((item) => (
-                    <div key={item.id} className="font-mono">
-                      {item.sku} × {item.receivedQty || item.qty}
-                      {item.spec && <span className="text-slate-500">({item.spec})</span>}
+                (() => {
+                  const visibleItems = order.items
+                    .map((item) => {
+                      // 已入库列表优先展示“实收数量”；实收为 0 的 SKU 不展示
+                      const displayQty = Number(item.receivedQty || 0);
+                      return { item, displayQty };
+                    })
+                    .filter(({ displayQty }) => displayQty > 0);
+
+                  if (visibleItems.length === 0) {
+                    return <span className="text-sm text-slate-500">-</span>;
+                  }
+
+                  return (
+                    <div className="text-xs text-slate-300 space-y-0.5">
+                      {visibleItems.slice(0, 3).map(({ item, displayQty }) => (
+                        <div key={item.id} className="font-mono">
+                          {item.sku} × {displayQty}
+                          {item.spec && <span className="text-slate-500">({item.spec})</span>}
+                        </div>
+                      ))}
+                      {visibleItems.length > 3 && (
+                        <div className="text-slate-500">+{visibleItems.length - 3} more</div>
+                      )}
                     </div>
-                  ))}
-                  {order.items.length > 3 && (
-                    <div className="text-slate-500">+{order.items.length - 3} more</div>
-                  )}
-                </div>
+                  );
+                })()
               ) : (
                 <span className="text-sm text-slate-300">{order.sku}</span>
               )}
@@ -618,6 +638,10 @@ function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutboun
   const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待入库"];
   const remaining = order.qty - order.receivedQty;
   const warehouse = warehouses.find((w: WarehouseType) => w.id === order.warehouseId);
+  const displayProductName =
+    order.productName ||
+    order.items?.[0]?.sku ||
+    "-";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
@@ -651,7 +675,7 @@ function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutboun
           </div>
           <div>
             <span className="text-xs text-slate-500 block">产品名称</span>
-            <span className="text-sm text-slate-200">{order.productName || "-"}</span>
+            <span className="text-sm text-slate-200">{displayProductName}</span>
           </div>
           <div>
             <span className="text-xs text-slate-500 block">SKU</span>

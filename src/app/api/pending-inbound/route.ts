@@ -77,6 +77,15 @@ export async function GET(request: NextRequest) {
               qty: true,
               receivedQty: true,
               unitPrice: true,
+              variant: {
+                select: {
+                  product: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
             },
             orderBy: { sku: 'asc' },
           },
@@ -90,6 +99,16 @@ export async function GET(request: NextRequest) {
 
     const response = {
       data: items.map(item => ({
+        // 多 SKU 场景下 pendingInbound.variantId 可能为空，需从明细反推出产品名（SPU）
+        // 取第一个可用的 variant.product.name 作为卡片“产品名称”显示
+        ...(function () {
+          const productNameFromItems =
+            item.items
+              ?.map(i => i.variant?.product?.name)
+              .find((name): name is string => typeof name === 'string' && name.trim().length > 0) || '';
+          const productNameFromSingle = item.variant?.product?.name || '';
+          return { productName: productNameFromSingle || productNameFromItems };
+        })(),
         id: item.id,
         inboundNumber: item.inboundNumber,
         deliveryOrderId: item.deliveryOrderId,
@@ -107,7 +126,6 @@ export async function GET(request: NextRequest) {
         updatedAt: item.updatedAt.toISOString(),
         batchCount: item._count.batches,
         warehouseName: item.batches?.[0]?.warehouseName ?? undefined,
-        productName: item.variant?.product?.name ?? "",
         // 多SKU明细
         items: item.items.map(i => ({
           id: i.id,

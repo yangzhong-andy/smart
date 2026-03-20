@@ -562,19 +562,33 @@ export default function DeliveryOrdersPage() {
                             })}
                             <div className="pt-1 mt-1 border-t border-slate-700/50 text-slate-500 text-xs">
                               {(() => {
-                                const totalQty = contract.items.reduce((sum: number, it: { id?: string; qty?: number }) => {
-                                  const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
-                                    ? Number(order.itemQtys[it.id]) || 0
-                                    : Number(it.qty) || 0;
+                                const hasItemQtys = !!order.itemQtys && typeof order.itemQtys === "object";
+
+                                // 与上面逐行展示保持同口径：
+                                // 仅对「在 order.itemQtys 里且数量 > 0」的 SKU 求和，避免 id 不匹配时回退 contract.items.qty
+                                const shownItems = contract.items.filter((it: { id?: string }) => {
+                                  if (!it.id) return false;
+                                  if (!hasItemQtys) return false;
+                                  return Number((order.itemQtys as Record<string, unknown>)[it.id]) > 0;
+                                });
+
+                                const totalQty = shownItems.reduce((sum: number, it: { id?: string }) => {
+                                  const qty = it.id
+                                    ? Number((order.itemQtys as Record<string, unknown>)[it.id]) || 0
+                                    : 0;
                                   return qty > 0 ? sum + qty : sum;
                                 }, 0);
-                                const totalAmount = contract.items.reduce((sum: number, it: { id?: string; qty?: number; unitPrice?: number }) => {
-                                  const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
-                                    ? Number(order.itemQtys[it.id]) || 0
-                                    : Number(it.qty) || 0;
-                                  const unitPrice = Number(it.unitPrice) || 0;
-                                  return qty > 0 ? sum + qty * unitPrice : sum;
-                                }, 0);
+
+                                const totalAmount = shownItems.reduce(
+                                  (sum: number, it: { id?: string; unitPrice?: number }) => {
+                                    const qty = it.id
+                                      ? Number((order.itemQtys as Record<string, unknown>)[it.id]) || 0
+                                      : 0;
+                                    const unitPrice = Number(it.unitPrice) || 0;
+                                    return qty > 0 ? sum + qty * unitPrice : sum;
+                                  },
+                                  0
+                                );
                                 return (
                                   <div className="flex items-center justify-between">
                                     <span>合计数量 {totalQty.toLocaleString("zh-CN")}</span>
@@ -624,19 +638,25 @@ export default function DeliveryOrdersPage() {
                               入库
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const url = new URL(window.location.origin + "/procurement/purchase-orders");
-                              url.searchParams.set("payTailContractId", order.contractId);
-                              url.searchParams.set("payTailDeliveryOrderId", order.id);
-                              window.location.href = url.toString();
-                            }}
-                            className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors"
-                          >
-                            <Wallet className="h-3 w-3" />
-                            发起付款
-                          </button>
+                          {!isTailPaid ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = new URL(window.location.origin + "/procurement/purchase-orders");
+                                url.searchParams.set("payTailContractId", order.contractId);
+                                url.searchParams.set("payTailDeliveryOrderId", order.id);
+                                window.location.href = url.toString();
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors"
+                            >
+                              <Wallet className="h-3 w-3" />
+                              发起付款
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-200">
+                              已付清
+                            </span>
+                          )}
                           <Link
                             href={`/procurement/purchase-orders`}
                             className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"
@@ -709,12 +729,26 @@ export default function DeliveryOrdersPage() {
                               );
                             })}
                             <div className="text-slate-500 text-xs pt-0.5">
-                              合计（拿货数量之和） {c.items.reduce((s: number, it: { id?: string; qty?: number }) => {
-                                const qty = inboundOrder.itemQtys && it.id && inboundOrder.itemQtys[it.id] !== undefined
-                                  ? Number(inboundOrder.itemQtys[it.id]) || 0
-                                  : Number(it.qty) || 0;
-                                return s + (qty > 0 ? qty : 0);
-                              }, 0).toLocaleString("zh-CN")}
+                              合计（拿货数量之和）{" "}
+                              {(() => {
+                                const hasItemQtys = !!inboundOrder.itemQtys && typeof inboundOrder.itemQtys === "object";
+
+                                const shownItems = c.items.filter((it: { id?: string; qty?: number }) => {
+                                  if (!it.id) return false;
+                                  if (!hasItemQtys) return false;
+                                  const q = Number((inboundOrder.itemQtys as Record<string, unknown>)[it.id]) || 0;
+                                  return q > 0;
+                                });
+
+                                const totalQty = shownItems.reduce((sum: number, it: { id?: string }) => {
+                                  const qty = it.id
+                                    ? Number((inboundOrder.itemQtys as Record<string, unknown>)[it.id]) || 0
+                                    : 0;
+                                  return qty > 0 ? sum + qty : sum;
+                                }, 0);
+
+                                return totalQty.toLocaleString("zh-CN");
+                              })()}
                             </div>
                           </div>
                         );

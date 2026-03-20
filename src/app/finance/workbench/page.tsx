@@ -708,7 +708,12 @@ export default function FinanceWorkbenchPage() {
       });
 
       // 采购尾款：同步更新拿货单已付尾款与合同已付总额
-      if ((request.summary || "").includes("采购尾款 - ") && request.relatedId) {
+      const isPurchaseTail =
+        request.relatedId &&
+        (request.category === "采购/采购尾款" ||
+          (request.summary || "").includes("采购尾款"));
+
+      if (isPurchaseTail) {
         try {
           const payTailRes = await fetch(`/api/delivery-orders/${request.relatedId}/pay-tail`, {
             method: "POST",
@@ -735,6 +740,9 @@ export default function FinanceWorkbenchPage() {
       );
       mutate('/api/cash-flow');
       mutate('/api/accounts');
+      // 刷新拿货单/合同，避免 SWR 缓存导致“财务已付款但页面未更新”
+      mutate("/api/delivery-orders?page=1&pageSize=500", undefined, { revalidate: true });
+      mutate("/api/purchase-contracts?page=1&pageSize=500", undefined, { revalidate: true });
       
       toast.success("支出已成功出账");
       setExpenseAccountModal({ open: false, requestId: null });
