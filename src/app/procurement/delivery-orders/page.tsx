@@ -130,17 +130,22 @@ export default function DeliveryOrdersPage() {
     const contract = contracts.find((c) => c.id === order.contractId);
     const itemQtys: Record<string, number> = {};
     if (contract?.items?.length) {
-      // 多SKU情况：初始化每个SKU的数量为拿货数量
+      // 多SKU情况：只初始化实际拿货的SKU（itemQtys中有数量且>0）
       for (const item of contract.items) {
         const itemId = item.id;
-        const qty = order.itemQtys && itemId && order.itemQtys[itemId] !== undefined
+        // 只使用拿货单中的实际数量，不使用合同原始数量
+        const orderQty = order.itemQtys && itemId && order.itemQtys[itemId] !== undefined
           ? Number(order.itemQtys[itemId]) || 0
-          : Number(item.qty) || 0;
-        itemQtys[itemId] = qty;
+          : 0;
+        if (orderQty > 0) {
+          itemQtys[itemId] = orderQty;
+        }
       }
     } else {
       // 单SKU情况
-      itemQtys['single'] = order.qty;
+      if (order.qty > 0) {
+        itemQtys['single'] = order.qty;
+      }
     }
     setInboundItemQtys(itemQtys);
     setInboundWarehouseId(warehouses[0]?.id ?? "");
