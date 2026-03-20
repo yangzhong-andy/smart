@@ -147,6 +147,21 @@ export async function createPendingInboundFromDeliveryOrder(deliveryOrderId: str
   const existing = await getPendingInboundByDeliveryOrderIdFromAPI(deliveryOrderId);
   if (existing) return { success: false, error: "该拿货单已存在待入库单" };
 
+  // 使用实际拿货的 SKU 数据，而不是合同的第一个 SKU
+  let sku = contract.sku;
+  let skuId = contract.skuId;
+  let qty = deliveryOrder.qty;
+
+  // 如果有 itemQtys（多 SKU 拿货），使用第一个拿货的 SKU
+  if (deliveryOrder.itemQtys && Object.keys(deliveryOrder.itemQtys).length > 0) {
+    const firstItemId = Object.keys(deliveryOrder.itemQtys)[0];
+    const firstItem = contract.items?.find(item => item.id === firstItemId);
+    if (firstItem) {
+      sku = firstItem.sku;
+      skuId = firstItem.variantId;
+    }
+  }
+
   const newInbound: PendingInbound = {
     id: crypto.randomUUID(),
     inboundNumber: `IN-${Date.now()}`,
@@ -154,9 +169,9 @@ export async function createPendingInboundFromDeliveryOrder(deliveryOrderId: str
     deliveryNumber: deliveryOrder.deliveryNumber,
     contractId: contract.id,
     contractNumber: contract.contractNumber,
-    sku: contract.sku,
-    skuId: contract.skuId,
-    qty: deliveryOrder.qty,
+    sku: sku,
+    skuId: skuId,
+    qty: qty,
     receivedQty: 0,
     domesticTrackingNumber: deliveryOrder.domesticTrackingNumber,
     shippedDate: deliveryOrder.shippedDate,
