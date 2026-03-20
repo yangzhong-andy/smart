@@ -115,15 +115,8 @@ export default function DeliveryOrdersPage() {
       return sum + (orderTotal > 0 ? orderTotal : o.qty);
     }, 0);
     const totalTailAmount = deliveryOrders.reduce((sum, o) => {
-      // 只计算有实际拿货数量的 SKU 的尾款
-      let orderTotal = 0;
-      if (o.itemQtys && typeof o.itemQtys === 'object' && o.items) {
-        orderTotal = o.items.reduce((s: number, item: { id: string; unitPrice?: number }) => {
-          const qty = Number(o.itemQtys?.[item.id]) || 0;
-          return s + qty * (Number(item.unitPrice) || 0);
-        }, 0);
-      }
-      return sum + (orderTotal > 0 ? orderTotal : o.tailAmount);
+      // 简单处理：直接用 tailAmount
+      return sum + (o.tailAmount || 0);
     }, 0);
     const totalTailPaid = deliveryOrders.reduce((sum, o) => sum + (o.tailPaid || 0), 0);
 
