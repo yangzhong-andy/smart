@@ -17,6 +17,24 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("pageSize") || "20");
     const noCache = searchParams.get("noCache") === "true";
 
+    // 检查是否有 deliveryOrderId 查询参数，如果有，可能需要处理 null 值
+    const where: any = {};
+    if (deliveryOrderId) {
+      // 如果传了 deliveryOrderId，可能是查询具体的记录
+      where.deliveryOrderId = deliveryOrderId;
+    }
+    if (status) {
+      where.status = status;
+    }
+
+    // 先检查数据库是否连接成功
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch (dbError) {
+      console.error("Database connection error:", dbError);
+      return NextResponse.json({ error: "数据库连接失败", details: String(dbError) }, { status: 500 });
+    }
+
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
@@ -33,10 +51,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(cached);
       }
     }
-
-    const where: any = {};
-    if (deliveryOrderId) where.deliveryOrderId = deliveryOrderId;
-    if (status) where.status = status;
 
     const [items, total] = await prisma.$transaction([
       prisma.pendingInbound.findMany({
