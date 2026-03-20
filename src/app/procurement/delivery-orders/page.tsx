@@ -507,13 +507,23 @@ export default function DeliveryOrdersPage() {
                       <td className="px-4 py-3 text-slate-300">{contract?.supplierName || "-"}</td>
                       <td className="px-4 py-3">
                         {contract?.items?.length
-                          ? contract.items.map((it: { sku?: string; variantSkuId?: string }) => it.variantSkuId || it.sku || "").filter(Boolean).join("、")
+                          ? contract.items.filter((it: { id?: string; sku?: string; variantSkuId?: string }) => {
+                              // 只显示实际拿货的SKU（itemQtys中有数量且>0）
+                              const orderQty = it.id && order.itemQtys && order.itemQtys[it.id] !== undefined 
+                                ? Number(order.itemQtys[it.id]) || 0 : 0;
+                              return orderQty > 0;
+                            }).map((it: { sku?: string; variantSkuId?: string }) => it.variantSkuId || it.sku || "").filter(Boolean).join("、")
                           : contract?.skuId || contract?.sku || "-"}
                       </td>
                       <td className="px-4 py-3 align-top">
                         {contract?.items?.length ? (
                           <div className="space-y-1">
-                            {contract.items.map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number; unitPrice?: number }) => {
+                            {contract.items.filter((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number; unitPrice?: number }) => {
+                              // 只显示实际拿货的SKU（itemQtys中有数量且>0）
+                              const orderQty = it.id && order.itemQtys && order.itemQtys[it.id] !== undefined 
+                                ? Number(order.itemQtys[it.id]) || 0 : 0;
+                              return orderQty > 0;
+                            }).map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number; unitPrice?: number }) => {
                               const sku = it.variantSkuId || it.sku || "";
                               const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
                                 ? Number(order.itemQtys[it.id]) || 0
@@ -540,14 +550,14 @@ export default function DeliveryOrdersPage() {
                                   const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
                                     ? Number(order.itemQtys[it.id]) || 0
                                     : Number(it.qty) || 0;
-                                  return sum + qty;
+                                  return qty > 0 ? sum + qty : sum;
                                 }, 0);
                                 const totalAmount = contract.items.reduce((sum: number, it: { id?: string; qty?: number; unitPrice?: number }) => {
                                   const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
                                     ? Number(order.itemQtys[it.id]) || 0
                                     : Number(it.qty) || 0;
                                   const unitPrice = Number(it.unitPrice) || 0;
-                                  return sum + qty * unitPrice;
+                                  return qty > 0 ? sum + qty * unitPrice : sum;
                                 }, 0);
                                 return (
                                   <div className="flex items-center justify-between">
