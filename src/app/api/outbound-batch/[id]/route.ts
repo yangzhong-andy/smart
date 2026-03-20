@@ -47,6 +47,14 @@ export async function GET(
       actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
       actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
       status: batch.status,
+      destinationCountry: batch.destinationCountry ?? undefined,
+      destinationPlatform: batch.destinationPlatform ?? undefined,
+      destinationStoreId: batch.destinationStoreId ?? undefined,
+      destinationStoreName: batch.destinationStoreName ?? undefined,
+      ownerType: batch.ownerType ?? undefined,
+      ownerId: batch.ownerId ?? undefined,
+      ownerName: batch.ownerName ?? undefined,
+      sourceBatchNumber: batch.sourceBatchNumber ?? undefined,
       currentLocation: batch.currentLocation ?? undefined,
       lastEvent: batch.lastEvent ?? undefined,
       lastEventTime: batch.lastEventTime?.toISOString() ?? undefined,
@@ -100,6 +108,14 @@ export async function PATCH(
     const updateData: Record<string, unknown> = {};
 
     if (body.destination !== undefined) updateData.destination = body.destination ?? null;
+    if (body.destinationCountry !== undefined) updateData.destinationCountry = body.destinationCountry ?? null;
+    if (body.destinationPlatform !== undefined) updateData.destinationPlatform = body.destinationPlatform ?? null;
+    if (body.destinationStoreId !== undefined) updateData.destinationStoreId = body.destinationStoreId ?? null;
+    if (body.destinationStoreName !== undefined) updateData.destinationStoreName = body.destinationStoreName ?? null;
+    if (body.ownerType !== undefined) updateData.ownerType = body.ownerType ?? null;
+    if (body.ownerId !== undefined) updateData.ownerId = body.ownerId ?? null;
+    if (body.ownerName !== undefined) updateData.ownerName = body.ownerName ?? null;
+    if (body.sourceBatchNumber !== undefined) updateData.sourceBatchNumber = body.sourceBatchNumber ?? null;
     if (body.trackingNumber !== undefined) updateData.trackingNumber = body.trackingNumber ?? null;
     if (body.notes !== undefined) updateData.notes = body.notes ?? null;
 
@@ -161,6 +177,14 @@ export async function PATCH(
       actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
       actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
       status: batch.status,
+      destinationCountry: batch.destinationCountry ?? undefined,
+      destinationPlatform: batch.destinationPlatform ?? undefined,
+      destinationStoreId: batch.destinationStoreId ?? undefined,
+      destinationStoreName: batch.destinationStoreName ?? undefined,
+      ownerType: batch.ownerType ?? undefined,
+      ownerId: batch.ownerId ?? undefined,
+      ownerName: batch.ownerName ?? undefined,
+      sourceBatchNumber: batch.sourceBatchNumber ?? undefined,
       currentLocation: batch.currentLocation ?? undefined,
       lastEvent: batch.lastEvent ?? undefined,
       lastEventTime: batch.lastEventTime?.toISOString() ?? undefined,

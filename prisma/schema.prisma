@@ -341,6 +341,7 @@ model ProductVariant {
   outboundOrders OutboundOrder[] // 出库单
   outboundOrderItems OutboundOrderItem[] // 出库单明细
   inventoryLogs  InventoryLog[] // 库存流水（国内中转-海外分发）
+  ownershipLedgers InventoryOwnershipLedger[] // 货权台账
 
   @@index([productId])
   @@index([skuId])
@@ -982,6 +983,16 @@ model OutboundBatch {
   // 柜子信息：一个批次可选择所属柜子
   containerId         String?
 
+  // 归属追踪：发运去向（国家/平台/店铺）和货权主体
+  destinationCountry  String? // 目的国家（如 BR/US/DE）
+  destinationPlatform String? // 目的平台（如 TikTok/Amazon/Shopee）
+  destinationStoreId  String? // 目的店铺ID
+  destinationStoreName String? // 目的店铺名称（冗余）
+  ownerType           String? // 货权主体类型：STORE/TEAM/COMPANY/AGENT/WAREHOUSE
+  ownerId             String? // 货权主体ID
+  ownerName           String? // 货权主体名称（冗余）
+  sourceBatchNumber   String? // 来源批次号（用于串联国内入库批次）
+
   // 物流追踪（整合在批次上，不再使用独立 LogisticsTracking）
   currentLocation     String? // 当前位置
   lastEvent           String? // 最新物流动态
@@ -1000,6 +1011,59 @@ model OutboundBatch {
   @@index([outboundOrderId])
   @@index([warehouseId])
   @@index([containerId])
+  @@index([destinationCountry])
+  @@index([destinationPlatform])
+  @@index([destinationStoreId])
+  @@index([ownerId])
+}
+
+// 库存货权台账：记录货在链路中的归属变化（谁拿走、去哪国、去哪个平台）
+model InventoryOwnershipLedger {
+  id                   String   @id @default(uuid())
+  variantId            String
+  skuId                String?
+  productName          String?
+  qty                  Int
+  unit                 String?  @default("pcs")
+
+  bizType              String   // SHIP_OUT / ARRIVE_OVERSEAS / ALLOCATE_TO_STORE / PLATFORM_SALE / ADJUST
+  bizNo                String?  // 业务单号（出库批次号/订单号）
+  relatedOrderId       String?
+  relatedOrderType     String?
+
+  fromWarehouseId      String?
+  fromWarehouseName    String?
+  toWarehouseId        String?
+  toWarehouseName      String?
+
+  fromOwnerType        String?
+  fromOwnerId          String?
+  fromOwnerName        String?
+  toOwnerType          String?
+  toOwnerId            String?
+  toOwnerName          String?
+
+  country              String?
+  platform             String?
+  storeId              String?
+  storeName            String?
+
+  sourceBatchNumber    String?
+  outboundBatchId      String?
+  outboundBatchNumber  String?
+
+  eventTime            DateTime @default(now())
+  createdAt            DateTime @default(now())
+
+  variant              ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+  @@index([bizType])
+  @@index([bizNo])
+  @@index([country])
+  @@index([platform])
+  @@index([storeId])
+  @@index([eventTime])
 }
 
 model VideoTask {

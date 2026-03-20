@@ -17,6 +17,14 @@ type BatchDetail = {
   qty: number;
   shippedDate: string;
   destination?: string;
+  destinationCountry?: string;
+  destinationPlatform?: string;
+  destinationStoreId?: string;
+  destinationStoreName?: string;
+  ownerType?: string;
+  ownerId?: string;
+  ownerName?: string;
+  sourceBatchNumber?: string;
   trackingNumber?: string;
   shippingMethod?: string;
   vesselName?: string;
@@ -90,6 +98,13 @@ export default function OutboundBatchDetailPage() {
   const [portOfDischarge, setPortOfDischarge] = useState("");
   const [eta, setEta] = useState("");
   const [status, setStatus] = useState("待发货");
+  const [destinationCountry, setDestinationCountry] = useState("");
+  const [destinationPlatform, setDestinationPlatform] = useState("");
+  const [destinationStoreId, setDestinationStoreId] = useState("");
+  const [destinationStoreName, setDestinationStoreName] = useState("");
+  const [ownerType, setOwnerType] = useState("");
+  const [ownerId, setOwnerId] = useState("");
+  const [ownerName, setOwnerName] = useState("");
 
   useEffect(() => {
     if (!batch) return;
@@ -99,6 +114,13 @@ export default function OutboundBatchDetailPage() {
     setPortOfDischarge(batch.portOfDischarge ?? "");
     setEta(isoToDateStr(batch.eta));
     setStatus(batch.status ?? "待发货");
+    setDestinationCountry(batch.destinationCountry ?? "");
+    setDestinationPlatform(batch.destinationPlatform ?? "");
+    setDestinationStoreId(batch.destinationStoreId ?? "");
+    setDestinationStoreName(batch.destinationStoreName ?? "");
+    setOwnerType(batch.ownerType ?? "");
+    setOwnerId(batch.ownerId ?? "");
+    setOwnerName(batch.ownerName ?? "");
   }, [batch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,6 +136,13 @@ export default function OutboundBatchDetailPage() {
         portOfDischarge: portOfDischarge || undefined,
         eta: eta ? `${eta}T00:00:00.000Z` : undefined,
         status: status || "待发货",
+        destinationCountry: destinationCountry || undefined,
+        destinationPlatform: destinationPlatform || undefined,
+        destinationStoreId: destinationStoreId || undefined,
+        destinationStoreName: destinationStoreName || undefined,
+        ownerType: ownerType || undefined,
+        ownerId: ownerId || undefined,
+        ownerName: ownerName || undefined,
       };
       const res = await fetch(`/api/outbound-batch/${id}`, {
         method: "PATCH",
@@ -248,6 +277,78 @@ export default function OutboundBatchDetailPage() {
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+          </div>
+
+          <div className="border-t border-slate-800 pt-4">
+            <h3 className="text-sm font-semibold text-slate-300 mb-3">货权与销售去向</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">目的国家</label>
+                <input
+                  type="text"
+                  value={destinationCountry}
+                  onChange={(e) => setDestinationCountry(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                  placeholder="如 BR / US / DE"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">目的平台</label>
+                <input
+                  type="text"
+                  value={destinationPlatform}
+                  onChange={(e) => setDestinationPlatform(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                  placeholder="如 TikTok / Amazon"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">目的店铺ID</label>
+                <input
+                  type="text"
+                  value={destinationStoreId}
+                  onChange={(e) => setDestinationStoreId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">目的店铺名称</label>
+                <input
+                  type="text"
+                  value={destinationStoreName}
+                  onChange={(e) => setDestinationStoreName(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">货权主体类型</label>
+                <input
+                  type="text"
+                  value={ownerType}
+                  onChange={(e) => setOwnerType(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                  placeholder="STORE / TEAM / COMPANY / AGENT"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">货权主体ID</label>
+                <input
+                  type="text"
+                  value={ownerId}
+                  onChange={(e) => setOwnerId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">货权主体名称</label>
+                <input
+                  type="text"
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">

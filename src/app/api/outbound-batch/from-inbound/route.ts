@@ -24,6 +24,13 @@ export async function POST(request: NextRequest) {
     const inboundBatchId = body.inboundBatchId;
     let warehouseId = body.warehouseId;
     const destination = body.destination ?? "";
+    const destinationCountry = body.destinationCountry ?? null;
+    const destinationPlatform = body.destinationPlatform ?? null;
+    const destinationStoreId = body.destinationStoreId ?? null;
+    const destinationStoreName = body.destinationStoreName ?? null;
+    const ownerType = body.ownerType ?? null;
+    const ownerId = body.ownerId ?? null;
+    const ownerName = body.ownerName ?? null;
     const qty = body.qty != null ? Number(body.qty) : NaN;
 
     if (!inboundBatchId || !Number.isFinite(qty) || qty < 0) {
@@ -165,6 +172,14 @@ export async function POST(request: NextRequest) {
           qty,
           shippedDate,
           destination: destination || null,
+          destinationCountry,
+          destinationPlatform,
+          destinationStoreId,
+          destinationStoreName,
+          ownerType,
+          ownerId,
+          ownerName,
+          sourceBatchNumber: batch.batchNumber,
           status: "待发货",
         },
       });
@@ -197,6 +212,40 @@ export async function POST(request: NextRequest) {
           relatedOrderType: "OutboundBatch",
           relatedOrderNumber: batchNumber,
           notes: `从入库批次 ${batch.batchNumber} 生成出库，数量 ${qty}`,
+        },
+      });
+
+      const variantMeta = await tx.productVariant.findUnique({
+        where: { id: variantId },
+        select: { skuId: true, product: { select: { name: true } } },
+      });
+      await tx.inventoryOwnershipLedger.create({
+        data: {
+          variantId,
+          skuId: variantMeta?.skuId ?? null,
+          productName: variantMeta?.product?.name ?? null,
+          qty,
+          bizType: "SHIP_OUT",
+          bizNo: batchNumber,
+          relatedOrderId: outboundBatch.id,
+          relatedOrderType: "OutboundBatch",
+          fromWarehouseId: warehouseId,
+          fromWarehouseName: warehouseName,
+          toWarehouseName: destination || null,
+          fromOwnerType: "WAREHOUSE",
+          fromOwnerId: warehouseId,
+          fromOwnerName: warehouseName,
+          toOwnerType: ownerType,
+          toOwnerId: ownerId,
+          toOwnerName: ownerName,
+          country: destinationCountry,
+          platform: destinationPlatform,
+          storeId: destinationStoreId,
+          storeName: destinationStoreName,
+          sourceBatchNumber: batch.batchNumber,
+          outboundBatchId: outboundBatch.id,
+          outboundBatchNumber: outboundBatch.batchNumber,
+          eventTime: now,
         },
       });
 

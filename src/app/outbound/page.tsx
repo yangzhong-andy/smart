@@ -16,6 +16,10 @@ type BatchItem = {
   qty: number;
   shippedDate: string;
   destination?: string;
+  destinationCountry?: string;
+  destinationPlatform?: string;
+  destinationStoreName?: string;
+  ownerName?: string;
   trackingNumber?: string;
   shippingMethod?: string;
   vesselName?: string;
@@ -313,6 +317,10 @@ export default function OutboundListPage() {
       b.batchNumber?.toLowerCase().includes(k) ||
       b.outboundOrder?.outboundNumber?.toLowerCase().includes(k) ||
       b.destination?.toLowerCase().includes(k) ||
+      b.destinationCountry?.toLowerCase().includes(k) ||
+      b.destinationPlatform?.toLowerCase().includes(k) ||
+      b.destinationStoreName?.toLowerCase().includes(k) ||
+      b.ownerName?.toLowerCase().includes(k) ||
       b.warehouseName?.toLowerCase().includes(k)
     );
   });
@@ -392,6 +400,16 @@ export default function OutboundListPage() {
                   <span className="text-slate-600">|</span>
                   <span className="text-sm text-slate-400">目的地</span>
                   <span className="text-sm text-slate-300">{b.destination ?? "-"}</span>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-sm text-slate-400">国家/平台</span>
+                  <span className="text-sm text-slate-300">
+                    {[b.destinationCountry, b.destinationPlatform].filter(Boolean).join(" / ") || "-"}
+                  </span>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-sm text-slate-400">店铺/归属</span>
+                  <span className="text-sm text-slate-300">
+                    {[b.destinationStoreName, b.ownerName].filter(Boolean).join(" / ") || "-"}
+                  </span>
                   <span className="text-slate-600">|</span>
                   <span className="text-sm text-slate-400">物流</span>
                   <span className="text-sm text-slate-300">

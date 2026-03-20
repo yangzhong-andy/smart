@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
     const outboundOrderId = searchParams.get("outboundOrderId");
     const warehouseId = searchParams.get("warehouseId");
     const status = searchParams.get("status");
+    const destinationCountry = searchParams.get("destinationCountry");
+    const destinationPlatform = searchParams.get("destinationPlatform");
+    const destinationStoreId = searchParams.get("destinationStoreId");
+    const ownerId = searchParams.get("ownerId");
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20") || 20, 30);
 
@@ -21,6 +25,10 @@ export async function GET(request: NextRequest) {
     if (outboundOrderId) where.outboundOrderId = outboundOrderId;
     if (warehouseId) where.warehouseId = warehouseId;
     if (status) where.status = status;
+    if (destinationCountry) where.destinationCountry = destinationCountry;
+    if (destinationPlatform) where.destinationPlatform = destinationPlatform;
+    if (destinationStoreId) where.destinationStoreId = destinationStoreId;
+    if (ownerId) where.ownerId = ownerId;
 
     const [batches, total] = await prisma.$transaction([
       prisma.outboundBatch.findMany({
@@ -56,6 +64,14 @@ export async function GET(request: NextRequest) {
       actualDepartureDate: b.actualDepartureDate?.toISOString() ?? undefined,
       actualArrivalDate: b.actualArrivalDate?.toISOString() ?? undefined,
       status: b.status,
+      destinationCountry: b.destinationCountry ?? undefined,
+      destinationPlatform: b.destinationPlatform ?? undefined,
+      destinationStoreId: b.destinationStoreId ?? undefined,
+      destinationStoreName: b.destinationStoreName ?? undefined,
+      ownerType: b.ownerType ?? undefined,
+      ownerId: b.ownerId ?? undefined,
+      ownerName: b.ownerName ?? undefined,
+      sourceBatchNumber: b.sourceBatchNumber ?? undefined,
       currentLocation: b.currentLocation ?? undefined,
       lastEvent: b.lastEvent ?? undefined,
       lastEventTime: b.lastEventTime?.toISOString() ?? undefined,
@@ -146,6 +162,14 @@ export async function POST(request: NextRequest) {
     const variantId = outboundOrder.variantId;
 
     const now = new Date();
+    const destinationCountry = body.destinationCountry ?? null;
+    const destinationPlatform = body.destinationPlatform ?? null;
+    const destinationStoreId = body.destinationStoreId ?? null;
+    const destinationStoreName = body.destinationStoreName ?? null;
+    const ownerType = body.ownerType ?? null;
+    const ownerId = body.ownerId ?? null;
+    const ownerName = body.ownerName ?? null;
+    const sourceBatchNumber = body.sourceBatchNumber ?? null;
 
       const batch = await prisma.$transaction(async (tx) => {
       // 1. 获取当前仓库该 SKU 的库存
@@ -202,6 +226,14 @@ export async function POST(request: NextRequest) {
           actualArrivalDate: body.actualArrivalDate ? new Date(body.actualArrivalDate) : null,
           status: body.status ?? "待发货",
           containerId: body.containerId ?? null,
+          destinationCountry,
+          destinationPlatform,
+          destinationStoreId,
+          destinationStoreName,
+          ownerType,
+          ownerId,
+          ownerName,
+          sourceBatchNumber,
           notes: body.notes ?? null,
         },
         include: {
@@ -238,6 +270,40 @@ export async function POST(request: NextRequest) {
           relatedOrderType: "OutboundBatch",
           relatedOrderNumber: batchNumber,
           notes: `出库批次 ${batchNumber}，出库单 ${outboundOrder.outboundNumber}，数量 ${qty}`,
+        },
+      });
+
+      const variantMeta = await tx.productVariant.findUnique({
+        where: { id: variantId },
+        select: { skuId: true, product: { select: { name: true } } },
+      });
+      await tx.inventoryOwnershipLedger.create({
+        data: {
+          variantId,
+          skuId: variantMeta?.skuId ?? null,
+          productName: variantMeta?.product?.name ?? null,
+          qty,
+          bizType: "SHIP_OUT",
+          bizNo: batchNumber,
+          relatedOrderId: newBatch.id,
+          relatedOrderType: "OutboundBatch",
+          fromWarehouseId: warehouseId,
+          fromWarehouseName: warehouseName,
+          toWarehouseName: (body.destination as string) ?? null,
+          fromOwnerType: "WAREHOUSE",
+          fromOwnerId: warehouseId,
+          fromOwnerName: warehouseName,
+          toOwnerType: ownerType,
+          toOwnerId: ownerId,
+          toOwnerName: ownerName,
+          country: destinationCountry,
+          platform: destinationPlatform,
+          storeId: destinationStoreId,
+          storeName: destinationStoreName,
+          sourceBatchNumber,
+          outboundBatchId: newBatch.id,
+          outboundBatchNumber: newBatch.batchNumber,
+          eventTime: now,
         },
       });
 

@@ -46,6 +46,8 @@ function formatDate(iso: string) {
 
 export default function WarehouseInventoryPage() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
+  const [skuKeyword, setSkuKeyword] = useState<string>("");
+  const [productKeyword, setProductKeyword] = useState<string>("");
   const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null);
 
   // 获取仓库列表
@@ -121,6 +123,15 @@ export default function WarehouseInventoryPage() {
   const selectedWarehouseStocks = selectedWarehouseId === "all" 
     ? stocks 
     : stocks.filter((s: StockItem) => s.warehouseId === selectedWarehouseId);
+  const filteredWarehouseStocks = useMemo(() => {
+    const sku = skuKeyword.trim().toLowerCase();
+    const product = productKeyword.trim().toLowerCase();
+    return selectedWarehouseStocks.filter((item: StockItem) => {
+      const hitSku = !sku || (item.skuId || "").toLowerCase().includes(sku);
+      const hitProduct = !product || (item.productName || "").toLowerCase().includes(product);
+      return hitSku && hitProduct;
+    });
+  }, [selectedWarehouseStocks, skuKeyword, productKeyword]);
 
   const toggleWarehouse = (id: string) => {
     setExpandedWarehouse(expandedWarehouse === id ? null : id);
@@ -136,7 +147,7 @@ export default function WarehouseInventoryPage() {
             icon={Download}
             onClick={() => {
               const headers = ["仓库", "SKU", "产品名称", "规格", "总库存", "可用", "锁定"];
-              const rows = selectedWarehouseStocks.map((item: StockItem) => [
+              const rows = filteredWarehouseStocks.map((item: StockItem) => [
                 item.warehouseName,
                 item.skuId,
                 item.productName,
@@ -201,7 +212,7 @@ export default function WarehouseInventoryPage() {
         </div>
 
         {/* 仓库筛选 */}
-        <div className="flex items-center gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <select
             value={selectedWarehouseId}
             onChange={(e) => setSelectedWarehouseId(e.target.value)}
@@ -214,6 +225,18 @@ export default function WarehouseInventoryPage() {
               </option>
             ))}
           </select>
+          <input
+            value={skuKeyword}
+            onChange={(e) => setSkuKeyword(e.target.value)}
+            placeholder="筛选SKU（支持模糊）"
+            className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 placeholder:text-slate-500"
+          />
+          <input
+            value={productKeyword}
+            onChange={(e) => setProductKeyword(e.target.value)}
+            placeholder="筛选产品名称（支持模糊）"
+            className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 placeholder:text-slate-500"
+          />
         </div>
 
         {/* 仓库卡片 */}
@@ -268,13 +291,13 @@ export default function WarehouseInventoryPage() {
                 : `${selectedWarehouse?.name || ""} 库存明细`}
             </h2>
             <p className="text-sm text-slate-400 mt-1">
-              共 {selectedWarehouseStocks.length} 条记录
+              共 {filteredWarehouseStocks.length} 条记录
             </p>
           </div>
 
           {isLoading ? (
             <div className="p-8 text-center text-slate-400">加载中...</div>
-          ) : selectedWarehouseStocks.length === 0 ? (
+          ) : filteredWarehouseStocks.length === 0 ? (
             <EmptyState
               icon={Package}
               title="暂无库存数据"
@@ -295,7 +318,7 @@ export default function WarehouseInventoryPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {selectedWarehouseStocks.map((item: StockItem) => (
+                  {filteredWarehouseStocks.map((item: StockItem) => (
                     <tr key={item.id} className="hover:bg-slate-800/30">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

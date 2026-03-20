@@ -166,6 +166,39 @@ export async function PATCH(
           notes: `出库批次 ${batch.batchNumber} 确认到达，调入数量 ${qty}`,
         },
       });
+
+      const variantMeta = await tx.productVariant.findUnique({
+        where: { id: variantId },
+        select: { skuId: true, product: { select: { name: true } } },
+      });
+      await tx.inventoryOwnershipLedger.create({
+        data: {
+          variantId,
+          skuId: variantMeta?.skuId ?? null,
+          productName: variantMeta?.product?.name ?? null,
+          qty,
+          bizType: "ARRIVE_OVERSEAS",
+          bizNo: batch.batchNumber,
+          relatedOrderId: batch.id,
+          relatedOrderType: "OutboundBatch",
+          fromWarehouseId: fromWarehouseId,
+          fromWarehouseName: batch.warehouseName,
+          toWarehouseId: toWarehouseId,
+          toWarehouseName: toWarehouse.name,
+          fromOwnerType: "IN_TRANSIT",
+          toOwnerType: batch.ownerType ?? "WAREHOUSE",
+          toOwnerId: batch.ownerId ?? toWarehouseId,
+          toOwnerName: batch.ownerName ?? toWarehouse.name,
+          country: batch.destinationCountry ?? null,
+          platform: batch.destinationPlatform ?? null,
+          storeId: batch.destinationStoreId ?? null,
+          storeName: batch.destinationStoreName ?? null,
+          sourceBatchNumber: batch.sourceBatchNumber ?? null,
+          outboundBatchId: batch.id,
+          outboundBatchNumber: batch.batchNumber,
+          eventTime: now,
+        },
+      });
     });
 
     const updated = await prisma.outboundBatch.findUnique({

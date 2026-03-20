@@ -41,6 +41,8 @@ const formatDate = (dateString: string): string => {
 };
 
 export default function LogisticsChannelsPage() {
+  const toSafeString = (value: unknown): string => (typeof value === "string" ? value : "");
+
   // 使用 SWR 获取渠道数据（兼容分页结构 { data, pagination }）
   const { data: channelsRaw, mutate: mutateChannels } = useSWR<any>('/api/logistics-channels?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
@@ -68,9 +70,9 @@ export default function LogisticsChannelsPage() {
   // 统计数据
   const channelStats = useMemo(() => {
     const total = channels.length;
-    const withContact = channels.filter(c => c.contact && c.contact.trim()).length;
-    const withQueryUrl = channels.filter(c => c.queryUrl && c.queryUrl.trim()).length;
-    const withPhone = channels.filter(c => c.phone && c.phone.trim()).length;
+    const withContact = channels.filter(c => toSafeString(c.contact).trim()).length;
+    const withQueryUrl = channels.filter(c => toSafeString(c.queryUrl).trim()).length;
+    const withPhone = channels.filter(c => toSafeString(c.phone).trim()).length;
     return { total, withContact, withQueryUrl, withPhone };
   }, [channels]);
 
@@ -121,11 +123,11 @@ export default function LogisticsChannelsPage() {
     if (channel) {
       setEditingChannel(channel);
       setForm({
-        name: channel.name,
-        channelCode: channel.channelCode,
-        contact: channel.contact,
-        phone: channel.phone,
-        queryUrl: channel.queryUrl
+        name: toSafeString(channel.name),
+        channelCode: toSafeString(channel.channelCode),
+        contact: toSafeString(channel.contact),
+        phone: toSafeString(channel.phone),
+        queryUrl: toSafeString(channel.queryUrl)
       });
     } else {
       resetForm();
@@ -141,7 +143,7 @@ export default function LogisticsChannelsPage() {
       return;
     }
     
-    if (!form.name.trim() || !form.channelCode.trim()) {
+    if (!toSafeString(form.name).trim() || !toSafeString(form.channelCode).trim()) {
       toast.error("请填写物流商名称和渠道代码");
       return;
     }
@@ -150,11 +152,11 @@ export default function LogisticsChannelsPage() {
     
     try {
       const body = {
-        name: form.name.trim(),
-        channelCode: form.channelCode.trim(),
-        contact: form.contact.trim(),
-        phone: form.phone.trim(),
-        queryUrl: form.queryUrl.trim()
+        name: toSafeString(form.name).trim(),
+        channelCode: toSafeString(form.channelCode).trim(),
+        contact: toSafeString(form.contact).trim(),
+        phone: toSafeString(form.phone).trim(),
+        queryUrl: toSafeString(form.queryUrl).trim()
       };
 
       if (editingChannel) {

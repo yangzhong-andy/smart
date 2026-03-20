@@ -188,6 +188,7 @@ export default function CashFlowPage() {
   const cashFlowReady = !cashFlowLoading;
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [filterCurrency, setFilterCurrency] = useState<string>("all");
+  const [filterPaymentType, setFilterPaymentType] = useState<string>("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterSubCategory, setFilterSubCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -374,6 +375,9 @@ export default function CashFlowPage() {
     if (filterCurrency !== "all") {
       filtered = filtered.filter((f) => f.currency === filterCurrency);
     }
+    if (filterPaymentType !== "all") {
+      filtered = filtered.filter((f) => f.type === filterPaymentType);
+    }
     if (filterCategory !== "all") {
       if (filterSubCategory !== "all") {
         // 筛选二级分类
@@ -502,7 +506,7 @@ export default function CashFlowPage() {
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.date).getTime();
       return bTime - aTime; // 倒序：最新的在前
     });
-  }, [cashFlowListRaw, filterCurrency, filterCategory, filterSubCategory, filterStatus, filterDateFrom, filterDateTo, filterYear, filterMonth, quickFilter]);
+  }, [cashFlowListRaw, filterCurrency, filterPaymentType, filterCategory, filterSubCategory, filterStatus, filterDateFrom, filterDateTo, filterYear, filterMonth, quickFilter]);
 
   const thisMonth = new Date().getMonth();
   const thisYear = new Date().getFullYear();
@@ -1134,7 +1138,7 @@ export default function CashFlowPage() {
         )}
         
         {/* 其他筛选条件 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 border-t border-slate-800 pt-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-t border-slate-800 pt-3">
           <div className="space-y-1">
             <label className="text-xs text-slate-400">币种</label>
             <select
@@ -1147,6 +1151,18 @@ export default function CashFlowPage() {
               <option value="USD">USD</option>
               <option value="JPY">JPY</option>
               <option value="EUR">EUR</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">收付款类型</label>
+            <select
+              value={filterPaymentType}
+              onChange={(e) => setFilterPaymentType(e.target.value)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+            >
+              <option value="all">全部</option>
+              <option value="income">收款</option>
+              <option value="expense">付款</option>
             </select>
           </div>
           <div className="space-y-1">
