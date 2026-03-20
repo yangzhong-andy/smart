@@ -93,6 +93,9 @@ export default function OutboundListPage() {
     warehouseId: "",
     destination: "",
   });
+  // 海外入库预报选项
+  const [createForecast, setCreateForecast] = useState(false);
+  const [forecastWarehouseId, setForecastWarehouseId] = useState("");
   const [creating, setCreating] = useState(false);
 
   const fetchBatches = useCallback(async () => {
@@ -177,6 +180,8 @@ export default function OutboundListPage() {
     setCreateModalOpen(false);
     setCreateItems([]);
     setCreateForm({ warehouseId: "", destination: "" });
+    setCreateForecast(false);
+    setForecastWarehouseId("");
   };
 
   const addSkuItem = () => {
@@ -240,13 +245,21 @@ export default function OutboundListPage() {
           warehouseName: warehouse.name,
           destination: createForm.destination.trim() || null,
           status: "待出库",
+          // 海外入库预报参数
+          createOverseasForecast: createForecast,
+          forecastWarehouseId: createForecast ? forecastWarehouseId : null,
+          forecastWarehouseName: createForecast ? warehouses.find(w => w.id === forecastWarehouseId)?.name : null,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error ?? "创建失败");
       }
-      toast.success(`出库单已创建：${data.outboundNumber ?? outboundNumber}`);
+      let successMsg = `出库单已创建：${data.outboundNumber ?? outboundNumber}`;
+      if (data.forecast) {
+        successMsg += `\n海外入库预报已创建：${data.forecast.inboundNumber}`;
+      }
+      toast.success(successMsg);
       closeCreateModal();
       fetchBatches();
     } catch (err) {
@@ -547,6 +560,42 @@ export default function OutboundListPage() {
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
                   placeholder="如：巴西圣保罗、某仓库（选填）"
                 />
+              </div>
+              {/* 海外入库预报选项 */}
+              <div className="border-t border-slate-700 pt-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={createForecast}
+                    onChange={(e) => {
+                      setCreateForecast(e.target.checked);
+                      if (!e.target.checked) setForecastWarehouseId("");
+                    }}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-slate-300">同时创建海外入库预报</span>
+                </label>
+                {createForecast && (
+                  <div className="mt-3 pl-6">
+                    <label className="block text-sm font-medium text-slate-400 mb-1">预报目标仓库（海外仓）</label>
+                    <select
+                      value={forecastWarehouseId}
+                      onChange={(e) => setForecastWarehouseId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                      required={createForecast}
+                    >
+                      <option value="">请选择海外仓</option>
+                      {warehouses.filter(w => w.type === "OVERSEAS").map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                      出库后，货物将自动生成海外入库预报记录
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 pt-2">
                 <ActionButton type="submit" isLoading={creating}>

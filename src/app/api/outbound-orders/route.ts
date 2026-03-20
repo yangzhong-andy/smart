@@ -134,6 +134,12 @@ export async function POST(request: NextRequest) {
       unitPrice?: number;
     }> | undefined;
 
+    // 是否创建海外入库预报
+    const createOverseasForecast = body.createOverseasForecast === true;
+    // 预报的目标仓库（海外仓）
+    const forecastWarehouseId = body.forecastWarehouseId;
+    const forecastWarehouseName = body.forecastWarehouseName;
+
     // 多SKU模式
     if (items && items.length > 0) {
       const totalQty = items.reduce((sum, item) => sum + (item.qty || 0), 0);
@@ -167,12 +173,60 @@ export async function POST(request: NextRequest) {
         include: { items: true }
       });
 
+      // 如果需要创建海外入库预报
+      let forecast = null;
+      if (createOverseasForecast && forecastWarehouseId) {
+        // 生成入库单号
+        const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const r = Math.random().toString(36).slice(2, 6).toUpperCase();
+        const inboundNumber = `PI-${date}-${r}`;
+        
+        // 创建预报记录（使用第一个SKU作为主SKU）
+        forecast = await prisma.pendingInbound.create({
+          data: {
+            inboundNumber,
+            // 出库时创建的预报，没有对应的拿货单和合同
+            deliveryOrderId: null,
+            deliveryNumber: null,
+            contractId: null,
+            contractNumber: null,
+            sku: items[0]?.sku || "",
+            variantId: items[0]?.variantId || null,
+            qty: totalQty,
+            receivedQty: 0,
+            status: "待入库",
+            // 关联出库单
+            fromOutboundId: order.id,
+            fromOutboundNumber: order.outboundNumber,
+          }
+        });
+
+        // 同时创建预报明细（多SKU）
+        if (items.length > 1) {
+          await prisma.pendingInboundItem.createMany({
+            data: items.slice(1).map(item => ({
+              pendingInboundId: forecast!.id,
+              variantId: item.variantId || null,
+              sku: item.sku,
+              skuName: item.skuName || null,
+              spec: item.spec || null,
+              qty: item.qty,
+              receivedQty: 0,
+            }))
+          });
+        }
+      }
+
       await clearCacheByPrefix(CACHE_KEY_PREFIX);
 
       return NextResponse.json({
         id: order.id,
         outboundNumber: order.outboundNumber,
         createdAt: order.createdAt.toISOString(),
+        forecast: forecast ? {
+          id: forecast.id,
+          inboundNumber: forecast.inboundNumber,
+        } : null,
       });
     } else {
       // 单SKU模式（兼容旧版本）
@@ -191,12 +245,41 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // 如果需要创建海外入库预报
+      let forecast = null;
+      if (createOverseasForecast && forecastWarehouseId && body.sku) {
+        const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const r = Math.random().toString(36).slice(2, 6).toUpperCase();
+        const inboundNumber = `PI-${date}-${r}`;
+        
+        forecast = await prisma.pendingInbound.create({
+          data: {
+            inboundNumber,
+            deliveryOrderId: null,
+            deliveryNumber: null,
+            contractId: null,
+            contractNumber: null,
+            sku: body.sku || "",
+            variantId: body.variantId || null,
+            qty: body.qty || 0,
+            receivedQty: 0,
+            status: "待入库",
+            fromOutboundId: order.id,
+            fromOutboundNumber: order.outboundNumber,
+          }
+        });
+      }
+
       await clearCacheByPrefix(CACHE_KEY_PREFIX);
 
       return NextResponse.json({
         id: order.id,
         outboundNumber: order.outboundNumber,
         createdAt: order.createdAt.toISOString(),
+        forecast: forecast ? {
+          id: forecast.id,
+          inboundNumber: forecast.inboundNumber,
+        } : null,
       });
     }
   } catch (error: any) {

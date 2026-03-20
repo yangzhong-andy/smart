@@ -60,6 +60,33 @@ function getProgressBarColor(status: string): string {
   }
 }
 
+// 计算航行进度信息
+function getVoyageInfo(container: Container) {
+  const now = new Date();
+  const etd = container.etd ? new Date(container.etd) : null;
+  const eta = container.eta ? new Date(container.eta) : null;
+  
+  if (!etd || !eta) return null;
+  
+  // 已航行天数
+  const daysPassed = Math.max(0, Math.floor((now.getTime() - etd.getTime()) / (1000 * 60 * 60 * 24)));
+  // 预计总航行天数
+  const totalDays = Math.max(1, Math.floor((eta.getTime() - etd.getTime()) / (1000 * 60 * 60 * 24)));
+  // 预计剩余天数
+  const daysLeft = Math.max(0, Math.floor((eta.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  // 进度百分比
+  const progress = Math.min(100, Math.max(0, Math.floor((daysPassed / totalDays) * 100)));
+  
+  return {
+    daysPassed,
+    totalDays,
+    daysLeft,
+    progress,
+    eta: eta.toLocaleDateString("zh-CN"),
+    isOverdue: now > eta,
+  };
+}
+
 // 柜子表单类型
 type ContainerForm = {
   // 基本信息
@@ -777,6 +804,28 @@ export default function ContainersPage() {
                       ETD：{c.etd ? new Date(c.etd).toLocaleDateString() : "-"} · ETA：
                       {c.eta ? new Date(c.eta).toLocaleDateString() : "-"}
                     </div>
+                    {/* 航行进度详情 */}
+                    {c.status === "IN_TRANSIT" && c.etd && c.eta && (
+                      <div className="mt-1 text-xs">
+                        {(() => {
+                          const info = getVoyageInfo(c);
+                          if (!info) return null;
+                          return (
+                            <div className="flex items-center gap-3">
+                              <span className="text-amber-400">
+                                已航行 {info.daysPassed} 天 / 共 {info.totalDays} 天
+                              </span>
+                              <span className={`${info.isOverdue ? "text-red-400" : "text-blue-400"}`}>
+                                {info.isOverdue ? `延误 ${info.daysLeft} 天` : `预计 ${info.daysLeft} 天后到港`}
+                              </span>
+                              <span className="text-slate-500">
+                                ({info.eta})
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                     <div className="mt-0.5 text-[11px] text-slate-500">
                       实际开船：
                       {c.actualDeparture
