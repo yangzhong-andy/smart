@@ -62,14 +62,17 @@ export async function POST(
     }
 
     // 优先使用 itemQtys（多SKU模式），否则使用 receivedQty（单SKU兼容模式）
-    const result = await executeDeliveryOrderInbound(
-      pending.deliveryOrderId,
-      warehouseId,
-      hasItemQtys ? itemQtys! : receivedQty!
-    );
+    // 出库时创建的海外入库预报没有 deliveryOrderId，不需要调用 executeDeliveryOrderInbound
+    if (pending.deliveryOrderId) {
+      const result = await executeDeliveryOrderInbound(
+        pending.deliveryOrderId,
+        warehouseId,
+        hasItemQtys ? itemQtys! : receivedQty!
+      );
 
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
     }
 
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
