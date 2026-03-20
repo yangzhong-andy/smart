@@ -547,9 +547,10 @@ export default function DeliveryOrdersPage() {
                               return orderQty > 0;
                             }).map((it: { id?: string; sku?: string; variantSkuId?: string; qty?: number; unitPrice?: number }) => {
                               const sku = it.variantSkuId || it.sku || "";
-                              const qty = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
+                              const orderQtyFromItem = order.itemQtys && it.id && order.itemQtys[it.id] !== undefined
                                 ? Number(order.itemQtys[it.id]) || 0
-                                : Number(it.qty) || 0;
+                                : 0;
+                              const qty = orderQtyFromItem > 0 ? orderQtyFromItem : (Number(it.qty) || 0);
                               const unitPrice = Number(it.unitPrice) || 0;
                               const lineAmount = qty * unitPrice;
                               return (
