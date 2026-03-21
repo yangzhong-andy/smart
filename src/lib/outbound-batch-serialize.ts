@@ -1,33 +1,9 @@
-import type { OutboundBatch, OutboundOrder, OutboundOrderItem, ProductVariant, Container } from "@prisma/client";
 import {
   linesFromBatchItems,
   type BatchSkuLine,
   unitCbmFromVariant,
   unitKgFromVariant,
 } from "@/lib/outbound-batch-sku-lines";
-
-type BatchWithRelations = OutboundBatch & {
-  outboundBatchItems?: Array<{
-    id: string;
-    variantId: string | null;
-    sku: string;
-    skuName: string | null;
-    spec: string | null;
-    qty: number;
-    variant: ProductVariant | null;
-  }>;
-  outboundOrder:
-    | (OutboundOrder & {
-        items: Array<
-          OutboundOrderItem & {
-            variant: ProductVariant | null;
-          }
-        >;
-        variant: ProductVariant | null;
-      })
-    | null;
-  container: Container | null;
-};
 
 function sumLines(lines: BatchSkuLine[]) {
   return lines.reduce(
@@ -41,8 +17,9 @@ function sumLines(lines: BatchSkuLine[]) {
 
 /**
  * 将出库批次转为 API 中的 skuLines（优先批次明细；无则按出库单参考 + estimated）
+ * 参数使用 any：Prisma findMany/findUnique 带 include 的推断类型与手写结构常不一致，避免构建报错。
  */
-export function buildOutboundBatchSkuPayload(batch: BatchWithRelations): {
+export function buildOutboundBatchSkuPayload(batch: any): {
   skuLines: BatchSkuLine[];
   skuLinesEstimated: boolean;
   skuLinesNote?: string;
