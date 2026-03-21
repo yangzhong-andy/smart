@@ -54,10 +54,14 @@ export async function POST(
       return notFound("出库批次不存在");
     }
 
-    const skuPayload = buildOutboundBatchSkuPayload({
+    // findUnique 的联合类型未必含 outboundBatchItems，此处统一归一化
+    const batchForSku = {
       ...batch,
-      outboundBatchItems: batch.outboundBatchItems ?? [],
-    } as any);
+      outboundBatchItems:
+        (batch as { outboundBatchItems?: unknown }).outboundBatchItems ?? [],
+    };
+
+    const skuPayload = buildOutboundBatchSkuPayload(batchForSku as any);
     if (skuPayload.skuLines.length === 0) {
       return badRequest("无法生成预录单：批次无可用 SKU 明细");
     }
