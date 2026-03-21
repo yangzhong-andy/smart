@@ -178,6 +178,37 @@ export async function POST(
         },
       });
 
+      // 批次 SKU 明细（与本次出库分摊一致，供批次面板 / 预录单使用）
+      if (hasItems) {
+        for (const item of orderWithItems.items) {
+          const ship = shipMap.get(item.id) || 0;
+          if (ship <= 0) continue;
+          await tx.outboundBatchItem.create({
+            data: {
+              outboundBatchId: batch.id,
+              outboundOrderItemId: item.id,
+              variantId: item.variantId,
+              sku: item.sku,
+              skuName: item.skuName,
+              spec: item.spec,
+              qty: ship,
+            },
+          });
+        }
+      } else {
+        await tx.outboundBatchItem.create({
+          data: {
+            outboundBatchId: batch.id,
+            outboundOrderItemId: null,
+            variantId: orderWithItems.variantId,
+            sku: orderWithItems.sku || "",
+            skuName: null,
+            spec: null,
+            qty: totalShipQty,
+          },
+        });
+      }
+
       const refreshed = await tx.outboundOrder.findUnique({
         where: { id },
         include: { items: true },

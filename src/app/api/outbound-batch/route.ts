@@ -1,8 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { buildOutboundBatchSkuPayload } from "@/lib/outbound-batch-serialize";
 import { ShippingMethod, InventoryLogType, InventoryLogStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+
+const INCLUDE_OUTBOUND_BATCH_FULL = {
+  outboundBatchItems: { include: { variant: true } },
+  outboundOrder: {
+    include: {
+      items: { include: { variant: true } },
+      variant: true,
+    },
+  },
+  warehouse: true,
+  container: true,
+} as const;
+
+const INCLUDE_OUTBOUND_BATCH_LEGACY = {
+  outboundOrder: {
+    include: {
+      items: { include: { variant: true } },
+      variant: true,
+    },
+  },
+  warehouse: true,
+  container: true,
+} as const;
+
+/** 未跑迁移时 OutboundBatchItem 表不存在，回退查询避免列表空白 */
+async function findManyOutboundBatchSafe(
+  args: {
+    where: Record<string, unknown>;
+    skip: number;
+    take: number;
+  }
+) {
+  const { where, skip, take } = args;
+  try {
+    return await prisma.outboundBatch.findMany({
+      where,
+      include: INCLUDE_OUTBOUND_BATCH_FULL as any,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+    });
+  } catch (e) {
+    console.error(
+      "[outbound-batch] 含批次明细的查询失败（是否未执行 prisma migrate？），已回退：",
+      e
+    );
+    const rows = await prisma.outboundBatch.findMany({
+      where,
+      include: INCLUDE_OUTBOUND_BATCH_LEGACY as any,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+    });
+    return rows.map((b) => ({
+      ...b,
+      outboundBatchItems: [] as any[],
+    }));
+  }
+}
 
 /**
  * GET /api/outbound-batch - 获取出库批次列表（包含关联的出库单、仓库信息）
@@ -30,80 +90,82 @@ export async function GET(request: NextRequest) {
     if (destinationStoreId) where.destinationStoreId = destinationStoreId;
     if (ownerId) where.ownerId = ownerId;
 
-    const [batches, total] = await prisma.$transaction([
-      prisma.outboundBatch.findMany({
+    const [batches, total] = await Promise.all([
+      findManyOutboundBatchSafe({
         where,
-        include: {
-          outboundOrder: true,
-          warehouse: true,
-          container: true,
-        },
-        orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.outboundBatch.count({ where }),
     ]);
 
-    const data = batches.map((b) => ({
-      id: b.id,
-      outboundOrderId: b.outboundOrderId,
-      batchNumber: b.batchNumber,
-      warehouseId: b.warehouseId,
-      warehouseName: b.warehouseName,
-      qty: b.qty,
-      shippedDate: b.shippedDate.toISOString(),
-      destination: b.destination ?? undefined,
-      trackingNumber: b.trackingNumber ?? undefined,
-      shippingMethod: b.shippingMethod ?? undefined,
-      vesselName: b.vesselName ?? undefined,
-      vesselVoyage: b.vesselVoyage ?? undefined,
-      portOfLoading: b.portOfLoading ?? undefined,
-      portOfDischarge: b.portOfDischarge ?? undefined,
-      eta: b.eta?.toISOString() ?? undefined,
-      actualDepartureDate: b.actualDepartureDate?.toISOString() ?? undefined,
-      actualArrivalDate: b.actualArrivalDate?.toISOString() ?? undefined,
-      status: b.status,
-      destinationCountry: b.destinationCountry ?? undefined,
-      destinationPlatform: b.destinationPlatform ?? undefined,
-      destinationStoreId: b.destinationStoreId ?? undefined,
-      destinationStoreName: b.destinationStoreName ?? undefined,
-      ownerType: b.ownerType ?? undefined,
-      ownerId: b.ownerId ?? undefined,
-      ownerName: b.ownerName ?? undefined,
-      sourceBatchNumber: b.sourceBatchNumber ?? undefined,
-      currentLocation: b.currentLocation ?? undefined,
-      lastEvent: b.lastEvent ?? undefined,
-      lastEventTime: b.lastEventTime?.toISOString() ?? undefined,
-      notes: b.notes ?? undefined,
-      createdAt: b.createdAt.toISOString(),
-      containerId: b.containerId ?? undefined,
-      container: b.container
-        ? {
-            id: b.container.id,
-            containerNo: b.container.containerNo,
-            status: b.container.status,
-          }
-        : undefined,
-      outboundOrder: b.outboundOrder
-        ? {
-            id: b.outboundOrder.id,
-            outboundNumber: b.outboundOrder.outboundNumber,
-            sku: b.outboundOrder.sku,
-            qty: b.outboundOrder.qty,
-            shippedQty: b.outboundOrder.shippedQty,
-            status: b.outboundOrder.status,
-          }
-        : undefined,
-      warehouse: b.warehouse
-        ? {
-            id: b.warehouse.id,
-            name: b.warehouse.name,
-            code: b.warehouse.code ?? undefined,
-            address: b.warehouse.address ?? undefined,
-          }
-        : undefined,
-    }));
+    const data = batches.map((b) => {
+      const skuPayload = buildOutboundBatchSkuPayload(b);
+      return {
+        id: b.id,
+        outboundOrderId: b.outboundOrderId,
+        batchNumber: b.batchNumber,
+        warehouseId: b.warehouseId,
+        warehouseName: b.warehouseName,
+        qty: b.qty,
+        shippedDate: b.shippedDate.toISOString(),
+        destination: b.destination ?? undefined,
+        trackingNumber: b.trackingNumber ?? undefined,
+        shippingMethod: b.shippingMethod ?? undefined,
+        vesselName: b.vesselName ?? undefined,
+        vesselVoyage: b.vesselVoyage ?? undefined,
+        portOfLoading: b.portOfLoading ?? undefined,
+        portOfDischarge: b.portOfDischarge ?? undefined,
+        eta: b.eta?.toISOString() ?? undefined,
+        actualDepartureDate: b.actualDepartureDate?.toISOString() ?? undefined,
+        actualArrivalDate: b.actualArrivalDate?.toISOString() ?? undefined,
+        status: b.status,
+        destinationCountry: b.destinationCountry ?? undefined,
+        destinationPlatform: b.destinationPlatform ?? undefined,
+        destinationStoreId: b.destinationStoreId ?? undefined,
+        destinationStoreName: b.destinationStoreName ?? undefined,
+        ownerType: b.ownerType ?? undefined,
+        ownerId: b.ownerId ?? undefined,
+        ownerName: b.ownerName ?? undefined,
+        sourceBatchNumber: b.sourceBatchNumber ?? undefined,
+        currentLocation: b.currentLocation ?? undefined,
+        lastEvent: b.lastEvent ?? undefined,
+        lastEventTime: b.lastEventTime?.toISOString() ?? undefined,
+        notes: b.notes ?? undefined,
+        createdAt: b.createdAt.toISOString(),
+        containerId: b.containerId ?? undefined,
+        container: b.container
+          ? {
+              id: b.container.id,
+              containerNo: b.container.containerNo,
+              status: b.container.status,
+            }
+          : undefined,
+        skuLines: skuPayload.skuLines,
+        skuLinesEstimated: skuPayload.skuLinesEstimated,
+        skuLinesNote: skuPayload.skuLinesNote,
+        totalVolumeCBM: skuPayload.totalVolumeCBM,
+        totalWeightKG: skuPayload.totalWeightKG,
+        outboundOrder: b.outboundOrder
+          ? {
+              id: b.outboundOrder.id,
+              outboundNumber: b.outboundOrder.outboundNumber,
+              sku: b.outboundOrder.sku,
+              qty: b.outboundOrder.qty,
+              shippedQty: b.outboundOrder.shippedQty,
+              status: b.outboundOrder.status,
+            }
+          : undefined,
+        warehouse: b.warehouse
+          ? {
+              id: b.warehouse.id,
+              name: b.warehouse.name,
+              code: b.warehouse.code ?? undefined,
+              address: b.warehouse.address ?? undefined,
+            }
+          : undefined,
+      };
+    });
 
     return NextResponse.json({
       data,
@@ -277,6 +339,19 @@ export async function POST(request: NextRequest) {
         where: { id: variantId },
         select: { skuId: true, product: { select: { name: true } } },
       });
+
+      await tx.outboundBatchItem.create({
+        data: {
+          outboundBatchId: newBatch.id,
+          outboundOrderItemId: null,
+          variantId,
+          sku: outboundOrder.sku || "",
+          skuName: variantMeta?.product?.name ?? null,
+          spec: null,
+          qty,
+        },
+      });
+
       await tx.inventoryOwnershipLedger.create({
         data: {
           variantId,

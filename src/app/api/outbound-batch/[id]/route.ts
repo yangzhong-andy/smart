@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { ShippingMethod } from "@prisma/client";
+import { buildOutboundBatchSkuPayload } from "@/lib/outbound-batch-serialize";
 
 export const dynamic = "force-dynamic";
 
@@ -16,17 +17,58 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const batch = await prisma.outboundBatch.findUnique({
-      where: { id },
-      include: {
-        outboundOrder: true,
-        warehouse: true,
+    const includeFull = {
+      outboundBatchItems: { include: { variant: true } },
+      outboundOrder: {
+        include: {
+          items: { include: { variant: true } },
+          variant: true,
+        },
       },
-    });
+      warehouse: true,
+      container: true,
+    } as const;
+
+    const includeLegacy = {
+      outboundOrder: {
+        include: {
+          items: { include: { variant: true } },
+          variant: true,
+        },
+      },
+      warehouse: true,
+      container: true,
+    } as const;
+
+    let batch: Awaited<ReturnType<typeof prisma.outboundBatch.findUnique>> | null = null;
+
+    try {
+      batch = await prisma.outboundBatch.findUnique({
+        where: { id },
+        include: includeFull as any,
+      });
+    } catch (e) {
+      console.error(
+        "[outbound-batch/id] 含 OutboundBatchItem 的查询失败（是否未 migrate？），已回退：",
+        e
+      );
+      batch = await prisma.outboundBatch.findUnique({
+        where: { id },
+        include: includeLegacy as any,
+      });
+      if (batch) {
+        batch = { ...batch, outboundBatchItems: [] } as any;
+      }
+    }
 
     if (!batch) {
       return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
     }
+
+    const skuPayload = buildOutboundBatchSkuPayload({
+      ...batch,
+      outboundBatchItems: batch.outboundBatchItems ?? [],
+    } as any);
 
     return NextResponse.json({
       id: batch.id,
@@ -60,6 +102,19 @@ export async function GET(
       lastEventTime: batch.lastEventTime?.toISOString() ?? undefined,
       notes: batch.notes ?? undefined,
       createdAt: batch.createdAt.toISOString(),
+      containerId: batch.containerId ?? undefined,
+      container: batch.container
+        ? {
+            id: batch.container.id,
+            containerNo: batch.container.containerNo,
+            status: batch.container.status,
+          }
+        : undefined,
+      skuLines: skuPayload.skuLines,
+      skuLinesEstimated: skuPayload.skuLinesEstimated,
+      skuLinesNote: skuPayload.skuLinesNote,
+      totalVolumeCBM: skuPayload.totalVolumeCBM,
+      totalWeightKG: skuPayload.totalWeightKG,
       outboundOrder: batch.outboundOrder
         ? {
             id: batch.outboundOrder.id,

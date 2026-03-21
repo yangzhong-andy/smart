@@ -53,6 +53,8 @@ export async function GET(request: NextRequest) {
       totalWeightKG: r.totalWeightKG ? r.totalWeightKG.toString() : undefined,
       suggestedContainerType: r.suggestedContainerType,
       containerId: r.containerId,
+      outboundBatchId: r.outboundBatchId ?? undefined,
+      outboundOrderId: r.outboundOrderId ?? undefined,
       itemCount: r.items.length,
       items: r.items.map((item) => ({
         id: item.id,

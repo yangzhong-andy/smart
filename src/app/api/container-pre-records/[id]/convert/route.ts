@@ -80,6 +80,14 @@ export async function POST(
       },
     });
 
+    // 若预录单来自出库批次，自动把批次绑定到新柜子
+    if (preRecord.outboundBatchId) {
+      await prisma.outboundBatch.update({
+        where: { id: preRecord.outboundBatchId },
+        data: { containerId: container.id },
+      });
+    }
+
     return NextResponse.json({
       id: container.id,
       containerNo: container.containerNo,
@@ -87,6 +95,7 @@ export async function POST(
       totalVolumeCBM: container.totalVolumeCBM?.toString(),
       totalWeightKG: container.totalWeightKG?.toString(),
       createdAt: container.createdAt.toISOString(),
+      outboundBatchId: preRecord.outboundBatchId ?? undefined,
     });
   } catch (error) {
     return serverError("转柜失败", error, { includeDetailsInDev: true });

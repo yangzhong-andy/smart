@@ -340,6 +340,7 @@ model ProductVariant {
   pendingInboundItems PendingInboundItem[] // 入库单明细
   outboundOrders OutboundOrder[] // 出库单
   outboundOrderItems OutboundOrderItem[] // 出库单明细
+  outboundBatchItems OutboundBatchItem[] // 出库批次明细
   inventoryLogs  InventoryLog[] // 库存流水（国内中转-海外分发）
   ownershipLedgers InventoryOwnershipLedger[] // 货权台账
 
@@ -854,8 +855,9 @@ model OutboundOrder {
   variant        ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   pendingInbound PendingInbound? @relation(fields: [pendingInboundId], references: [id], onDelete: SetNull)
-  batches        OutboundBatch[] // 出库批次
-  items          OutboundOrderItem[] // 多SKU明细
+  batches             OutboundBatch[] // 出库批次
+  items               OutboundOrderItem[] // 多SKU明细
+  containerPreRecords ContainerPreRecord[]
 
   @@index([variantId])
   @@index([warehouseId])
@@ -876,10 +878,31 @@ model OutboundOrderItem {
   updatedAt         DateTime @updatedAt
 
   // 关联关系
-  outboundOrder OutboundOrder @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
-  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  outboundOrder       OutboundOrder       @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  variant             ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  outboundBatchItems  OutboundBatchItem[]
 
   @@index([outboundOrderId])
+  @@index([variantId])
+}
+
+// 出库批次 SKU 明细（与出库操作时的分摊一致，用于面板展示与预录单）
+model OutboundBatchItem {
+  id                  String   @id @default(uuid())
+  outboundBatchId     String
+  outboundOrderItemId String?
+  variantId           String?
+  sku                 String
+  skuName             String?
+  spec                String?
+  qty                 Int
+  createdAt           DateTime @default(now())
+
+  outboundBatch     OutboundBatch      @relation(fields: [outboundBatchId], references: [id], onDelete: Cascade)
+  outboundOrderItem OutboundOrderItem? @relation(fields: [outboundOrderItemId], references: [id], onDelete: SetNull)
+  variant           ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([outboundBatchId])
   @@index([variantId])
 }
 
@@ -1003,10 +1026,12 @@ model OutboundBatch {
   createdAt           DateTime @default(now())
 
   // 关联关系
-  outboundOrder  OutboundOrder  @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
-  warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  logisticsCosts LogisticsCost[]
-  container      Container?     @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  outboundOrder       OutboundOrder        @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  warehouse           Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  logisticsCosts      LogisticsCost[]
+  container           Container?         @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  outboundBatchItems  OutboundBatchItem[]
+  containerPreRecords ContainerPreRecord[]
 
   @@index([outboundOrderId])
   @@index([warehouseId])
@@ -2199,7 +2224,13 @@ model ContainerPreRecord {
   
   // 关联的正式柜子（转正后）
   containerId   String?
-  
+
+  // 来源：出库批次 / 出库单（生成预录单时写入，便于追溯与一键转柜后绑定批次）
+  outboundBatchId String?
+  outboundOrderId String?
+  outboundBatch   OutboundBatch? @relation(fields: [outboundBatchId], references: [id], onDelete: SetNull)
+  outboundOrder   OutboundOrder? @relation(fields: [outboundOrderId], references: [id], onDelete: SetNull)
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -2208,6 +2239,8 @@ model ContainerPreRecord {
 
   @@index([status])
   @@index([containerId])
+  @@index([outboundBatchId])
+  @@index([outboundOrderId])
 }
 
 // 预录单产品明细

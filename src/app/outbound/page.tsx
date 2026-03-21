@@ -3,10 +3,31 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Package, ArrowRight, CheckCircle, X, Plus } from "lucide-react";
+import {
+  Package,
+  ArrowRight,
+  CheckCircle,
+  X,
+  Plus,
+  ChevronDown,
+  ChevronUp,
+  Container as ContainerIcon,
+} from "lucide-react";
 import { PageHeader, SearchBar, EmptyState, ActionButton } from "@/components/ui";
 
 type SkuOption = { variant_id: string; sku_id: string; name?: string };
+
+type SkuLine = {
+  id?: string;
+  sku: string;
+  skuName?: string | null;
+  spec?: string | null;
+  qty: number;
+  unitVolumeCBM: number;
+  unitWeightKG: number;
+  lineVolumeCBM: number;
+  lineWeightKG: number;
+};
 
 type BatchItem = {
   id: string;
@@ -27,12 +48,19 @@ type BatchItem = {
   portOfDischarge?: string;
   eta?: string;
   status: string;
+  sourceBatchNumber?: string;
+  currentLocation?: string;
   containerId?: string;
   container?: {
     id: string;
     containerNo: string;
     status: string;
   };
+  skuLines?: SkuLine[];
+  skuLinesEstimated?: boolean;
+  skuLinesNote?: string;
+  totalVolumeCBM?: number;
+  totalWeightKG?: number;
   outboundOrder?: {
     id: string;
     outboundNumber: string;
@@ -61,6 +89,22 @@ function formatDate(iso: string) {
   if (!iso) return "-";
   try {
     return new Date(iso).toLocaleDateString("zh-CN");
+  } catch {
+    return iso;
+  }
+}
+
+function formatDateTime(iso: string) {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   } catch {
     return iso;
   }
@@ -109,6 +153,24 @@ export default function OutboundListPage() {
   const [forecastWarehouseId, setForecastWarehouseId] = useState("");
   const [creating, setCreating] = useState(false);
 
+  /** 批次行展开：SKU 明细 + 预录单 */
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+  const [preRecordModalBatch, setPreRecordModalBatch] = useState<BatchItem | null>(null);
+  const [preRecordSubmitting, setPreRecordSubmitting] = useState(false);
+  const [preRecordForm, setPreRecordForm] = useState({
+    name: "",
+    notes: "",
+    shippingMethod: "SEA",
+    originPort: "",
+    destinationPort: "",
+    destinationCountry: "",
+    exporterName: "",
+  });
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertPreRecordId, setConvertPreRecordId] = useState<string | null>(null);
+  const [convertForm, setConvertForm] = useState({ containerNo: "", containerType: "40HQ" });
+  const [converting, setConverting] = useState(false);
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
@@ -117,12 +179,21 @@ export default function OutboundListPage() {
       params.set("pageSize", String(pagination.pageSize));
       if (filterStatus !== "all") params.set("status", filterStatus);
       const res = await fetch(`/api/outbound-batch?${params.toString()}`);
-      if (!res.ok) throw new Error("获取失败");
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          typeof json?.error === "string"
+            ? json.error
+            : `加载失败 (${res.status})`;
+        throw new Error(msg);
+      }
       setBatches(Array.isArray(json.data) ? json.data : []);
       if (json.pagination) setPagination((p) => ({ ...p, ...json.pagination }));
-    } catch {
+    } catch (e) {
       setBatches([]);
+      toast.error(
+        e instanceof Error ? e.message : "加载出库批次失败，请检查网络或数据库迁移是否已执行"
+      );
     } finally {
       setLoading(false);
     }
@@ -359,6 +430,84 @@ export default function OutboundListPage() {
     );
   });
 
+  const openPreRecordModal = (batch: BatchItem) => {
+    setPreRecordModalBatch(batch);
+    setPreRecordForm({
+      name: `预录-${batch.batchNumber}-${new Date().toISOString().slice(0, 10)}`,
+      notes: "",
+      shippingMethod: batch.shippingMethod || "SEA",
+      originPort: batch.portOfLoading || "",
+      destinationPort: batch.portOfDischarge || "",
+      destinationCountry: batch.destinationCountry || "",
+      exporterName: "",
+    });
+  };
+
+  const submitPreRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!preRecordModalBatch) return;
+    setPreRecordSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/outbound-batch/${preRecordModalBatch.id}/container-pre-record`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: preRecordForm.name.trim(),
+            notes: preRecordForm.notes.trim() || null,
+            shippingMethod: preRecordForm.shippingMethod,
+            originPort: preRecordForm.originPort.trim() || null,
+            destinationPort: preRecordForm.destinationPort.trim() || null,
+            destinationCountry: preRecordForm.destinationCountry.trim() || null,
+            exporterName: preRecordForm.exporterName.trim() || null,
+          }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "生成预录单失败");
+      toast.success("预录单已生成，请填写柜号完成转正式柜");
+      setPreRecordModalBatch(null);
+      setConvertPreRecordId(data.id);
+      const sug = (data.suggestedContainerType as string) || "40HQ";
+      setConvertForm({ containerNo: "", containerType: sug });
+      setConvertOpen(true);
+      fetchBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "生成失败");
+    } finally {
+      setPreRecordSubmitting(false);
+    }
+  };
+
+  const submitConvert = async () => {
+    if (!convertPreRecordId || !convertForm.containerNo.trim()) {
+      toast.error("请填写柜号");
+      return;
+    }
+    setConverting(true);
+    try {
+      const res = await fetch(`/api/container-pre-records/${convertPreRecordId}/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          containerNo: convertForm.containerNo.trim(),
+          containerType: convertForm.containerType,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "转柜失败");
+      toast.success(`已生成正式柜：${data.containerNo ?? convertForm.containerNo}`);
+      setConvertOpen(false);
+      setConvertPreRecordId(null);
+      fetchBatches();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "转柜失败");
+    } finally {
+      setConverting(false);
+    }
+  };
+
   const statusColor = (s: string) => {
     const map: Record<string, string> = {
       待发货: "bg-slate-500/20 text-slate-300",
@@ -374,8 +523,8 @@ export default function OutboundListPage() {
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeader
-          title="出库管理"
-          description="出库单与批次列表，可进入详情编辑运输信息"
+          title="出库管理（批次）"
+          description="展开行可查看 SKU 明细、体积重量估算；可生成柜子预录单并一键转正式柜。"
         />
         <ActionButton icon={Plus} onClick={openCreateModal}>
           新建出库单
@@ -416,101 +565,440 @@ export default function OutboundListPage() {
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map((b) => (
-            <div
-              key={b.id}
-              className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 hover:bg-slate-800/40 transition-all"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                  <span className={`px-2 py-1 rounded text-xs ${statusColor(b.status)}`}>
-                    {BATCH_STATUS_LABELS[b.status] ?? b.status}
-                  </span>
-                  <span className="text-sm text-slate-400">批次</span>
-                  <span className="text-sm font-medium text-slate-200">{b.batchNumber}</span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-sm text-slate-400">出库单</span>
-                  <span className="text-sm text-slate-300">{b.outboundOrder?.outboundNumber ?? "-"}</span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-sm text-slate-400">目的地</span>
-                  <span className="text-sm text-slate-300">{b.destination ?? "-"}</span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-sm text-slate-400">国家/平台</span>
-                  <span className="text-sm text-slate-300">
-                    {[b.destinationCountry, b.destinationPlatform].filter(Boolean).join(" / ") || "-"}
-                  </span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-sm text-slate-400">店铺/归属</span>
-                  <span className="text-sm text-slate-300">
-                    {[b.destinationStoreName, b.ownerName].filter(Boolean).join(" / ") || "-"}
-                  </span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-sm text-slate-400">物流</span>
-                  <span className="text-sm text-slate-300">
-                    {b.shippingMethod ? SHIPPING_METHOD_LABELS[b.shippingMethod] ?? b.shippingMethod : "-"}
-                    {b.vesselName ? ` · ${b.vesselName}` : ""}
-                  </span>
-                  <span className="text-sm text-slate-500">
-                    {formatDate(b.shippedDate)} · {b.qty} 件
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {(b.status === "运输中" || b.status === "已清关") && (
-                    <ActionButton
-                      variant="ghost"
-                      size="sm"
-                      icon={CheckCircle}
-                      onClick={() => openConfirmModal(b)}
-                    >
-                      确认到货
-                    </ActionButton>
-                  )}
-                  {/* 柜子选择：仅简单绑定，不改变原有出库流程 */}
-                  <select
-                    value={b.containerId || ""}
-                    onChange={async (e) => {
-                      const containerId = e.target.value || null;
-                      try {
-                        const res = await fetch(
-                          `/api/outbound-batch/${b.id}/set-container`,
-                          {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ containerId }),
-                          }
-                        );
-                        const data = await res.json().catch(() => ({}));
-                        if (!res.ok) {
-                          throw new Error(data?.error ?? "更新失败");
-                        }
-                        toast.success("柜子绑定已更新");
-                        fetchBatches();
-                      } catch (err) {
-                        toast.error(
-                          err instanceof Error ? err.message : "更新失败"
-                        );
+          {filtered.map((b) => {
+            const expanded = expandedBatchId === b.id;
+            const skuLines = b.skuLines ?? [];
+            const boxQty =
+              skuLines.length > 0
+                ? skuLines.reduce((s, l) => s + (l.qty || 0), 0)
+                : b.qty;
+            const vol = b.totalVolumeCBM ?? 0;
+            const kg = b.totalWeightKG ?? 0;
+            return (
+              <div
+                key={b.id}
+                className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden hover:bg-slate-800/40 transition-all"
+              >
+                {/* 面板摘要（对齐业务：批次 / 流水 / 箱数体积 / 重量 / 货站 / 装柜） */}
+                <div className="p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedBatchId(expanded ? null : b.id)
                       }
-                    }}
-                    className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                      className="flex flex-wrap items-center gap-x-3 gap-y-2 text-left min-w-0 flex-1"
+                    >
+                      <span
+                        className={`shrink-0 px-2 py-1 rounded text-xs ${statusColor(b.status)}`}
+                      >
+                        {BATCH_STATUS_LABELS[b.status] ?? b.status}
+                      </span>
+                      <span className="text-sm text-slate-400">批次</span>
+                      <span className="text-sm font-medium text-slate-200">
+                        {b.batchNumber}
+                      </span>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-sm text-slate-400">流水号</span>
+                      <span className="text-sm text-slate-300">
+                        {b.outboundOrder?.outboundNumber ?? "-"}
+                      </span>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-sm text-slate-400">已装柜</span>
+                      <span className="text-sm text-slate-200">
+                        {b.container?.containerNo ?? "—"}
+                      </span>
+                      <span className="hidden sm:inline text-slate-600">|</span>
+                      <span className="text-sm text-slate-400">件数/体积</span>
+                      <span className="text-sm text-slate-200">
+                        {boxQty} 件 / {vol.toFixed(2)} m³
+                      </span>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-sm text-slate-400">总重量</span>
+                      <span className="text-sm text-slate-200">
+                        {kg.toFixed(2)} kg
+                      </span>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-sm text-slate-400">货站</span>
+                      <span className="text-sm text-slate-300 truncate max-w-[220px]">
+                        {b.warehouseName ?? "-"}
+                      </span>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-sm text-slate-500">
+                        {formatDateTime(b.shippedDate)}
+                      </span>
+                      <span className="ml-1 text-slate-500 inline-flex items-center gap-0.5">
+                        {expanded ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </span>
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {(b.status === "运输中" || b.status === "已清关") && (
+                        <ActionButton
+                          variant="ghost"
+                          size="sm"
+                          icon={CheckCircle}
+                          onClick={() => openConfirmModal(b)}
+                        >
+                          确认到货
+                        </ActionButton>
+                      )}
+                      <select
+                        value={b.containerId || ""}
+                        onChange={async (e) => {
+                          const containerId = e.target.value || null;
+                          try {
+                            const res = await fetch(
+                              `/api/outbound-batch/${b.id}/set-container`,
+                              {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ containerId }),
+                              }
+                            );
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              throw new Error(data?.error ?? "更新失败");
+                            }
+                            toast.success("柜子绑定已更新");
+                            fetchBatches();
+                          } catch (err) {
+                            toast.error(
+                              err instanceof Error ? err.message : "更新失败"
+                            );
+                          }
+                        }}
+                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                      >
+                        <option value="">
+                          {b.containerId ? "取消绑定柜子" : "未装柜"}
+                        </option>
+                        {containers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.containerNo}
+                          </option>
+                        ))}
+                      </select>
+                      <ActionButton
+                        variant="secondary"
+                        size="sm"
+                        icon={ContainerIcon}
+                        onClick={() => openPreRecordModal(b)}
+                      >
+                        柜子预录单
+                      </ActionButton>
+                      <Link href={`/outbound/${b.id}`}>
+                        <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
+                          详情 / 编辑
+                        </ActionButton>
+                      </Link>
+                    </div>
+                  </div>
+                  {/* 次要信息行 */}
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                    <span>
+                      目的地：{b.destination ?? "-"} ·{" "}
+                      {[b.destinationCountry, b.destinationPlatform]
+                        .filter(Boolean)
+                        .join(" / ") || "-"}
+                    </span>
+                    <span>
+                      店铺/归属：{" "}
+                      {[b.destinationStoreName, b.ownerName]
+                        .filter(Boolean)
+                        .join(" / ") || "-"}
+                    </span>
+                    {b.sourceBatchNumber ? (
+                      <span>来源批次：{b.sourceBatchNumber}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {expanded && (
+                  <div className="border-t border-slate-800 bg-slate-950/50 px-4 py-4 space-y-4">
+                    {b.skuLinesEstimated && b.skuLinesNote && (
+                      <p className="text-amber-400/90 text-xs leading-relaxed">
+                        {b.skuLinesNote}
+                      </p>
+                    )}
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-300 mb-2">
+                        SKU 明细（本批次）
+                      </h4>
+                      {skuLines.length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          暂无 SKU 行，请确认出库单是否含明细或已维护产品尺寸重量。
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto rounded-lg border border-slate-800">
+                          <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-900/80 text-slate-400 text-xs">
+                              <tr>
+                                <th className="px-3 py-2">SKU</th>
+                                <th className="px-3 py-2">名称</th>
+                                <th className="px-3 py-2 text-right">件数</th>
+                                <th className="px-3 py-2 text-right">单件体积 m³</th>
+                                <th className="px-3 py-2 text-right">单件 kg</th>
+                                <th className="px-3 py-2 text-right">行体积 m³</th>
+                                <th className="px-3 py-2 text-right">行重量 kg</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800">
+                              {skuLines.map((line, idx) => (
+                                <tr key={line.id ?? idx} className="text-slate-300">
+                                  <td className="px-3 py-2 font-mono text-xs">
+                                    {line.sku}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-400">
+                                    {line.skuName || "—"}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {line.qty}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums text-xs">
+                                    {line.unitVolumeCBM.toFixed(4)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums text-xs">
+                                    {line.unitWeightKG.toFixed(2)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {line.lineVolumeCBM.toFixed(3)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {line.lineWeightKG.toFixed(2)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <ActionButton
+                        size="sm"
+                        icon={ContainerIcon}
+                        onClick={() => openPreRecordModal(b)}
+                      >
+                        生成预录单（填起运/目的港等）
+                      </ActionButton>
+                      <Link
+                        href="/logistics/pre-records"
+                        className="inline-flex items-center text-xs text-primary-400 hover:text-primary-300"
+                      >
+                        查看全部预录单 →
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 从批次生成预录单 */}
+      {preRecordModalBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">
+                柜子预录单 · {preRecordModalBatch.batchNumber}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setPreRecordModalBatch(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={submitPreRecord} className="p-4 space-y-3">
+              <p className="text-xs text-slate-500">
+                将按当前批次 SKU 明细生成预录单；提交后可填写柜号一键转为正式柜子并自动绑定本批次。
+              </p>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">预录单名称</label>
+                <input
+                  value={preRecordForm.name}
+                  onChange={(e) =>
+                    setPreRecordForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">运输方式</label>
+                  <select
+                    value={preRecordForm.shippingMethod}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({
+                        ...f,
+                        shippingMethod: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
                   >
-                    <option value="">
-                      {b.containerId ? "取消绑定柜子" : "未绑定柜子"}
-                    </option>
-                    {containers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.containerNo}
-                      </option>
-                    ))}
+                    <option value="SEA">海运 SEA</option>
+                    <option value="AIR">空运 AIR</option>
+                    <option value="EXPRESS">快递 EXPRESS</option>
                   </select>
-                  <Link href={`/outbound/${b.id}`}>
-                    <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
-                      详情 / 编辑
-                    </ActionButton>
-                  </Link>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">目的国</label>
+                  <input
+                    value={preRecordForm.destinationCountry}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({
+                        ...f,
+                        destinationCountry: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                    placeholder="如 BR / US"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">起运港</label>
+                  <input
+                    value={preRecordForm.originPort}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({
+                        ...f,
+                        originPort: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">目的港</label>
+                  <input
+                    value={preRecordForm.destinationPort}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({
+                        ...f,
+                        destinationPort: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
                 </div>
               </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">发货人/抬头（可选）</label>
+                <input
+                  value={preRecordForm.exporterName}
+                  onChange={(e) =>
+                    setPreRecordForm((f) => ({
+                      ...f,
+                      exporterName: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">备注</label>
+                <textarea
+                  value={preRecordForm.notes}
+                  onChange={(e) =>
+                    setPreRecordForm((f) => ({ ...f, notes: e.target.value }))
+                  }
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <ActionButton type="submit" isLoading={preRecordSubmitting}>
+                  生成预录单
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setPreRecordModalBatch(null)}
+                >
+                  取消
+                </ActionButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 预录单转正式柜 */}
+      {convertOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">
+                一键转正式柜
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setConvertOpen(false);
+                  setConvertPreRecordId(null);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          ))}
+            <div className="p-4 space-y-4">
+              <p className="text-xs text-slate-500">
+                填写柜号与柜型后创建正式柜子，并自动将本出库批次绑定到该柜。
+              </p>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">柜号 *</label>
+                <input
+                  value={convertForm.containerNo}
+                  onChange={(e) =>
+                    setConvertForm((f) => ({ ...f, containerNo: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  placeholder="如 MSKU1234567"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">柜型</label>
+                <select
+                  value={convertForm.containerType}
+                  onChange={(e) =>
+                    setConvertForm((f) => ({
+                      ...f,
+                      containerType: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                >
+                  <option value="20GP">20GP</option>
+                  <option value="40GP">40GP</option>
+                  <option value="40HQ">40HQ</option>
+                  <option value="LCL">LCL</option>
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <ActionButton onClick={submitConvert} isLoading={converting}>
+                  确认转正式柜
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setConvertOpen(false);
+                    setConvertPreRecordId(null);
+                  }}
+                >
+                  稍后
+                </ActionButton>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

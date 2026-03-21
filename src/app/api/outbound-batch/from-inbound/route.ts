@@ -219,6 +219,19 @@ export async function POST(request: NextRequest) {
         where: { id: variantId },
         select: { skuId: true, product: { select: { name: true } } },
       });
+
+      await tx.outboundBatchItem.create({
+        data: {
+          outboundBatchId: outboundBatch.id,
+          outboundOrderItemId: null,
+          variantId,
+          sku,
+          skuName: variantMeta?.product?.name ?? null,
+          spec: null,
+          qty,
+        },
+      });
+
       await tx.inventoryOwnershipLedger.create({
         data: {
           variantId,
