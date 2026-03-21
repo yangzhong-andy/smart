@@ -65,6 +65,20 @@ export async function GET(
       return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
     }
 
+    // findUnique 的泛型推断不含 include 字段，运行时已有 container / warehouse / outboundOrder
+    const row = batch as typeof batch & {
+      container?: { id: string; containerNo: string; status: string } | null;
+      warehouse?: { id: string; name: string; code: string | null; address: string | null } | null;
+      outboundOrder?: {
+        id: string;
+        outboundNumber: string;
+        sku: string | null;
+        qty: number | null;
+        shippedQty: number;
+        status: string;
+      } | null;
+    };
+
     const batchForSku = {
       ...batch,
       outboundBatchItems:
@@ -74,43 +88,43 @@ export async function GET(
     const skuPayload = buildOutboundBatchSkuPayload(batchForSku as any);
 
     return NextResponse.json({
-      id: batch.id,
-      outboundOrderId: batch.outboundOrderId,
-      batchNumber: batch.batchNumber,
-      warehouseId: batch.warehouseId,
-      warehouseName: batch.warehouseName,
-      qty: batch.qty,
-      shippedDate: batch.shippedDate.toISOString(),
-      destination: batch.destination ?? undefined,
-      trackingNumber: batch.trackingNumber ?? undefined,
-      shippingMethod: batch.shippingMethod ?? undefined,
-      vesselName: batch.vesselName ?? undefined,
-      vesselVoyage: batch.vesselVoyage ?? undefined,
-      portOfLoading: batch.portOfLoading ?? undefined,
-      portOfDischarge: batch.portOfDischarge ?? undefined,
-      eta: batch.eta?.toISOString() ?? undefined,
-      actualDepartureDate: batch.actualDepartureDate?.toISOString() ?? undefined,
-      actualArrivalDate: batch.actualArrivalDate?.toISOString() ?? undefined,
-      status: batch.status,
-      destinationCountry: batch.destinationCountry ?? undefined,
-      destinationPlatform: batch.destinationPlatform ?? undefined,
-      destinationStoreId: batch.destinationStoreId ?? undefined,
-      destinationStoreName: batch.destinationStoreName ?? undefined,
-      ownerType: batch.ownerType ?? undefined,
-      ownerId: batch.ownerId ?? undefined,
-      ownerName: batch.ownerName ?? undefined,
-      sourceBatchNumber: batch.sourceBatchNumber ?? undefined,
-      currentLocation: batch.currentLocation ?? undefined,
-      lastEvent: batch.lastEvent ?? undefined,
-      lastEventTime: batch.lastEventTime?.toISOString() ?? undefined,
-      notes: batch.notes ?? undefined,
-      createdAt: batch.createdAt.toISOString(),
-      containerId: batch.containerId ?? undefined,
-      container: batch.container
+      id: row.id,
+      outboundOrderId: row.outboundOrderId,
+      batchNumber: row.batchNumber,
+      warehouseId: row.warehouseId,
+      warehouseName: row.warehouseName,
+      qty: row.qty,
+      shippedDate: row.shippedDate.toISOString(),
+      destination: row.destination ?? undefined,
+      trackingNumber: row.trackingNumber ?? undefined,
+      shippingMethod: row.shippingMethod ?? undefined,
+      vesselName: row.vesselName ?? undefined,
+      vesselVoyage: row.vesselVoyage ?? undefined,
+      portOfLoading: row.portOfLoading ?? undefined,
+      portOfDischarge: row.portOfDischarge ?? undefined,
+      eta: row.eta?.toISOString() ?? undefined,
+      actualDepartureDate: row.actualDepartureDate?.toISOString() ?? undefined,
+      actualArrivalDate: row.actualArrivalDate?.toISOString() ?? undefined,
+      status: row.status,
+      destinationCountry: row.destinationCountry ?? undefined,
+      destinationPlatform: row.destinationPlatform ?? undefined,
+      destinationStoreId: row.destinationStoreId ?? undefined,
+      destinationStoreName: row.destinationStoreName ?? undefined,
+      ownerType: row.ownerType ?? undefined,
+      ownerId: row.ownerId ?? undefined,
+      ownerName: row.ownerName ?? undefined,
+      sourceBatchNumber: row.sourceBatchNumber ?? undefined,
+      currentLocation: row.currentLocation ?? undefined,
+      lastEvent: row.lastEvent ?? undefined,
+      lastEventTime: row.lastEventTime?.toISOString() ?? undefined,
+      notes: row.notes ?? undefined,
+      createdAt: row.createdAt.toISOString(),
+      containerId: row.containerId ?? undefined,
+      container: row.container
         ? {
-            id: batch.container.id,
-            containerNo: batch.container.containerNo,
-            status: batch.container.status,
+            id: row.container.id,
+            containerNo: row.container.containerNo,
+            status: row.container.status,
           }
         : undefined,
       skuLines: skuPayload.skuLines,
@@ -118,22 +132,22 @@ export async function GET(
       skuLinesNote: skuPayload.skuLinesNote,
       totalVolumeCBM: skuPayload.totalVolumeCBM,
       totalWeightKG: skuPayload.totalWeightKG,
-      outboundOrder: batch.outboundOrder
+      outboundOrder: row.outboundOrder
         ? {
-            id: batch.outboundOrder.id,
-            outboundNumber: batch.outboundOrder.outboundNumber,
-            sku: batch.outboundOrder.sku,
-            qty: batch.outboundOrder.qty,
-            shippedQty: batch.outboundOrder.shippedQty,
-            status: batch.outboundOrder.status,
+            id: row.outboundOrder.id,
+            outboundNumber: row.outboundOrder.outboundNumber,
+            sku: row.outboundOrder.sku,
+            qty: row.outboundOrder.qty,
+            shippedQty: row.outboundOrder.shippedQty,
+            status: row.outboundOrder.status,
           }
         : undefined,
-      warehouse: batch.warehouse
+      warehouse: row.warehouse
         ? {
-            id: batch.warehouse.id,
-            name: batch.warehouse.name,
-            code: batch.warehouse.code ?? undefined,
-            address: batch.warehouse.address ?? undefined,
+            id: row.warehouse.id,
+            name: row.warehouse.name,
+            code: row.warehouse.code ?? undefined,
+            address: row.warehouse.address ?? undefined,
           }
         : undefined,
     });
