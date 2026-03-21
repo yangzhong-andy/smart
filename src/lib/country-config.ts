@@ -7,7 +7,7 @@ export type Country = {
   code: string; // ISO 国家代码
   name: string; // 国家名称（中文）
   nameEn: string; // 国家名称（英文）
-  currency: "GBP" | "JPY" | "USD" | "RMB" | "EUR" | "HKD" | "SGD" | "AUD"; // 法定货币
+  currency: "GBP" | "JPY" | "USD" | "RMB" | "EUR" | "HKD" | "SGD" | "AUD" | "BRL"; // 法定货币
   region: "亚洲" | "欧洲" | "美洲" | "大洋洲" | "其他"; // 地区
 };
 
@@ -40,7 +40,7 @@ export const COUNTRIES: Country[] = [
   { code: "US", name: "美国", nameEn: "United States", currency: "USD", region: "美洲" },
   { code: "CA", name: "加拿大", nameEn: "Canada", currency: "USD", region: "美洲" },
   { code: "MX", name: "墨西哥", nameEn: "Mexico", currency: "USD", region: "美洲" },
-  { code: "BR", name: "巴西", nameEn: "Brazil", currency: "USD", region: "美洲" },
+  { code: "BR", name: "巴西", nameEn: "Brazil", currency: "BRL", region: "美洲" },
   
   // 大洋洲
   { code: "AU", name: "澳大利亚", nameEn: "Australia", currency: "AUD", region: "大洋洲" },
@@ -63,6 +63,23 @@ export function getCountryByCode(code: string): Country | undefined {
 export function getCurrencyByCountry(code: string): string {
   const country = getCountryByCode(code);
   return country?.currency || "USD";
+}
+
+/** 货币代码 → 中文名（用于店铺国家下拉等展示） */
+export const CURRENCY_LABEL_ZH: Record<string, string> = {
+  GBP: "英镑",
+  JPY: "日元",
+  USD: "美元",
+  RMB: "人民币",
+  EUR: "欧元",
+  HKD: "港币",
+  SGD: "新加坡元",
+  AUD: "澳元",
+  BRL: "巴西雷亚尔",
+};
+
+export function getCurrencyLabelZh(code: string): string {
+  return CURRENCY_LABEL_ZH[code] || code;
 }
 
 /**

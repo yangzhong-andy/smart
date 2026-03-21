@@ -8,7 +8,7 @@ export type Store = {
   name: string; // 店铺名称（如 TK-UK-01）
   platform: "TikTok" | "Amazon" | "其他"; // 所属平台
   country: string; // 国家代码（ISO，如 JP, UK, US）
-  currency: "GBP" | "JPY" | "USD" | "RMB" | "EUR" | "HKD" | "SGD" | "AUD"; // 经营币种
+  currency: "GBP" | "JPY" | "USD" | "RMB" | "EUR" | "HKD" | "SGD" | "AUD" | "BRL"; // 经营币种
   accountId: string; // 关联收款账户ID
   accountName: string; // 关联收款账户名称（冗余字段，便于显示）
   vatNumber?: string; // VAT/税务识别号（欧洲站等）

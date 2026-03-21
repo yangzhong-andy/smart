@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Megaphone, Pencil, Trash2, Search, X, Download, Wallet, Globe, Building2, Users } from "lucide-react";
 import { type Store } from "@/lib/store-store";
 import { type BankAccount } from "@/lib/finance-store";
-import { COUNTRIES, getCurrencyByCountry, getCountriesByRegion, getCountryByCode, type Country } from "@/lib/country-config";
+import { COUNTRIES, getCurrencyByCountry, getCountriesByRegion, getCountryByCode, getCurrencyLabelZh, type Country } from "@/lib/country-config";
 import { getInfluencerStats } from "@/lib/influencer-bd-store";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -609,7 +609,9 @@ export default function StoresPage() {
                     )}
                     <div className="flex items-center gap-2 text-slate-300">
                       <Wallet className="h-4 w-4 text-slate-400" />
-                      <span className="text-xs">{store.currency}</span>
+                      <span className="text-xs">
+                        {getCurrencyLabelZh(store.currency)} ({store.currency})
+                      </span>
                     </div>
                     {store.accountName && (
                       <div className="flex items-center gap-2 text-slate-300">
@@ -643,7 +645,9 @@ export default function StoresPage() {
                           )}
                           <div className="flex justify-between">
                             <span className="text-slate-400">经营币种：</span>
-                            <span className="text-slate-100">{store.currency}</span>
+                            <span className="text-slate-100">
+                              {getCurrencyLabelZh(store.currency)} ({store.currency})
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -752,7 +756,7 @@ export default function StoresPage() {
                       <optgroup key={region} label={region}>
                         {countries.map((country) => (
                           <option key={country.code} value={country.code}>
-                            {country.name} ({country.code}) - {country.currency}
+                            {country.name} ({country.code}) - {getCurrencyLabelZh(country.currency)} ({country.currency})
                           </option>
                         ))}
                       </optgroup>
@@ -763,7 +767,11 @@ export default function StoresPage() {
                   <span className="text-slate-300">经营币种</span>
                   <input
                     type="text"
-                    value={form.currency}
+                    value={
+                      form.currency
+                        ? `${getCurrencyLabelZh(form.currency)} (${form.currency})`
+                        : ""
+                    }
                     readOnly
                     className="w-full rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 outline-none text-slate-400 cursor-not-allowed"
                   />
