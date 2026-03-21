@@ -59,7 +59,8 @@ export async function PUT(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    const canManageStore = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN' || userRole === 'MANAGER'
+    if (!canManageStore) {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
@@ -128,7 +129,8 @@ export async function DELETE(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    const canManageStore = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN' || userRole === 'MANAGER'
+    if (!canManageStore) {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
