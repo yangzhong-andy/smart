@@ -76,6 +76,8 @@ export async function POST(
       const hasItems =
         Array.isArray(orderWithItems.items) && orderWithItems.items.length > 0;
       let totalShipQty = 0;
+      /** 多 SKU 出库时各明细行数量；需在创建批次明细前仍可访问，故放在 if 块外 */
+      let shipMap = new Map<string, number>();
 
       if (hasItems) {
         if (!Array.isArray(itemShippings) || itemShippings.length === 0) {
@@ -93,7 +95,7 @@ export async function POST(
         if (normalized.length === 0)
           throw new Error("请输入有效的 SKU 出库数量");
 
-        const shipMap = new Map<string, number>();
+        shipMap.clear();
         for (const it of normalized) {
           shipMap.set(
             it.itemId,
