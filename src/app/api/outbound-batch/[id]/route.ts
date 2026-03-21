@@ -65,10 +65,13 @@ export async function GET(
       return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
     }
 
-    const skuPayload = buildOutboundBatchSkuPayload({
+    const batchForSku = {
       ...batch,
-      outboundBatchItems: batch.outboundBatchItems ?? [],
-    } as any);
+      outboundBatchItems:
+        (batch as { outboundBatchItems?: unknown }).outboundBatchItems ?? [],
+    };
+
+    const skuPayload = buildOutboundBatchSkuPayload(batchForSku as any);
 
     return NextResponse.json({
       id: batch.id,
