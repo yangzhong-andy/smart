@@ -16,6 +16,7 @@ import {
   formatDate
 } from "@/logistics/hooks";
 import type { OutboundOrder, Warehouse as WarehouseType } from "@/logistics/types";
+import ConfirmOutboundDialog from "@/components/outbound/ConfirmOutboundDialog";
 
 type SkuOption = { variant_id: string; sku_id: string; name?: string };
 
@@ -68,16 +69,8 @@ export default function OutboundPage() {
   
   // 详情 Modal 状态
   const [detailModal, setDetailModal] = useState<OutboundItem | null>(null);
-  const [shipModalOrder, setShipModalOrder] = useState<OutboundItem | null>(null);
-  const [shipQty, setShipQty] = useState<string>("");
-  const [shipItemQtyMap, setShipItemQtyMap] = useState<Record<string, string>>({});
-  const [shipDestinationCountry, setShipDestinationCountry] = useState("");
-  const [shipDestinationPlatform, setShipDestinationPlatform] = useState("");
-  const [shipDestinationStoreId, setShipDestinationStoreId] = useState("");
-  const [shipDestinationStoreName, setShipDestinationStoreName] = useState("");
-  const [shipOwnerType, setShipOwnerType] = useState("");
-  const [shipOwnerId, setShipOwnerId] = useState("");
-  const [shipOwnerName, setShipOwnerName] = useState("");
+  /** 确认出库弹窗（含物流渠道、国家、店铺） */
+  const [shipConfirmOrder, setShipConfirmOrder] = useState<OutboundItem | null>(null);
   const [shipSubmitting, setShipSubmitting] = useState(false);
 
   // 新建出库单
@@ -250,105 +243,57 @@ export default function OutboundPage() {
     }
   };
 
-  // 出库操作
-  const openShipModal = (order: OutboundOrder) => {
-    const remaining = Math.max(0, order.qty - order.shippedQty);
-    const o = order as OutboundItem;
-    setShipModalOrder(o);
-    setShipQty(String(remaining));
-    if (Array.isArray(o.items) && o.items.length > 0) {
-      const m: Record<string, string> = {};
-      o.items.forEach((it) => {
-        const remain = Math.max(0, (it.qty || 0) - (it.shippedQty || 0));
-        m[it.id] = remain > 0 ? String(remain) : "0";
-      });
-      setShipItemQtyMap(m);
-    } else {
-      setShipItemQtyMap({});
-    }
-    setShipDestinationCountry("");
-    setShipDestinationPlatform("");
-    setShipDestinationStoreId("");
-    setShipDestinationStoreName("");
-    setShipOwnerType("");
-    setShipOwnerId("");
-    setShipOwnerName("");
+  const openShipConfirm = (order: OutboundOrder) => {
+    setShipConfirmOrder(order as OutboundItem);
   };
 
-  const closeShipModal = () => {
-    setShipModalOrder(null);
-    setShipQty("");
-    setShipItemQtyMap({});
-    setShipDestinationCountry("");
-    setShipDestinationPlatform("");
-    setShipDestinationStoreId("");
-    setShipDestinationStoreName("");
-    setShipOwnerType("");
-    setShipOwnerId("");
-    setShipOwnerName("");
-  };
-
-  const handleShipSubmit = async () => {
-    if (!shipModalOrder) return;
-    const hasItems = Array.isArray(shipModalOrder.items) && shipModalOrder.items.length > 0;
-
+  const handleShipConfirm = async (payload: {
+    shippedQty?: number;
+    itemShipments?: { itemId: string; qty: number }[];
+    logisticsChannelId: string | null;
+    logisticsChannelName: string | null;
+    destinationCountry: string;
+    destinationPlatform: string;
+    storeId: string;
+    storeName: string;
+    ownershipType: string;
+    ownershipSubjectId: string;
+    ownershipSubjectName: string;
+  }) => {
+    if (!shipConfirmOrder) return;
     setShipSubmitting(true);
     try {
-      let body: any = {
-        logisticsChannelName: null,
-        destinationCountry: shipDestinationCountry || null,
-        destinationPlatform: shipDestinationPlatform || null,
-        destinationStoreId: shipDestinationStoreId || null,
-        destinationStoreName: shipDestinationStoreName || null,
-        ownerType: shipOwnerType || null,
-        ownerId: shipOwnerId || null,
-        ownerName: shipOwnerName || null,
+      const body: Record<string, unknown> = {
+        logisticsChannelId: payload.logisticsChannelId,
+        logisticsChannelName: payload.logisticsChannelName,
+        destinationCountry: payload.destinationCountry || undefined,
+        destinationPlatform: payload.destinationPlatform || undefined,
+        storeId: payload.storeId || undefined,
+        storeName: payload.storeName || undefined,
+        ownershipType: payload.ownershipType || undefined,
+        ownershipSubjectId: payload.ownershipSubjectId || undefined,
+        ownershipSubjectName: payload.ownershipSubjectName || undefined,
       };
-      if (hasItems) {
-        const itemShippings = (shipModalOrder.items || [])
-          .map((it) => {
-            const inputVal = Number(shipItemQtyMap[it.id] || 0);
-            const ship = Number.isFinite(inputVal) ? Math.floor(inputVal) : 0;
-            const remaining = Math.max(0, (it.qty || 0) - (it.shippedQty || 0));
-            if (ship > remaining) {
-              throw new Error(`SKU ${it.sku} 出库数量不能超过待出库 ${remaining}`);
-            }
-            return { itemId: it.id, qty: Math.max(0, ship) };
-          })
-          .filter((x) => x.qty > 0);
-        if (itemShippings.length === 0) {
-          throw new Error("请至少选择一个 SKU 并填写出库数量");
-        }
-        body.itemShippings = itemShippings;
-      } else {
-        const remaining = Math.max(0, shipModalOrder.qty - shipModalOrder.shippedQty);
-        const qtyNum = Number(shipQty);
-        if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-          throw new Error("请输入正确的出库数量");
-        }
-        const qty = Math.min(Math.floor(qtyNum), remaining);
-        if (qty <= 0) {
-          throw new Error("出库数量不能超过待出库数量");
-        }
-        body.shippedQty = qty;
+      if (payload.itemShipments && payload.itemShipments.length > 0) {
+        body.itemShipments = payload.itemShipments;
+      } else if (payload.shippedQty != null) {
+        body.shippedQty = payload.shippedQty;
       }
 
-      const response = await fetch(`/api/outbound-orders/${shipModalOrder.id}/ship`, {
+      const response = await fetch(`/api/outbound-orders/${shipConfirmOrder.id}/ship`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
-
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err?.error || "出库失败");
+        throw new Error((data as { error?: string })?.error || "出库失败");
       }
-      
       toast.success("出库成功");
+      setShipConfirmOrder(null);
       mutate();
-      closeShipModal();
-    } catch (error: any) {
-      toast.error(error?.message || "出库失败，请重试");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "出库失败，请重试");
     } finally {
       setShipSubmitting(false);
     }
@@ -448,7 +393,7 @@ export default function OutboundPage() {
               key={order.id}
               order={order as OutboundItem}
               onView={() => handleViewDetail(order)}
-              onShip={() => openShipModal(order)}
+              onShip={() => openShipConfirm(order)}
             />
           ))}
         </div>
@@ -573,138 +518,30 @@ export default function OutboundPage() {
           warehouses={warehouseList}
           onClose={handleCloseDetail}
           onShip={() => {
-            openShipModal(detailModal);
+            openShipConfirm(detailModal);
             handleCloseDetail();
           }}
         />
       )}
 
-      {/* 出库数量弹窗 */}
-      {shipModalOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
-          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-100">确认出库</h3>
-              <button
-                type="button"
-                onClick={closeShipModal}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <p className="text-slate-300">
-                出库单：<span className="font-medium">{shipModalOrder.outboundNumber || "-"}</span>
-              </p>
-              <p className="text-slate-400">
-                当前待出库数量：{Math.max(0, shipModalOrder.qty - shipModalOrder.shippedQty)}
-              </p>
-              <div>
-                {Array.isArray(shipModalOrder.items) && shipModalOrder.items.length > 0 ? (
-                  <div className="space-y-2">
-                    <label className="block text-xs text-slate-400">请选择 SKU 并填写出库数量</label>
-                    {shipModalOrder.items.filter((it) => (it.qty || 0) > 0).map((it) => {
-                      const remaining = Math.max(0, (it.qty || 0) - (it.shippedQty || 0));
-                      return (
-                        <div key={it.id} className="grid grid-cols-[1fr_120px] gap-2 items-center">
-                          <div className="text-xs text-slate-300">
-                            <div className="font-mono">{it.sku}</div>
-                            <div className="text-slate-500">待出库：{remaining}</div>
-                          </div>
-                          <input
-                            type="number"
-                            min={0}
-                            max={remaining}
-                            value={shipItemQtyMap[it.id] ?? "0"}
-                            onChange={(e) =>
-                              setShipItemQtyMap((prev) => ({ ...prev, [it.id]: e.target.value }))
-                            }
-                            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200 outline-none focus:border-primary-400"
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <>
-                    <label className="block text-xs text-slate-400 mb-1">请输入出库数量</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={Math.max(0, shipModalOrder.qty - shipModalOrder.shippedQty)}
-                      value={shipQty}
-                      onChange={(e) => setShipQty(e.target.value)}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200 outline-none focus:border-primary-400"
-                    />
-                  </>
-                )}
-              </div>
-              <div className="border-t border-slate-800 pt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                <input
-                  value={shipDestinationCountry}
-                  onChange={(e) => setShipDestinationCountry(e.target.value)}
-                  placeholder="目的国家（如 BR）"
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-                <input
-                  value={shipDestinationPlatform}
-                  onChange={(e) => setShipDestinationPlatform(e.target.value)}
-                  placeholder="目的平台（如 TikTok）"
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-                <input
-                  value={shipDestinationStoreId}
-                  onChange={(e) => setShipDestinationStoreId(e.target.value)}
-                  placeholder="店铺ID"
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-                <input
-                  value={shipDestinationStoreName}
-                  onChange={(e) => setShipDestinationStoreName(e.target.value)}
-                  placeholder="店铺名称"
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-                <input
-                  value={shipOwnerType}
-                  onChange={(e) => setShipOwnerType(e.target.value)}
-                  placeholder="货权主体类型（STORE/TEAM）"
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-                <input
-                  value={shipOwnerId}
-                  onChange={(e) => setShipOwnerId(e.target.value)}
-                  placeholder="货权主体ID"
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-                <input
-                  value={shipOwnerName}
-                  onChange={(e) => setShipOwnerName(e.target.value)}
-                  placeholder="货权主体名称"
-                  className="md:col-span-2 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-primary-400"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                type="button"
-                onClick={closeShipModal}
-                className="rounded-md border border-slate-600 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={shipSubmitting}
-                onClick={handleShipSubmit}
-                className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-600 disabled:opacity-60"
-              >
-                {shipSubmitting ? "提交中..." : "确认出库"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmOutboundDialog
+        open={!!shipConfirmOrder}
+        order={
+          shipConfirmOrder
+            ? {
+                id: shipConfirmOrder.id,
+                outboundNumber: shipConfirmOrder.outboundNumber,
+                qty: shipConfirmOrder.qty,
+                shippedQty: shipConfirmOrder.shippedQty,
+                variantId: (shipConfirmOrder as OutboundItem & { variantId?: string }).variantId,
+                items: shipConfirmOrder.items,
+              }
+            : null
+        }
+        onClose={() => !shipSubmitting && setShipConfirmOrder(null)}
+        onConfirm={handleShipConfirm}
+        submitting={shipSubmitting}
+      />
     </div>
   );
 }

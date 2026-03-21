@@ -79,8 +79,9 @@ export async function PUT(
       if (body.platform !== undefined) updateData.platform = platformToEnum[body.platform] || Platform.OTHER
     if (body.country !== undefined) updateData.country = body.country
     if (body.currency !== undefined) updateData.currency = body.currency
-    if (body.accountId !== undefined) updateData.accountId = body.accountId || null
-    if (body.accountName !== undefined) updateData.accountName = body.accountName || null
+    // 与 schema 中非可选 String 一致：清空关联时用空字符串，不能写 null
+    if (body.accountId !== undefined) updateData.accountId = body.accountId ? String(body.accountId) : ''
+    if (body.accountName !== undefined) updateData.accountName = body.accountName ? String(body.accountName) : ''
     if (body.vatNumber !== undefined) updateData.vatNumber = body.vatNumber || null
     if (body.taxId !== undefined) updateData.taxId = body.taxId || null
 

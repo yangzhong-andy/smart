@@ -97,6 +97,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
+    if (!body.name || !String(body.name).trim()) {
+      return badRequest('店铺名称不能为空')
+    }
+    if (!body.country || !String(body.country).trim()) {
+      return badRequest('请选择国家/站点')
+    }
+
     const PLATFORM_MAP_FRONT_TO_DB: Record<string, Platform> = {
       'TikTok': Platform.TIKTOK,
       'Amazon': Platform.AMAZON,
@@ -105,14 +112,15 @@ export async function POST(request: NextRequest) {
       '其他': Platform.OTHER
     };
 
+    // accountId / accountName 在 schema 中为必填 String（非 String?），未关联账户时必须用空字符串，不能传 null
     const store = await prisma.store.create({
       data: {
-        name: body.name,
+        name: String(body.name ?? '').trim(),
         platform: PLATFORM_MAP_FRONT_TO_DB[body.platform] || Platform.OTHER,
-        country: body.country,
+        country: String(body.country ?? '').trim(),
         currency: body.currency || 'USD',
-        accountId: body.accountId || null,
-        accountName: body.accountName || null,
+        accountId: body.accountId ? String(body.accountId) : '',
+        accountName: body.accountName ? String(body.accountName) : '',
         vatNumber: body.vatNumber || null,
         taxId: body.taxId || null,
       }
@@ -128,7 +136,10 @@ export async function POST(request: NextRequest) {
       createdAt: store.createdAt.toISOString()
     });
   } catch (error) {
-    return serverError('Failed to create store')
+    console.error('[POST /api/stores]', error)
+    return serverError('创建店铺失败，请检查是否重复名称或数据库约束', error, {
+      includeDetailsInDev: true,
+    })
   }
 }
 
