@@ -41,7 +41,7 @@ export function buildOutboundBatchSkuPayload(batch: any): {
   const order = batch.outboundOrder;
   if (order?.items?.length) {
     const skuLines = linesFromBatchItems(
-      order.items.map((it) => ({
+      order.items.map((it: any) => ({
         id: it.id,
         variantId: it.variantId,
         sku: it.sku,
