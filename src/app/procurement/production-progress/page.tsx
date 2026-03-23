@@ -218,8 +218,18 @@ export default function ProductionProgressPage() {
     today.setHours(0, 0, 0, 0);
 
     return contracts.map((contract) => {
-      const finishedQty = contract.finishedQty || 0;
-      const totalQty = contract.totalQty;
+      // 多 SKU 合同优先按明细实时汇总，避免合同冗余字段滞后导致顶部统计不准
+      const items = Array.isArray(contract.items) ? contract.items : [];
+      const finishedQtyFromItems = items.reduce(
+        (sum, it) => sum + Number(it.finishedQty || 0),
+        0
+      );
+      const totalQtyFromItems = items.reduce(
+        (sum, it) => sum + Number(it.qty || 0),
+        0
+      );
+      const finishedQty = items.length > 0 ? finishedQtyFromItems : (contract.finishedQty || 0);
+      const totalQty = items.length > 0 ? totalQtyFromItems : contract.totalQty;
       const progress = totalQty > 0 ? (finishedQty / totalQty) * 100 : 0;
       
       // 确定生产状态

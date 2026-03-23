@@ -120,7 +120,19 @@ export async function GET(request: NextRequest) {
     }
 
     const response = {
-      data: contracts.map(c => ({
+      data: contracts.map(c => {
+        const items = (c as any).items ?? [];
+        const itemFinishedQty = items.reduce(
+          (sum: number, it: { finishedQty?: number | null }) => sum + (it.finishedQty ?? 0),
+          0
+        );
+        const itemTotalQty = items.reduce(
+          (sum: number, it: { qty?: number | null }) => sum + (it.qty ?? 0),
+          0
+        );
+        const finishedQty = items.length > 0 ? itemFinishedQty : c.finishedQty;
+        const totalQty = items.length > 0 ? itemTotalQty : c.totalQty;
+        return ({
         id: c.id,
         contractNumber: c.contractNumber,
         supplierId: c.supplierId || undefined,
@@ -128,9 +140,9 @@ export async function GET(request: NextRequest) {
         sku: c.sku,
         skuId: c.skuId || undefined,
         unitPrice: Number(c.unitPrice),
-        totalQty: c.totalQty,
+        totalQty,
         pickedQty: c.pickedQty,
-        finishedQty: c.finishedQty,
+        finishedQty,
         totalAmount: Number(c.totalAmount),
         depositRate: Number(c.depositRate),
         depositAmount: Number(c.depositAmount),
@@ -159,7 +171,7 @@ export async function GET(request: NextRequest) {
           finishedQty: it.finishedQty ?? 0,
           totalAmount: Number(it.totalAmount),
         })) ?? [],
-      })),
+      })}),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 
