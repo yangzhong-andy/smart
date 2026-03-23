@@ -35,7 +35,7 @@ type ProductionStatus = "未开始" | "生产中" | "部分完成" | "已完成"
 
 export default function ProductionProgressPage() {
   const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
-    "/api/purchase-contracts?page=1&pageSize=500",
+    "/api/purchase-contracts?page=1&pageSize=500&noCache=true",
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
