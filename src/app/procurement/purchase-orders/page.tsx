@@ -192,6 +192,7 @@ export default function PurchaseOrdersPage() {
   const [variantModalSupplierId, setVariantModalSupplierId] = useState<string | null>(null); // 弹窗打开时锁定的供应商 ID，避免中途被清空又显示全部
   const [variantModalProductIds, setVariantModalProductIds] = useState<string[] | null>(null); // 该供应商关联的 productId 列表，null 表示加载中
   const [variantQuantities, setVariantQuantities] = useState<Record<string, string>>({});
+  const [variantPrices, setVariantPrices] = useState<Record<string, string>>({});
   const [selectedSpuContract, setSelectedSpuContract] = useState<SpuOption | null>(null);
   const [variantSearchContract, setVariantSearchContract] = useState(""); // 变体选择器内按颜色/SKU 搜索
   const [isCreateSaving, setIsCreateSaving] = useState(false); // 新建合同保存中，避免重复提交且给用户反馈
@@ -427,6 +428,7 @@ export default function PurchaseOrdersPage() {
     setVariantModalProductIds(null); // 加载中
     setSelectedSpuContract(null);
     setVariantQuantities({});
+    setVariantPrices({});
     setVariantSearchContract("");
     setVariantModalOpen(true);
     if (sid) {
@@ -451,10 +453,14 @@ export default function PurchaseOrdersPage() {
     if (cached?.length) {
       setSelectedSpuContract({ productId: spu.productId, name: spu.name, variants: cached });
       const next: Record<string, string> = {};
+      const nextPrices: Record<string, string> = {};
       cached.forEach((v) => {
         next[v.sku_id!] = variantQuantities[v.sku_id!] ?? "";
+        nextPrices[v.sku_id!] =
+          variantPrices[v.sku_id!] ?? String((v as any).cost_price ?? 0);
       });
       setVariantQuantities(next);
+      setVariantPrices(nextPrices);
       return;
     }
     setLoadingSpuId(spu.productId);
@@ -463,10 +469,14 @@ export default function PurchaseOrdersPage() {
       setVariantCache((prev) => ({ ...prev, [spu.productId]: variants }));
       setSelectedSpuContract({ productId: spu.productId, name: spu.name, variants });
       const next: Record<string, string> = {};
+      const nextPrices: Record<string, string> = {};
       variants.forEach((v) => {
         next[v.sku_id!] = variantQuantities[v.sku_id!] ?? "";
+        nextPrices[v.sku_id!] =
+          variantPrices[v.sku_id!] ?? String((v as any).cost_price ?? 0);
       });
       setVariantQuantities(next);
+      setVariantPrices(nextPrices);
     } catch (e) {
       toast.error("加载该规格变体失败");
     } finally {
@@ -483,6 +493,9 @@ export default function PurchaseOrdersPage() {
     selectedSpuContract.variants.forEach((v) => {
       const q = Number(variantQuantities[v.sku_id!]);
       if (Number.isNaN(q) || q <= 0) return;
+      const rawPrice = variantPrices[v.sku_id!] ?? String((v as any).cost_price ?? 0);
+      const price = Number(rawPrice);
+      if (!Number.isFinite(price) || price < 0) return;
       const skuName = selectedSpuContract.name;
       const spec = v.color || v.sku_id || "";
       rows.push({
@@ -492,11 +505,11 @@ export default function PurchaseOrdersPage() {
         skuName,
         spec,
         quantity: String(q),
-        unitPrice: String((v as Product).cost_price ?? 0),
+        unitPrice: String(price),
       });
     });
     if (rows.length === 0) {
-      toast.error("请至少为一个颜色填写数量");
+      toast.error("请至少为一个颜色填写数量，并确保单价有效（≥0）");
       return;
     }
     setFormItems((prev) => (prev.length === 0 ? rows : [...prev, ...rows]));
@@ -505,6 +518,7 @@ export default function PurchaseOrdersPage() {
     setVariantModalProductIds(null);
     setSelectedSpuContract(null);
     setVariantQuantities({});
+    setVariantPrices({});
     toast.success(`已添加 ${rows.length} 个变体，共 ${rows.reduce((s, r) => s + Number(r.quantity), 0)} 件`);
   };
 
@@ -1352,6 +1366,7 @@ export default function PurchaseOrdersPage() {
           setVariantModalProductIds(null);
           setSelectedSpuContract(null);
           setVariantQuantities({});
+          setVariantPrices({});
           setVariantSearchContract("");
         }}
         variantModalSupplierId={variantModalSupplierId}
@@ -1363,6 +1378,8 @@ export default function PurchaseOrdersPage() {
         setVariantSearchContract={setVariantSearchContract}
         variantQuantities={variantQuantities}
         setVariantQuantities={setVariantQuantities}
+        variantPrices={variantPrices}
+        setVariantPrices={setVariantPrices}
         loadingSpuId={loadingSpuId}
         onConfirmVariantSelection={confirmVariantSelectionContract}
         onSubmit={handleCreate}

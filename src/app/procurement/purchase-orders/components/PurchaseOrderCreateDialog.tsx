@@ -53,6 +53,8 @@ interface PurchaseOrderCreateDialogProps {
   setVariantSearchContract: (v: string) => void;
   variantQuantities: Record<string, string>;
   setVariantQuantities: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  variantPrices: Record<string, string>;
+  setVariantPrices: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   loadingSpuId: string | null;
   onConfirmVariantSelection: () => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
@@ -86,6 +88,8 @@ export function PurchaseOrderCreateDialog({
   setVariantSearchContract,
   variantQuantities,
   setVariantQuantities,
+  variantPrices,
+  setVariantPrices,
   loadingSpuId,
   onConfirmVariantSelection,
   onSubmit,
@@ -478,9 +482,23 @@ export function PurchaseOrderCreateDialog({
                           <span className="text-slate-500 text-sm flex-1 truncate">
                             {v.sku_id}
                           </span>
-                          <span className="text-slate-400 text-sm whitespace-nowrap">
-                            ¥{Number(v.cost_price ?? 0).toFixed(2)}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500 text-xs whitespace-nowrap">单价</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder={String(Number(v.cost_price ?? 0).toFixed(2))}
+                              value={variantPrices[v.sku_id!] ?? String(v.cost_price ?? 0)}
+                              onChange={(e) =>
+                                setVariantPrices((prev) => ({
+                                  ...prev,
+                                  [v.sku_id!]: e.target.value,
+                                }))
+                              }
+                              className="w-24 rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-right text-slate-100 outline-none focus:border-primary-400"
+                            />
+                          </div>
                           <input
                             type="number"
                             min={0}
