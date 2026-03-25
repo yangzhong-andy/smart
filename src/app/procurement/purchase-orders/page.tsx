@@ -920,6 +920,7 @@ export default function PurchaseOrdersPage() {
         relatedId: deliveryOrderId,
       };
       const created = await createExpenseRequest(newExpenseRequest);
+      toast.success("尾款付款申请已发起，等待审批", { icon: "✅" });
       const updatedRequests = await getExpenseRequests();
       setExpenseRequests(Array.isArray(updatedRequests) ? updatedRequests : (updatedRequests as any)?.data ?? []);
       setSuccessModal({

@@ -46,6 +46,7 @@ export default function DeliveryOrdersPage() {
   const [inboundItemQtys, setInboundItemQtys] = useState<Record<string, number>>({});
   const [inboundWarehouseId, setInboundWarehouseId] = useState<string>("");
   const [inboundSubmitting, setInboundSubmitting] = useState(false);
+  const [payTailSubmitting, setPayTailSubmitting] = useState(false);
   const [generatingBills, setGeneratingBills] = useState(false);
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -642,11 +643,16 @@ export default function DeliveryOrdersPage() {
                             <button
                               type="button"
                               onClick={() => {
+                                if (payTailSubmitting) return;
+                                const ok = window.confirm(`确认为拿货单 ${order.deliveryNumber} 发起尾款付款申请吗？`);
+                                if (!ok) return;
+                                setPayTailSubmitting(true);
                                 const url = new URL(window.location.origin + "/procurement/purchase-orders");
                                 url.searchParams.set("payTailContractId", order.contractId);
                                 url.searchParams.set("payTailDeliveryOrderId", order.id);
                                 window.location.href = url.toString();
                               }}
+                              disabled={payTailSubmitting}
                               className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors"
                             >
                               <Wallet className="h-3 w-3" />
