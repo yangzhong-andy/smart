@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Truck, Package, Plus, RefreshCw } from "lucide-react";
-import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
+import { Download, Plus, RefreshCw } from "lucide-react";
+import { PageHeader, ActionButton } from "@/components/ui";
 import type { Container } from "@/logistics/types";
+import Link from "next/link";
+import { ContainerStats } from "./components/ContainerStats";
+import { ContainerFilters } from "./components/ContainerFilters";
+import { ContainersTable } from "./components/ContainersTable";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -60,6 +64,20 @@ function getProgressBarColor(status: string): string {
   }
 }
 
+function formatDate(value?: string | null): string {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("zh-CN");
+}
+
+function formatNumber(value?: string | null, digits = 2): string {
+  if (!value) return "-";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  return n.toFixed(digits);
+}
+
 // 计算航行进度信息
 function getVoyageInfo(container: Container) {
   const now = new Date();
@@ -72,8 +90,10 @@ function getVoyageInfo(container: Container) {
   const daysPassed = Math.max(0, Math.floor((now.getTime() - etd.getTime()) / (1000 * 60 * 60 * 24)));
   // 预计总航行天数
   const totalDays = Math.max(1, Math.floor((eta.getTime() - etd.getTime()) / (1000 * 60 * 60 * 24)));
-  // 预计剩余天数
-  const daysLeft = Math.max(0, Math.floor((eta.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  // 剩余天数（负数表示已超期）
+  const daysLeftRaw = Math.floor((eta.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const daysLeft = Math.max(0, daysLeftRaw);
+  const overdueDays = Math.max(0, -daysLeftRaw);
   // 进度百分比
   const progress = Math.min(100, Math.max(0, Math.floor((daysPassed / totalDays) * 100)));
   
@@ -81,6 +101,7 @@ function getVoyageInfo(container: Container) {
     daysPassed,
     totalDays,
     daysLeft,
+    overdueDays,
     progress,
     eta: eta.toLocaleDateString("zh-CN"),
     isOverdue: now > eta,
@@ -187,6 +208,19 @@ export default function ContainersPage() {
   const [filterMethod, setFilterMethod] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<ContainerForm>(emptyForm);
+  const [detailContainer, setDetailContainer] = useState<Container | null>(null);
+  const [detailData, setDetailData] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const statusOptions = [
+    { value: "PLANNED", label: "已计划" },
+    { value: "LOADING", label: "装柜中" },
+    { value: "IN_TRANSIT", label: "在途" },
+    { value: "ARRIVED_PORT", label: "已到港" },
+    { value: "CUSTOMS_CLEAR", label: "清关完成" },
+    { value: "IN_WAREHOUSE", label: "已入仓" },
+    { value: "CLOSED", label: "已完结" },
+  ];
 
   // 获取柜子列表
   const { data, isLoading, mutate } = useSWR("/api/containers?page=1&pageSize=200", fetcher);
@@ -316,6 +350,120 @@ export default function ContainersPage() {
     }
   };
 
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      toast.error("没有可导出的柜子数据");
+      return;
+    }
+    const headers = [
+      "柜号",
+      "柜型",
+      "状态",
+      "运输方式",
+      "船公司",
+      "船名",
+      "航次",
+      "起运港",
+      "目的港",
+      "ETD",
+      "ETA",
+      "体积CBM",
+      "重量KG",
+      "批次数",
+      "创建时间",
+    ];
+    const rows = filtered.map((c) => [
+      c.containerNo,
+      c.containerType,
+      statusLabels[c.status] ?? c.status,
+      methodLabels[c.shippingMethod] ?? c.shippingMethod,
+      c.shipCompany || "",
+      c.vesselName || "",
+      c.voyageNo || "",
+      c.originPort || "",
+      c.destinationPort || "",
+      formatDate(c.etd),
+      formatDate(c.eta),
+      formatNumber(c.totalVolumeCBM),
+      formatNumber(c.totalWeightKG),
+      String(c.outboundBatchCount ?? 0),
+      formatDate(c.createdAt),
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      )
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `柜子管理_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`已导出 ${filtered.length} 条柜子数据`);
+  };
+
+  const handleChangeStatus = async (container: Container, status: string) => {
+    if (status === container.status) return;
+    const fromLabel = statusLabels[container.status] ?? container.status;
+    const toLabel = statusLabels[status] ?? status;
+    const confirmed = window.confirm(
+      `确认将柜子 ${container.containerNo} 状态从“${fromLabel}”改为“${toLabel}”吗？`
+    );
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`/api/containers/${container.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json?.error || "状态更新失败");
+        return;
+      }
+      toast.success(`状态已更新为：${statusLabels[status] ?? status}`);
+      mutate();
+      if (detailContainer?.id === container.id) {
+        setDetailContainer({ ...detailContainer, status: status as any });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("状态更新失败，请稍后重试");
+    }
+  };
+
+  useEffect(() => {
+    if (!detailContainer?.id) {
+      setDetailData(null);
+      return;
+    }
+    let active = true;
+    setDetailLoading(true);
+    fetch(`/api/containers/${detailContainer.id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!active) return;
+        setDetailData(json);
+      })
+      .catch(() => {
+        if (!active) return;
+        setDetailData(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setDetailLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [detailContainer?.id]);
+
   return (
     <div className="space-y-6 p-6">
       <PageHeader
@@ -331,6 +479,13 @@ export default function ContainersPage() {
               刷新
             </ActionButton>
             <ActionButton
+              variant="secondary"
+              icon={Download}
+              onClick={handleExport}
+            >
+              导出数据
+            </ActionButton>
+            <ActionButton
               variant="primary"
               icon={Plus}
               onClick={() => setIsCreateOpen((v) => !v)}
@@ -341,44 +496,24 @@ export default function ContainersPage() {
         }
       />
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <StatCard title="柜子总数" value={stats.total} icon={Truck} />
-        <StatCard title="在途柜" value={stats.byStatus["IN_TRANSIT"] || 0} icon={Truck} />
-        <StatCard title="已到港" value={stats.byStatus["ARRIVED_PORT"] || 0} icon={Package} />
-        <StatCard title="已入仓" value={stats.byStatus["IN_WAREHOUSE"] || 0} icon={Package} />
-      </div>
+      <ContainerStats
+        summary={{
+          total: stats.total,
+          inTransit: stats.byStatus["IN_TRANSIT"] || 0,
+          arrivedPort: stats.byStatus["ARRIVED_PORT"] || 0,
+          inWarehouse: stats.byStatus["IN_WAREHOUSE"] || 0,
+        }}
+      />
 
-      {/* 筛选区 */}
-      <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl border border-slate-800 bg-slate-900/60">
-        <SearchBar
-          value={searchKeyword}
-          onChange={setSearchKeyword}
-          placeholder="搜索柜号、船名、航次..."
-        />
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
-        >
-          <option value="all">全部状态</option>
-          {Object.keys(statusLabels).map((s) => (
-            <option key={s} value={s}>
-              {statusLabels[s]}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterMethod}
-          onChange={(e) => setFilterMethod(e.target.value)}
-          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
-        >
-          <option value="all">全部方式</option>
-          <option value="SEA">海运</option>
-          <option value="AIR">空运</option>
-          <option value="EXPRESS">快递</option>
-        </select>
-      </div>
+      <ContainerFilters
+        searchKeyword={searchKeyword}
+        onSearchKeywordChange={setSearchKeyword}
+        filterStatus={filterStatus}
+        onFilterStatusChange={setFilterStatus}
+        filterMethod={filterMethod}
+        onFilterMethodChange={setFilterMethod}
+        statusCountMap={stats.byStatus}
+      />
 
       {/* 新建柜子表单（完整版） */}
       {isCreateOpen && (
@@ -759,106 +894,109 @@ export default function ContainersPage() {
         </div>
       )}
 
-      {/* 列表区域 */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        {isLoading ? (
-          <div className="space-y-3">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-16 rounded-lg bg-slate-800/50 animate-pulse" />
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={Truck}
-            title="暂无柜子记录"
-            description="可以通过右上角“新增柜子”按钮，录入第一批柜信息。"
-          />
-        ) : (
-          <div className="space-y-3">
-            {filtered.map((c) => (
-              <div
-                key={c.id}
-                className="flex flex-col gap-2 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3 hover:border-primary-500/60 transition-all"
-              >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-100">
-                        {c.containerNo}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                        {c.containerType}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                        {methodLabels[c.shippingMethod] ?? c.shippingMethod}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-primary-300">
-                        {statusLabels[c.status] ?? c.status}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      {c.originPort || "-"} → {c.destinationPort || "-"} · 批次数：
-                      {c.outboundBatchCount ?? 0}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      ETD：{c.etd ? new Date(c.etd).toLocaleDateString() : "-"} · ETA：
-                      {c.eta ? new Date(c.eta).toLocaleDateString() : "-"}
-                    </div>
-                    {/* 航行进度详情 */}
-                    {c.status === "IN_TRANSIT" && c.etd && c.eta && (
-                      <div className="mt-1 text-xs">
-                        {(() => {
-                          const info = getVoyageInfo(c);
-                          if (!info) return null;
-                          return (
-                            <div className="flex items-center gap-3">
-                              <span className="text-amber-400">
-                                已航行 {info.daysPassed} 天 / 共 {info.totalDays} 天
-                              </span>
-                              <span className={`${info.isOverdue ? "text-red-400" : "text-blue-400"}`}>
-                                {info.isOverdue ? `延误 ${info.daysLeft} 天` : `预计 ${info.daysLeft} 天后到港`}
-                              </span>
-                              <span className="text-slate-500">
-                                ({info.eta})
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                    <div className="mt-0.5 text-[11px] text-slate-500">
-                      实际开船：
-                      {c.actualDeparture
-                        ? new Date(c.actualDeparture).toLocaleDateString()
-                        : "-"}{" "}
-                      · 实际到港：
-                      {c.actualArrival
-                        ? new Date(c.actualArrival).toLocaleDateString()
-                        : "-"}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span>创建于：{new Date(c.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-                {/* 运输进度条 */}
-                <div className="mt-1">
-                  <div className="flex justify-between text-[11px] text-slate-500 mb-1">
-                    <span>运输进度</span>
-                    <span>{getProgress(c.status)}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className={`h-full ${getProgressBarColor(c.status)} transition-all`}
-                      style={{ width: `${getProgress(c.status)}%` }}
-                    />
-                  </div>
-                </div>
+      <ContainersTable
+        isLoading={isLoading}
+        containers={filtered}
+        statusLabels={statusLabels}
+        methodLabels={methodLabels}
+        getProgress={getProgress}
+        getProgressBarColor={getProgressBarColor}
+        getVoyageInfo={getVoyageInfo}
+        formatDate={formatDate}
+        formatNumber={formatNumber}
+        onOpenDetail={setDetailContainer}
+        onChangeStatus={handleChangeStatus}
+        statusOptions={statusOptions}
+      />
+
+      {detailContainer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">
+                  柜子详情 · {detailContainer.containerNo}
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">参照采购合同详情弹窗风格，便于集中查看字段</p>
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={() => setDetailContainer(null)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <InfoRow label="柜号" value={detailContainer.containerNo} />
+              <InfoRow label="柜型" value={detailContainer.containerType} />
+              <InfoRow label="状态" value={statusLabels[detailContainer.status] ?? detailContainer.status} />
+              <InfoRow label="运输方式" value={methodLabels[detailContainer.shippingMethod] ?? detailContainer.shippingMethod} />
+              <InfoRow label="船公司" value={detailContainer.shipCompany || "-"} />
+              <InfoRow label="船名/航次" value={`${detailContainer.vesselName || "-"} / ${detailContainer.voyageNo || "-"}`} />
+              <InfoRow label="起运港" value={detailContainer.originPort || "-"} />
+              <InfoRow label="目的港" value={detailContainer.destinationPort || "-"} />
+              <InfoRow label="ETD/ETA" value={`${formatDate(detailContainer.etd)} / ${formatDate(detailContainer.eta)}`} />
+              <InfoRow label="实际开船/到港" value={`${formatDate(detailContainer.actualDeparture)} / ${formatDate(detailContainer.actualArrival)}`} />
+              <InfoRow label="出口公司" value={detailContainer.exporterName || "-"} />
+              <InfoRow label="海外公司" value={detailContainer.overseasCompanyName || "-"} />
+              <InfoRow label="目的仓库" value={detailContainer.warehouseName || "-"} />
+              <InfoRow label="店铺" value={detailContainer.storeName || "-"} />
+              <InfoRow label="总体积(CBM)" value={formatNumber(detailContainer.totalVolumeCBM)} />
+              <InfoRow label="总重量(KG)" value={formatNumber(detailContainer.totalWeightKG)} />
+              <InfoRow label="批次数" value={String(detailContainer.outboundBatchCount ?? 0)} />
+              <InfoRow label="创建时间" value={formatDate(detailContainer.createdAt)} />
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-500 mb-2">关联出库批次</div>
+              {detailLoading ? (
+                <div className="text-sm text-slate-400">正在加载批次...</div>
+              ) : Array.isArray(detailData?.outboundBatches) && detailData.outboundBatches.length > 0 ? (
+                <div className="space-y-2">
+                  {detailData.outboundBatches.map((b: any) => (
+                    <div
+                      key={b.id}
+                      className="rounded border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-300"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-slate-100 font-medium">{b.batchNumber}</span>
+                        <span>数量 {b.qty}</span>
+                        <span>状态 {b.status}</span>
+                        <span>发货 {formatDate(b.shippedDate)}</span>
+                      </div>
+                      <div className="mt-1 text-slate-500">
+                        出库单 {b.outboundOrder?.outboundNumber || "-"} · SKU {b.outboundOrder?.sku || "-"} · 仓库{" "}
+                        {b.warehouse?.name || "-"}
+                      </div>
+                      <div className="mt-2">
+                        <Link
+                          href={`/outbound?keyword=${encodeURIComponent(b.batchNumber || "")}`}
+                          className="inline-flex rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                        >
+                          去出库批次页面查看
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">暂无关联批次</div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="mt-1 text-slate-200">{value}</div>
     </div>
   );
 }

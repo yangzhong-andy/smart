@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
+import { AUTH_SECRET } from '@/lib/auth-secret'
 
 // 检查 NEXTAUTH_SECRET 是否配置
 if (!process.env.NEXTAUTH_SECRET) {
@@ -104,5 +105,5 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 7 * 24 * 60 * 60 // 7 天
   },
-  secret: process.env.NEXTAUTH_SECRET || 'insecure-default-do-not-use-in-production'
+  secret: AUTH_SECRET
 }

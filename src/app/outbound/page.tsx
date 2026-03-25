@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Package,
@@ -113,6 +114,7 @@ function formatDateTime(iso: string) {
 type WarehouseItem = { id: string; name: string; type?: string };
 
 export default function OutboundListPage() {
+  const searchParams = useSearchParams();
   const [batches, setBatches] = useState<BatchItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
@@ -170,6 +172,12 @@ export default function OutboundListPage() {
   const [convertPreRecordId, setConvertPreRecordId] = useState<string | null>(null);
   const [convertForm, setConvertForm] = useState({ containerNo: "", containerType: "40HQ" });
   const [converting, setConverting] = useState(false);
+
+  useEffect(() => {
+    const queryKeyword = searchParams?.get("keyword")?.trim();
+    if (!queryKeyword) return;
+    setKeyword(queryKeyword);
+  }, [searchParams]);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -429,6 +437,13 @@ export default function OutboundListPage() {
       b.warehouseName?.toLowerCase().includes(k)
     );
   });
+
+  useEffect(() => {
+    const queryKeyword = searchParams?.get("keyword")?.trim();
+    if (!queryKeyword) return;
+    if (filtered.length === 0) return;
+    setExpandedBatchId((prev) => prev ?? filtered[0].id);
+  }, [searchParams, filtered]);
 
   const openPreRecordModal = (batch: BatchItem) => {
     setPreRecordModalBatch(batch);

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { getToken } from "next-auth/jwt";
-
-const JWT_SECRET =
-  process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || "fallback-secret";
+import { AUTH_SECRET } from "@/lib/auth-secret";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -23,7 +21,7 @@ export async function middleware(request: NextRequest) {
   const cookieToken = request.cookies.get("token")?.value;
   if (cookieToken) {
     try {
-      jwt.verify(cookieToken, JWT_SECRET);
+      jwt.verify(cookieToken, AUTH_SECRET);
       return NextResponse.next();
     } catch {
       // 无效则继续尝试使用 NextAuth 的会话
@@ -33,7 +31,7 @@ export async function middleware(request: NextRequest) {
   // 2）兜底：使用 NextAuth 的 JWT 会话（当前登录页就是用的 NextAuth）
   const nextAuthToken = await getToken({
     req: request as any,
-    secret: process.env.NEXTAUTH_SECRET || JWT_SECRET,
+    secret: AUTH_SECRET,
   });
 
   if (nextAuthToken) {
