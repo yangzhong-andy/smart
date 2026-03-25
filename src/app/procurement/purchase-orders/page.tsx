@@ -256,7 +256,9 @@ export default function PurchaseOrdersPage() {
     const list = Object.values(variantCache).flat();
     return list.map((p: any) => ({
       ...p,
-      id: p.sku_id,
+      // PurchaseContractItem.variantId 外键指向的是 ProductVariant.id（UUID）
+      // 而 p.sku_id 是 SKU 编码，不可直接当作 variantId
+      id: p.variant_id ?? p.id ?? p.sku_id,
       sku: p.sku_id,
       name: p.name,
       cost: p.cost_price,
