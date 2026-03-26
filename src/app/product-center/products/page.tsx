@@ -739,7 +739,7 @@ export default function ProductsPage() {
           return next;
         });
       }
-      toast.success(editingProduct ? "产品已更�? : "产品已创�?);
+      toast.success(editingProduct ? "产品已更新" : "产品已创建");
       resetForm();
       setIsModalOpen(false);
     } catch (error: any) {
