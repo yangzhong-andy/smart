@@ -263,8 +263,8 @@ export default function ProductsPage() {
       "SKU编码",
       "产品名称",
       "分类",
-      "状�?,
-      "拿货�?,
+      "状态",
+      "拿货价",
       "币种",
       "目标ROI(%)",
       "重量(kg)",
@@ -273,7 +273,7 @@ export default function ProductsPage() {
       "高度(cm)",
       "关联工厂",
       "最小起订量(MOQ)",
-      "生产周期(�?",
+      "生产周期(天)",
       "创建时间",
       "更新时间"
     ];
