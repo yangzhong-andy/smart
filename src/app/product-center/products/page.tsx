@@ -898,7 +898,7 @@ export default function ProductsPage() {
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">产品档案</h1>
-          <p className="mt-1 text-sm text-slate-400">管理产品SKU档案，包含财务、物理、供应等全维度信息�?/p>
+          <p className="mt-1 text-sm text-slate-400">管理产品 SKU 档案，包含财务、物理、供应等全维度信息</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -980,7 +980,7 @@ export default function ProductsPage() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i <= 0 ? previewImages.length - 1 : i - 1)); }}
                 className="absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-                aria-label="上一�?
+                aria-label="上一张"
               >
                 <ChevronLeft className="h-8 w-8" />
               </button>
@@ -988,7 +988,7 @@ export default function ProductsPage() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i >= previewImages.length - 1 ? 0 : i + 1)); }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-                aria-label="下一�?
+                aria-label="下一张"
               >
                 <ChevronRight className="h-8 w-8" />
               </button>
