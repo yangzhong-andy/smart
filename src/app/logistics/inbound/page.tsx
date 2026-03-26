@@ -40,6 +40,7 @@ interface InboundItemSKU {
 
 // 表单数据类型
 interface InboundFormData {
+  orderId: string;
   inboundNumber: string;
   deliveryNumber: string;
   sku: string;
@@ -54,6 +55,7 @@ interface InboundFormData {
 
 // 初始表单数据
 const initialFormData: InboundFormData = {
+  orderId: "",
   inboundNumber: "",
   deliveryNumber: "",
   sku: "",
@@ -153,6 +155,7 @@ export default function InboundPage() {
     
     setForm({
       ...initialFormData,
+      orderId: order.id,
       inboundNumber: order.inboundNumber,
       deliveryNumber: order.deliveryNumber || "",
       sku: order.sku,
@@ -167,7 +170,7 @@ export default function InboundPage() {
 
   // 提交入库
   const handleReceiveSubmit = async () => {
-    const order = inboundOrders.find((i: InboundOrder) => i.id === form.inboundNumber);
+    const order = inboundOrders.find((i: InboundOrder) => i.id === form.orderId);
     if (!order) return;
 
     // 检查是否填写了实收数量
