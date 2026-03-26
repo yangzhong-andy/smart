@@ -820,7 +820,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (skuId: string) => {
-    if (!confirm("鈿狅�?纭畾瑕佸垹闄よ繖涓?SKU 鍚楋紵\n姝ゆ搷浣滀笉鍙仮澶嶏�?)) return;
+    if (!confirm("确定要删除这个 SKU 吗？\n此操作不可恢复。")) return;
 
     try {
       const response = await fetch("/api/products/" + encodeURIComponent(skuId), {
@@ -850,7 +850,7 @@ export default function ProductsPage() {
 
   /** 鍒犻櫎鏁翠釜浜у搧锛圫PU锛夊強鍏跺叏閮ㄥ彉浣?*/
   const handleDeleteSpu = async (productId: string) => {
-    if (!confirm("鈿狅�?纭畾瑕佸垹闄よ浜у搧鍙婂叾鍏ㄩ儴鍙樹綋鍚楋紵\n姝ゆ搷浣滀笉鍙仮澶嶏�?)) return;
+    if (!confirm("确定要删除该产品及其全部变体吗？\n此操作不可恢复。")) return;
     try {
       const res = await fetch("/api/products/spu/" + encodeURIComponent(productId), { method: "DELETE" });
       if (!res.ok) {
