@@ -34,6 +34,7 @@ type BatchItem = {
   id: string;
   outboundOrderId: string;
   batchNumber: string;
+  warehouseId?: string;
   warehouseName?: string;
   qty: number;
   shippedDate: string;
@@ -167,6 +168,12 @@ export default function OutboundListPage() {
     destinationPort: "",
     destinationCountry: "",
     exporterName: "",
+    loadingLocation: "",
+    formFilledAt: new Date().toISOString().slice(0, 16),
+    loadingDate: "",
+    shippingWarehouseId: "",
+    shippingWarehouseName: "",
+    loadingLogisticsCompany: "",
   });
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertPreRecordId, setConvertPreRecordId] = useState<string | null>(null);
@@ -455,6 +462,12 @@ export default function OutboundListPage() {
       destinationPort: batch.portOfDischarge || "",
       destinationCountry: batch.destinationCountry || "",
       exporterName: "",
+      loadingLocation: "",
+      formFilledAt: new Date().toISOString().slice(0, 16),
+      loadingDate: "",
+      shippingWarehouseId: batch.warehouseId || "",
+      shippingWarehouseName: batch.warehouseName || "",
+      loadingLogisticsCompany: "",
     });
   };
 
@@ -476,6 +489,12 @@ export default function OutboundListPage() {
             destinationPort: preRecordForm.destinationPort.trim() || null,
             destinationCountry: preRecordForm.destinationCountry.trim() || null,
             exporterName: preRecordForm.exporterName.trim() || null,
+            loadingLocation: preRecordForm.loadingLocation.trim() || null,
+            formFilledAt: preRecordForm.formFilledAt || null,
+            loadingDate: preRecordForm.loadingDate || null,
+            shippingWarehouseId: preRecordForm.shippingWarehouseId || null,
+            shippingWarehouseName: preRecordForm.shippingWarehouseName || null,
+            loadingLogisticsCompany: preRecordForm.loadingLogisticsCompany.trim() || null,
           }),
         }
       );
@@ -916,6 +935,50 @@ export default function OutboundListPage() {
                   }
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
                 />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">装柜地点</label>
+                  <input
+                    value={preRecordForm.loadingLocation}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({ ...f, loadingLocation: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">装柜物流公司</label>
+                  <input
+                    value={preRecordForm.loadingLogisticsCompany}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({ ...f, loadingLogisticsCompany: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">填表时间</label>
+                  <input
+                    type="datetime-local"
+                    value={preRecordForm.formFilledAt}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({ ...f, formFilledAt: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">装柜日期</label>
+                  <input
+                    type="date"
+                    value={preRecordForm.loadingDate}
+                    onChange={(e) =>
+                      setPreRecordForm((f) => ({ ...f, loadingDate: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">备注</label>

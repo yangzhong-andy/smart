@@ -2195,12 +2195,19 @@ model ContainerPreRecord {
   name        String?  // 预录单名称/批次号
   status      String   @default("Draft") // Draft(草稿), Confirmed(已确认/待转柜), Converted(已转柜)
   notes       String?
+  loadingProductQty Int? // 装柜产品总数量（自动汇总）
   
   // 主体信息
   exporterId         String?
   exporterName        String?
   overseasCompanyId   String?
   overseasCompanyName String?
+  loadingLocation     String? // 装柜地点
+  formFilledAt        DateTime? // 填表时间
+  loadingDate         DateTime? // 装柜日期
+  shippingWarehouseId String? // 发货仓库ID
+  shippingWarehouseName String? // 发货仓库名称
+  loadingLogisticsCompany String? // 装柜物流公司
   
   // 物流信息
   shippingMethod     String? // 运输方式

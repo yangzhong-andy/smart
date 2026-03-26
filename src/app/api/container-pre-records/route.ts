@@ -4,6 +4,12 @@ import { badRequest, serverError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
+function toDateOrNull(v: unknown): Date | null {
+  if (!v) return null;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * GET /api/container-pre-records
  * 获取预录单列表
@@ -44,6 +50,13 @@ export async function GET(request: NextRequest) {
       originPort: r.originPort,
       destinationPort: r.destinationPort,
       destinationCountry: r.destinationCountry,
+      loadingProductQty: r.loadingProductQty ?? undefined,
+      loadingLocation: (r as any).loadingLocation ?? undefined,
+      formFilledAt: (r as any).formFilledAt?.toISOString?.() ?? undefined,
+      loadingDate: (r as any).loadingDate?.toISOString?.() ?? undefined,
+      shippingWarehouseId: (r as any).shippingWarehouseId ?? undefined,
+      shippingWarehouseName: (r as any).shippingWarehouseName ?? undefined,
+      loadingLogisticsCompany: (r as any).loadingLogisticsCompany ?? undefined,
       warehouseId: r.warehouseId,
       warehouseName: r.warehouseName,
       platform: r.platform,
@@ -99,19 +112,46 @@ export async function POST(request: NextRequest) {
       return badRequest("请添加产品明细");
     }
 
-    // 计算总体积和总重量
+    // 优先按箱规计算体积；无箱规时回退用传入单件体积
     let totalVolumeCBM = 0;
     let totalWeightKG = 0;
+    let loadingProductQty = 0;
+    const variantIds = Array.from(
+      new Set(
+        items
+          .map((it: any) => (it?.variantId ? String(it.variantId) : ""))
+          .filter((v: string) => v.length > 0)
+      )
+    );
+    const boxSpecs = variantIds.length
+      ? await prisma.boxSpec.findMany({
+          where: { variantId: { in: variantIds } },
+          orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+        })
+      : [];
+    const boxSpecByVariant = new Map<string, (typeof boxSpecs)[number]>();
+    for (const bs of boxSpecs) {
+      if (!boxSpecByVariant.has(bs.variantId)) boxSpecByVariant.set(bs.variantId, bs);
+    }
     
     const processedItems = items.map((item: any) => {
-      const unitVolume = item.unitVolumeCBM || 0;
-      const unitWeight = item.unitWeightKG || 0;
-      const qty = item.qty || 0;
+      const qty = Number(item.qty) || 0;
+      const variantId = item.variantId ? String(item.variantId) : "";
+      const bs = variantId ? boxSpecByVariant.get(variantId) : undefined;
+      const perUnitFromBox =
+        bs?.boxLengthCm && bs?.boxWidthCm && bs?.boxHeightCm && bs?.qtyPerBox
+          ? (Number(bs.boxLengthCm) * Number(bs.boxWidthCm) * Number(bs.boxHeightCm)) / 1000000 / Number(bs.qtyPerBox)
+          : 0;
+      const unitVolume = perUnitFromBox > 0 ? perUnitFromBox : (Number(item.unitVolumeCBM) || 0);
+      const perUnitWeightFromBox =
+        bs?.weightKg && bs?.qtyPerBox ? Number(bs.weightKg) / Number(bs.qtyPerBox) : 0;
+      const unitWeight = perUnitWeightFromBox > 0 ? perUnitWeightFromBox : (Number(item.unitWeightKG) || 0);
       const itemVolume = unitVolume * qty;
       const itemWeight = unitWeight * qty;
       
       totalVolumeCBM += itemVolume;
       totalWeightKG += itemWeight;
+      loadingProductQty += qty;
       
       return {
         variantId: item.variantId || null,
@@ -152,6 +192,13 @@ export async function POST(request: NextRequest) {
         originPort: body.originPort || null,
         destinationPort: body.destinationPort || null,
         destinationCountry: body.destinationCountry || null,
+        loadingProductQty: loadingProductQty || 0,
+        loadingLocation: body.loadingLocation || null,
+        formFilledAt: toDateOrNull(body.formFilledAt) ?? new Date(),
+        loadingDate: toDateOrNull(body.loadingDate),
+        shippingWarehouseId: body.shippingWarehouseId || null,
+        shippingWarehouseName: body.shippingWarehouseName || null,
+        loadingLogisticsCompany: body.loadingLogisticsCompany || null,
         warehouseId: body.warehouseId || null,
         warehouseName: body.warehouseName || null,
         platform: body.platform || null,
@@ -163,7 +210,7 @@ export async function POST(request: NextRequest) {
         items: {
           create: processedItems,
         },
-      },
+      } as any,
       include: {
         items: true,
       },

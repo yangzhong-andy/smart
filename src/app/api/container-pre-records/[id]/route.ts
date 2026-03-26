@@ -4,6 +4,12 @@ import { badRequest, notFound, serverError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
+function toDateOrNull(v: unknown): Date | null {
+  if (!v) return null;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * GET /api/container-pre-records/[id]
  * 获取预录单详情
@@ -38,6 +44,13 @@ export async function GET(
       originPort: preRecord.originPort,
       destinationPort: preRecord.destinationPort,
       destinationCountry: preRecord.destinationCountry,
+      loadingProductQty: (preRecord as any).loadingProductQty ?? undefined,
+      loadingLocation: (preRecord as any).loadingLocation,
+      formFilledAt: (preRecord as any).formFilledAt?.toISOString?.(),
+      loadingDate: (preRecord as any).loadingDate?.toISOString?.(),
+      shippingWarehouseId: (preRecord as any).shippingWarehouseId,
+      shippingWarehouseName: (preRecord as any).shippingWarehouseName,
+      loadingLogisticsCompany: (preRecord as any).loadingLogisticsCompany,
       warehouseId: preRecord.warehouseId,
       warehouseName: preRecord.warehouseName,
       platform: preRecord.platform,
@@ -92,21 +105,49 @@ export async function PUT(
       return badRequest("已转柜的预录单无法修改");
     }
 
-    // 如果更新了产品明细，需要重新计算体积
+    // 如果更新了产品明细，需要重新计算体积（优先按箱规）
     let totalVolumeCBM = body.totalVolumeCBM;
     let totalWeightKG = body.totalWeightKG;
     let suggestedContainerType = body.suggestedContainerType;
+    let loadingProductQty = body.loadingProductQty;
 
     if (body.items) {
       totalVolumeCBM = 0;
       totalWeightKG = 0;
+      loadingProductQty = 0;
+      const variantIds = Array.from(
+        new Set(
+          (body.items as any[])
+            .map((it) => (it?.variantId ? String(it.variantId) : ""))
+            .filter((v) => v.length > 0)
+        )
+      );
+      const boxSpecs = variantIds.length
+        ? await prisma.boxSpec.findMany({
+            where: { variantId: { in: variantIds } },
+            orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+          })
+        : [];
+      const boxSpecByVariant = new Map<string, (typeof boxSpecs)[number]>();
+      for (const bs of boxSpecs) {
+        if (!boxSpecByVariant.has(bs.variantId)) boxSpecByVariant.set(bs.variantId, bs);
+      }
       
       for (const item of body.items) {
-        const unitVolume = parseFloat(item.unitVolumeCBM) || 0;
-        const unitWeight = parseFloat(item.unitWeightKG) || 0;
-        const qty = item.qty || 0;
+        const qty = Number(item.qty) || 0;
+        const variantId = item.variantId ? String(item.variantId) : "";
+        const bs = variantId ? boxSpecByVariant.get(variantId) : undefined;
+        const perUnitFromBox =
+          bs?.boxLengthCm && bs?.boxWidthCm && bs?.boxHeightCm && bs?.qtyPerBox
+            ? (Number(bs.boxLengthCm) * Number(bs.boxWidthCm) * Number(bs.boxHeightCm)) / 1000000 / Number(bs.qtyPerBox)
+            : 0;
+        const unitVolume = perUnitFromBox > 0 ? perUnitFromBox : (parseFloat(item.unitVolumeCBM) || 0);
+        const perUnitWeightFromBox =
+          bs?.weightKg && bs?.qtyPerBox ? Number(bs.weightKg) / Number(bs.qtyPerBox) : 0;
+        const unitWeight = perUnitWeightFromBox > 0 ? perUnitWeightFromBox : (parseFloat(item.unitWeightKG) || 0);
         totalVolumeCBM += unitVolume * qty;
         totalWeightKG += unitWeight * qty;
+        loadingProductQty += qty;
       }
       
       if (totalVolumeCBM <= 33) {
@@ -137,6 +178,13 @@ export async function PUT(
         originPort: body.originPort ?? undefined,
         destinationPort: body.destinationPort ?? undefined,
         destinationCountry: body.destinationCountry ?? undefined,
+        loadingProductQty: loadingProductQty != null ? Number(loadingProductQty) : undefined,
+        loadingLocation: body.loadingLocation ?? undefined,
+        formFilledAt: body.formFilledAt !== undefined ? toDateOrNull(body.formFilledAt) : undefined,
+        loadingDate: body.loadingDate !== undefined ? toDateOrNull(body.loadingDate) : undefined,
+        shippingWarehouseId: body.shippingWarehouseId ?? undefined,
+        shippingWarehouseName: body.shippingWarehouseName ?? undefined,
+        loadingLogisticsCompany: body.loadingLogisticsCompany ?? undefined,
         warehouseId: body.warehouseId ?? undefined,
         warehouseName: body.warehouseName ?? undefined,
         platform: body.platform ?? undefined,
@@ -159,7 +207,7 @@ export async function PUT(
             totalWeightKG: item.totalWeightKG != null ? Number(item.totalWeightKG) : null,
           })),
         } : undefined,
-      },
+      } as any,
       include: {
         items: true,
       },

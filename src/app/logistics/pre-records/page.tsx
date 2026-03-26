@@ -32,6 +32,13 @@ type PreRecord = {
   originPort: string;
   destinationPort: string;
   destinationCountry: string;
+  loadingProductQty?: number;
+  loadingLocation?: string;
+  formFilledAt?: string;
+  loadingDate?: string;
+  shippingWarehouseId?: string;
+  shippingWarehouseName?: string;
+  loadingLogisticsCompany?: string;
   warehouseId: string;
   warehouseName: string;
   platform: string;
@@ -70,6 +77,13 @@ export default function PreRecordsPage() {
     originPort: "",
     destinationPort: "",
     destinationCountry: "",
+    loadingProductQty: 0,
+    loadingLocation: "",
+    formFilledAt: new Date().toISOString().slice(0, 16),
+    loadingDate: "",
+    shippingWarehouseId: "",
+    shippingWarehouseName: "",
+    loadingLogisticsCompany: "",
     exporterId: "",
     exporterName: "",
     overseasCompanyId: "",
@@ -108,6 +122,24 @@ export default function PreRecordsPage() {
   const warehouses = warehousesData?.data || [];
   const stores = storesData?.data || [];
   const products = productsData?.data || [];
+  const [boxSpecCache, setBoxSpecCache] = useState<Record<string, any | null>>({});
+
+  const variantOptions = useMemo(() => {
+    const list: Array<{ variantId: string; skuId: string; productName: string; color?: string; weightKg?: number }> = [];
+    for (const p of products) {
+      for (const v of p.variants || []) {
+        if (!v?.id) continue;
+        list.push({
+          variantId: String(v.id),
+          skuId: String(v.skuId || ""),
+          productName: String(p.name || ""),
+          color: v.color || undefined,
+          weightKg: v.weightKg ? Number(v.weightKg) : undefined,
+        });
+      }
+    }
+    return list;
+  }, [products]);
 
   // 计算体积
   const calculateVolume = (items: PreRecordItem[]) => {
@@ -150,29 +182,18 @@ export default function PreRecordsPage() {
   };
 
   // 更新产品
-  const updateItem = (index: number, field: string, value: any) => {
+  const updateItem = async (index: number, field: string, value: any) => {
     setForm((f) => {
       const newItems = [...f.items];
       (newItems[index] as any)[field] = value;
 
-      // 如果选择了产品，自动填充第一个SKU的体积
       if (field === "variantId" && value) {
-        const product = products.find((p: any) => p.id === value);
-        if (product) {
-          // 取第一个variant
-          const variant = product.variants?.[0];
-          if (variant) {
-            const volume = variant.volumeCBM || 0;
-            newItems[index].unitVolumeCBM = volume;
-            newItems[index].unitWeightKG = parseFloat(variant.weightKg) || 0;
-            newItems[index].sku = variant.skuId;
-            newItems[index].skuName = product.name;
-            newItems[index].spec = variant.color || "";
-          } else {
-            // 如果没有variant，只显示产品名
-            newItems[index].sku = product.name;
-            newItems[index].skuName = product.name;
-          }
+        const selected = variantOptions.find((v) => v.variantId === String(value));
+        if (selected) {
+          newItems[index].sku = selected.skuId;
+          newItems[index].skuName = selected.productName;
+          newItems[index].spec = selected.color || "";
+          if (selected.weightKg) newItems[index].unitWeightKG = selected.weightKg;
         }
       }
 
@@ -182,6 +203,40 @@ export default function PreRecordsPage() {
 
       return { ...f, items: newItems };
     });
+
+    // 选择 SKU 后，按箱规计算单件体积（箱体积/每箱数量）
+    if (field === "variantId" && value) {
+      const variantId = String(value);
+      let boxSpec = boxSpecCache[variantId];
+      if (boxSpec === undefined) {
+        try {
+          const res = await fetch(`/api/box-spec?variantId=${encodeURIComponent(variantId)}`);
+          const list = res.ok ? await res.json() : [];
+          boxSpec = Array.isArray(list) && list.length > 0 ? list[0] : null;
+          setBoxSpecCache((prev) => ({ ...prev, [variantId]: boxSpec }));
+        } catch {
+          boxSpec = null;
+          setBoxSpecCache((prev) => ({ ...prev, [variantId]: null }));
+        }
+      }
+      if (boxSpec && boxSpec.boxLengthCm && boxSpec.boxWidthCm && boxSpec.boxHeightCm && boxSpec.qtyPerBox) {
+        const perUnitVolume =
+          (Number(boxSpec.boxLengthCm) * Number(boxSpec.boxWidthCm) * Number(boxSpec.boxHeightCm)) /
+          1000000 /
+          Number(boxSpec.qtyPerBox);
+        const perUnitWeight =
+          boxSpec.weightKg && boxSpec.qtyPerBox ? Number(boxSpec.weightKg) / Number(boxSpec.qtyPerBox) : undefined;
+        setForm((f) => {
+          const newItems = [...f.items];
+          if (!newItems[index]) return f;
+          newItems[index].unitVolumeCBM = perUnitVolume;
+          if (perUnitWeight) newItems[index].unitWeightKG = perUnitWeight;
+          newItems[index].totalVolumeCBM = newItems[index].unitVolumeCBM * newItems[index].qty;
+          newItems[index].totalWeightKG = newItems[index].unitWeightKG * newItems[index].qty;
+          return { ...f, items: newItems };
+        });
+      }
+    }
   };
 
   // 删除产品
@@ -206,6 +261,7 @@ export default function PreRecordsPage() {
     try {
       const payload = {
         ...form,
+        loadingProductQty: form.items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0),
         totalVolumeCBM: totalVolume,
         totalWeightKG: totalWeight,
         suggestedContainerType: suggested,
@@ -241,6 +297,13 @@ export default function PreRecordsPage() {
         originPort: "",
         destinationPort: "",
         destinationCountry: "",
+        loadingProductQty: 0,
+        loadingLocation: "",
+        formFilledAt: new Date().toISOString().slice(0, 16),
+        loadingDate: "",
+        shippingWarehouseId: "",
+        shippingWarehouseName: "",
+        loadingLogisticsCompany: "",
         exporterId: "",
         exporterName: "",
         overseasCompanyId: "",
@@ -271,6 +334,13 @@ export default function PreRecordsPage() {
       originPort: record.originPort || "",
       destinationPort: record.destinationPort || "",
       destinationCountry: record.destinationCountry || "",
+      loadingProductQty: record.loadingProductQty || 0,
+      loadingLocation: record.loadingLocation || "",
+      formFilledAt: record.formFilledAt ? record.formFilledAt.slice(0, 16) : new Date().toISOString().slice(0, 16),
+      loadingDate: record.loadingDate ? record.loadingDate.slice(0, 10) : "",
+      shippingWarehouseId: record.shippingWarehouseId || "",
+      shippingWarehouseName: record.shippingWarehouseName || "",
+      loadingLogisticsCompany: record.loadingLogisticsCompany || "",
       exporterId: record.exporterId || "",
       exporterName: record.exporterName || "",
       overseasCompanyId: record.overseasCompanyId || "",
@@ -347,7 +417,7 @@ export default function PreRecordsPage() {
         title="柜子预录单"
         description="预先录入产品明细，计算体积后一键转为正式柜子"
         actions={
-          <ActionButton variant="primary" icon={Plus} onClick={() => { setEditingRecord(null); setForm({ name: "", notes: "", shippingMethod: "SEA", originPort: "", destinationPort: "", destinationCountry: "", exporterId: "", exporterName: "", overseasCompanyId: "", overseasCompanyName: "", warehouseId: "", warehouseName: "", platform: "", storeId: "", storeName: "", items: [] }); setIsModalOpen(true); }}>
+          <ActionButton variant="primary" icon={Plus} onClick={() => { setEditingRecord(null); setForm({ name: "", notes: "", shippingMethod: "SEA", originPort: "", destinationPort: "", destinationCountry: "", loadingProductQty: 0, loadingLocation: "", formFilledAt: new Date().toISOString().slice(0, 16), loadingDate: "", shippingWarehouseId: "", shippingWarehouseName: "", loadingLogisticsCompany: "", exporterId: "", exporterName: "", overseasCompanyId: "", overseasCompanyName: "", warehouseId: "", warehouseName: "", platform: "", storeId: "", storeName: "", items: [] }); setIsModalOpen(true); }}>
             新建预录单
           </ActionButton>
         }
@@ -380,10 +450,10 @@ export default function PreRecordsPage() {
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-slate-400">
-                      产品: {record.itemCount}件 | 体积: {record.totalVolumeCBM ? parseFloat(record.totalVolumeCBM).toFixed(3) : 0} CBM | 重量: {record.totalWeightKG ? parseFloat(record.totalWeightKG).toFixed(2) : 0} KG
+                      产品: {record.loadingProductQty ?? record.itemCount}件 | 装柜产品总体积: {record.totalVolumeCBM ? parseFloat(record.totalVolumeCBM).toFixed(3) : 0} CBM | 重量: {record.totalWeightKG ? parseFloat(record.totalWeightKG).toFixed(2) : 0} KG
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      建议柜型: {record.suggestedContainerType || "-"} | {record.originPort || "-"} → {record.destinationPort || "-"}
+                      建议柜型: {record.suggestedContainerType || "-"} | 装柜地点: {record.loadingLocation || "-"} | 物流公司: {record.loadingLogisticsCompany || "-"}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -470,6 +540,58 @@ export default function PreRecordsPage() {
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
                   />
                 </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-slate-300">装柜地点</span>
+                  <input
+                    value={form.loadingLocation}
+                    onChange={(e) => setForm({ ...form, loadingLocation: e.target.value })}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                    placeholder="如：义乌仓A库"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-slate-300">填表时间</span>
+                  <input
+                    type="datetime-local"
+                    value={form.formFilledAt}
+                    onChange={(e) => setForm({ ...form, formFilledAt: e.target.value })}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-slate-300">装柜日期</span>
+                  <input
+                    type="date"
+                    value={form.loadingDate}
+                    onChange={(e) => setForm({ ...form, loadingDate: e.target.value })}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-slate-300">发货仓库</span>
+                  <select
+                    value={form.shippingWarehouseId}
+                    onChange={(e) => {
+                      const w = warehouses.find((x: any) => x.id === e.target.value);
+                      setForm({ ...form, shippingWarehouseId: e.target.value, shippingWarehouseName: w?.name || "" });
+                    }}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                  >
+                    <option value="">请选择</option>
+                    {warehouses.map((w: any) => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-slate-300">装柜物流公司</span>
+                  <input
+                    value={form.loadingLogisticsCompany}
+                    onChange={(e) => setForm({ ...form, loadingLogisticsCompany: e.target.value })}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                    placeholder="如：XX物流"
+                  />
+                </label>
               </div>
 
               {/* 主体信息 */}
@@ -552,12 +674,14 @@ export default function PreRecordsPage() {
                     <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
                       <select
                         value={item.variantId}
-                        onChange={(e) => updateItem(index, "variantId", e.target.value)}
+                        onChange={(e) => { void updateItem(index, "variantId", e.target.value); }}
                         className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-primary-400"
                       >
                         <option value="">选择产品</option>
-                        {products.map((p: any) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
+                        {variantOptions.map((v) => (
+                          <option key={v.variantId} value={v.variantId}>
+                            {v.productName} / {v.skuId}{v.color ? ` / ${v.color}` : ""}
+                          </option>
                         ))}
                       </select>
                       <input
@@ -580,9 +704,13 @@ export default function PreRecordsPage() {
 
               {/* 计算结果 */}
               <div className="p-3 rounded-lg bg-primary-500/10 border border-primary-500/30">
-                <div className="grid grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-4 gap-4 text-sm">
                   <div>
-                    <span className="text-slate-400">总体积: </span>
+                    <span className="text-slate-400">装柜产品总数量: </span>
+                    <span className="font-medium text-slate-200">{form.items.reduce((s, it) => s + (Number(it.qty) || 0), 0)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">装柜产品总体积: </span>
                     <span className="font-medium text-slate-200">{calc.totalVolume.toFixed(3)} CBM</span>
                   </div>
                   <div>

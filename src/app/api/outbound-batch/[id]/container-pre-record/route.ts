@@ -67,17 +67,44 @@ export async function POST(
     }
 
     const lines = skuPayload.skuLines;
+    const variantIds = Array.from(
+      new Set(
+        lines
+          .map((l) => (l?.variantId ? String(l.variantId) : ""))
+          .filter((v) => v.length > 0)
+      )
+    );
+    const boxSpecs = variantIds.length
+      ? await prisma.boxSpec.findMany({
+          where: { variantId: { in: variantIds } },
+          orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+        })
+      : [];
+    const boxSpecByVariant = new Map<string, (typeof boxSpecs)[number]>();
+    for (const bs of boxSpecs) {
+      if (!boxSpecByVariant.has(bs.variantId)) boxSpecByVariant.set(bs.variantId, bs);
+    }
     let totalVolumeCBM = 0;
     let totalWeightKG = 0;
+    let loadingProductQty = 0;
 
     const processedItems = lines.map((line) => {
-      const unitVolume = line.unitVolumeCBM || 0;
-      const unitWeight = line.unitWeightKG || 0;
+      const variantId = line.variantId ? String(line.variantId) : "";
+      const bs = variantId ? boxSpecByVariant.get(variantId) : undefined;
+      const perUnitFromBox =
+        bs?.boxLengthCm && bs?.boxWidthCm && bs?.boxHeightCm && bs?.qtyPerBox
+          ? (Number(bs.boxLengthCm) * Number(bs.boxWidthCm) * Number(bs.boxHeightCm)) / 1000000 / Number(bs.qtyPerBox)
+          : 0;
+      const unitVolume = perUnitFromBox > 0 ? perUnitFromBox : (line.unitVolumeCBM || 0);
+      const perUnitWeightFromBox =
+        bs?.weightKg && bs?.qtyPerBox ? Number(bs.weightKg) / Number(bs.qtyPerBox) : 0;
+      const unitWeight = perUnitWeightFromBox > 0 ? perUnitWeightFromBox : (line.unitWeightKG || 0);
       const qty = line.qty || 0;
       const itemVolume = unitVolume * qty;
       const itemWeight = unitWeight * qty;
       totalVolumeCBM += itemVolume;
       totalWeightKG += itemWeight;
+      loadingProductQty += qty;
       return {
         variantId: line.variantId || null,
         sku: line.sku || "",
@@ -116,6 +143,13 @@ export async function POST(
         destinationPort: body.destinationPort || null,
         destinationCountry:
           body.destinationCountry ?? batch.destinationCountry ?? null,
+        loadingProductQty: loadingProductQty || 0,
+        loadingLocation: body.loadingLocation || null,
+        formFilledAt: body.formFilledAt ? new Date(body.formFilledAt) : new Date(),
+        loadingDate: body.loadingDate ? new Date(body.loadingDate) : null,
+        shippingWarehouseId: body.shippingWarehouseId || null,
+        shippingWarehouseName: body.shippingWarehouseName || null,
+        loadingLogisticsCompany: body.loadingLogisticsCompany || null,
         warehouseId: body.warehouseId ?? batch.warehouseId ?? null,
         warehouseName: body.warehouseName ?? batch.warehouseName ?? null,
         platform: body.platform ?? batch.destinationPlatform ?? null,
@@ -129,7 +163,7 @@ export async function POST(
         items: {
           create: processedItems,
         },
-      },
+      } as any,
       include: { items: true },
     });
 
