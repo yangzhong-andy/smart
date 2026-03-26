@@ -529,12 +529,17 @@ export default function PurchaseOrdersPage() {
       toast.error("请先在供应商库新增供应商后再创建采购合同", { icon: "⚠️" });
       return;
     }
-    const validRows = formItems.filter(
-      (row) =>
-        (row.sku?.trim() || row.skuName?.trim() || products.find((p) => (p.id || p.sku_id) === row.productId)) &&
+    const validRows = formItems.filter((row) => {
+      const skuKey = (row.productId || row.sku || "").trim();
+      const resolved =
+        products.find((p: any) => p?.sku_id === skuKey || p?.sku === skuKey || p?.id === skuKey) ??
+        null;
+      return (
+        (row.sku?.trim() || row.skuName?.trim() || resolved) &&
         Number(row.quantity) > 0 &&
         Number(row.unitPrice) >= 0
-    );
+      );
+    });
     if (validRows.length === 0) {
       toast.error("请至少添加一条有效物料（SKU/品名、数量、单价）", { icon: "⚠️" });
       return;
@@ -547,15 +552,19 @@ export default function PurchaseOrdersPage() {
         ? undefined
         : form.contractVoucher;
     const items = validRows.map((row) => {
-      const product = products.find((p) => (p.id || p.sku_id) === row.productId);
-      const sku = row.sku?.trim() || product?.sku || product?.sku_id || "";
-      const skuName = row.skuName?.trim() || product?.name || "";
+      const skuKey = (row.productId || row.sku || "").trim();
+      const product =
+        products.find((p: any) => p?.sku_id === skuKey || p?.sku === skuKey || p?.id === skuKey) ??
+        null;
+      const sku = row.sku?.trim() || (product as any)?.sku || (product as any)?.sku_id || "";
+      const skuName = row.skuName?.trim() || (product as any)?.name || "";
       const qty = Number(row.quantity) || 0;
-      const unitPrice = Number(row.unitPrice) ?? (product?.cost_price ?? 0);
+      const unitPrice = Number(row.unitPrice) ?? ((product as any)?.cost_price ?? 0);
       return {
         sku: sku || "未填",
-        skuId: product?.sku_id || product?.id || undefined,
-        variantId: product?.id || undefined,
+        // skuId 用于合同头部展示/兼容旧逻辑；variantId 必须是 ProductVariant.id(UUID)
+        skuId: (product as any)?.sku_id || undefined,
+        variantId: (product as any)?.variant_id || (product as any)?.id || undefined,
         skuName: skuName || undefined,
         spec: row.spec?.trim() || undefined,
         quantity: qty,
