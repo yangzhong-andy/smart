@@ -57,8 +57,7 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
     setLoading(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     if (!variantId) return;
 
     const payload = {
@@ -201,7 +200,7 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
           <h4 className="text-sm font-medium text-slate-300 mb-3">
             {editingId ? "编辑箱规" : "添加箱规"}
           </h4>
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
               <label className="space-y-1">
                 <span className="text-xs text-slate-400">箱长 (cm)</span>
@@ -288,13 +287,14 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
                 取消
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 className="px-3 py-1.5 rounded-md bg-primary-500 text-sm text-white hover:bg-primary-600"
               >
                 {editingId ? "更新" : "添加"}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
     </div>
