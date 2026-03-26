@@ -207,6 +207,19 @@ export async function POST(request: NextRequest) {
     const itemsInput = Array.isArray(body.items) ? body.items : [];
 
     if (itemsInput.length > 0) {
+      // 兜底：按 sku 反查 ProductVariant.id，防止前端传错 variantId 导致“多行统计到同一SKU”
+      const skuList = itemsInput
+        .map((it: any) => (it?.sku != null ? String(it.sku).trim() : ""))
+        .filter((s: string) => s.length > 0 && s !== "未填" && s !== "多款");
+      const variantBySku = new Map<string, string>();
+      if (skuList.length > 0) {
+        const variants = await prisma.productVariant.findMany({
+          where: { skuId: { in: Array.from(new Set(skuList)) } },
+          select: { id: true, skuId: true },
+        });
+        for (const v of variants) variantBySku.set(v.skuId, v.id);
+      }
+
       totalQty = itemsInput.reduce((sum: number, i: { quantity?: number }) => sum + (Number(i.quantity) || 0), 0);
       totalAmount = itemsInput.reduce(
         (sum: number, i: { quantity?: number; unitPrice?: number }) =>
@@ -218,6 +231,9 @@ export async function POST(request: NextRequest) {
       skuId = first.skuId != null ? String(first.skuId) : null;
       unitPrice = Number(first.unitPrice) || 0;
       if (depositAmount <= 0 && totalAmount > 0) depositAmount = totalAmount * (depositRate / 100);
+
+      // 把校正映射挂到 body，后续 create items 时使用
+      (body as any).__variantBySku = variantBySku;
     } else {
       sku = body.sku != null ? String(body.sku).trim() : "";
       skuId = body.skuId != null ? String(body.skuId) : null;
@@ -260,9 +276,13 @@ export async function POST(request: NextRequest) {
                 create: itemsInput.map((item: { sku?: string; skuId?: string; variantId?: string; skuName?: string; spec?: string; quantity?: number; unitPrice?: number }, i: number) => {
                   const qty = Number(item.quantity) || 0;
                   const up = Number(item.unitPrice) || 0;
+                  const skuCode = (item.sku || item.skuName || "").toString().trim();
+                  const variantBySku = (body as any).__variantBySku as Map<string, string> | undefined;
+                  const resolvedVariantId = skuCode && variantBySku ? (variantBySku.get(skuCode) || null) : null;
                   return {
                     sku: (item.sku || item.skuName || "未填").toString().trim() || "未填",
-                    variantId: item.variantId || null,
+                    // 优先使用按 sku 解析出的 ProductVariant.id，避免错误落到同一 SKU
+                    variantId: resolvedVariantId || item.variantId || null,
                     skuName: item.skuName != null ? String(item.skuName).trim() : null,
                     spec: item.spec != null ? String(item.spec).trim() : null,
                     unitPrice: up,
