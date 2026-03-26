@@ -200,7 +200,34 @@ export default function InboundPage() {
 
       toast.success(`入库成功，库存已增加，待入库单已更新。`);
       setIsModalOpen(false);
-      mutate();
+      // 进度条/数量立即更新：SWR 在 dedupe 窗口内可能不立刻重拉，这里先做一次本地乐观更新
+      const receivedDelta = Object.values(form.itemQtys).reduce(
+        (sum, v) => sum + (Number(v) || 0),
+        0
+      );
+      mutate(
+        (current) => {
+          const list = Array.isArray(current) ? current : [];
+          return list.map((it) => {
+            if (!it || (it as any).id !== order.id) return it;
+            const oldReceived = Number((it as any).receivedQty) || 0;
+            const planQty = Number((it as any).qty) || 0;
+            const newReceivedQty = oldReceived + receivedDelta;
+            const newStatus =
+              newReceivedQty >= planQty ? "已入库" : (newReceivedQty > 0 ? "部分入库" : (it as any).status);
+            const next: any = { ...(it as any), receivedQty: newReceivedQty, status: newStatus };
+            if (Array.isArray((it as any).items)) {
+              next.items = (it as any).items.map((row: any) => {
+                const inc = Number(form.itemQtys?.[row.id]) || 0;
+                if (inc <= 0) return row;
+                return { ...row, receivedQty: (Number(row.receivedQty) || 0) + inc };
+              });
+            }
+            return next;
+          });
+        },
+        { revalidate: true }
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "入库失败，请重试");
     } finally {
