@@ -16,7 +16,7 @@ import type { ProductFormState, VariantRow } from "./components/types";
 import { newVariantRow } from "./components/types";
 import { formatNumber } from "./components/constants";
 
-// 鍏煎鍔犺浇渚涘簲鍟嗘暟鎹紙浼樺厛浠?API 鍔犺浇锛?
+// 鍏煎鍔犺浇渚涘簲鍟嗘暟鎹紙浼樺厛�?API 鍔犺浇锛?
 async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
   if (typeof window === "undefined") return [];
   try {
@@ -43,7 +43,7 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // 鎼滅储銆佺瓫閫夈€佹帓搴忕姸鎬?
+  // 鎼滅储銆佺瓫閫夈€佹帓搴忕姸�?
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<ProductStatus | "all">("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
@@ -92,7 +92,7 @@ export default function ProductsPage() {
 
   const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<any>('/api/products?list=spu&page=1&pageSize=500');
 
-  // 按供应商过滤的 productId 集合（来自 /api/product-suppliers?supplierId=...）
+  // 按供应商过滤�?productId 集合（来�?/api/product-suppliers?supplierId=...�?
   const [supplierFilterProductIds, setSupplierFilterProductIds] = useState<Set<string> | null>(null);
   const [supplierFilterName, setSupplierFilterName] = useState<string | null>(null);
 
@@ -119,7 +119,7 @@ export default function ProductsPage() {
     }
   }, [productsError]);
 
-  // 如果 URL 中带有 supplierId，则按供应商过滤产品列表
+  // 如果 URL 中带�?supplierId，则按供应商过滤产品列表
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -174,7 +174,7 @@ export default function ProductsPage() {
     return Array.from(new Set(cats)).sort();
   }, [spuList]);
 
-  // 绛涢€夊拰鎺掑簭鍚庣殑 SPU 鍒楄〃锛堜竴涓?SPU 涓€寮犲崱鐗囷級
+  // 绛涢€夊拰鎺掑簭鍚庣�?SPU 鍒楄〃锛堜竴�?SPU 涓€寮犲崱鐗囷級
   const filteredSpuList = useMemo(() => {
     let result = [...spuList];
     if (filterStatus !== "all") {
@@ -198,7 +198,7 @@ export default function ProductsPage() {
 
   const filteredProducts = useMemo(() => products, [products]);
 
-  // 浜у搧缁熻鎽樿锛氭棤绛涢€夋椂浼樺厛鐢ㄦ帴鍙ｈ繑鍥炵殑 summary锛屾湁绛涢€夋椂鐢ㄥ墠绔?filteredSpuList + products 璁＄畻
+  // 浜у搧缁熻鎽樿锛氭棤绛涢€夋椂浼樺厛鐢ㄦ帴鍙ｈ繑鍥炵殑 summary锛屾湁绛涢€夋椂鐢ㄥ墠绔?filteredSpuList + products 璁＄�?
   const productSummary = useMemo(() => {
     const noFilter = filterStatus === "all" && filterCategory === "all" && !searchKeyword.trim();
     if (noFilter && apiSummary) {
@@ -263,8 +263,8 @@ export default function ProductsPage() {
       "SKU编码",
       "产品名称",
       "分类",
-      "状态",
-      "拿货价",
+      "状�?,
+      "拿货�?,
       "币种",
       "目标ROI(%)",
       "重量(kg)",
@@ -273,7 +273,7 @@ export default function ProductsPage() {
       "高度(cm)",
       "关联工厂",
       "最小起订量(MOQ)",
-      "生产周期(天)",
+      "生产周期(�?",
       "创建时间",
       "更新时间"
     ];
@@ -316,7 +316,7 @@ export default function ProductsPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success("已导出 " + filtered.length + " 条产品数据");
+    toast.success("已导�?" + filtered.length + " 条产品数�?);
   };
 
   const resetForm = () => {
@@ -358,7 +358,7 @@ export default function ProductsPage() {
   const handleOpenModal = (product?: Product) => {
     if (product) {
       setEditingProduct(product);
-      setFormVariants([newVariantRow()]); // 编辑时不需要多行
+      setFormVariants([newVariantRow()]); // 编辑时不需要多�?
       setForm({
         spu_code: (product as any).spu_code ?? "",
         sku_id: product.sku_id,
@@ -418,7 +418,7 @@ export default function ProductsPage() {
         return;
       }
       if (!form.name.trim()) {
-        toast.error("请填写产品名称");
+        toast.error("请填写产品名�?);
         return;
       }
       const skuIds = valid.map((r) => r.sku_id.trim());
@@ -434,7 +434,7 @@ export default function ProductsPage() {
       for (const r of valid) {
         const cp = Number(r.cost_price);
         if (Number.isNaN(cp) || cp < 0) {
-          toast.error("变体 " + (r.sku_id || r.color || "未命名") + " 的单价需为有效数字");
+          toast.error("变体 " + (r.sku_id || r.color || "未命�?) + " 的单价需为有效数�?);
           return;
         }
       }
@@ -486,7 +486,7 @@ export default function ProductsPage() {
       const bodyStrBatch = JSON.stringify(productData);
       if (bodyStrBatch.length > PAYLOAD_LIMIT_BYTES) {
         const mb = (bodyStrBatch.length / 1024 / 1024).toFixed(2);
-        toast.error("请求体约 " + mb + "MB，超过线上限制（约 4.5MB）。请减少产品多图数量或使用更小图片后重试。");
+        toast.error("请求体约 " + mb + "MB，超过线上限制（�?4.5MB）。请减少产品多图数量或使用更小图片后重试�?);
         return;
       }
 
@@ -505,7 +505,7 @@ export default function ProductsPage() {
           throw new Error(message);
         }
         await mutateProducts?.();
-        toast.success("已创建产品「" + form.name + "」及 " + valid.length + " 个变体");
+        toast.success("已创建产品�? + form.name + "」及 " + valid.length + " 个变�?);
         resetForm();
         setIsModalOpen(false);
       } catch (err: any) {
@@ -518,19 +518,19 @@ export default function ProductsPage() {
 
     // 鍗曞彉浣撴ā寮忥紙缂栬緫鎴栨棫寮忔柊寤猴級
     if (!form.sku_id.trim() || !form.name.trim()) {
-      toast.error("请填写 SKU 编码与产品名称");
+      toast.error("请填�?SKU 编码与产品名�?);
       return;
     }
     const costPrice = Number(form.cost_price);
     if (Number.isNaN(costPrice) || costPrice < 0) {
-      toast.error("成本价需为数字且不小于 0");
+      toast.error("成本价需为数字且不小�?0");
       return;
     }
     const duplicate = products.find((p) =>
       p.sku_id === form.sku_id.trim() && (!editingProduct || p.sku_id !== editingProduct.sku_id)
     );
     if (duplicate) {
-      toast.error("SKU 编码已存在");
+      toast.error("SKU 编码已存�?);
       return;
     }
     
@@ -558,7 +558,7 @@ export default function ProductsPage() {
     const origGallery = Array.isArray((editingProduct as any)?.gallery_images) ? (editingProduct as any).gallery_images : [];
     const galleryUnchanged = galleryList.length === origGallery.length && galleryList.every((url, i) => url === origGallery[i]);
 
-    // 缂栬緫鏃朵粎鏀瑰彉浣撳瓧娈碉紙濡傚崟浠枫€佸簱瀛橈級鈫?璧?PATCH锛岃姹傚皬銆佷繚瀛樺揩
+    // 缂栬緫鏃朵粎鏀瑰彉浣撳瓧娈碉紙濡傚崟浠枫€佸簱瀛橈級鈫?�?PATCH锛岃姹傚皬銆佷繚瀛樺�?
     const variantOnlyFields = {
       cost_price: costPrice,
       stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
@@ -622,7 +622,7 @@ export default function ProductsPage() {
               return next;
             });
           }
-          toast.success("产品已更新");
+          toast.success("产品已更�?);
           resetForm();
           setIsModalOpen(false);
         } catch (error: any) {
@@ -634,7 +634,7 @@ export default function ProductsPage() {
       }
     }
 
-    // 鏂板缓锛氬叏閲忔彁浜わ紱缂栬緫锛氬彧鍥炰紶鏈夊彉鏇寸殑瀛楁锛屽浘鐗囨湭鏀瑰姩鍒欎笉鍥炰紶锛岄伩鍏嶉噸澶嶄笂浼犲ぇ鍥?
+    // 鏂板缓锛氬叏閲忔彁浜わ紱缂栬緫锛氬彧鍥炰紶鏈夊彉鏇寸殑瀛楁锛屽浘鐗囨湭鏀瑰姩鍒欎笉鍥炰紶锛岄伩鍏嶉噸澶嶄笂浼犲ぇ�?
     const orig = editingProduct as any;
     const productData: any = editingProduct ? {} : {
       sku_id: form.sku_id.trim(),
@@ -698,7 +698,7 @@ export default function ProductsPage() {
         productData.suppliers = suppliersList.length > 0 ? suppliersList : undefined;
       }
       if (Object.keys(productData).length === 0) {
-        toast.info("无变更，未提交");
+        toast.info("无变更，未提�?);
         return;
       }
     }
@@ -712,7 +712,7 @@ export default function ProductsPage() {
     const bodyStr = JSON.stringify(productData);
     if (bodyStr.length > PAYLOAD_LIMIT_BYTES) {
       const mb = (bodyStr.length / 1024 / 1024).toFixed(2);
-      toast.error("请求体约 " + mb + "MB，超过线上限制（约 4.5MB）。请减少产品多图数量或使用更小图片后重试。");
+      toast.error("请求体约 " + mb + "MB，超过线上限制（�?4.5MB）。请减少产品多图数量或使用更小图片后重试�?);
       return;
     }
 
@@ -739,7 +739,7 @@ export default function ProductsPage() {
           return next;
         });
       }
-      toast.success(editingProduct ? "产品已更新" : "产品已创建");
+      toast.success(editingProduct ? "产品已更�? : "产品已创�?);
       resetForm();
       setIsModalOpen(false);
     } catch (error: any) {
@@ -776,7 +776,7 @@ export default function ProductsPage() {
     for (const r of valid) {
       const cp = Number(r.cost_price);
       if (Number.isNaN(cp) || cp < 0) {
-        toast.error("变体 " + (r.sku_id || r.color || "未命名") + " 的单价需为有效数字");
+        toast.error("变体 " + (r.sku_id || r.color || "未命�?) + " 的单价需为有效数�?);
         return;
       }
     }
@@ -809,7 +809,7 @@ export default function ProductsPage() {
         delete next[spuId];
         return next;
       });
-      toast.success("已为「" + addVariantProduct.name + "」添加 " + valid.length + " 个变体");
+      toast.success("已为�? + addVariantProduct.name + "」添�?" + valid.length + " 个变�?);
       setAddVariantProduct(null);
       setAddVariantFormVariants([newVariantRow()]);
     } catch (err: any) {
@@ -820,7 +820,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (skuId: string) => {
-    if (!confirm("鈿狅笍 纭畾瑕佸垹闄よ繖涓?SKU 鍚楋紵\n姝ゆ搷浣滀笉鍙仮澶嶏紒")) return;
+    if (!confirm("鈿狅�?纭畾瑕佸垹闄よ繖涓?SKU 鍚楋紵\n姝ゆ搷浣滀笉鍙仮澶嶏�?)) return;
 
     try {
       const response = await fetch("/api/products/" + encodeURIComponent(skuId), {
@@ -841,7 +841,7 @@ export default function ProductsPage() {
         });
       }
       await mutateProducts?.();
-      toast.success("SKU 已删除");
+      toast.success("SKU 已删�?);
     } catch (error: any) {
       console.error('Failed to delete product:', error);
       toast.error(error.message || '删除失败');
@@ -850,7 +850,7 @@ export default function ProductsPage() {
 
   /** 鍒犻櫎鏁翠釜浜у搧锛圫PU锛夊強鍏跺叏閮ㄥ彉浣?*/
   const handleDeleteSpu = async (productId: string) => {
-    if (!confirm("鈿狅笍 纭畾瑕佸垹闄よ浜у搧鍙婂叾鍏ㄩ儴鍙樹綋鍚楋紵\n姝ゆ搷浣滀笉鍙仮澶嶏紒")) return;
+    if (!confirm("鈿狅�?纭畾瑕佸垹闄よ浜у搧鍙婂叾鍏ㄩ儴鍙樹綋鍚楋紵\n姝ゆ搷浣滀笉鍙仮澶嶏�?)) return;
     try {
       const res = await fetch("/api/products/spu/" + encodeURIComponent(productId), { method: "DELETE" });
       if (!res.ok) {
@@ -898,7 +898,7 @@ export default function ProductsPage() {
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">产品档案</h1>
-          <p className="mt-1 text-sm text-slate-400">管理产品SKU档案，包含财务、物理、供应等全维度信息。</p>
+          <p className="mt-1 text-sm text-slate-400">管理产品SKU档案，包含财务、物理、供应等全维度信息�?/p>
         </div>
         <div className="flex gap-2">
           <button
@@ -980,7 +980,7 @@ export default function ProductsPage() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i <= 0 ? previewImages.length - 1 : i - 1)); }}
                 className="absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-                aria-label="上一张"
+                aria-label="上一�?
               >
                 <ChevronLeft className="h-8 w-8" />
               </button>
@@ -988,7 +988,7 @@ export default function ProductsPage() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPreviewIndex((i) => (i >= previewImages.length - 1 ? 0 : i + 1)); }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
-                aria-label="下一张"
+                aria-label="下一�?
               >
                 <ChevronRight className="h-8 w-8" />
               </button>
@@ -1012,6 +1012,7 @@ export default function ProductsPage() {
         open={isModalOpen}
         onClose={() => { resetForm(); setIsModalOpen(false); }}
         editingProduct={editingProduct}
+        variantId={editingProduct?.variant_id ?? null}
         form={form}
         setForm={setForm}
         formVariants={formVariants}

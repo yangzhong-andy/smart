@@ -13,11 +13,13 @@ import {
   formatNumber,
 } from "./constants";
 import { Palette, Plus, Trash, TrendingUp } from "lucide-react";
+import { BoxSpecForm } from "@/components/BoxSpecForm";
 
 export type ProductFormDialogProps = {
   open: boolean;
   onClose: () => void;
   editingProduct: Product | null;
+  variantId?: string | null; // 当前编辑的 SKU ID
   form: ProductFormState;
   setForm: React.Dispatch<React.SetStateAction<ProductFormState>>;
   formVariants: VariantRow[];
@@ -31,6 +33,7 @@ export function ProductFormDialog({
   open,
   onClose,
   editingProduct,
+  variantId,
   form,
   setForm,
   formVariants,
@@ -826,6 +829,11 @@ export function ProductFormDialog({
               </>
             )}
           </div>
+
+          {/* 箱规管理 - 仅编辑时显示 */}
+          {editingProduct && variantId && (
+            <BoxSpecForm variantId={variantId} />
+          )}
 
           <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
             <button

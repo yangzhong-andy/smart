@@ -2264,3 +2264,19 @@ model ContainerPreRecordItem {
   @@index([preRecordId])
   @@index([variantId])
 }
+
+// 箱规表
+model BoxSpec {
+  id          String   @id @default(uuid())
+  variantId   String   // 关联 SKU (ProductVariant)
+  boxLengthCm Decimal? @db.Decimal(10, 2) // 箱子长度(cm)
+  boxWidthCm  Decimal? @db.Decimal(10, 2) // 箱子宽度(cm)
+  boxHeightCm Decimal? @db.Decimal(10, 2) // 箱子高度(cm)
+  qtyPerBox   Int      // 一箱装多少个
+  isDefault   Boolean  @default(false) // 是否默认箱规
+  weightKg    Decimal? @db.Decimal(10, 3) // 箱子重量(kg)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([variantId])
+}
