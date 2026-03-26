@@ -71,6 +71,51 @@ export async function POST(
       );
 
       if (!result.success) {
+        // 如果拿货单已入库：避免重复加库存，但允许把「待入库单」进度同步上来（解决前端“已入库但进度条不动”）
+        if (typeof result.error === "string" && result.error.includes("已入库")) {
+          await prisma.$transaction(async (tx) => {
+            const pi = await tx.pendingInbound.findUnique({
+              where: { id: pendingInboundId },
+              select: { id: true, qty: true, receivedQty: true },
+            });
+            if (!pi) throw new Error("待入库单不存在");
+
+            const delta = hasItemQtys
+              ? Object.values(itemQtys || {}).reduce((sum, v) => sum + (Number(v) || 0), 0)
+              : (Number(receivedQty) || 0);
+
+            const nextReceived = Math.min(Number(pi.qty) || 0, (Number(pi.receivedQty) || 0) + delta);
+            const nextStatus = nextReceived >= (Number(pi.qty) || 0) ? "已入库" : (nextReceived > 0 ? "部分入库" : "待入库");
+
+            await tx.pendingInbound.update({
+              where: { id: pendingInboundId },
+              data: { receivedQty: nextReceived, status: nextStatus, updatedAt: new Date() },
+            });
+
+            // 多SKU：key 是 pendingInboundItem.id
+            if (hasItemQtys && itemQtys) {
+              const now = new Date();
+              for (const [itemId, qty] of Object.entries(itemQtys)) {
+                const inc = Number(qty) || 0;
+                if (inc <= 0) continue;
+                await tx.pendingInboundItem.updateMany({
+                  where: { id: itemId, pendingInboundId },
+                  data: { receivedQty: { increment: inc }, updatedAt: now },
+                });
+              }
+            }
+          });
+
+          await clearCacheByPrefix(CACHE_KEY_PREFIX);
+          await clearCacheByPrefix(OUTBOUND_ORDERS_CACHE_PREFIX);
+          await clearCacheByPrefix(INBOUND_BATCHES_CACHE_PREFIX);
+
+          return NextResponse.json({
+            success: true,
+            message: "该拿货单已入库：已同步待入库进度（不重复加库存）",
+          });
+        }
+
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
     }
