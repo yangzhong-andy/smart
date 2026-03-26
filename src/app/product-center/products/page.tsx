@@ -406,7 +406,7 @@ export default function ProductsPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSubmitting) {
-      toast.loading("正在提交，请勿重复点击");
+      toast.loading("正在提交，请勿重复点击");
       return;
     }
 
@@ -418,7 +418,7 @@ export default function ProductsPage() {
         return;
       }
       if (!form.name.trim()) {
-        toast.error("请填写产品名�?);
+        toast.error("请填写产品名称");
         return;
       }
       const skuIds = valid.map((r) => r.sku_id.trim());
@@ -434,7 +434,7 @@ export default function ProductsPage() {
       for (const r of valid) {
         const cp = Number(r.cost_price);
         if (Number.isNaN(cp) || cp < 0) {
-          toast.error("变体 " + (r.sku_id || r.color || "未命�?) + " 的单价需为有效数�?);
+          toast.error("变体 " + (r.sku_id || r.color || "未命名") + " 的单价需为有效数字");
           return;
         }
       }
@@ -486,7 +486,7 @@ export default function ProductsPage() {
       const bodyStrBatch = JSON.stringify(productData);
       if (bodyStrBatch.length > PAYLOAD_LIMIT_BYTES) {
         const mb = (bodyStrBatch.length / 1024 / 1024).toFixed(2);
-        toast.error("请求体约 " + mb + "MB，超过线上限制（�?4.5MB）。请减少产品多图数量或使用更小图片后重试�?);
+        toast.error("请求体约 " + mb + "MB，超过线上限制（约 4.5MB）。请减少产品多图数量或使用更小图片后重试。");
         return;
       }
 
@@ -505,7 +505,7 @@ export default function ProductsPage() {
           throw new Error(message);
         }
         await mutateProducts?.();
-        toast.success("已创建产品�? + form.name + "」及 " + valid.length + " 个变�?);
+        toast.success("已创建产品「" + form.name + "」及 " + valid.length + " 个变体");
         resetForm();
         setIsModalOpen(false);
       } catch (err: any) {
@@ -518,19 +518,19 @@ export default function ProductsPage() {
 
     // 鍗曞彉浣撴ā寮忥紙缂栬緫鎴栨棫寮忔柊寤猴級
     if (!form.sku_id.trim() || !form.name.trim()) {
-      toast.error("请填�?SKU 编码与产品名�?);
+      toast.error("请填写 SKU 编码与产品名称");
       return;
     }
     const costPrice = Number(form.cost_price);
     if (Number.isNaN(costPrice) || costPrice < 0) {
-      toast.error("成本价需为数字且不小�?0");
+      toast.error("成本价需为数字且不小于 0");
       return;
     }
     const duplicate = products.find((p) =>
       p.sku_id === form.sku_id.trim() && (!editingProduct || p.sku_id !== editingProduct.sku_id)
     );
     if (duplicate) {
-      toast.error("SKU 编码已存�?);
+      toast.error("SKU 编码已存在");
       return;
     }
     
@@ -622,7 +622,7 @@ export default function ProductsPage() {
               return next;
             });
           }
-          toast.success("产品已更�?);
+          toast.success("产品已更新");
           resetForm();
           setIsModalOpen(false);
         } catch (error: any) {
@@ -698,7 +698,7 @@ export default function ProductsPage() {
         productData.suppliers = suppliersList.length > 0 ? suppliersList : undefined;
       }
       if (Object.keys(productData).length === 0) {
-        toast.info("无变更，未提�?);
+        toast.info("无变更，未提交");
         return;
       }
     }
@@ -712,7 +712,7 @@ export default function ProductsPage() {
     const bodyStr = JSON.stringify(productData);
     if (bodyStr.length > PAYLOAD_LIMIT_BYTES) {
       const mb = (bodyStr.length / 1024 / 1024).toFixed(2);
-      toast.error("请求体约 " + mb + "MB，超过线上限制（�?4.5MB）。请减少产品多图数量或使用更小图片后重试�?);
+      toast.error("请求体约 " + mb + "MB，超过线上限制（约 4.5MB）。请减少产品多图数量或使用更小图片后重试。");
       return;
     }
 
@@ -776,7 +776,7 @@ export default function ProductsPage() {
     for (const r of valid) {
       const cp = Number(r.cost_price);
       if (Number.isNaN(cp) || cp < 0) {
-        toast.error("变体 " + (r.sku_id || r.color || "未命�?) + " 的单价需为有效数�?);
+        toast.error("变体 " + (r.sku_id || r.color || "未命名") + " 的单价需为有效数字");
         return;
       }
     }
@@ -809,7 +809,7 @@ export default function ProductsPage() {
         delete next[spuId];
         return next;
       });
-      toast.success("已为�? + addVariantProduct.name + "」添�?" + valid.length + " 个变�?);
+      toast.success("已为「" + addVariantProduct.name + "」添加 " + valid.length + " 个变体");
       setAddVariantProduct(null);
       setAddVariantFormVariants([newVariantRow()]);
     } catch (err: any) {
@@ -841,7 +841,7 @@ export default function ProductsPage() {
         });
       }
       await mutateProducts?.();
-      toast.success("SKU 已删�?);
+      toast.success("SKU 已删除");
     } catch (error: any) {
       console.error('Failed to delete product:', error);
       toast.error(error.message || '删除失败');
