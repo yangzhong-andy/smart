@@ -316,7 +316,7 @@ export default function ProductsPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success("已导�?" + filtered.length + " 条产品数�?);
+    toast.success("已导出 " + filtered.length + " 条产品数据");
   };
 
   const resetForm = () => {
