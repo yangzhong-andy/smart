@@ -115,13 +115,13 @@ export async function PUT(
       totalVolumeCBM = 0;
       totalWeightKG = 0;
       loadingProductQty = 0;
-      const variantIds = Array.from(
-        new Set(
+      const variantIds: string[] = [
+        ...new Set<string>(
           (body.items as any[])
             .map((it) => (it?.variantId ? String(it.variantId) : ""))
-            .filter((v) => v.length > 0)
-        )
-      );
+            .filter((v: string) => v.length > 0)
+        ),
+      ];
       const boxSpecs = variantIds.length
         ? await prisma.boxSpec.findMany({
             where: { variantId: { in: variantIds } },

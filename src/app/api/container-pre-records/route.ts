@@ -116,13 +116,13 @@ export async function POST(request: NextRequest) {
     let totalVolumeCBM = 0;
     let totalWeightKG = 0;
     let loadingProductQty = 0;
-    const variantIds = Array.from(
-      new Set(
-        items
-          .map((it: any) => (it?.variantId ? String(it.variantId) : ""))
+    const variantIds: string[] = [
+      ...new Set<string>(
+        (items as any[])
+          .map((it) => (it?.variantId ? String(it.variantId) : ""))
           .filter((v: string) => v.length > 0)
-      )
-    );
+      ),
+    ];
     const boxSpecs = variantIds.length
       ? await prisma.boxSpec.findMany({
           where: { variantId: { in: variantIds } },
