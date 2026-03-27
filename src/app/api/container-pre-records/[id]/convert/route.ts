@@ -80,8 +80,16 @@ export async function POST(
       },
     });
 
-    // 若预录单来自出库批次，自动把批次绑定到新柜子
-    if (preRecord.outboundBatchId) {
+    // 支持拼柜：可显式传入多个批次ID，未传时回退到预录单主关联批次
+    const outboundBatchIds = Array.isArray(body?.outboundBatchIds)
+      ? [...new Set((body.outboundBatchIds as unknown[]).map((v) => String(v).trim()).filter(Boolean))]
+      : [];
+    if (outboundBatchIds.length > 0) {
+      await prisma.outboundBatch.updateMany({
+        where: { id: { in: outboundBatchIds } },
+        data: { containerId: container.id },
+      });
+    } else if (preRecord.outboundBatchId) {
       await prisma.outboundBatch.update({
         where: { id: preRecord.outboundBatchId },
         data: { containerId: container.id },
@@ -96,6 +104,7 @@ export async function POST(
       totalWeightKG: container.totalWeightKG?.toString(),
       createdAt: container.createdAt.toISOString(),
       outboundBatchId: preRecord.outboundBatchId ?? undefined,
+      outboundBatchIds: outboundBatchIds.length > 0 ? outboundBatchIds : (preRecord.outboundBatchId ? [preRecord.outboundBatchId] : []),
     });
   } catch (error) {
     return serverError("转柜失败", error, { includeDetailsInDev: true });

@@ -121,6 +121,7 @@ export default function OutboundListPage() {
   const [keyword, setKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
 
   const [confirmBatch, setConfirmBatch] = useState<BatchItem | null>(null);
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
@@ -158,7 +159,7 @@ export default function OutboundListPage() {
 
   /** 批次行展开：SKU 明细 + 预录单 */
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
-  const [preRecordModalBatch, setPreRecordModalBatch] = useState<BatchItem | null>(null);
+  const [preRecordModalBatches, setPreRecordModalBatches] = useState<BatchItem[]>([]);
   const [preRecordSubmitting, setPreRecordSubmitting] = useState(false);
   const [preRecordForm, setPreRecordForm] = useState({
     name: "",
@@ -177,6 +178,7 @@ export default function OutboundListPage() {
   });
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertPreRecordId, setConvertPreRecordId] = useState<string | null>(null);
+  const [convertOutboundBatchIds, setConvertOutboundBatchIds] = useState<string[]>([]);
   const [convertForm, setConvertForm] = useState({ containerNo: "", containerType: "40HQ" });
   const [converting, setConverting] = useState(false);
 
@@ -452,60 +454,82 @@ export default function OutboundListPage() {
     setExpandedBatchId((prev) => prev ?? filtered[0].id);
   }, [searchParams, filtered]);
 
-  const openPreRecordModal = (batch: BatchItem) => {
-    setPreRecordModalBatch(batch);
+  const openPreRecordModal = (batches: BatchItem[]) => {
+    if (batches.length === 0) return;
+    const first = batches[0];
+    setPreRecordModalBatches(batches);
     setPreRecordForm({
-      name: `预录-${batch.batchNumber}-${new Date().toISOString().slice(0, 10)}`,
+      name:
+        batches.length > 1
+          ? `预录-拼柜-${new Date().toISOString().slice(0, 10)}`
+          : `预录-${first.batchNumber}-${new Date().toISOString().slice(0, 10)}`,
       notes: "",
-      shippingMethod: batch.shippingMethod || "SEA",
-      originPort: batch.portOfLoading || "",
-      destinationPort: batch.portOfDischarge || "",
-      destinationCountry: batch.destinationCountry || "",
+      shippingMethod: first.shippingMethod || "SEA",
+      originPort: first.portOfLoading || "",
+      destinationPort: first.portOfDischarge || "",
+      destinationCountry: first.destinationCountry || "",
       exporterName: "",
       loadingLocation: "",
       formFilledAt: new Date().toISOString().slice(0, 16),
       loadingDate: "",
-      shippingWarehouseId: batch.warehouseId || "",
-      shippingWarehouseName: batch.warehouseName || "",
+      shippingWarehouseId: first.warehouseId || "",
+      shippingWarehouseName: first.warehouseName || "",
       loadingLogisticsCompany: "",
     });
   };
 
+  const openMergePreRecordModal = () => {
+    const selected = batches.filter((b) => selectedBatchIds.includes(b.id));
+    if (selected.length < 2) {
+      toast.error("请至少勾选 2 个批次进行拼柜");
+      return;
+    }
+    openPreRecordModal(selected);
+  };
+
   const submitPreRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!preRecordModalBatch) return;
+    if (preRecordModalBatches.length === 0) return;
     setPreRecordSubmitting(true);
     try {
-      const res = await fetch(
-        `/api/outbound-batch/${preRecordModalBatch.id}/container-pre-record`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: preRecordForm.name.trim(),
-            notes: preRecordForm.notes.trim() || null,
-            shippingMethod: preRecordForm.shippingMethod,
-            originPort: preRecordForm.originPort.trim() || null,
-            destinationPort: preRecordForm.destinationPort.trim() || null,
-            destinationCountry: preRecordForm.destinationCountry.trim() || null,
-            exporterName: preRecordForm.exporterName.trim() || null,
-            loadingLocation: preRecordForm.loadingLocation.trim() || null,
-            formFilledAt: preRecordForm.formFilledAt || null,
-            loadingDate: preRecordForm.loadingDate || null,
-            shippingWarehouseId: preRecordForm.shippingWarehouseId || null,
-            shippingWarehouseName: preRecordForm.shippingWarehouseName || null,
-            loadingLogisticsCompany: preRecordForm.loadingLogisticsCompany.trim() || null,
-          }),
-        }
-      );
+      const payload = {
+        name: preRecordForm.name.trim(),
+        notes: preRecordForm.notes.trim() || null,
+        shippingMethod: preRecordForm.shippingMethod,
+        originPort: preRecordForm.originPort.trim() || null,
+        destinationPort: preRecordForm.destinationPort.trim() || null,
+        destinationCountry: preRecordForm.destinationCountry.trim() || null,
+        exporterName: preRecordForm.exporterName.trim() || null,
+        loadingLocation: preRecordForm.loadingLocation.trim() || null,
+        formFilledAt: preRecordForm.formFilledAt || null,
+        loadingDate: preRecordForm.loadingDate || null,
+        shippingWarehouseId: preRecordForm.shippingWarehouseId || null,
+        shippingWarehouseName: preRecordForm.shippingWarehouseName || null,
+        loadingLogisticsCompany: preRecordForm.loadingLogisticsCompany.trim() || null,
+      };
+      const isMergeMode = preRecordModalBatches.length > 1;
+      const url = isMergeMode
+        ? "/api/outbound-batch/merge-container-pre-record"
+        : `/api/outbound-batch/${preRecordModalBatches[0].id}/container-pre-record`;
+      const requestBody = isMergeMode
+        ? { ...payload, batchIds: preRecordModalBatches.map((b) => b.id) }
+        : payload;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? "生成预录单失败");
       toast.success("预录单已生成，请填写柜号完成转正式柜");
-      setPreRecordModalBatch(null);
+      setPreRecordModalBatches([]);
       setConvertPreRecordId(data.id);
+      const idsFromApi = Array.isArray(data?.outboundBatchIds) ? data.outboundBatchIds : [];
+      setConvertOutboundBatchIds(idsFromApi.length > 0 ? idsFromApi : preRecordModalBatches.map((b) => b.id));
       const sug = (data.suggestedContainerType as string) || "40HQ";
       setConvertForm({ containerNo: "", containerType: sug });
       setConvertOpen(true);
+      setSelectedBatchIds([]);
       fetchBatches();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "生成失败");
@@ -527,6 +551,7 @@ export default function OutboundListPage() {
         body: JSON.stringify({
           containerNo: convertForm.containerNo.trim(),
           containerType: convertForm.containerType,
+          outboundBatchIds: convertOutboundBatchIds,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -534,6 +559,7 @@ export default function OutboundListPage() {
       toast.success(`已生成正式柜：${data.containerNo ?? convertForm.containerNo}`);
       setConvertOpen(false);
       setConvertPreRecordId(null);
+      setConvertOutboundBatchIds([]);
       fetchBatches();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "转柜失败");
@@ -583,6 +609,15 @@ export default function OutboundListPage() {
           <option value="已清关">已清关</option>
           <option value="已到达">已到达</option>
         </select>
+        <ActionButton
+          size="sm"
+          variant="secondary"
+          icon={ContainerIcon}
+          onClick={openMergePreRecordModal}
+          disabled={selectedBatchIds.length < 2}
+        >
+          拼柜预录单（已选 {selectedBatchIds.length}）
+        </ActionButton>
       </div>
 
       {loading ? (
@@ -601,6 +636,7 @@ export default function OutboundListPage() {
         <div className="space-y-3">
           {filtered.map((b) => {
             const expanded = expandedBatchId === b.id;
+            const isSelected = selectedBatchIds.includes(b.id);
             const skuLines = b.skuLines ?? [];
             const boxQty =
               skuLines.length > 0
@@ -616,6 +652,21 @@ export default function OutboundListPage() {
                 {/* 面板摘要（对齐业务：批次 / 流水 / 箱数体积 / 重量 / 货站 / 装柜） */}
                 <div className="p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-400 shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          setSelectedBatchIds((prev) =>
+                            e.target.checked
+                              ? [...new Set([...prev, b.id])]
+                              : prev.filter((id) => id !== b.id)
+                          );
+                        }}
+                        className="rounded border-slate-600 bg-slate-900 text-primary-500 focus:ring-primary-500"
+                      />
+                      拼柜
+                    </label>
                     <button
                       type="button"
                       onClick={() =>
@@ -720,7 +771,7 @@ export default function OutboundListPage() {
                         variant="secondary"
                         size="sm"
                         icon={ContainerIcon}
-                        onClick={() => openPreRecordModal(b)}
+                        onClick={() => openPreRecordModal([b])}
                       >
                         柜子预录单
                       </ActionButton>
@@ -815,7 +866,7 @@ export default function OutboundListPage() {
                       <ActionButton
                         size="sm"
                         icon={ContainerIcon}
-                        onClick={() => openPreRecordModal(b)}
+                        onClick={() => openPreRecordModal([b])}
                       >
                         生成预录单（填起运/目的港等）
                       </ActionButton>
@@ -835,16 +886,16 @@ export default function OutboundListPage() {
       )}
 
       {/* 从批次生成预录单 */}
-      {preRecordModalBatch && (
+      {preRecordModalBatches.length > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b border-slate-700">
               <h2 className="text-lg font-semibold text-slate-200">
-                柜子预录单 · {preRecordModalBatch.batchNumber}
+                柜子预录单 · {preRecordModalBatches.length > 1 ? `拼柜（${preRecordModalBatches.length}个批次）` : preRecordModalBatches[0].batchNumber}
               </h2>
               <button
                 type="button"
-                onClick={() => setPreRecordModalBatch(null)}
+                onClick={() => setPreRecordModalBatches([])}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
               >
                 <X className="w-5 h-5" />
@@ -852,7 +903,9 @@ export default function OutboundListPage() {
             </div>
             <form onSubmit={submitPreRecord} className="p-4 space-y-3">
               <p className="text-xs text-slate-500">
-                将按当前批次 SKU 明细生成预录单；提交后可填写柜号一键转为正式柜子并自动绑定本批次。
+                {preRecordModalBatches.length > 1
+                  ? "将按已选择批次的 SKU 明细合并生成一张预录单；提交后可填写柜号一键转为正式柜子并自动绑定所选批次。"
+                  : "将按当前批次 SKU 明细生成预录单；提交后可填写柜号一键转为正式柜子并自动绑定本批次。"}
               </p>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">预录单名称</label>
@@ -998,7 +1051,7 @@ export default function OutboundListPage() {
                 <ActionButton
                   type="button"
                   variant="secondary"
-                  onClick={() => setPreRecordModalBatch(null)}
+                  onClick={() => setPreRecordModalBatches([])}
                 >
                   取消
                 </ActionButton>
@@ -1021,6 +1074,7 @@ export default function OutboundListPage() {
                 onClick={() => {
                   setConvertOpen(false);
                   setConvertPreRecordId(null);
+                  setConvertOutboundBatchIds([]);
                 }}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
               >
