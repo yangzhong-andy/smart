@@ -41,12 +41,14 @@ type DirectSkuItem = {
   boxVolumeCBM: number;
   boxWeightKG: number;
   boxCount: number;
+  boxVolumetricWeightKG: number;
   selectedBoxSpecId: string;
   boxSpecOptions: Array<{
     id: string;
     qtyPerBox: number;
     boxVolumeCBM: number;
     boxWeightKG: number;
+    boxVolumetricWeightKG: number;
     label: string;
   }>;
 };
@@ -150,6 +152,7 @@ function mergeSkuLines(batches: BatchItem[]) {
           boxVolumeCBM: 0,
           boxWeightKG: 0,
           boxCount: 0,
+          boxVolumetricWeightKG: 0,
           selectedBoxSpecId: "",
           boxSpecOptions: [],
         });
@@ -242,6 +245,7 @@ export default function OutboundListPage() {
     destinationCountry: "",
     etd: "",
     eta: "",
+    volumetricDivisor: "6000",
   });
   const [directSkuItems, setDirectSkuItems] = useState<DirectSkuItem[]>([]);
 
@@ -564,6 +568,7 @@ export default function OutboundListPage() {
       destinationCountry: first.destinationCountry || "",
       etd: "",
       eta: "",
+      volumetricDivisor: "6000",
     });
     const merged = mergeSkuLines(batches);
     setDirectSkuItems(merged);
@@ -582,11 +587,17 @@ export default function OutboundListPage() {
                   : 0;
               const boxWeightKG = Number(spec.weightKg || 0);
               const qtyPerBox = Number(spec.qtyPerBox || 0);
+              const divisor = 6000;
+              const boxVolumetricWeightKG =
+                spec.boxLengthCm && spec.boxWidthCm && spec.boxHeightCm
+                  ? (Number(spec.boxLengthCm) * Number(spec.boxWidthCm) * Number(spec.boxHeightCm)) / divisor
+                  : 0;
               return {
                 id: String(spec.id || ""),
                 qtyPerBox,
                 boxVolumeCBM,
                 boxWeightKG,
+                boxVolumetricWeightKG,
                 label: `${qtyPerBox || "-"}件/箱 · ${boxVolumeCBM > 0 ? boxVolumeCBM.toFixed(4) : "-"}m³ · ${boxWeightKG > 0 ? boxWeightKG.toFixed(3) : "-"}kg`,
               };
             })
@@ -598,6 +609,7 @@ export default function OutboundListPage() {
             qtyPerBox: first.qtyPerBox,
             boxVolumeCBM: first.boxVolumeCBM,
             boxWeightKG: first.boxWeightKG,
+            boxVolumetricWeightKG: first.boxVolumetricWeightKG,
             boxCount: first.qtyPerBox > 0 ? Math.ceil((row.qty || 0) / first.qtyPerBox) : 0,
             selectedBoxSpecId: first.id,
             boxSpecOptions: options,
@@ -721,6 +733,9 @@ export default function OutboundListPage() {
           item.qtyPerBox > 0 && item.boxWeightKG > 0
             ? item.boxWeightKG / item.qtyPerBox
             : 0,
+        boxCount: item.boxCount || 0,
+        boxWeightKG: item.boxWeightKG || 0,
+        boxVolumetricWeightKG: item.boxVolumetricWeightKG || 0,
       }));
       const res = await fetch("/api/outbound-batch/direct-container", {
         method: "POST",
@@ -736,6 +751,7 @@ export default function OutboundListPage() {
           destinationCountry: directContainerForm.destinationCountry.trim() || null,
           etd: directContainerForm.etd || null,
           eta: directContainerForm.eta || null,
+          volumetricDivisor: Number(directContainerForm.volumetricDivisor) || 6000,
           skuOverrides,
         }),
       });
@@ -775,6 +791,7 @@ export default function OutboundListPage() {
           qtyPerBox: selected.qtyPerBox,
           boxVolumeCBM: selected.boxVolumeCBM,
           boxWeightKG: selected.boxWeightKG,
+          boxVolumetricWeightKG: selected.boxVolumetricWeightKG,
           boxCount: selected.qtyPerBox > 0 ? Math.ceil((row.qty || 0) / selected.qtyPerBox) : row.boxCount,
         };
       })
@@ -789,6 +806,28 @@ export default function OutboundListPage() {
     (sum, row) => sum + (row.boxWeightKG || 0) * (row.boxCount || 0),
     0
   );
+  const directTotalVolumetricWeight = directSkuItems.reduce(
+    (sum, row) => sum + (row.boxVolumetricWeightKG || 0) * (row.boxCount || 0),
+    0
+  );
+  const directChargeableWeight = Math.max(directTotalWeight, directTotalVolumetricWeight);
+
+  const recalcVolumetricByDivisor = (divisorRaw: string) => {
+    const divisor = Number(divisorRaw) || 6000;
+    if (divisor <= 0) return;
+    setDirectSkuItems((prev) =>
+      prev.map((row) => {
+        const boxSpecOptions = row.boxSpecOptions.map((o) => ({
+          ...o,
+          boxVolumetricWeightKG: o.boxVolumeCBM ? (o.boxVolumeCBM * 1_000_000) / divisor : 0,
+        }));
+        const opt = boxSpecOptions.find((o) => o.id === row.selectedBoxSpecId);
+        if (!opt) return { ...row, boxSpecOptions };
+        const boxVolumetricWeightKG = opt.boxVolumetricWeightKG || 0;
+        return { ...row, boxVolumetricWeightKG, boxSpecOptions };
+      })
+    );
+  };
 
   const statusColor = (s: string) => {
     const map: Record<string, string> = {
@@ -1235,6 +1274,22 @@ export default function OutboundListPage() {
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
                   />
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-slate-400 mb-1">体积重系数（长*宽*高/系数）</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step="1"
+                    value={directContainerForm.volumetricDivisor}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDirectContainerForm((f) => ({ ...f, volumetricDivisor: v }));
+                      recalcVolumetricByDivisor(v);
+                    }}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                    placeholder="如 6000 / 5000"
+                  />
+                </div>
               </div>
               <div className="rounded-lg border border-slate-800 overflow-x-auto">
                 <table className="w-full text-xs">
@@ -1246,9 +1301,11 @@ export default function OutboundListPage() {
                       <th className="px-2 py-2 text-right">每箱件数</th>
                       <th className="px-2 py-2 text-right">箱规体积m³/箱</th>
                       <th className="px-2 py-2 text-right">箱规重量kg/箱</th>
+                      <th className="px-2 py-2 text-right">体积重kg/箱</th>
                       <th className="px-2 py-2 text-right">箱数(手填)</th>
                       <th className="px-2 py-2 text-right">行体积m³</th>
-                      <th className="px-2 py-2 text-right">行重量kg</th>
+                      <th className="px-2 py-2 text-right">行实重kg</th>
+                      <th className="px-2 py-2 text-right">行体积重kg</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -1283,6 +1340,9 @@ export default function OutboundListPage() {
                         <td className="px-2 py-2 text-right tabular-nums">
                           {row.boxWeightKG > 0 ? row.boxWeightKG.toFixed(3) : "-"}
                         </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {row.boxVolumetricWeightKG > 0 ? row.boxVolumetricWeightKG.toFixed(3) : "-"}
+                        </td>
                         <td className="px-2 py-2">
                           <input
                             type="number"
@@ -1304,6 +1364,9 @@ export default function OutboundListPage() {
                         <td className="px-2 py-2 text-right tabular-nums">
                           {(row.boxWeightKG * row.boxCount).toFixed(2)}
                         </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {(row.boxVolumetricWeightKG * row.boxCount).toFixed(2)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1311,7 +1374,9 @@ export default function OutboundListPage() {
               </div>
               <div className="text-xs text-slate-300">
                 汇总：总体积 <span className="font-semibold">{directTotalVolume.toFixed(3)}</span> m³，
-                总重量 <span className="font-semibold">{directTotalWeight.toFixed(2)}</span> kg
+                实际重 <span className="font-semibold">{directTotalWeight.toFixed(2)}</span> kg，
+                体积重 <span className="font-semibold">{directTotalVolumetricWeight.toFixed(2)}</span> kg，
+                计费重（取高） <span className="font-semibold">{directChargeableWeight.toFixed(2)}</span> kg
               </div>
               <div className="flex gap-2 pt-2">
                 <ActionButton type="submit" isLoading={directSubmitting}>

@@ -34,8 +34,12 @@ export async function POST(request: NextRequest) {
     const containerNo = String(body.containerNo || "").trim();
     const containerType = String(body.containerType || "").trim();
     const shippingMethod = String(body.shippingMethod || "").trim().toUpperCase();
+    const volumetricDivisor = Number(body.volumetricDivisor || 6000);
     if (!containerNo || !containerType || !shippingMethod) {
       return badRequest("请填写柜号、柜型、运输方式");
+    }
+    if (!Number.isFinite(volumetricDivisor) || volumetricDivisor <= 0) {
+      return badRequest("体积重系数必须大于 0");
     }
 
     const containerExists = await prisma.container.findUnique({
@@ -95,7 +99,8 @@ export async function POST(request: NextRequest) {
         }>)
       : [];
     let totalVolumeCBM = 0;
-    let totalWeightKG = 0;
+    let totalActualWeightKG = 0;
+    let totalVolumetricWeightKG = 0;
     if (skuOverrides.length > 0) {
       for (const row of skuOverrides) {
         const qty = Number(row.qty || 0);
@@ -103,15 +108,19 @@ export async function POST(request: NextRequest) {
         const unitW = Number(row.unitWeightKG || 0);
         if (qty <= 0) continue;
         totalVolumeCBM += unitV * qty;
-        totalWeightKG += unitW * qty;
+        totalActualWeightKG += unitW * qty;
+        // 体积重公式：长*宽*高/6000；换算到 CBM 后等价为 CBM * 1_000_000 / 6000
+        totalVolumetricWeightKG += (unitV * qty * 1_000_000) / volumetricDivisor;
       }
     } else {
       for (const batch of orderedBatches) {
         const payload = buildOutboundBatchSkuPayload(batch as any);
         totalVolumeCBM += payload.totalVolumeCBM || 0;
-        totalWeightKG += payload.totalWeightKG || 0;
+        totalActualWeightKG += payload.totalWeightKG || 0;
+        totalVolumetricWeightKG += ((payload.totalVolumeCBM || 0) * 1_000_000) / volumetricDivisor;
       }
     }
+    const chargeableWeightKG = Math.max(totalActualWeightKG, totalVolumetricWeightKG);
 
     const container = await prisma.$transaction(async (tx) => {
       const c = await tx.container.create({
@@ -138,7 +147,7 @@ export async function POST(request: NextRequest) {
           storeId: body.storeId || firstBatch.destinationStoreId || null,
           storeName: body.storeName || firstBatch.destinationStoreName || null,
           totalVolumeCBM: totalVolumeCBM || null,
-          totalWeightKG: totalWeightKG || null,
+          totalWeightKG: chargeableWeightKG || null,
         },
       });
 
@@ -156,6 +165,10 @@ export async function POST(request: NextRequest) {
       containerType: container.containerType,
       totalVolumeCBM: container.totalVolumeCBM?.toString(),
       totalWeightKG: container.totalWeightKG?.toString(),
+      actualWeightKG: totalActualWeightKG.toFixed(2),
+      volumetricWeightKG: totalVolumetricWeightKG.toFixed(2),
+      chargeableWeightKG: chargeableWeightKG.toFixed(2),
+      volumetricDivisor,
       outboundBatchIds: orderedBatches.map((b) => b.id),
       outboundBatchNumbers: orderedBatches.map((b) => b.batchNumber),
       createdAt: container.createdAt.toISOString(),
