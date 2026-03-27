@@ -20,6 +20,7 @@ type SkuOption = { variant_id: string; sku_id: string; name?: string };
 
 type SkuLine = {
   id?: string;
+  variantId?: string | null;
   sku: string;
   skuName?: string | null;
   spec?: string | null;
@@ -28,6 +29,26 @@ type SkuLine = {
   unitWeightKG: number;
   lineVolumeCBM: number;
   lineWeightKG: number;
+};
+
+type DirectSkuItem = {
+  key: string;
+  variantId?: string | null;
+  sku: string;
+  skuName?: string | null;
+  qty: number;
+  qtyPerBox: number;
+  boxVolumeCBM: number;
+  boxWeightKG: number;
+  boxCount: number;
+  selectedBoxSpecId: string;
+  boxSpecOptions: Array<{
+    id: string;
+    qtyPerBox: number;
+    boxVolumeCBM: number;
+    boxWeightKG: number;
+    label: string;
+  }>;
 };
 
 type BatchItem = {
@@ -112,6 +133,34 @@ function formatDateTime(iso: string) {
   }
 }
 
+function mergeSkuLines(batches: BatchItem[]) {
+  const map = new Map<string, DirectSkuItem>();
+  for (const b of batches) {
+    for (const line of b.skuLines ?? []) {
+      const key = `${line.variantId ?? ""}__${line.sku}`;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, {
+          key,
+          variantId: line.variantId ?? null,
+          sku: line.sku,
+          skuName: line.skuName ?? null,
+          qty: line.qty || 0,
+          qtyPerBox: 0,
+          boxVolumeCBM: 0,
+          boxWeightKG: 0,
+          boxCount: 0,
+          selectedBoxSpecId: "",
+          boxSpecOptions: [],
+        });
+      } else {
+        prev.qty += line.qty || 0;
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 type WarehouseItem = { id: string; name: string; type?: string };
 
 export default function OutboundListPage() {
@@ -181,6 +230,20 @@ export default function OutboundListPage() {
   const [convertOutboundBatchIds, setConvertOutboundBatchIds] = useState<string[]>([]);
   const [convertForm, setConvertForm] = useState({ containerNo: "", containerType: "40HQ" });
   const [converting, setConverting] = useState(false);
+  const [directModalBatches, setDirectModalBatches] = useState<BatchItem[]>([]);
+  const [directSubmitting, setDirectSubmitting] = useState(false);
+  const [directContainerForm, setDirectContainerForm] = useState({
+    containerNo: "",
+    containerType: "40HQ",
+    shippingMethod: "SEA",
+    shipCompany: "",
+    originPort: "",
+    destinationPort: "",
+    destinationCountry: "",
+    etd: "",
+    eta: "",
+  });
+  const [directSkuItems, setDirectSkuItems] = useState<DirectSkuItem[]>([]);
 
   useEffect(() => {
     const queryKeyword = searchParams?.get("keyword")?.trim();
@@ -487,6 +550,75 @@ export default function OutboundListPage() {
     openPreRecordModal(selected);
   };
 
+  const openDirectContainerModal = async (batches: BatchItem[]) => {
+    if (batches.length === 0) return;
+    const first = batches[0];
+    setDirectModalBatches(batches);
+    setDirectContainerForm({
+      containerNo: "",
+      containerType: "40HQ",
+      shippingMethod: first.shippingMethod || "SEA",
+      shipCompany: "",
+      originPort: first.portOfLoading || "",
+      destinationPort: first.portOfDischarge || "",
+      destinationCountry: first.destinationCountry || "",
+      etd: "",
+      eta: "",
+    });
+    const merged = mergeSkuLines(batches);
+    setDirectSkuItems(merged);
+    try {
+      const withSpecs = await Promise.all(
+        merged.map(async (row) => {
+          const variantId = row.variantId ? String(row.variantId) : "";
+          if (!variantId) return row;
+          const res = await fetch(`/api/box-spec?variantId=${encodeURIComponent(variantId)}`);
+          const list = await res.json().catch(() => []);
+          const options = (Array.isArray(list) ? list : [])
+            .map((spec: any) => {
+              const boxVolumeCBM =
+                spec.boxLengthCm && spec.boxWidthCm && spec.boxHeightCm
+                  ? (Number(spec.boxLengthCm) * Number(spec.boxWidthCm) * Number(spec.boxHeightCm)) / 1_000_000
+                  : 0;
+              const boxWeightKG = Number(spec.weightKg || 0);
+              const qtyPerBox = Number(spec.qtyPerBox || 0);
+              return {
+                id: String(spec.id || ""),
+                qtyPerBox,
+                boxVolumeCBM,
+                boxWeightKG,
+                label: `${qtyPerBox || "-"}件/箱 · ${boxVolumeCBM > 0 ? boxVolumeCBM.toFixed(4) : "-"}m³ · ${boxWeightKG > 0 ? boxWeightKG.toFixed(3) : "-"}kg`,
+              };
+            })
+            .filter((it) => it.id);
+          const first = options[0];
+          if (!first) return row;
+          return {
+            ...row,
+            qtyPerBox: first.qtyPerBox,
+            boxVolumeCBM: first.boxVolumeCBM,
+            boxWeightKG: first.boxWeightKG,
+            boxCount: first.qtyPerBox > 0 ? Math.ceil((row.qty || 0) / first.qtyPerBox) : 0,
+            selectedBoxSpecId: first.id,
+            boxSpecOptions: options,
+          };
+        })
+      );
+      setDirectSkuItems(withSpecs);
+    } catch {
+      // 保持默认值，不阻断装柜流程
+    }
+  };
+
+  const openMergeDirectContainerModal = () => {
+    const selected = batches.filter((b) => selectedBatchIds.includes(b.id));
+    if (selected.length === 0) {
+      toast.error("请至少勾选 1 个批次");
+      return;
+    }
+    openDirectContainerModal(selected);
+  };
+
   const submitPreRecord = async (e: React.FormEvent) => {
     e.preventDefault();
     if (preRecordModalBatches.length === 0) return;
@@ -568,6 +700,96 @@ export default function OutboundListPage() {
     }
   };
 
+  const submitDirectContainer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (directModalBatches.length === 0) return;
+    if (!directContainerForm.containerNo.trim()) {
+      toast.error("请填写柜号");
+      return;
+    }
+    setDirectSubmitting(true);
+    try {
+      const skuOverrides = directSkuItems.map((item) => ({
+        variantId: item.variantId ?? null,
+        sku: item.sku,
+        qty: item.qtyPerBox > 0 && item.boxCount > 0 ? item.qtyPerBox * item.boxCount : item.qty,
+        unitVolumeCBM:
+          item.qtyPerBox > 0 && item.boxVolumeCBM > 0
+            ? item.boxVolumeCBM / item.qtyPerBox
+            : 0,
+        unitWeightKG:
+          item.qtyPerBox > 0 && item.boxWeightKG > 0
+            ? item.boxWeightKG / item.qtyPerBox
+            : 0,
+      }));
+      const res = await fetch("/api/outbound-batch/direct-container", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          batchIds: directModalBatches.map((b) => b.id),
+          containerNo: directContainerForm.containerNo.trim(),
+          containerType: directContainerForm.containerType,
+          shippingMethod: directContainerForm.shippingMethod,
+          shipCompany: directContainerForm.shipCompany.trim() || null,
+          originPort: directContainerForm.originPort.trim() || null,
+          destinationPort: directContainerForm.destinationPort.trim() || null,
+          destinationCountry: directContainerForm.destinationCountry.trim() || null,
+          etd: directContainerForm.etd || null,
+          eta: directContainerForm.eta || null,
+          skuOverrides,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "生成柜子失败");
+      toast.success(`已生成柜子：${data.containerNo}`);
+      setDirectModalBatches([]);
+      setDirectSkuItems([]);
+      setSelectedBatchIds([]);
+      fetchBatches();
+      fetchContainers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "生成柜子失败");
+    } finally {
+      setDirectSubmitting(false);
+    }
+  };
+
+  const updateDirectSkuItem = (key: string, patch: Partial<DirectSkuItem>) => {
+    setDirectSkuItems((prev) =>
+      prev.map((row) => {
+        if (row.key !== key) return row;
+        return { ...row, ...patch };
+      })
+    );
+  };
+
+  const selectDirectSkuBoxSpec = (key: string, boxSpecId: string) => {
+    setDirectSkuItems((prev) =>
+      prev.map((row) => {
+        if (row.key !== key) return row;
+        const selected = row.boxSpecOptions.find((opt) => opt.id === boxSpecId);
+        if (!selected) return row;
+        return {
+          ...row,
+          selectedBoxSpecId: selected.id,
+          qtyPerBox: selected.qtyPerBox,
+          boxVolumeCBM: selected.boxVolumeCBM,
+          boxWeightKG: selected.boxWeightKG,
+          boxCount: selected.qtyPerBox > 0 ? Math.ceil((row.qty || 0) / selected.qtyPerBox) : row.boxCount,
+        };
+      })
+    );
+  };
+
+  const directTotalVolume = directSkuItems.reduce(
+    (sum, row) => sum + (row.boxVolumeCBM || 0) * (row.boxCount || 0),
+    0
+  );
+  const directTotalWeight = directSkuItems.reduce(
+    (sum, row) => sum + (row.boxWeightKG || 0) * (row.boxCount || 0),
+    0
+  );
+
   const statusColor = (s: string) => {
     const map: Record<string, string> = {
       待发货: "bg-slate-500/20 text-slate-300",
@@ -617,6 +839,14 @@ export default function OutboundListPage() {
           disabled={selectedBatchIds.length < 2}
         >
           拼柜预录单（已选 {selectedBatchIds.length}）
+        </ActionButton>
+        <ActionButton
+          size="sm"
+          icon={ContainerIcon}
+          onClick={openMergeDirectContainerModal}
+          disabled={selectedBatchIds.length < 1}
+        >
+          直接生成柜子（已选 {selectedBatchIds.length}）
         </ActionButton>
       </div>
 
@@ -775,6 +1005,13 @@ export default function OutboundListPage() {
                       >
                         柜子预录单
                       </ActionButton>
+                      <ActionButton
+                        size="sm"
+                        icon={ContainerIcon}
+                        onClick={() => openDirectContainerModal([b])}
+                      >
+                        直接装柜
+                      </ActionButton>
                       <Link href={`/outbound/${b.id}`}>
                         <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
                           详情 / 编辑
@@ -870,6 +1107,13 @@ export default function OutboundListPage() {
                       >
                         生成预录单（填起运/目的港等）
                       </ActionButton>
+                      <ActionButton
+                        size="sm"
+                        icon={ContainerIcon}
+                        onClick={() => openDirectContainerModal([b])}
+                      >
+                        直接生成柜子
+                      </ActionButton>
                       <Link
                         href="/logistics/pre-records"
                         className="inline-flex items-center text-xs text-primary-400 hover:text-primary-300"
@@ -882,6 +1126,203 @@ export default function OutboundListPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 直接生成柜子 */}
+      {directModalBatches.length > 0 && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">
+                直接生成柜子 · {directModalBatches.length > 1 ? `拼柜（${directModalBatches.length}个批次）` : directModalBatches[0].batchNumber}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setDirectModalBatches([])}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={submitDirectContainer} className="p-4 space-y-3">
+              <p className="text-xs text-slate-500">
+                创建后会直接生成正式柜子，并自动绑定当前所选出库批次。
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">柜号 *</label>
+                  <input
+                    value={directContainerForm.containerNo}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, containerNo: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                    placeholder="如 MSKU1234567"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">柜型 *</label>
+                  <select
+                    value={directContainerForm.containerType}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, containerType: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  >
+                    <option value="20GP">20GP</option>
+                    <option value="40GP">40GP</option>
+                    <option value="40HQ">40HQ</option>
+                    <option value="LCL">LCL</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">运输方式 *</label>
+                  <select
+                    value={directContainerForm.shippingMethod}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, shippingMethod: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  >
+                    <option value="SEA">海运 SEA</option>
+                    <option value="AIR">空运 AIR</option>
+                    <option value="EXPRESS">快递 EXPRESS</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">物流公司</label>
+                  <input
+                    value={directContainerForm.shipCompany}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, shipCompany: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">起运港</label>
+                  <input
+                    value={directContainerForm.originPort}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, originPort: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">目的港</label>
+                  <input
+                    value={directContainerForm.destinationPort}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, destinationPort: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">目的国</label>
+                  <input
+                    value={directContainerForm.destinationCountry}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, destinationCountry: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">ETD</label>
+                  <input
+                    type="date"
+                    value={directContainerForm.etd}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, etd: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-slate-400 mb-1">ETA</label>
+                  <input
+                    type="date"
+                    value={directContainerForm.eta}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, eta: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-900/70 text-slate-400">
+                    <tr>
+                      <th className="px-2 py-2 text-left">SKU</th>
+                      <th className="px-2 py-2 text-left">箱规</th>
+                      <th className="px-2 py-2 text-right">件数</th>
+                      <th className="px-2 py-2 text-right">每箱件数</th>
+                      <th className="px-2 py-2 text-right">箱规体积m³/箱</th>
+                      <th className="px-2 py-2 text-right">箱规重量kg/箱</th>
+                      <th className="px-2 py-2 text-right">箱数(手填)</th>
+                      <th className="px-2 py-2 text-right">行体积m³</th>
+                      <th className="px-2 py-2 text-right">行重量kg</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {directSkuItems.map((row) => (
+                      <tr key={row.key} className="text-slate-300">
+                        <td className="px-2 py-2">
+                          <div className="font-mono">{row.sku}</div>
+                          <div className="text-[11px] text-slate-500">{row.skuName || "-"}</div>
+                        </td>
+                        <td className="px-2 py-2">
+                          {row.boxSpecOptions.length > 0 ? (
+                            <select
+                              value={row.selectedBoxSpecId}
+                              onChange={(e) => selectDirectSkuBoxSpec(row.key, e.target.value)}
+                              className="w-44 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-[11px]"
+                            >
+                              {row.boxSpecOptions.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-slate-500">无箱规</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">{row.qty}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{row.qtyPerBox || "-"}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {row.boxVolumeCBM > 0 ? row.boxVolumeCBM.toFixed(4) : "-"}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {row.boxWeightKG > 0 ? row.boxWeightKG.toFixed(3) : "-"}
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            step="1"
+                            value={row.boxCount || ""}
+                            onChange={(e) =>
+                              updateDirectSkuItem(row.key, {
+                                boxCount: Number(e.target.value) || 0,
+                              })
+                            }
+                            className="w-24 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right"
+                            placeholder="箱数"
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {(row.boxVolumeCBM * row.boxCount).toFixed(3)}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {(row.boxWeightKG * row.boxCount).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-xs text-slate-300">
+                汇总：总体积 <span className="font-semibold">{directTotalVolume.toFixed(3)}</span> m³，
+                总重量 <span className="font-semibold">{directTotalWeight.toFixed(2)}</span> kg
+              </div>
+              <div className="flex gap-2 pt-2">
+                <ActionButton type="submit" isLoading={directSubmitting}>
+                  确认生成柜子
+                </ActionButton>
+                <ActionButton type="button" variant="secondary" onClick={() => setDirectModalBatches([])}>
+                  取消
+                </ActionButton>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
