@@ -160,7 +160,7 @@ export async function GET(
 }
 
 // 允许的物流状态（手动更新：已发货 → 运输中 → 已清关 → 已到达）
-const LOGISTICS_STATUS_LIST = ["待发货", "已发货", "运输中", "已清关", "已到达"];
+const LOGISTICS_STATUS_LIST = ["待发货", "已发货", "运输中", "已清关", "已到达", "已装柜"];
 
 /**
  * PATCH /api/outbound-batch/[id] - 更新出库批次（含物流信息、物流追踪状态）

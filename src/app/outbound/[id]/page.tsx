@@ -58,6 +58,7 @@ const STATUS_OPTIONS = [
   { value: "运输中", label: "运输中" },
   { value: "已清关", label: "已清关" },
   { value: "已到达", label: "已到达" },
+  { value: "已装柜", label: "已装柜" },
 ];
 
 function isoToDateStr(iso: string | undefined): string {

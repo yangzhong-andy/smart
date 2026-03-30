@@ -102,6 +102,7 @@ const BATCH_STATUS_LABELS: Record<string, string> = {
   运输中: "运输中",
   已清关: "已清关",
   已到达: "已到达",
+  已装柜: "已装柜",
 };
 
 const SHIPPING_METHOD_LABELS: Record<string, string> = {
@@ -248,6 +249,11 @@ export default function OutboundListPage() {
     volumetricDivisor: "6000",
   });
   const [directSkuItems, setDirectSkuItems] = useState<DirectSkuItem[]>([]);
+  /** 直接装柜成功后的确认弹窗内容 */
+  const [directSuccessResult, setDirectSuccessResult] = useState<{
+    containerNo: string;
+    batchNumbers: string[];
+  } | null>(null);
 
   useEffect(() => {
     const queryKeyword = searchParams?.get("keyword")?.trim();
@@ -757,7 +763,13 @@ export default function OutboundListPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? "生成柜子失败");
-      toast.success(`已生成柜子：${data.containerNo}`);
+      const batchNumbers = Array.isArray(data.outboundBatchNumbers)
+        ? (data.outboundBatchNumbers as string[])
+        : [];
+      setDirectSuccessResult({
+        containerNo: String(data.containerNo ?? ""),
+        batchNumbers,
+      });
       setDirectModalBatches([]);
       setDirectSkuItems([]);
       setSelectedBatchIds([]);
@@ -836,6 +848,7 @@ export default function OutboundListPage() {
       运输中: "bg-amber-500/20 text-amber-300",
       已清关: "bg-purple-500/20 text-purple-300",
       已到达: "bg-emerald-500/20 text-emerald-300",
+      已装柜: "bg-cyan-500/20 text-cyan-300",
     };
     return map[s] ?? "bg-slate-500/20 text-slate-300";
   };
@@ -869,6 +882,7 @@ export default function OutboundListPage() {
           <option value="运输中">运输中</option>
           <option value="已清关">已清关</option>
           <option value="已到达">已到达</option>
+          <option value="已装柜">已装柜</option>
         </select>
         <ActionButton
           size="sm"
@@ -1171,8 +1185,9 @@ export default function OutboundListPage() {
       {/* 直接生成柜子 */}
       {directModalBatches.length > 0 && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+          {/* 勿在整卡上加 overflow-y-auto：会截断/干扰原生 date/datetime 选择器弹层 */}
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700 shrink-0">
               <h2 className="text-lg font-semibold text-slate-200">
                 直接生成柜子 · {directModalBatches.length > 1 ? `拼柜（${directModalBatches.length}个批次）` : directModalBatches[0].batchNumber}
               </h2>
@@ -1184,11 +1199,11 @@ export default function OutboundListPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={submitDirectContainer} className="p-4 space-y-3">
-              <p className="text-xs text-slate-500">
+            <form onSubmit={submitDirectContainer} className="p-4 space-y-3 flex flex-col flex-1 min-h-0">
+              <p className="text-xs text-slate-500 shrink-0">
                 创建后会直接生成正式柜子，并自动绑定当前所选出库批次。
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">柜号 *</label>
                   <input
@@ -1257,21 +1272,21 @@ export default function OutboundListPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">ETD</label>
+                  <label className="block text-xs text-slate-400 mb-1">ETD（日期时间）</label>
                   <input
-                    type="date"
+                    type="datetime-local"
                     value={directContainerForm.etd}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, etd: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm [color-scheme:dark]"
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-xs text-slate-400 mb-1">ETA</label>
+                  <label className="block text-xs text-slate-400 mb-1">ETA（日期时间）</label>
                   <input
-                    type="date"
+                    type="datetime-local"
                     value={directContainerForm.eta}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, eta: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm [color-scheme:dark]"
                   />
                 </div>
                 <div className="sm:col-span-2">
@@ -1291,7 +1306,7 @@ export default function OutboundListPage() {
                   />
                 </div>
               </div>
-              <div className="rounded-lg border border-slate-800 overflow-x-auto">
+              <div className="rounded-lg border border-slate-800 overflow-x-auto overflow-y-auto flex-1 min-h-0 max-h-[min(50vh,420px)]">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-900/70 text-slate-400">
                     <tr>
@@ -1372,13 +1387,13 @@ export default function OutboundListPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="text-xs text-slate-300">
+              <div className="text-xs text-slate-300 shrink-0">
                 汇总：总体积 <span className="font-semibold">{directTotalVolume.toFixed(3)}</span> m³，
                 实际重 <span className="font-semibold">{directTotalWeight.toFixed(2)}</span> kg，
                 体积重 <span className="font-semibold">{directTotalVolumetricWeight.toFixed(2)}</span> kg，
                 计费重（取高） <span className="font-semibold">{directChargeableWeight.toFixed(2)}</span> kg
               </div>
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-2 shrink-0">
                 <ActionButton type="submit" isLoading={directSubmitting}>
                   确认生成柜子
                 </ActionButton>
@@ -1387,6 +1402,42 @@ export default function OutboundListPage() {
                 </ActionButton>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 直接装柜成功确认 */}
+      {directSuccessResult && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60">
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="direct-success-title"
+          >
+            <div className="p-4 border-b border-slate-700">
+              <h2 id="direct-success-title" className="text-lg font-semibold text-slate-100">
+                装柜成功
+              </h2>
+              <p className="mt-2 text-sm text-slate-300">
+                已创建正式柜子 <span className="font-mono text-cyan-300">{directSuccessResult.containerNo}</span>
+                ，所选出库批次状态已更新为「已装柜」并已绑定该柜。
+              </p>
+              {directSuccessResult.batchNumbers.length > 0 && (
+                <ul className="mt-3 max-h-40 overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-800/50 px-3 py-2 text-xs text-slate-400 space-y-1">
+                  {directSuccessResult.batchNumbers.map((bn) => (
+                    <li key={bn} className="font-mono text-slate-300">
+                      {bn}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="p-4 flex justify-end">
+              <ActionButton type="button" onClick={() => setDirectSuccessResult(null)}>
+                知道了
+              </ActionButton>
+            </div>
           </div>
         </div>
       )}

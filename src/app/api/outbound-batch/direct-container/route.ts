@@ -151,9 +151,15 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      const now = new Date();
       await tx.outboundBatch.updateMany({
         where: { id: { in: orderedBatches.map((b) => b.id) } },
-        data: { containerId: c.id },
+        data: {
+          containerId: c.id,
+          status: "已装柜",
+          lastEvent: "已装柜",
+          lastEventTime: now,
+        },
       });
 
       return c;

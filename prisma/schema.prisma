@@ -997,7 +997,7 @@ model OutboundBatch {
   eta                 DateTime? // 预计到达时间
   actualDepartureDate DateTime? // 实际开船/起飞日期
   actualArrivalDate   DateTime? // 实际到达时间
-  status              String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达
+  status              String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达/已装柜
 
   // 物流渠道
   logisticsChannelId   String? // 物流渠道ID
