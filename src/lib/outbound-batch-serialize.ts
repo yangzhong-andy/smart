@@ -28,7 +28,42 @@ export function buildOutboundBatchSkuPayload(batch: any): {
 } {
   const batchItems = batch.outboundBatchItems ?? [];
   if (batchItems.length > 0) {
-    const skuLines = linesFromBatchItems(batchItems);
+    // 优先使用批次明细的 qty 分摊；如果某些 batchItem 的 variant 关联丢失/尺寸为空，
+    // 则尝试从 outboundOrder.items 中按 variantId/sku 补齐尺寸再计算，避免整条批次体积/重量变 0。
+    const orderItems = batch?.outboundOrder?.items ?? [];
+    const variantByVariantId = new Map<string, any>();
+    const variantBySku = new Map<string, any>();
+    for (const it of orderItems as any[]) {
+      if (it?.variantId) variantByVariantId.set(String(it.variantId), it.variant ?? null);
+      if (it?.sku) variantBySku.set(String(it.sku), it.variant ?? null);
+    }
+
+    const skuLines: BatchSkuLine[] = (batchItems as any[]).map((row) => {
+      const qty = Number(row?.qty ?? 0) || 0;
+
+      const variant =
+        row?.variant ??
+        (row?.variantId ? variantByVariantId.get(String(row.variantId)) : null) ??
+        (row?.sku ? variantBySku.get(String(row.sku)) : null) ??
+        null;
+
+      const unitV = unitCbmFromVariant(variant);
+      const unitW = unitKgFromVariant(variant);
+
+      return {
+        id: row?.id,
+        variantId: row?.variantId ?? null,
+        sku: row?.sku ?? "",
+        skuName: row?.skuName ?? null,
+        spec: row?.spec ?? null,
+        qty,
+        unitVolumeCBM: unitV,
+        unitWeightKG: unitW,
+        lineVolumeCBM: unitV * qty,
+        lineWeightKG: unitW * qty,
+      };
+    });
+
     const { totalCbm, totalKg } = sumLines(skuLines);
     return {
       skuLines,

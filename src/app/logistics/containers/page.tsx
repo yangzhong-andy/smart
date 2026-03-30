@@ -10,6 +10,7 @@ import Link from "next/link";
 import { ContainerStats } from "./components/ContainerStats";
 import { ContainerFilters } from "./components/ContainerFilters";
 import { ContainersTable } from "./components/ContainersTable";
+import { LogisticsProgressAxis } from "./components/LogisticsProgressAxis";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -948,6 +949,8 @@ export default function ContainersPage() {
               <InfoRow label="批次数" value={String(detailContainer.outboundBatchCount ?? 0)} />
               <InfoRow label="创建时间" value={formatDate(detailContainer.createdAt)} />
             </div>
+
+            <LogisticsProgressAxis container={detailContainer} />
 
             <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
               <div className="text-xs text-slate-500 mb-2">关联出库批次</div>
