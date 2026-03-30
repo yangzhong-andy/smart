@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
   Container as ContainerIcon,
+  Trash2,
 } from "lucide-react";
 import { PageHeader, SearchBar, EmptyState, ActionButton } from "@/components/ui";
 
@@ -32,11 +33,15 @@ type SkuLine = {
 };
 
 type DirectSkuItem = {
+  /** 表格行唯一 id */
   key: string;
+  /** 同一出库 SKU（可拆多行、多箱规） */
+  groupKey: string;
   variantId?: string | null;
   sku: string;
   skuName?: string | null;
-  qty: number;
+  /** 本行件数（多箱规时各行相加须等于出库合计） */
+  lineQty: number;
   qtyPerBox: number;
   boxVolumeCBM: number;
   boxWeightKG: number;
@@ -52,6 +57,17 @@ type DirectSkuItem = {
     label: string;
   }>;
 };
+
+function newDirectSkuRowKey(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `row-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** 用于体积汇总与提交件数：有箱数时按箱规折算，否则用本行件数 */
+function directLineEffectivePieces(row: DirectSkuItem): number {
+  if (row.qtyPerBox > 0 && row.boxCount > 0) return row.qtyPerBox * row.boxCount;
+  return row.lineQty;
+}
 
 type BatchItem = {
   id: string;
@@ -136,19 +152,20 @@ function formatDateTime(iso: string) {
   }
 }
 
-function mergeSkuLines(batches: BatchItem[]) {
+function mergeSkuLines(batches: BatchItem[]): DirectSkuItem[] {
   const map = new Map<string, DirectSkuItem>();
   for (const b of batches) {
     for (const line of b.skuLines ?? []) {
-      const key = `${line.variantId ?? ""}__${line.sku}`;
-      const prev = map.get(key);
+      const groupKey = `${line.variantId ?? ""}__${line.sku}`;
+      const prev = map.get(groupKey);
       if (!prev) {
-        map.set(key, {
-          key,
+        map.set(groupKey, {
+          key: groupKey,
+          groupKey,
           variantId: line.variantId ?? null,
           sku: line.sku,
           skuName: line.skuName ?? null,
-          qty: line.qty || 0,
+          lineQty: line.qty || 0,
           qtyPerBox: 0,
           boxVolumeCBM: 0,
           boxWeightKG: 0,
@@ -158,7 +175,7 @@ function mergeSkuLines(batches: BatchItem[]) {
           boxSpecOptions: [],
         });
       } else {
-        prev.qty += line.qty || 0;
+        prev.lineQty += line.qty || 0;
       }
     }
   }
@@ -249,6 +266,8 @@ export default function OutboundListPage() {
     volumetricDivisor: "6000",
   });
   const [directSkuItems, setDirectSkuItems] = useState<DirectSkuItem[]>([]);
+  /** 每个 groupKey（SKU）在出库明细中的总件数，用于校验多箱规拆行 */
+  const [directSkuQtyBudget, setDirectSkuQtyBudget] = useState<Record<string, number>>({});
   /** 直接装柜成功后的确认弹窗内容 */
   const [directSuccessResult, setDirectSuccessResult] = useState<{
     containerNo: string;
@@ -560,6 +579,12 @@ export default function OutboundListPage() {
     openPreRecordModal(selected);
   };
 
+  const closeDirectContainerModal = useCallback(() => {
+    setDirectModalBatches([]);
+    setDirectSkuItems([]);
+    setDirectSkuQtyBudget({});
+  }, []);
+
   const openDirectContainerModal = async (batches: BatchItem[]) => {
     if (batches.length === 0) return;
     const first = batches[0];
@@ -576,7 +601,8 @@ export default function OutboundListPage() {
       eta: "",
       volumetricDivisor: "6000",
     });
-    const merged = mergeSkuLines(batches);
+    const merged = mergeSkuLines(batches).map((r) => ({ ...r, key: newDirectSkuRowKey() }));
+    setDirectSkuQtyBudget(Object.fromEntries(merged.map((r) => [r.groupKey, r.lineQty])));
     setDirectSkuItems(merged);
     try {
       const withSpecs = await Promise.all(
@@ -616,7 +642,7 @@ export default function OutboundListPage() {
             boxVolumeCBM: first.boxVolumeCBM,
             boxWeightKG: first.boxWeightKG,
             boxVolumetricWeightKG: first.boxVolumetricWeightKG,
-            boxCount: first.qtyPerBox > 0 ? Math.ceil((row.qty || 0) / first.qtyPerBox) : 0,
+            boxCount: first.qtyPerBox > 0 ? Math.ceil((row.lineQty || 0) / first.qtyPerBox) : 0,
             selectedBoxSpecId: first.id,
             boxSpecOptions: options,
           };
@@ -727,10 +753,27 @@ export default function OutboundListPage() {
     }
     setDirectSubmitting(true);
     try {
+      const allocated = new Map<string, number>();
+      for (const row of directSkuItems) {
+        const g = row.groupKey;
+        allocated.set(g, (allocated.get(g) ?? 0) + directLineEffectivePieces(row));
+      }
+      for (const [gk, budget] of Object.entries(directSkuQtyBudget)) {
+        const sum = allocated.get(gk) ?? 0;
+        if (sum !== budget) {
+          const label = directSkuItems.find((r) => r.groupKey === gk);
+          toast.error(
+            `SKU「${label?.sku ?? gk}」出库合计 ${budget} 件，当前各行合计 ${sum} 件，请按箱规拆行分配正确件数后再提交`
+          );
+          return;
+        }
+      }
+
       const skuOverrides = directSkuItems.map((item) => ({
         variantId: item.variantId ?? null,
         sku: item.sku,
-        qty: item.qtyPerBox > 0 && item.boxCount > 0 ? item.qtyPerBox * item.boxCount : item.qty,
+        qty:
+          item.qtyPerBox > 0 && item.boxCount > 0 ? item.qtyPerBox * item.boxCount : item.lineQty,
         unitVolumeCBM:
           item.qtyPerBox > 0 && item.boxVolumeCBM > 0
             ? item.boxVolumeCBM / item.qtyPerBox
@@ -770,8 +813,7 @@ export default function OutboundListPage() {
         containerNo: String(data.containerNo ?? ""),
         batchNumbers,
       });
-      setDirectModalBatches([]);
-      setDirectSkuItems([]);
+      closeDirectContainerModal();
       setSelectedBatchIds([]);
       fetchBatches();
       fetchContainers();
@@ -804,11 +846,68 @@ export default function OutboundListPage() {
           boxVolumeCBM: selected.boxVolumeCBM,
           boxWeightKG: selected.boxWeightKG,
           boxVolumetricWeightKG: selected.boxVolumetricWeightKG,
-          boxCount: selected.qtyPerBox > 0 ? Math.ceil((row.qty || 0) / selected.qtyPerBox) : row.boxCount,
+          boxCount:
+            selected.qtyPerBox > 0 ? Math.ceil((row.lineQty || 0) / selected.qtyPerBox) : row.boxCount,
         };
       })
     );
   };
+
+  const addDirectSkuSpecRow = (groupKey: string) => {
+    setDirectSkuItems((prev) => {
+      const template = prev.find((r) => r.groupKey === groupKey);
+      if (!template) return prev;
+      const firstOpt = template.boxSpecOptions[0];
+      return [
+        ...prev,
+        {
+          ...template,
+          key: newDirectSkuRowKey(),
+          lineQty: 0,
+          boxCount: 0,
+          qtyPerBox: firstOpt?.qtyPerBox ?? template.qtyPerBox,
+          boxVolumeCBM: firstOpt?.boxVolumeCBM ?? template.boxVolumeCBM,
+          boxWeightKG: firstOpt?.boxWeightKG ?? template.boxWeightKG,
+          boxVolumetricWeightKG: firstOpt?.boxVolumetricWeightKG ?? template.boxVolumetricWeightKG,
+          selectedBoxSpecId: firstOpt?.id ?? template.selectedBoxSpecId,
+        },
+      ];
+    });
+  };
+
+  const removeDirectSkuSpecRow = (rowKey: string) => {
+    setDirectSkuItems((prev) => {
+      const target = prev.find((r) => r.key === rowKey);
+      if (!target) return prev;
+      const sameGroup = prev.filter((r) => r.groupKey === target.groupKey);
+      if (sameGroup.length <= 1) return prev;
+      return prev.filter((r) => r.key !== rowKey);
+    });
+  };
+
+  const directAllocatedByGroup = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of directSkuItems) {
+      m.set(row.groupKey, (m.get(row.groupKey) ?? 0) + directLineEffectivePieces(row));
+    }
+    return m;
+  }, [directSkuItems]);
+
+  const directRowCountByGroup = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of directSkuItems) {
+      m.set(row.groupKey, (m.get(row.groupKey) ?? 0) + 1);
+    }
+    return m;
+  }, [directSkuItems]);
+
+  const directFirstRowKeyByGroup = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of directSkuItems) {
+      if (!m.has(row.groupKey)) m.set(row.groupKey, row.key);
+    }
+    return m;
+  }, [directSkuItems]);
 
   const directTotalVolume = directSkuItems.reduce(
     (sum, row) => sum + (row.boxVolumeCBM || 0) * (row.boxCount || 0),
@@ -1193,7 +1292,7 @@ export default function OutboundListPage() {
               </h2>
               <button
                 type="button"
-                onClick={() => setDirectModalBatches([])}
+                onClick={closeDirectContainerModal}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
               >
                 <X className="w-5 h-5" />
@@ -1201,7 +1300,7 @@ export default function OutboundListPage() {
             </div>
             <form onSubmit={submitDirectContainer} className="p-4 space-y-3 flex flex-col flex-1 min-h-0">
               <p className="text-xs text-slate-500 shrink-0">
-                创建后会直接生成正式柜子，并自动绑定当前所选出库批次。
+                创建后会直接生成正式柜子，并自动绑定当前所选出库批次。若同一 SKU 需用多种箱规装柜，点「加箱规行」拆成多行分别选择箱规与箱数，各行折算件数之和须等于该 SKU 出库合计。
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
                 <div>
@@ -1312,7 +1411,8 @@ export default function OutboundListPage() {
                     <tr>
                       <th className="px-2 py-2 text-left">SKU</th>
                       <th className="px-2 py-2 text-left">箱规</th>
-                      <th className="px-2 py-2 text-right">件数</th>
+                      <th className="px-2 py-2 text-center w-[88px]">操作</th>
+                      <th className="px-2 py-2 text-right">本行件数</th>
                       <th className="px-2 py-2 text-right">每箱件数</th>
                       <th className="px-2 py-2 text-right">箱规体积m³/箱</th>
                       <th className="px-2 py-2 text-right">箱规重量kg/箱</th>
@@ -1324,11 +1424,27 @@ export default function OutboundListPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
-                    {directSkuItems.map((row) => (
+                    {directSkuItems.map((row) => {
+                      const budget = directSkuQtyBudget[row.groupKey] ?? 0;
+                      const alloc = directAllocatedByGroup.get(row.groupKey) ?? 0;
+                      const nInGroup = directRowCountByGroup.get(row.groupKey) ?? 1;
+                      const mismatch = budget > 0 && alloc !== budget;
+                      const showGroupHint = directFirstRowKeyByGroup.get(row.groupKey) === row.key;
+                      return (
                       <tr key={row.key} className="text-slate-300">
                         <td className="px-2 py-2">
                           <div className="font-mono">{row.sku}</div>
                           <div className="text-[11px] text-slate-500">{row.skuName || "-"}</div>
+                          {showGroupHint ? (
+                            <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                              出库合计 {budget} 件 · 已分配 {alloc} 件
+                              {mismatch ? (
+                                <span className="text-amber-400 ml-1">（不一致）</span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-600 mt-0.5">↳ 同 SKU 拆行</div>
+                          )}
                         </td>
                         <td className="px-2 py-2">
                           {row.boxSpecOptions.length > 0 ? (
@@ -1347,7 +1463,45 @@ export default function OutboundListPage() {
                             <span className="text-slate-500">无箱规</span>
                           )}
                         </td>
-                        <td className="px-2 py-2 text-right tabular-nums">{row.qty}</td>
+                        <td className="px-2 py-2 text-center">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              title="同 SKU 再加一种箱规"
+                              onClick={() => addDirectSkuSpecRow(row.groupKey)}
+                              className="p-1 rounded border border-slate-600 text-slate-400 hover:text-primary-300 hover:border-primary-600"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            {nInGroup > 1 ? (
+                              <button
+                                type="button"
+                                title="删除本行"
+                                onClick={() => removeDirectSkuSpecRow(row.key)}
+                                className="p-1 rounded border border-slate-600 text-slate-400 hover:text-red-300 hover:border-red-700"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step="1"
+                            value={row.lineQty || ""}
+                            onChange={(e) => {
+                              const v = Number(e.target.value) || 0;
+                              updateDirectSkuItem(row.key, {
+                                lineQty: v,
+                                boxCount:
+                                  row.qtyPerBox > 0 ? Math.ceil(v / row.qtyPerBox) : row.boxCount,
+                              });
+                            }}
+                            className="w-20 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right tabular-nums"
+                          />
+                        </td>
                         <td className="px-2 py-2 text-right tabular-nums">{row.qtyPerBox || "-"}</td>
                         <td className="px-2 py-2 text-right tabular-nums">
                           {row.boxVolumeCBM > 0 ? row.boxVolumeCBM.toFixed(4) : "-"}
@@ -1364,11 +1518,14 @@ export default function OutboundListPage() {
                             min={0}
                             step="1"
                             value={row.boxCount || ""}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const bc = Number(e.target.value) || 0;
+                              const qp = row.qtyPerBox;
                               updateDirectSkuItem(row.key, {
-                                boxCount: Number(e.target.value) || 0,
-                              })
-                            }
+                                boxCount: bc,
+                                lineQty: qp > 0 ? qp * bc : row.lineQty,
+                              });
+                            }}
                             className="w-24 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right"
                             placeholder="箱数"
                           />
@@ -1383,7 +1540,8 @@ export default function OutboundListPage() {
                           {(row.boxVolumetricWeightKG * row.boxCount).toFixed(2)}
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1397,7 +1555,7 @@ export default function OutboundListPage() {
                 <ActionButton type="submit" isLoading={directSubmitting}>
                   确认生成柜子
                 </ActionButton>
-                <ActionButton type="button" variant="secondary" onClick={() => setDirectModalBatches([])}>
+                <ActionButton type="button" variant="secondary" onClick={closeDirectContainerModal}>
                   取消
                 </ActionButton>
               </div>
