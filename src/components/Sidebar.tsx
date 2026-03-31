@@ -46,6 +46,7 @@ const ROUTE_PREFETCH_API: Record<string, string> = {
   "/settings/company": "/api/company",
   "/hr/employees": "/api/employees",
   "/inventory": "/api/stock",
+  "/inventory/reconciliation": "/api/inventory/reconciliation",
   "/logistics/channels": "/api/logistics-channels",
   "/logistics/containers": "/api/containers",
   "/logistics/duty-stats": "/api/containers",
@@ -100,7 +101,8 @@ const navItems: NavItem[] = [
       { label: "工厂端管理", labelEn: "", icon: Factory, href: "/supply-chain/factories" },
       { label: "库存查询", labelEn: "", icon: Factory, href: "/inventory" },
       { label: "仓库库存", labelEn: "", icon: Package, href: "/inventory/warehouse" },
-      { label: "库存看板", labelEn: "", icon: Package, href: "/inventory/dashboard" }
+      { label: "库存看板", labelEn: "", icon: Package, href: "/inventory/dashboard" },
+      { label: "库存对账", labelEn: "", icon: Package, href: "/inventory/reconciliation" }
     ]
   },
   {

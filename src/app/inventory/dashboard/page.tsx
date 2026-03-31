@@ -98,16 +98,16 @@ export default function InventoryDashboardPage() {
     }, 0);
   }, [stockData]);
 
-  // 计算总库存数量
+  // 计算总库存数量（口径：qty，总库存，不扣预留）
   const totalStockQty = useMemo(() => {
     if (!Array.isArray(stockData) || stockData.length === 0) {
       return 0;
     }
     return stockData.reduce((sum, item) => {
-      if (!item || typeof item.availableQty !== 'number') {
+      if (!item || typeof item.qty !== 'number') {
         return sum;
       }
-      return sum + (item.availableQty || 0);
+      return sum + (item.qty || 0);
     }, 0);
   }, [stockData]);
 
