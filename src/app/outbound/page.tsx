@@ -97,6 +97,7 @@ type BatchItem = {
     id: string;
     containerNo: string;
     status: string;
+    destinationCountry?: string;
   };
   skuLines?: SkuLine[];
   skuLinesEstimated?: boolean;
@@ -1244,10 +1245,18 @@ export default function OutboundListPage() {
                   {/* 次要信息行 */}
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                     <span>
-                      目的地：{b.destination ?? "-"} ·{" "}
-                      {[b.destinationCountry, b.destinationPlatform]
-                        .filter(Boolean)
-                        .join(" / ") || "-"}
+                      目的地：
+                      {[
+                        b.destination,
+                        [b.destinationCountry, b.destinationPlatform]
+                          .filter(Boolean)
+                          .join(" / "),
+                        b.container?.destinationCountry
+                          ? `柜目的国 ${b.container.destinationCountry}`
+                          : "",
+                      ]
+                        .filter((v) => Boolean(v && String(v).trim()))
+                        .join(" · ") || "-"}
                     </span>
                     <span>
                       店铺/归属：{" "}

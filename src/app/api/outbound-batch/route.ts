@@ -141,6 +141,7 @@ export async function GET(request: NextRequest) {
               id: row.container.id,
               containerNo: row.container.containerNo,
               status: row.container.status,
+              destinationCountry: row.container.destinationCountry ?? undefined,
             }
           : undefined,
         skuLines: skuPayload.skuLines,
