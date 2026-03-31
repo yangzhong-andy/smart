@@ -183,6 +183,8 @@ function mergeSkuLines(batches: BatchItem[]): DirectSkuItem[] {
 }
 
 type WarehouseItem = { id: string; name: string; type?: string };
+type LogisticsChannelItem = { id: string; name: string; channelCode?: string };
+type CountryOption = { value: string; label: string };
 
 export default function OutboundListPage() {
   const searchParams = useSearchParams();
@@ -195,6 +197,8 @@ export default function OutboundListPage() {
 
   const [confirmBatch, setConfirmBatch] = useState<BatchItem | null>(null);
   const [warehouses, setWarehouses] = useState<WarehouseItem[]>([]);
+  const [logisticsChannels, setLogisticsChannels] = useState<LogisticsChannelItem[]>([]);
+  const [destinationCountries, setDestinationCountries] = useState<CountryOption[]>([]);
   const [toWarehouseId, setToWarehouseId] = useState("");
   const [confirming, setConfirming] = useState(false);
 
@@ -258,6 +262,7 @@ export default function OutboundListPage() {
     containerType: "40HQ",
     shippingMethod: "SEA",
     shipCompany: "",
+    loadingDate: "",
     originPort: "",
     destinationPort: "",
     destinationCountry: "",
@@ -339,6 +344,41 @@ export default function OutboundListPage() {
     }
   }, []);
 
+  const fetchLogisticsChannels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/logistics-channels?page=1&pageSize=500");
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data?.data) ? data.data : [];
+      setLogisticsChannels(
+        list.map((c: any) => ({
+          id: String(c.id),
+          name: String(c.name || ""),
+          channelCode: c.channelCode ? String(c.channelCode) : undefined,
+        }))
+      );
+    } catch {
+      setLogisticsChannels([]);
+    }
+  }, []);
+
+  const fetchDestinationCountries = useCallback(async () => {
+    try {
+      const res = await fetch("/api/countries");
+      const data = await res.json().catch(() => ({}));
+      const list = (Array.isArray(data?.data) ? data.data : []) as CountryOption[];
+      setDestinationCountries(
+        list
+          .map((c) => ({
+            value: String(c.value || "").trim(),
+            label: String(c.label || c.value || "").trim(),
+          }))
+          .filter((c) => c.value)
+      );
+    } catch {
+      setDestinationCountries([]);
+    }
+  }, []);
+
   const fetchSkus = useCallback(async () => {
     try {
       const res = await fetch("/api/products?pageSize=500");
@@ -375,6 +415,7 @@ export default function OutboundListPage() {
     fetchSkus();
     fetchWarehouses();
     fetchContainers();
+    fetchDestinationCountries();
   };
 
   const closeCreateModal = () => {
@@ -568,6 +609,8 @@ export default function OutboundListPage() {
       shippingWarehouseName: first.warehouseName || "",
       loadingLogisticsCompany: "",
     });
+    fetchLogisticsChannels();
+    fetchDestinationCountries();
   };
 
   const openMergePreRecordModal = () => {
@@ -594,6 +637,7 @@ export default function OutboundListPage() {
       containerType: "40HQ",
       shippingMethod: first.shippingMethod || "SEA",
       shipCompany: "",
+      loadingDate: "",
       originPort: first.portOfLoading || "",
       destinationPort: first.portOfDischarge || "",
       destinationCountry: first.destinationCountry || "",
@@ -604,6 +648,8 @@ export default function OutboundListPage() {
     const merged = mergeSkuLines(batches).map((r) => ({ ...r, key: newDirectSkuRowKey() }));
     setDirectSkuQtyBudget(Object.fromEntries(merged.map((r) => [r.groupKey, r.lineQty])));
     setDirectSkuItems(merged);
+    fetchLogisticsChannels();
+    fetchDestinationCountries();
     try {
       const withSpecs = await Promise.all(
         merged.map(async (row) => {
@@ -795,6 +841,7 @@ export default function OutboundListPage() {
           containerType: directContainerForm.containerType,
           shippingMethod: directContainerForm.shippingMethod,
           shipCompany: directContainerForm.shipCompany.trim() || null,
+          loadingDate: directContainerForm.loadingDate || null,
           originPort: directContainerForm.originPort.trim() || null,
           destinationPort: directContainerForm.destinationPort.trim() || null,
           destinationCountry: directContainerForm.destinationCountry.trim() || null,
@@ -954,6 +1001,11 @@ export default function OutboundListPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <datalist id="destination-country-options">
+        {destinationCountries.map((country) => (
+          <option key={country.value} value={country.value} label={country.label} />
+        ))}
+      </datalist>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeader
           title="出库管理（批次）"
@@ -1339,11 +1391,29 @@ export default function OutboundListPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">物流公司</label>
-                  <input
+                  <label className="block text-xs text-slate-400 mb-1">物流公司（关联）</label>
+                  <select
                     value={directContainerForm.shipCompany}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, shipCompany: e.target.value }))}
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                  >
+                    <option value="">请选择物流公司</option>
+                    {logisticsChannels.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                        {c.channelCode ? ` (${c.channelCode})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500">来源：物流渠道管理，保存后写入柜子的船公司/承运人字段。</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">装柜日期（日期时间）</label>
+                  <input
+                    type="datetime-local"
+                    value={directContainerForm.loadingDate}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, loadingDate: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm [color-scheme:dark]"
                   />
                 </div>
                 <div>
@@ -1365,9 +1435,11 @@ export default function OutboundListPage() {
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">目的国</label>
                   <input
+                    list="destination-country-options"
                     value={directContainerForm.destinationCountry}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, destinationCountry: e.target.value }))}
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
+                    placeholder="请选择或输入目的国"
                   />
                 </div>
                 <div>
@@ -1653,6 +1725,7 @@ export default function OutboundListPage() {
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">目的国</label>
                   <input
+                    list="destination-country-options"
                     value={preRecordForm.destinationCountry}
                     onChange={(e) =>
                       setPreRecordForm((f) => ({
@@ -1717,13 +1790,21 @@ export default function OutboundListPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">装柜物流公司</label>
-                  <input
+                  <select
                     value={preRecordForm.loadingLogisticsCompany}
                     onChange={(e) =>
                       setPreRecordForm((f) => ({ ...f, loadingLogisticsCompany: e.target.value }))
                     }
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
-                  />
+                  >
+                    <option value="">请选择物流公司</option>
+                    {logisticsChannels.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                        {c.channelCode ? ` (${c.channelCode})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">填表时间</label>
@@ -1951,10 +2032,11 @@ export default function OutboundListPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input
                   type="text"
+                  list="destination-country-options"
                   value={createForm.destinationCountry}
                   onChange={(e) => setCreateForm((f) => ({ ...f, destinationCountry: e.target.value }))}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
-                  placeholder="目的国家（如 BR）"
+                  placeholder="目的国家（来源店铺国家，可输入）"
                 />
                 <input
                   type="text"

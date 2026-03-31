@@ -53,6 +53,12 @@ type PreRecord = {
   createdAt: string;
 };
 
+type LogisticsChannelItem = {
+  id: string;
+  name: string;
+  channelCode?: string;
+};
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const statusLabels: Record<string, string> = {
@@ -116,12 +122,17 @@ export default function PreRecordsPage() {
   const { data: warehousesData } = useSWR<{ data: any[] }>("/api/warehouses?pageSize=100", fetcher);
   const { data: storesData } = useSWR<{ data: any[] }>("/api/stores?pageSize=100", fetcher);
   const { data: productsData } = useSWR<{ data: any[] }>("/api/products/all?pageSize=500", fetcher);
+  const { data: logisticsChannelsData } = useSWR<{ data: LogisticsChannelItem[] }>(
+    "/api/logistics-channels?page=1&pageSize=500",
+    fetcher
+  );
 
   const exporters = exportersData?.data || [];
   const overseasCompanies = overseasCompaniesData?.data || [];
   const warehouses = warehousesData?.data || [];
   const stores = storesData?.data || [];
   const products = productsData?.data || [];
+  const logisticsChannels = Array.isArray(logisticsChannelsData?.data) ? logisticsChannelsData!.data : [];
   const [boxSpecCache, setBoxSpecCache] = useState<Record<string, any | null>>({});
 
   const variantOptions = useMemo(() => {
@@ -585,12 +596,19 @@ export default function PreRecordsPage() {
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs text-slate-300">装柜物流公司</span>
-                  <input
+                  <select
                     value={form.loadingLogisticsCompany}
                     onChange={(e) => setForm({ ...form, loadingLogisticsCompany: e.target.value })}
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-                    placeholder="如：XX物流"
-                  />
+                  >
+                    <option value="">请选择物流公司</option>
+                    {logisticsChannels.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                        {c.channelCode ? ` (${c.channelCode})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 

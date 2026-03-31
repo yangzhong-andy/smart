@@ -134,6 +134,12 @@ export async function POST(request: NextRequest) {
           originPort: body.originPort || firstBatch.portOfLoading || null,
           destinationPort: body.destinationPort || firstBatch.portOfDischarge || null,
           destinationCountry: body.destinationCountry || firstBatch.destinationCountry || null,
+          // 直接装柜面板“装柜日期”落到实际开船字段，便于后续进度轴读取 sailedAt
+          actualDeparture: body.loadingDate
+            ? new Date(body.loadingDate)
+            : body.actualDeparture
+              ? new Date(body.actualDeparture)
+              : null,
           etd: body.etd ? new Date(body.etd) : null,
           eta: body.eta ? new Date(body.eta) : null,
           status: "PLANNED",

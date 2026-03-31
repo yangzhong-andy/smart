@@ -106,6 +106,12 @@ export default function OutboundBatchDetailPage() {
   const [ownerType, setOwnerType] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [ownerName, setOwnerName] = useState("");
+  const { data: countryData } = useSWR<{ data: Array<{ value: string; label: string }> }>(
+    "/api/countries",
+    batchFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 300000 }
+  );
+  const destinationCountries = Array.isArray(countryData?.data) ? countryData!.data : [];
 
   useEffect(() => {
     if (!batch) return;
@@ -191,6 +197,11 @@ export default function OutboundBatchDetailPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <datalist id="destination-country-options">
+        {destinationCountries.map((c) => (
+          <option key={c.value} value={c.value} label={c.label} />
+        ))}
+      </datalist>
       <div className="flex items-center gap-4">
         <Link
           href="/outbound"
@@ -287,10 +298,11 @@ export default function OutboundBatchDetailPage() {
                 <label className="block text-sm font-medium text-slate-400 mb-1.5">目的国家</label>
                 <input
                   type="text"
+                  list="destination-country-options"
                   value={destinationCountry}
                   onChange={(e) => setDestinationCountry(e.target.value)}
                   className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
-                  placeholder="如 BR / US / DE"
+                  placeholder="请选择或输入目的国家"
                 />
               </div>
               <div>

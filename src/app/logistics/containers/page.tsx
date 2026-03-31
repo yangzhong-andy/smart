@@ -163,6 +163,12 @@ type ContainerForm = {
   totalWeightKG: string;
 };
 
+type LogisticsChannelItem = {
+  id: string;
+  name: string;
+  channelCode?: string;
+};
+
 const emptyForm: ContainerForm = {
   containerNo: "",
   containerType: "40HQ",
@@ -242,6 +248,18 @@ export default function ContainersPage() {
   // 获取店铺列表
   const { data: storesData } = useSWR<{ data: any[] }>("/api/stores?pageSize=100", fetcher);
   const stores = storesData?.data || [];
+
+  // 获取系统国家维度（店铺国家 + 标准国家配置）
+  const { data: countriesData } = useSWR<{ data: Array<{ value: string; label: string }> }>(
+    "/api/countries",
+    fetcher
+  );
+  const destinationCountries = Array.isArray(countriesData?.data) ? countriesData!.data : [];
+  const { data: logisticsChannelsData } = useSWR<{ data: LogisticsChannelItem[] }>(
+    "/api/logistics-channels?page=1&pageSize=500",
+    fetcher
+  );
+  const logisticsChannels = Array.isArray(logisticsChannelsData?.data) ? logisticsChannelsData!.data : [];
 
   const stats = useMemo(() => {
     const total = containers.length;
@@ -467,6 +485,11 @@ export default function ContainersPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <datalist id="store-country-options">
+        {destinationCountries.map((country) => (
+          <option key={country.value} value={country.value} label={country.label} />
+        ))}
+      </datalist>
       <PageHeader
         title="柜子管理"
         description="按柜管理在途货物、海运信息和出库批次"
@@ -564,11 +587,19 @@ export default function ContainersPage() {
             {/* 船运信息 */}
             <label className="space-y-1">
               <span className="text-xs text-slate-300">船公司</span>
-              <input
+              <select
                 value={createForm.shipCompany}
                 onChange={(e) => setCreateForm((f) => ({ ...f, shipCompany: e.target.value }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              />
+              >
+                <option value="">请选择物流公司</option>
+                {logisticsChannels.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                    {c.channelCode ? ` (${c.channelCode})` : ""}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="space-y-1">
               <span className="text-xs text-slate-300">船名</span>
@@ -623,9 +654,11 @@ export default function ContainersPage() {
             <label className="space-y-1">
               <span className="text-xs text-slate-300">目的国家</span>
               <input
+                list="store-country-options"
                 value={createForm.destinationCountry}
                 onChange={(e) => setCreateForm((f) => ({ ...f, destinationCountry: e.target.value }))}
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                placeholder="请选择或输入目的国"
               />
             </label>
             <label className="space-y-1">
