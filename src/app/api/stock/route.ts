@@ -9,6 +9,8 @@ export async function GET(request: NextRequest) {
     const warehouseId = searchParams.get('warehouseId')
     const variantId = searchParams.get('variantId')
     const skuId = searchParams.get('skuId')
+    const location = searchParams.get('location')
+    const noCache = searchParams.get('noCache') === 'true'
     
     const where: any = {}
     
@@ -27,6 +29,9 @@ export async function GET(request: NextRequest) {
           mode: 'insensitive'
         }
       }
+    }
+    if (location) {
+      where.warehouse = { location: location as any }
     }
     
     const stocks = await prisma.stock.findMany({
@@ -68,7 +73,18 @@ export async function GET(request: NextRequest) {
       createdAt: stock.createdAt.toISOString()
     }))
     
-    return NextResponse.json(transformed)
+    return NextResponse.json(
+      transformed,
+      noCache
+        ? {
+            headers: {
+              'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+              Pragma: 'no-cache',
+              Expires: '0',
+            },
+          }
+        : undefined
+    )
   } catch (error: any) {
     
     // 如果表不存在，返回空数组

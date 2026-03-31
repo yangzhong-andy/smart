@@ -51,7 +51,7 @@ export default function WarehouseInventoryPage() {
   const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null);
 
   // 获取仓库列表
-  const { data: warehousesRaw } = useSWR<Warehouse[]>("/api/warehouses", fetcher, {
+  const { data: warehousesRaw } = useSWR<Warehouse[]>("/api/warehouses?noCache=true", fetcher, {
     revalidateOnFocus: false,
   });
   const warehouses = Array.isArray(warehousesRaw)
@@ -61,8 +61,8 @@ export default function WarehouseInventoryPage() {
   // 获取库存数据
   const { data: stocksRaw, isLoading } = useSWR<StockItem[]>(
     selectedWarehouseId === "all" 
-      ? "/api/stock" 
-      : `/api/stock?warehouseId=${selectedWarehouseId}`,
+      ? "/api/stock?noCache=true" 
+      : `/api/stock?warehouseId=${selectedWarehouseId}&noCache=true`,
     fetcher,
     { revalidateOnFocus: false }
   );

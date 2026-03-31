@@ -15,16 +15,14 @@ const formatCurrency = (n: number, curr: string = "CNY") => {
   }).format(n);
 };
 
-// SWR fetcher - 添加错误处理和数据验证
+// SWR fetcher - 统一返回后端原始 JSON（数组或对象）
 const fetcher = async (url: string) => {
   try {
     const res = await fetch(url);
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
-    const data = await res.json();
-    // 确保返回的是数组，如果不是则返回空数组
-    return Array.isArray(data) ? data : [];
+    return await res.json();
   } catch (error) {
     console.error('Fetcher error:', error);
     // 返回空数组而不是抛出错误，避免页面崩溃
@@ -61,12 +59,12 @@ type Warehouse = {
 
 export default function InventoryDashboardPage() {
   // 使用 SWR 加载数据
-  const { data: stockDataRaw, isLoading: stockLoading, error: stockError } = useSWR<any>("/api/stock?page=1&pageSize=5000", fetcher, {
+  const { data: stockDataRaw, isLoading: stockLoading, error: stockError } = useSWR<any>("/api/stock?page=1&pageSize=5000&noCache=true", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const { data: warehousesDataRaw, error: warehousesError } = useSWR<any>("/api/warehouses?page=1&pageSize=500", fetcher, {
+  const { data: warehousesDataRaw, error: warehousesError } = useSWR<any>("/api/warehouses?page=1&pageSize=500&noCache=true", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
@@ -77,7 +75,7 @@ export default function InventoryDashboardPage() {
   // 筛选状态
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [searchSku, setSearchSku] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "in_stock" | "in_transit">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "domestic" | "overseas" | "transit">("all");
 
   // 计算总库存价值
   const totalInventoryValue = useMemo(() => {
@@ -135,17 +133,15 @@ export default function InventoryDashboardPage() {
       );
     }
 
-    // 状态筛选（在库/在途）
+    // 状态筛选（国内/海外）
     if (statusFilter !== "all") {
-      if (statusFilter === "in_stock") {
-        // 在库：location 为 FACTORY 或 DOMESTIC
-        filtered = filtered.filter(
-          (item) => item.location === "FACTORY" || item.location === "DOMESTIC"
-        );
-      } else if (statusFilter === "in_transit") {
-        // 在途：location 为 TRANSIT
-        filtered = filtered.filter((item) => item.location === "TRANSIT");
-      }
+      filtered = filtered.filter((item) => {
+        const warehouse = warehousesData.find((w) => w.id === item.warehouseId);
+        const loc = String(warehouse?.location || item.location || "").toUpperCase();
+        if (statusFilter === "domestic") return loc === "DOMESTIC";
+        if (statusFilter === "overseas") return loc === "OVERSEAS";
+        return loc === "TRANSIT";
+      });
     }
 
     return filtered;
@@ -336,12 +332,13 @@ export default function InventoryDashboardPage() {
             <label className="block text-xs font-medium text-slate-400 mb-2">状态</label>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as "all" | "in_stock" | "in_transit")}
+              onChange={(e) => setStatusFilter(e.target.value as "all" | "domestic" | "overseas" | "transit")}
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 outline-none focus:border-primary-400"
             >
               <option value="all">全部状态</option>
-              <option value="in_stock">在库</option>
-              <option value="in_transit">在途</option>
+              <option value="domestic">国内库存</option>
+              <option value="overseas">海外库存</option>
+              <option value="transit">在途库存</option>
             </select>
           </div>
         </div>
