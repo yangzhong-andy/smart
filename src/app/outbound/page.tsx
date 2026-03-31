@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
 import {
   Package,
   ArrowRight,
@@ -279,6 +280,24 @@ export default function OutboundListPage() {
     batchNumbers: string[];
   } | null>(null);
 
+  const countryOptionsByRegion = useMemo(() => {
+    const grouped = getCountriesByRegion();
+    const knownCodes = new Set<string>();
+    Object.values(grouped).forEach((arr) => {
+      arr.forEach((c) => knownCodes.add(String(c.code).toUpperCase()));
+    });
+
+    const extras = destinationCountries
+      .filter((c) => c.value && !knownCodes.has(c.value.toUpperCase()))
+      .map((c) => ({ value: c.value, label: c.label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
+
+    return {
+      grouped,
+      extras,
+    };
+  }, [destinationCountries]);
+
   useEffect(() => {
     const queryKeyword = searchParams?.get("keyword")?.trim();
     if (!queryKeyword) return;
@@ -378,6 +397,10 @@ export default function OutboundListPage() {
       setDestinationCountries([]);
     }
   }, []);
+
+  useEffect(() => {
+    fetchDestinationCountries();
+  }, [fetchDestinationCountries]);
 
   const fetchSkus = useCallback(async () => {
     try {
@@ -1001,11 +1024,6 @@ export default function OutboundListPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <datalist id="destination-country-options">
-        {destinationCountries.map((country) => (
-          <option key={country.value} value={country.value} label={country.label} />
-        ))}
-      </datalist>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <PageHeader
           title="出库管理（批次）"
@@ -1432,15 +1450,35 @@ export default function OutboundListPage() {
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-xs text-slate-400 mb-1">目的国</label>
-                  <input
-                    list="destination-country-options"
+                  <select
                     value={directContainerForm.destinationCountry}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, destinationCountry: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
-                    placeholder="请选择或输入目的国"
-                  />
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  >
+                    <option value="">请选择目的国</option>
+                    {Object.entries(countryOptionsByRegion.grouped).map(([region, countries]) => (
+                      <optgroup key={region} label={region}>
+                        {countries.map((country) => (
+                          <option key={country.code} value={country.code}>
+                            {country.name} ({country.code})
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {countryOptionsByRegion.extras.length > 0 && (
+                      <optgroup label="系统维护">
+                        {countryOptionsByRegion.extras.map((country) => (
+                          <option key={country.value} value={country.value}>
+                            {getCountryByCode(country.value)?.name
+                              ? `${getCountryByCode(country.value)!.name} (${country.value})`
+                              : country.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">ETD（日期时间）</label>
@@ -1724,8 +1762,7 @@ export default function OutboundListPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">目的国</label>
-                  <input
-                    list="destination-country-options"
+                  <select
                     value={preRecordForm.destinationCountry}
                     onChange={(e) =>
                       setPreRecordForm((f) => ({
@@ -1733,9 +1770,30 @@ export default function OutboundListPage() {
                         destinationCountry: e.target.value,
                       }))
                     }
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm"
-                    placeholder="如 BR / US"
-                  />
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  >
+                    <option value="">请选择目的国</option>
+                    {Object.entries(countryOptionsByRegion.grouped).map(([region, countries]) => (
+                      <optgroup key={region} label={region}>
+                        {countries.map((country) => (
+                          <option key={country.code} value={country.code}>
+                            {country.name} ({country.code})
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {countryOptionsByRegion.extras.length > 0 && (
+                      <optgroup label="系统维护">
+                        {countryOptionsByRegion.extras.map((country) => (
+                          <option key={country.value} value={country.value}>
+                            {getCountryByCode(country.value)?.name
+                              ? `${getCountryByCode(country.value)!.name} (${country.value})`
+                              : country.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">起运港</label>
@@ -2030,14 +2088,33 @@ export default function OutboundListPage() {
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  list="destination-country-options"
+                <select
                   value={createForm.destinationCountry}
                   onChange={(e) => setCreateForm((f) => ({ ...f, destinationCountry: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
-                  placeholder="目的国家（来源店铺国家，可输入）"
-                />
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                >
+                  <option value="">请选择目的国</option>
+                  {Object.entries(countryOptionsByRegion.grouped).map(([region, countries]) => (
+                    <optgroup key={region} label={region}>
+                      {countries.map((country) => (
+                        <option key={country.code} value={country.code}>
+                          {country.name} ({country.code})
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {countryOptionsByRegion.extras.length > 0 && (
+                    <optgroup label="系统维护">
+                      {countryOptionsByRegion.extras.map((country) => (
+                        <option key={country.value} value={country.value}>
+                          {getCountryByCode(country.value)?.name
+                            ? `${getCountryByCode(country.value)!.name} (${country.value})`
+                            : country.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
                 <input
                   type="text"
                   value={createForm.destinationPlatform}

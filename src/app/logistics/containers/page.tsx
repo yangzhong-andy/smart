@@ -7,6 +7,7 @@ import { Download, Plus, RefreshCw } from "lucide-react";
 import { PageHeader, ActionButton } from "@/components/ui";
 import type { Container } from "@/logistics/types";
 import Link from "next/link";
+import { getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
 import { ContainerStats } from "./components/ContainerStats";
 import { ContainerFilters } from "./components/ContainerFilters";
 import { ContainersTable } from "./components/ContainersTable";
@@ -255,6 +256,17 @@ export default function ContainersPage() {
     fetcher
   );
   const destinationCountries = Array.isArray(countriesData?.data) ? countriesData!.data : [];
+  const countryOptionsByRegion = useMemo(() => {
+    const grouped = getCountriesByRegion();
+    const knownCodes = new Set<string>();
+    Object.values(grouped).forEach((arr) => {
+      arr.forEach((c) => knownCodes.add(String(c.code).toUpperCase()));
+    });
+    const extras = destinationCountries
+      .filter((c) => c.value && !knownCodes.has(String(c.value).toUpperCase()))
+      .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
+    return { grouped, extras };
+  }, [destinationCountries]);
   const { data: logisticsChannelsData } = useSWR<{ data: LogisticsChannelItem[] }>(
     "/api/logistics-channels?page=1&pageSize=500",
     fetcher
@@ -485,11 +497,6 @@ export default function ContainersPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <datalist id="store-country-options">
-        {destinationCountries.map((country) => (
-          <option key={country.value} value={country.value} label={country.label} />
-        ))}
-      </datalist>
       <PageHeader
         title="柜子管理"
         description="按柜管理在途货物、海运信息和出库批次"
@@ -653,13 +660,33 @@ export default function ContainersPage() {
             </label>
             <label className="space-y-1">
               <span className="text-xs text-slate-300">目的国家</span>
-              <input
-                list="store-country-options"
+              <select
                 value={createForm.destinationCountry}
                 onChange={(e) => setCreateForm((f) => ({ ...f, destinationCountry: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-                placeholder="请选择或输入目的国"
-              />
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+              >
+                <option value="">请选择目的国</option>
+                {Object.entries(countryOptionsByRegion.grouped).map(([region, countries]) => (
+                  <optgroup key={region} label={region}>
+                    {countries.map((country) => (
+                      <option key={country.code} value={country.code}>
+                        {country.name} ({country.code})
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+                {countryOptionsByRegion.extras.length > 0 && (
+                  <optgroup label="系统维护">
+                    {countryOptionsByRegion.extras.map((country) => (
+                      <option key={country.value} value={country.value}>
+                        {getCountryByCode(country.value)?.name
+                          ? `${getCountryByCode(country.value)!.name} (${country.value})`
+                          : country.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
             </label>
             <label className="space-y-1">
               <span className="text-xs text-slate-300">出口模式</span>
