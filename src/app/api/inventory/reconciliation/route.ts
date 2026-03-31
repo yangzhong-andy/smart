@@ -130,6 +130,19 @@ export async function GET(request: NextRequest) {
         Number(variantAgg._sum.inTransit ?? 0),
     };
 
+    // 业务口径：工厂 + 国内 + 海运在途（来自 ProductVariant） + 海外仓（来自 Stock）
+    const businessByLocation = {
+      FACTORY: variantProfile.sumAtFactory,
+      DOMESTIC: variantProfile.sumAtDomestic,
+      TRANSIT: variantProfile.sumInTransit,
+      OVERSEAS: Number(byLocation.OVERSEAS?.qty ?? 0),
+    };
+    const businessTotalQty =
+      businessByLocation.FACTORY +
+      businessByLocation.DOMESTIC +
+      businessByLocation.TRANSIT +
+      businessByLocation.OVERSEAS;
+
     const payload = {
       generatedAt: new Date().toISOString(),
       grandTotalQty,
@@ -148,6 +161,8 @@ export async function GET(request: NextRequest) {
       byWarehouse,
       locationLabels: LOCATION_LABELS,
       variantProfile,
+      businessByLocation,
+      businessTotalQty,
     };
 
     return NextResponse.json(payload, {

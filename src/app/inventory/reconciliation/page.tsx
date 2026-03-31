@@ -54,6 +54,13 @@ type ReconciliationPayload = {
     sumStockQuantityField: number;
     sumProfileThree: number;
   };
+  businessByLocation: {
+    FACTORY: number;
+    DOMESTIC: number;
+    TRANSIT: number;
+    OVERSEAS: number;
+  };
+  businessTotalQty: number;
 };
 
 const ORDER = ["FACTORY", "DOMESTIC", "TRANSIT", "OVERSEAS", "UNKNOWN"] as const;
@@ -172,6 +179,12 @@ export default function InventoryReconciliationPage() {
 
             {/* 总览 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 p-4">
+                <div className="text-xs text-primary-200/80">业务总库存（工厂+国内+在途+海外）</div>
+                <div className="text-2xl font-semibold text-primary-100 tabular-nums mt-1">
+                  {data.businessTotalQty.toLocaleString("zh-CN")}
+                </div>
+              </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                 <div className="text-xs text-slate-500">Stock 总件数（qty）</div>
                 <div className="text-2xl font-semibold text-slate-100 tabular-nums mt-1">
@@ -200,7 +213,7 @@ export default function InventoryReconciliationPage() {
 
             {/* 四段 + 未知 */}
             <div>
-              <h2 className="text-sm font-medium text-slate-300 mb-3">按仓库位置（业务四段）</h2>
+              <h2 className="text-sm font-medium text-slate-300 mb-3">按仓库位置（Stock 口径）</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {ORDER.map((key) => {
                   const b = data.byLocation[key];
@@ -237,6 +250,39 @@ export default function InventoryReconciliationPage() {
                   已筛选位置：{data.byLocation[locFilter]?.label ?? locFilter}，点击下方「全部」可清除。
                 </p>
               )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+              <h2 className="text-sm font-medium text-slate-300 mb-2">业务四段口径（你提的定义）</h2>
+              <p className="text-xs text-slate-500 mb-3">
+                工厂/国内/在途取自产品档案字段，海外取自 Stock 的 OVERSEAS 段。
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <span className="text-slate-500">工厂</span>
+                  <div className="text-slate-100 font-mono tabular-nums">
+                    {data.businessByLocation.FACTORY.toLocaleString("zh-CN")}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500">国内</span>
+                  <div className="text-slate-100 font-mono tabular-nums">
+                    {data.businessByLocation.DOMESTIC.toLocaleString("zh-CN")}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500">海运在途</span>
+                  <div className="text-slate-100 font-mono tabular-nums">
+                    {data.businessByLocation.TRANSIT.toLocaleString("zh-CN")}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500">海外仓</span>
+                  <div className="text-slate-100 font-mono tabular-nums">
+                    {data.businessByLocation.OVERSEAS.toLocaleString("zh-CN")}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* 产品档案对照 */}
