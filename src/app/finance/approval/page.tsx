@@ -222,16 +222,31 @@ export default function ApprovalCenterPage() {
       message: `确定要批准这笔账单吗？批准后系统将自动推送给财务人员处理入账。\n\n账单信息：\n- 类型：${billType}\n- 金额：${billAmount}\n- 服务方：${serviceProvider}`,
       type: "info",
       onConfirm: async () => {
+        const approvedAt = new Date().toISOString();
+        const approver = getCurrentUserDisplayName(session);
         const updatedBills = allBills.map((b) =>
           b.id === billId
             ? {
                 ...b,
                 status: "Approved" as BillStatus,
-                approvedBy: getCurrentUserDisplayName(session), // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
-                approvedAt: new Date().toISOString()
+                approvedBy: approver, // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
+                approvedAt
               }
             : b
         );
+        // 乐观更新：立即从待审批列表移除，避免必须手动刷新
+        mutate("pending-bills", (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          return current.filter((b: { id?: string }) => b.id !== billId);
+        }, false);
+        mutate("monthly-bills", (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          return current.map((b: any) =>
+            b?.id === billId ? { ...b, status: "Approved", approvedBy: approver, approvedAt } : b
+          );
+        }, false);
+        setConfirmDialog(null);
+
         await saveMonthlyBills(updatedBills);
         mutate("monthly-bills", undefined, { revalidate: true });
         mutate("pending-bills", undefined, { revalidate: true });
@@ -390,8 +405,8 @@ export default function ApprovalCenterPage() {
                 amount: bill.totalAmount,
                 currency: bill.currency,
                 netAmount: bill.netAmount,
-                approvedBy: getCurrentUserDisplayName(session),
-                approvedAt: new Date().toISOString(),
+                approvedBy: approver,
+                approvedAt,
                 notes: bill.notes
               });
               console.log("应收款账单", billId, "审批通过，已创建待入账任务（推送到待入账列表）");
@@ -414,8 +429,6 @@ export default function ApprovalCenterPage() {
         mutate("pending-entries", undefined, { revalidate: true });
         window.dispatchEvent(new CustomEvent("approval-updated"));
         broadcastFinanceSwrInvalidate();
-        
-        setConfirmDialog(null);
         toast.success("已批准，已推送给财务人员处理入账");
       }
     });
