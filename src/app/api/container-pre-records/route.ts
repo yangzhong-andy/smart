@@ -18,11 +18,13 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
+    const outboundBatchId = searchParams.get("outboundBatchId");
     const page = parseInt(searchParams.get("page") || "1", 10);
     const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20", 10) || 20, 50);
 
     const where: any = {};
     if (status) where.status = status;
+    if (outboundBatchId) where.outboundBatchId = outboundBatchId;
 
     const [rows, total] = await prisma.$transaction([
       prisma.containerPreRecord.findMany({
@@ -42,6 +44,8 @@ export async function GET(request: NextRequest) {
       name: r.name,
       status: r.status,
       notes: r.notes,
+      outboundBatchId: r.outboundBatchId ?? undefined,
+      outboundOrderId: r.outboundOrderId ?? undefined,
       exporterId: r.exporterId,
       exporterName: r.exporterName,
       overseasCompanyId: r.overseasCompanyId,
@@ -184,6 +188,8 @@ export async function POST(request: NextRequest) {
         name: body.name || null,
         status: "Draft",
         notes: body.notes || null,
+        outboundBatchId: body.outboundBatchId || null,
+        outboundOrderId: body.outboundOrderId || null,
         exporterId: body.exporterId || null,
         exporterName: body.exporterName || null,
         overseasCompanyId: body.overseasCompanyId || null,

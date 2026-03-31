@@ -84,6 +84,23 @@ export async function GET(
         qty: b.qty,
         shippedDate: b.shippedDate.toISOString(),
         status: b.status,
+        // 批次级运输/追踪（出库后维护，便于在「柜子详情」看本柜在途情况）
+        shippingMethod: b.shippingMethod ?? undefined,
+        trackingNumber: b.trackingNumber ?? undefined,
+        vesselName: b.vesselName ?? undefined,
+        vesselVoyage: b.vesselVoyage ?? undefined,
+        portOfLoading: b.portOfLoading ?? undefined,
+        portOfDischarge: b.portOfDischarge ?? undefined,
+        eta: b.eta?.toISOString() ?? undefined,
+        actualDepartureDate: b.actualDepartureDate?.toISOString() ?? undefined,
+        actualArrivalDate: b.actualArrivalDate?.toISOString() ?? undefined,
+        destinationCountry: b.destinationCountry ?? undefined,
+        destinationPlatform: b.destinationPlatform ?? undefined,
+        destinationStoreName: b.destinationStoreName ?? undefined,
+        ownerName: b.ownerName ?? undefined,
+        currentLocation: b.currentLocation ?? undefined,
+        lastEvent: b.lastEvent ?? undefined,
+        lastEventTime: b.lastEventTime?.toISOString() ?? undefined,
         warehouse: b.warehouse
           ? {
               id: b.warehouse.id,

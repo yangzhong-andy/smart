@@ -39,6 +39,7 @@ import ExpenseEntry from "../cash-flow/components/ExpenseEntry";
 import IncomeEntry from "../cash-flow/components/IncomeEntry";
 import TransferEntry from "../cash-flow/components/TransferEntry";
 import { enrichWithUID } from "@/lib/business-utils";
+import { FINANCE_SWR_SYNC_KEY, broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
 
 type CashFlow = {
   id: string;
@@ -206,11 +207,17 @@ export default function FinanceWorkbenchPage() {
     shouldRetryOnError: false as const,
     errorRetryCount: 0,
   };
+  /** 审批/入账相关列表：切回浏览器标签时自动拉取，避免必须手动刷新 */
+  const swrOptionsRefreshOnFocus = {
+    ...swrOptions,
+    revalidateOnFocus: true,
+    dedupingInterval: 3000,
+  };
 
   // 使用 SWR 获取数据（优化：大幅增加去重间隔以减少数据库访问）
   const { data: pendingEntriesData, error: pendingEntriesError } = useSWR("pending-entries", fetcher, {
-    ...swrOptions,
-    dedupingInterval: 300000,
+    ...swrOptionsRefreshOnFocus,
+    dedupingInterval: 8000,
   });
   const { data: monthlyBillsData, error: monthlyBillsError } = useSWR("monthly-bills", fetcher, {
     ...swrOptions,
@@ -227,18 +234,18 @@ export default function FinanceWorkbenchPage() {
     errorRetryCount: 2,
   });
   const { data: pendingBillsData, error: pendingBillsError } = useSWR("pending-bills", fetcher, {
-    ...swrOptions,
-    dedupingInterval: 600000,
+    ...swrOptionsRefreshOnFocus,
+    dedupingInterval: 8000,
   });
   const { data: approvedExpenseRequestsData, error: approvedExpenseError } = useSWR(
     "approved-expense-requests",
     fetcher,
-    { ...swrOptions, dedupingInterval: 300000 }
+    { ...swrOptionsRefreshOnFocus, dedupingInterval: 8000 }
   );
   const { data: approvedIncomeRequestsData, error: approvedIncomeError } = useSWR(
     "approved-income-requests",
     fetcher,
-    { ...swrOptions, dedupingInterval: 300000 }
+    { ...swrOptionsRefreshOnFocus, dedupingInterval: 8000 }
   );
   const { data: storesDataRaw } = useSWR<any>("/api/stores?page=1&pageSize=500", fetcher, {
     ...swrOptions,
@@ -441,11 +448,13 @@ export default function FinanceWorkbenchPage() {
     }
   }, [incomeAccountModal.open, incomeAccountModal.requestId, selectedIncomeRequest, approvedIncomeRequests, stores, accounts]);
 
-  // 刷新审批数据（修复：添加 mutate 到依赖项，避免无限循环）
+  // 刷新审批/待入账相关数据（与审批中心、对账中心写入后保持一致）
   const refreshApprovalData = useCallback(() => {
-    mutate("approved-expense-requests");
-    mutate("approved-income-requests");
-    mutate("pending-bills");
+    mutate("pending-entries", undefined, { revalidate: true });
+    mutate("monthly-bills", undefined, { revalidate: true });
+    mutate("approved-expense-requests", undefined, { revalidate: true });
+    mutate("approved-income-requests", undefined, { revalidate: true });
+    mutate("pending-bills", undefined, { revalidate: true });
   }, [mutate]);
 
   // 处理流水记录创建
@@ -517,7 +526,11 @@ export default function FinanceWorkbenchPage() {
     
     // 监听 localStorage 变化（当审批状态更新时）
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "expenseRequests" || e.key === "incomeRequests") {
+      if (
+        e.key === "expenseRequests" ||
+        e.key === "incomeRequests" ||
+        e.key === FINANCE_SWR_SYNC_KEY
+      ) {
         refreshApprovalData();
       }
     };
@@ -738,8 +751,10 @@ export default function FinanceWorkbenchPage() {
           Array.isArray(prev) ? prev.filter((r) => r.id !== requestId) : prev,
         { revalidate: true }
       );
-      mutate('/api/cash-flow');
-      mutate('/api/accounts');
+      mutate('/api/cash-flow', undefined, { revalidate: true });
+      mutate('/api/accounts', undefined, { revalidate: true });
+      mutate("pending-entries", undefined, { revalidate: true });
+      broadcastFinanceSwrInvalidate();
       // 刷新拿货单/合同，避免 SWR 缓存导致“财务已付款但页面未更新”
       mutate("/api/delivery-orders?page=1&pageSize=500", undefined, { revalidate: true });
       mutate("/api/purchase-contracts?page=1&pageSize=500", undefined, { revalidate: true });
@@ -843,8 +858,10 @@ export default function FinanceWorkbenchPage() {
           Array.isArray(current) ? current.filter((r) => r.id !== requestId) : current,
         { revalidate: true }
       );
-      mutate("cash-flow");
-      mutate("bank-accounts");
+      mutate("cash-flow", undefined, { revalidate: true });
+      mutate("bank-accounts", undefined, { revalidate: true });
+      mutate("pending-entries", undefined, { revalidate: true });
+      broadcastFinanceSwrInvalidate();
       
       toast.success("收入已成功入账");
       setIncomeAccountModal({ open: false, requestId: null });

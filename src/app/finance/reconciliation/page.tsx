@@ -35,6 +35,7 @@ import { enrichWithUID, createBusinessEntityWithRelations } from "@/lib/business
 import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-store";
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { createPaymentNotification, markNotificationAsRead, findNotificationsByRelated } from "@/lib/notification-store";
+import { broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
 
 // 数据均通过 useSWR 异步拉取，无大循环/同步请求，不阻塞侧栏加载与点击
 export default function ReconciliationPage() {
@@ -394,7 +395,8 @@ export default function ReconciliationPage() {
                 approvedAt: new Date().toISOString(),
                 notes: bill.notes,
               });
-              mutate("pending-entries");
+              mutate("pending-entries", undefined, { revalidate: true });
+              broadcastFinanceSwrInvalidate();
             } catch (e) {
               console.error("创建待入账任务失败:", billId, e);
               toast.error("创建待入账任务失败，请稍后在「待入账」中核对");
@@ -582,7 +584,8 @@ export default function ReconciliationPage() {
         );
         savePaymentRequests(updatedRequests);
       }
-      mutate("pending-entries");
+      mutate("pending-entries", undefined, { revalidate: true });
+      broadcastFinanceSwrInvalidate();
       setIsEntryModalOpen(false);
       setSelectedPendingEntry(null);
       setEntryForm({ accountId: "", entryDate: new Date().toISOString().slice(0, 10), voucher: "" });
@@ -778,7 +781,8 @@ export default function ReconciliationPage() {
           onClick={() => {
             setActiveCategory("PendingEntry");
             setFilterType("all"); // 切换板块时重置类型筛选
-            mutate("pending-entries"); // 刷新待入账任务列表（API）
+            mutate("pending-entries", undefined, { revalidate: true }); // 刷新待入账任务列表（API）
+            broadcastFinanceSwrInvalidate();
           }}
           className={`px-6 py-3 text-sm font-medium transition-all duration-200 border-b-2 relative ${
             activeCategory === "PendingEntry"

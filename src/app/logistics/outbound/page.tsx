@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { 
   Package, Download, Eye, CheckCircle2, 
@@ -328,9 +329,18 @@ export default function OutboundPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <div className="rounded-lg border border-slate-600 bg-slate-900/80 px-4 py-3 text-sm text-slate-300">
+        本页为<strong className="text-slate-100">出库单</strong>维度。若需按<strong className="text-cyan-300">批次</strong>查看
+        SKU 明细、做<strong className="text-cyan-300">柜子预录单 / 一键转柜</strong>，请打开侧栏「
+        <Link href="/outbound" className="text-cyan-400 hover:underline font-medium">
+          出库批次（SKU/柜预录）
+        </Link>
+        」或直达 <code className="text-xs text-slate-500">/outbound</code>。
+      </div>
+
       <PageHeader
-        title="出库管理"
-        description="管理出库批次，跟踪出库进度"
+        title="出库单（物流）"
+        description="管理出库单与发货进度；批次级操作请使用「出库批次」页"
         actions={
           <div className="flex gap-2">
             <ActionButton onClick={openCreateModal} icon={Plus}>

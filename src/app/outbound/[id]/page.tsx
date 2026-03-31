@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Save } from "lucide-react";
+import { Anchor, ArrowLeft, CircleCheck, ClipboardList, Package, Save, Ship, Warehouse } from "lucide-react";
 import { PageHeader, ActionButton } from "@/components/ui";
 import DateInput from "@/components/DateInput";
 import { getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
@@ -33,15 +33,50 @@ type BatchDetail = {
   portOfLoading?: string;
   portOfDischarge?: string;
   eta?: string;
+  /** 实际开船/起飞（ETD） */
+  actualDepartureDate?: string;
+  containerId?: string;
+  container?: { id: string; containerNo: string };
+  /** 海外仓确认到货时间（与 confirm-arrival 一致） */
+  arrivalConfirmedAt?: string;
+  /** 创建出库单时勾选的海外入库预报（按出库单关联，非批次级） */
+  overseasForecastInbound?: {
+    id: string;
+    inboundNumber: string;
+    status: string;
+    qty: number;
+    receivedQty: number;
+  };
   status: string;
   notes?: string;
   outboundOrder?: {
     id: string;
     outboundNumber: string;
-    sku: string;
-    qty: number;
+    sku?: string;
+    qty?: number;
     shippedQty: number;
     status: string;
+    items: Array<{
+      id: string;
+      sku: string;
+      skuName?: string;
+      spec?: string;
+      qty: number;
+      shippedQty: number;
+      unitWeightKg?: number;
+      totalWeightKg?: number;
+      pieceVolumeM3?: number;
+      totalVolumeM3?: number;
+      productName?: string;
+      variantSkuId?: string;
+      isLegacySingle?: boolean;
+    }>;
+    skuLineTotals?: {
+      lineCount: number;
+      totalQty: number;
+      totalWeightKg?: number;
+      totalVolumeM3?: number;
+    };
   };
   warehouse?: { id: string; name: string };
 };
@@ -98,6 +133,7 @@ export default function OutboundBatchDetailPage() {
   const [vesselName, setVesselName] = useState("");
   const [portOfLoading, setPortOfLoading] = useState("");
   const [portOfDischarge, setPortOfDischarge] = useState("");
+  const [actualDepartureDate, setActualDepartureDate] = useState("");
   const [eta, setEta] = useState("");
   const [status, setStatus] = useState("待发货");
   const [destinationCountry, setDestinationCountry] = useState("");
@@ -131,6 +167,7 @@ export default function OutboundBatchDetailPage() {
     setVesselName(batch.vesselName ?? batch.vesselVoyage ?? "");
     setPortOfLoading(batch.portOfLoading ?? "");
     setPortOfDischarge(batch.portOfDischarge ?? "");
+    setActualDepartureDate(isoToDateStr(batch.actualDepartureDate));
     setEta(isoToDateStr(batch.eta));
     setStatus(batch.status ?? "待发货");
     setDestinationCountry(batch.destinationCountry ?? "");
@@ -153,6 +190,9 @@ export default function OutboundBatchDetailPage() {
         vesselVoyage: vesselName || undefined,
         portOfLoading: portOfLoading || undefined,
         portOfDischarge: portOfDischarge || undefined,
+        actualDepartureDate: actualDepartureDate
+          ? `${actualDepartureDate}T00:00:00.000Z`
+          : null,
         eta: eta ? `${eta}T00:00:00.000Z` : undefined,
         status: status || "待发货",
         destinationCountry: destinationCountry || undefined,
@@ -174,6 +214,7 @@ export default function OutboundBatchDetailPage() {
       }
       const updated = await res.json();
       mutate(updated, false);
+      setActualDepartureDate(isoToDateStr(updated.actualDepartureDate));
       setEta(isoToDateStr(updated.eta));
       toast.success("保存成功");
     } catch (err) {
@@ -222,10 +263,213 @@ export default function OutboundBatchDetailPage() {
         title={`出库批次 ${batch.batchNumber}`}
         description={
           batch.outboundOrder
-            ? `出库单 ${batch.outboundOrder.outboundNumber} · ${batch.qty} 件${batch.warehouseName ? ` · ${batch.warehouseName}` : ""}`
+            ? `出库单 ${batch.outboundOrder.outboundNumber} · 本批次 ${batch.qty} 件${batch.warehouseName ? ` · ${batch.warehouseName}` : ""}`
             : "编辑运输信息"
         }
       />
+
+      {/* 全链路：国内出库 → 柜子 → 在途 → 海外预报 → 海外仓 */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 max-w-4xl">
+        <h2 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+          <Ship className="w-4 h-4 text-cyan-500/90" />
+          跨境全链路进度
+        </h2>
+        <p className="text-xs text-slate-500 mb-4">
+          对应关系：出库批次绑定<strong className="text-slate-400">柜子</strong>；创建出库单时可生成<strong className="text-slate-400">海外入库预报</strong>（挂在出库单上）。
+          详细说明见项目内{" "}
+          <code className="text-[11px] bg-slate-800 px-1 rounded">docs/跨境物流链路说明.md</code>
+        </p>
+        <ol className="space-y-3 border-l border-slate-700 ml-2 pl-4">
+          <li className="text-sm text-slate-300">
+            <span className="text-emerald-400/90 inline-flex items-center gap-1">
+              <CircleCheck className="w-3.5 h-3.5" /> ① 国内仓出库
+            </span>
+            <span className="text-slate-500 text-xs ml-2">
+              {batch.warehouseName ?? "—"} · 发货 {new Date(batch.shippedDate).toLocaleString("zh-CN")}
+            </span>
+          </li>
+          <li className="text-sm">
+            {batch.container?.id ? (
+              <>
+                <span className="text-emerald-400/90 inline-flex items-center gap-1">
+                  <CircleCheck className="w-3.5 h-3.5" /> ② 绑定柜子
+                </span>
+                <Link
+                  href={`/logistics/containers/${batch.container.id}`}
+                  className="text-cyan-400 hover:underline ml-2"
+                >
+                  {batch.container.containerNo}
+                </Link>
+                <span className="text-slate-500 text-xs ml-1">（查看本柜在途货物）</span>
+              </>
+            ) : (
+              <>
+                <span className="text-amber-400/90 inline-flex items-center gap-1">
+                  <Anchor className="w-3.5 h-3.5" /> ② 绑定柜子
+                </span>
+                <span className="text-slate-500 text-xs ml-2">未绑定 — 请在「出库」列表为该批次选择柜号</span>
+              </>
+            )}
+          </li>
+          <li className="text-sm text-slate-300">
+            <span className="inline-flex items-center gap-1 text-slate-200">
+              <Ship className="w-3.5 h-3.5 text-slate-500" /> ③ 国际运输（在途）
+            </span>
+            <span className="text-slate-500 text-xs ml-2">
+              状态：{batch.status}
+              {batch.vesselName ? ` · ${batch.vesselName}` : ""}
+            </span>
+          </li>
+          <li className="text-sm">
+            {batch.overseasForecastInbound ? (
+              <>
+                <span className="text-emerald-400/90 inline-flex items-center gap-1">
+                  <ClipboardList className="w-3.5 h-3.5" /> ④ 海外入库预报
+                </span>
+                <span className="text-slate-300 ml-2 font-mono text-xs">
+                  {batch.overseasForecastInbound.inboundNumber}
+                </span>
+                <span className="text-slate-500 text-xs ml-2">
+                  {batch.overseasForecastInbound.status} · 待入 {batch.overseasForecastInbound.qty} / 已收{" "}
+                  {batch.overseasForecastInbound.receivedQty}
+                </span>
+                <Link
+                  href="/logistics/inbound"
+                  className="text-cyan-400 hover:underline text-xs ml-2"
+                >
+                  去入库页处理 →
+                </Link>
+              </>
+            ) : (
+              <>
+                <span className="text-slate-500 inline-flex items-center gap-1">
+                  <ClipboardList className="w-3.5 h-3.5" /> ④ 海外入库预报
+                </span>
+                <span className="text-slate-500 text-xs ml-2">
+                  无（创建出库单时未勾选「同时创建海外入库预报」）
+                </span>
+              </>
+            )}
+          </li>
+          <li className="text-sm">
+            {batch.arrivalConfirmedAt ? (
+              <>
+                <span className="text-emerald-400/90 inline-flex items-center gap-1">
+                  <CircleCheck className="w-3.5 h-3.5" /> ⑤ 海外仓已入库
+                </span>
+                <span className="text-slate-500 text-xs ml-2">
+                  {new Date(batch.arrivalConfirmedAt).toLocaleString("zh-CN")}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-amber-400/80 inline-flex items-center gap-1">
+                  <Warehouse className="w-3.5 h-3.5" /> ⑤ 海外仓上架
+                </span>
+                <span className="text-slate-500 text-xs ml-2">
+                  未到仓或未确认 — 可在「出库」列表对批次点「确认到货」增加海外仓库存
+                </span>
+              </>
+            )}
+          </li>
+        </ol>
+      </div>
+
+      {/* 关联出库单 SKU 明细（多行明细 + 单品重量/体积估算） */}
+      {batch.outboundOrder && (batch.outboundOrder.items?.length ?? 0) > 0 ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 max-w-4xl">
+          <h2 className="text-sm font-semibold text-slate-300 mb-1 flex items-center gap-2">
+            <Package className="w-4 h-4 text-cyan-500/90" />
+            出库单 SKU 明细
+          </h2>
+          <p className="text-xs text-slate-500 mb-4">
+            数据来自出库单行「OutboundOrderItem」。多 SKU 时按行展示；无明细的旧单则按本批次数量与主 SKU 显示一行。
+            重量/体积由产品 SKU 档案（长宽高、重量）估算，可与实际装箱略有偏差。
+          </p>
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-sm text-left min-w-[800px]">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-500 text-xs">
+                  <th className="py-2 pr-3 font-medium">SKU / 编码</th>
+                  <th className="py-2 pr-3 font-medium">品名 / 规格</th>
+                  <th className="py-2 pr-3 font-medium">数量</th>
+                  <th className="py-2 pr-3 font-medium">单件 kg</th>
+                  <th className="py-2 pr-3 font-medium">行小计 kg</th>
+                  <th className="py-2 pr-3 font-medium">行体积 m³</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batch.outboundOrder.items.map((row) => (
+                  <tr key={row.id} className="border-b border-slate-800/80">
+                    <td className="py-2.5 pr-3 align-top">
+                      <div className="text-slate-200 font-mono text-xs">{row.sku}</div>
+                      {row.variantSkuId && row.variantSkuId !== row.sku ? (
+                        <div className="text-[11px] text-slate-500 mt-0.5">变体: {row.variantSkuId}</div>
+                      ) : null}
+                    </td>
+                    <td className="py-2.5 pr-3 align-top text-slate-300 text-xs">
+                      {[row.productName || row.skuName, row.spec].filter(Boolean).join(" · ") || "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 align-top text-slate-200">{row.qty}</td>
+                    <td className="py-2.5 pr-3 align-top text-slate-400">
+                      {row.unitWeightKg != null ? row.unitWeightKg.toFixed(3) : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 align-top text-slate-400">
+                      {row.totalWeightKg != null ? row.totalWeightKg.toFixed(3) : "—"}
+                    </td>
+                    <td className="py-2.5 pr-3 align-top text-slate-400">
+                      {row.totalVolumeM3 != null ? row.totalVolumeM3.toFixed(3) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {batch.outboundOrder.skuLineTotals ? (
+                <tfoot>
+                  <tr className="border-t border-slate-700 text-slate-400 text-xs">
+                    <td colSpan={2} className="py-2 pr-3 font-medium text-slate-300">
+                      合计（按上表行汇总）
+                    </td>
+                    <td className="py-2 pr-3">{batch.outboundOrder.skuLineTotals.totalQty}</td>
+                    <td className="py-2 pr-3">—</td>
+                    <td className="py-2 pr-3">
+                      {batch.outboundOrder.skuLineTotals.totalWeightKg != null
+                        ? batch.outboundOrder.skuLineTotals.totalWeightKg.toFixed(3)
+                        : "—"}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {batch.outboundOrder.skuLineTotals.totalVolumeM3 != null
+                        ? batch.outboundOrder.skuLineTotals.totalVolumeM3.toFixed(3)
+                        : "—"}
+                    </td>
+                  </tr>
+                </tfoot>
+              ) : null}
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-600 mt-3">
+            本批次发货件数：<span className="text-slate-400">{batch.qty}</span>
+            {batch.outboundOrder.skuLineTotals != null &&
+              batch.qty !== batch.outboundOrder.skuLineTotals.totalQty && (
+                <span className="text-amber-400/90 ml-2">
+                  · 与表中数量合计不一致时，多为部分发货或一单多批次出库
+                </span>
+              )}
+          </p>
+        </div>
+      ) : null}
+
+      {batch.container?.id ? (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3 max-w-2xl text-sm">
+          <span className="text-slate-400">所属柜子：</span>
+          <Link
+            href={`/logistics/containers/${batch.container.id}`}
+            className="text-cyan-400 hover:underline font-medium"
+          >
+            {batch.container.containerNo}
+          </Link>
+          <span className="text-slate-500 ml-2">查看本柜全部在途货物与航线</span>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 max-w-2xl">
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -275,14 +519,27 @@ export default function OutboundBatchDetailPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">ETA（预计到达）</label>
-            <DateInput
-              value={eta}
-              onChange={setEta}
-              placeholder="选择日期"
-              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1.5">
+                ETD（实际开船时间）
+              </label>
+              <DateInput
+                value={actualDepartureDate}
+                onChange={setActualDepartureDate}
+                placeholder="选择日期"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1.5">ETA（预计到达）</label>
+              <DateInput
+                value={eta}
+                onChange={setEta}
+                placeholder="选择日期"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
+              />
+            </div>
           </div>
 
           <div>

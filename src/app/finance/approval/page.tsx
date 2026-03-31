@@ -34,6 +34,7 @@ import { ApprovalStats } from "./components/ApprovalStats";
 import { ApprovalFilters, type ActiveTab } from "./components/ApprovalFilters";
 import { ApprovalList } from "./components/ApprovalList";
 import { ApprovalDetailDialog } from "./components/ApprovalDetailDialog";
+import { broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
 
 function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
   if (!session?.user) return "当前用户";
@@ -232,9 +233,8 @@ export default function ApprovalCenterPage() {
             : b
         );
         await saveMonthlyBills(updatedBills);
-        // 鍒锋柊 SWR 缂撳瓨
-        mutate("monthly-bills");
-        mutate("pending-bills");
+        mutate("monthly-bills", undefined, { revalidate: true });
+        mutate("pending-bills", undefined, { revalidate: true });
         
         // 濡傛灉鏄箍鍛婅处鍗曪紝涓旀湭鐢熸垚杩旂偣搴旀敹娆撅紝鍒欒嚜鍔ㄧ敓鎴?
         if (bill.billType === "广告" && bill.agencyId && bill.adAccountId) {
@@ -409,6 +409,11 @@ export default function ApprovalCenterPage() {
           // 濡傛灉 billCategory 鏈缃垨涓哄叾浠栧€硷紝鏍规嵁璐﹀崟绫诲瀷鎺ㄦ柇
           console.warn("账单", billId, "的 billCategory 为", bill.billCategory || "undefined", "，无法确定推送位置");
         }
+
+        // 财务工作台 / 对账中心：立即拉取待入账与账单（含跨标签页）
+        mutate("pending-entries", undefined, { revalidate: true });
+        window.dispatchEvent(new CustomEvent("approval-updated"));
+        broadcastFinanceSwrInvalidate();
         
         setConfirmDialog(null);
         toast.success("已批准，已推送给财务人员处理入账");
@@ -526,7 +531,9 @@ export default function ApprovalCenterPage() {
           }, false);
           mutate("expense-requests", undefined, { revalidate: true });
           mutate("pending-expense-requests", undefined, { revalidate: true });
+          mutate("approved-expense-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
+          broadcastFinanceSwrInvalidate();
           toast.success("已批准，已推送给财务人员处理出账");
           setConfirmDialog(null);
           if (selectedExpenseRequest?.id === requestId) {
@@ -565,7 +572,9 @@ export default function ApprovalCenterPage() {
           }, false);
           mutate("income-requests", undefined, { revalidate: true });
           mutate("pending-income-requests", undefined, { revalidate: true });
+          mutate("approved-income-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
+          broadcastFinanceSwrInvalidate();
           toast.success("已批准，已推送给财务人员处理入账");
           setConfirmDialog(null);
           if (selectedIncomeRequest?.id === requestId) {
