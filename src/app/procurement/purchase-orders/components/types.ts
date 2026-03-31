@@ -10,6 +10,8 @@ export type Supplier = {
   depositRate: number;
   tailPeriodDays: number;
   settleBase: "发货" | "入库";
+  bankAccount?: string;
+  bankName?: string;
 };
 
 export type FormItemRow = {

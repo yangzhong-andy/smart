@@ -799,6 +799,23 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  const resolveSupplierPayeeInfo = (contract: PurchaseContract) => {
+    const normalizedName = (contract.supplierName || "").trim();
+    const supplier =
+      suppliers.find((s) => s.id === contract.supplierId) ||
+      suppliers.find((s) => (s.name || "").trim() === normalizedName);
+    const payeeName = supplier?.name || normalizedName || undefined;
+    const payeeAccount =
+      supplier?.bankAccount && supplier.bankAccount.trim()
+        ? supplier.bankAccount.trim()
+        : undefined;
+    const payeeBankName =
+      supplier?.bankName && supplier.bankName.trim()
+        ? supplier.bankName.trim()
+        : undefined;
+    return { payeeName, payeeAccount, payeeBankName };
+  };
+
   // 处理支付
   const handlePayment = async (contractId: string, type: "deposit" | "tail", deliveryOrderId?: string) => {
     const contract = contracts.find((c) => c.id === contractId);
@@ -841,9 +858,7 @@ export default function PurchaseOrdersPage() {
 
       const depositAmount = contract.depositAmount - (contract.depositPaid || 0);
       // 从供应商档案带出工厂/供应商收款信息，便于财务打款
-      const supplier = suppliers.find((s) => s.id === contract.supplierId) as { id: string; name: string; bankAccount?: string; bankName?: string } | undefined;
-      const payeeName = supplier?.name ?? contract.supplierName ?? undefined;
-      const payeeAccount = supplier?.bankAccount?.trim() ? supplier.bankAccount : undefined;
+      const { payeeName, payeeAccount, payeeBankName } = resolveSupplierPayeeInfo(contract);
 
       // 创建支出申请（原付款申请）
       const newExpenseRequest: ExpenseRequest = {
@@ -857,7 +872,7 @@ export default function PurchaseOrdersPage() {
         createdBy: "系统", // 实际应该从用户系统获取
         createdAt: new Date().toISOString(),
         submittedAt: new Date().toISOString(),
-        remark: `采购合同：${contract.contractNumber}\n供应商：${contract.supplierName}\nSKU：${contract.sku}\n采购数量：${contract.totalQty}\n单价：${currency(contract.unitPrice)}\n合同总额：${currency(contract.totalAmount)}\n已取货数：${contract.pickedQty} / ${contract.totalQty}`,
+        remark: `采购合同：${contract.contractNumber}\n供应商：${contract.supplierName}\nSKU：${contract.sku}\n采购数量：${contract.totalQty}\n单价：${currency(contract.unitPrice)}\n合同总额：${currency(contract.totalAmount)}\n已取货数：${contract.pickedQty} / ${contract.totalQty}\n收款人：${payeeName || "未维护"}\n开户行：${payeeBankName || "未维护"}\n收款账号：${payeeAccount || "未维护"}`,
         departmentId: undefined, // 可以从用户系统获取
         departmentName: "全球供应链部", // 可以从用户系统获取
         payeeName,
@@ -917,11 +932,7 @@ export default function PurchaseOrdersPage() {
         toast.error(`该拿货单的尾款付款申请已存在，当前状态：${statusText}`, { icon: "⚠️" });
         return;
       }
-      const supplier = suppliers.find((s) => s.id === contract.supplierId) as
-        | { id: string; name: string; bankAccount?: string; bankName?: string }
-        | undefined;
-      const payeeName = supplier?.name ?? contract.supplierName ?? undefined;
-      const payeeAccount = supplier?.bankAccount?.trim() ? supplier.bankAccount : undefined;
+      const { payeeName, payeeAccount, payeeBankName } = resolveSupplierPayeeInfo(contract);
       const deliveryNumber = (order as { deliveryNumber?: string }).deliveryNumber || order.id;
       const newExpenseRequest: ExpenseRequest = {
         id: `temp_${Date.now()}`,
@@ -934,7 +945,7 @@ export default function PurchaseOrdersPage() {
         createdBy: "系统",
         createdAt: new Date().toISOString(),
         submittedAt: new Date().toISOString(),
-        remark: `拿货单：${deliveryNumber}\n合同：${contract.contractNumber}\n供应商：${contract.supplierName}\n应付尾款：${remaining.toFixed(2)}`,
+        remark: `拿货单：${deliveryNumber}\n合同：${contract.contractNumber}\n供应商：${contract.supplierName}\n应付尾款：${remaining.toFixed(2)}\n收款人：${payeeName || "未维护"}\n开户行：${payeeBankName || "未维护"}\n收款账号：${payeeAccount || "未维护"}`,
         departmentId: undefined,
         departmentName: "全球供应链部",
         payeeName,

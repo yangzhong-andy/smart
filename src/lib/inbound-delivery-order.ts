@@ -110,9 +110,7 @@ export async function executeDeliveryOrderInbound(
   const contract = order.contract;
   // 优先使用请求中的 itemQtys，否则使用数据库中的 itemQtys
   const itemQtys = itemQtysFromRequest || (order.itemQtys as Record<string, number> | null);
-  
-  // 获取所有有 variantId 的 items
-  const itemsWithVariant = (contract.items || []).filter((item) => item.variantId);
+  const contractItems = contract.items || [];
   
   const warehouse = await prisma.warehouse.findUnique({
     where: { id: warehouseId },
@@ -126,26 +124,69 @@ export async function executeDeliveryOrderInbound(
   
   // 记录入库的 SKU 列表（用于多 SKU 时创建批次）
   const inboundBatchData: { variantId: string; sku: string; qty: number }[] = [];
+  // 记录多 SKU 入库明细（含解析后的 variantId）
+  const inboundLines: Array<{ itemId: string; variantId: string; sku: string; receivedQty: number; plannedQty: number; item: any }> = [];
   let pendingInboundIdForBatch: string | null = null;
   
   await prisma.$transaction(async (tx) => {
     const now = new Date();
 
-    // 如果有 itemQtys 且有带 variantId 的 items，遍历每个 SKU 入库
-    if (itemQtys && Object.keys(itemQtys).length > 0 && itemsWithVariant.length > 0) {
-      for (const item of itemsWithVariant) {
-        const variantId = item.variantId!;
-        const receivedQty = itemQtys[item.id] || 0;
-        if (receivedQty <= 0) continue;
-        await processStockInbound(tx, variantId, warehouseId, receivedQty, deliveryOrderId, order.deliveryNumber);
-        // 记录每个 SKU 的入库信息
+    // 多 SKU 入库：按 itemQtys 中实际填写的行逐条处理，并补解析缺失 variantId
+    if (itemQtys && Object.keys(itemQtys).length > 0 && contractItems.length > 0) {
+      const unresolvedSkus: string[] = [];
+      for (const item of contractItems) {
+        const plannedQty = Number(itemQtys[item.id]) || 0;
+        if (plannedQty <= 0) continue;
+
+        let variantId = item.variantId ?? null;
+        if (!variantId && item.sku) {
+          const bySku = await tx.productVariant.findUnique({ where: { skuId: String(item.sku) } });
+          if (bySku?.id) {
+            variantId = bySku.id;
+            // 自修复：回填合同明细 variantId，避免后续反复报错
+            await tx.purchaseContractItem.update({
+              where: { id: item.id },
+              data: { variantId: bySku.id, updatedAt: now },
+            });
+          }
+        }
+
+        if (!variantId) {
+          unresolvedSkus.push(item.sku || item.skuName || item.id);
+          continue;
+        }
+
+        await processStockInbound(
+          tx,
+          variantId,
+          warehouseId,
+          plannedQty,
+          deliveryOrderId,
+          order.deliveryNumber
+        );
+        inboundLines.push({
+          itemId: item.id,
+          variantId,
+          sku: item.sku || item.skuName || "未知",
+          receivedQty: plannedQty,
+          plannedQty,
+          item,
+        });
         inboundBatchData.push({
           variantId,
-          sku: item.sku || item.skuName || '未知',
-          qty: receivedQty
+          sku: item.sku || item.skuName || "未知",
+          qty: plannedQty,
         });
       }
-      // 多 SKU 入库时不需要后续的 pendingInbound 创建逻辑
+
+      if (unresolvedSkus.length > 0) {
+        throw new Error(
+          `以下 SKU 未绑定产品变体（variantId）：${unresolvedSkus.join("、")}。请在合同中重新选择对应 SKU 后再入库。`
+        );
+      }
+      if (inboundLines.length === 0) {
+        throw new Error("未检测到有效实收数量，无法入库");
+      }
     } else {
       // 兼容旧逻辑：单个 SKU 入库
       if (contract.items?.length) {
@@ -203,14 +244,13 @@ export async function executeDeliveryOrderInbound(
       });
       
       // 更新 PendingInboundItem 的已入库数量
-      if (itemQtys && Object.keys(itemQtys).length > 0 && itemsWithVariant.length > 0) {
-        for (const item of itemsWithVariant) {
-          const received = itemQtys[item.id] || 0;
-          if (received > 0) {
+      if (inboundLines.length > 0) {
+        for (const line of inboundLines) {
+          if (line.receivedQty > 0) {
             await tx.pendingInboundItem.updateMany({
-              where: { pendingInboundId: order.pendingInbound.id, variantId: item.variantId },
+              where: { pendingInboundId: order.pendingInbound.id, variantId: line.variantId },
               data: {
-                receivedQty: { increment: received },
+                receivedQty: { increment: line.receivedQty },
                 updatedAt: now
               }
             });
@@ -241,24 +281,20 @@ export async function executeDeliveryOrderInbound(
       });
       
       // 为每个SKU创建 PendingInboundItem 明细
-      if (itemQtys && Object.keys(itemQtys).length > 0 && itemsWithVariant.length > 0) {
+      if (inboundLines.length > 0) {
         // 多SKU情况：为每个SKU创建明细
-        for (const item of itemsWithVariant) {
-          const received = itemQtys[item.id] || 0;
-          const plannedQty = Number(itemQtys[item.id]) || 0;
-          // 只为本次实际拿货的 SKU 创建明细，避免混入合同全量数量
-          if (plannedQty <= 0) continue;
+        for (const line of inboundLines) {
           await tx.pendingInboundItem.create({
             data: {
               pendingInboundId: newPending.id,
-              variantId: item.variantId ?? null,
-              sku: item.sku || item.skuName || '',
+              variantId: line.variantId,
+              sku: line.sku || '',
               // skuName 应为产品/规格展示名，不能写供应商名
-              skuName: item.skuName || item.sku || null,
-              spec: item.spec ?? null,
-              qty: plannedQty,
-              receivedQty: received,
-              unitPrice: item.unitPrice ?? null,
+              skuName: line.item.skuName || line.item.sku || null,
+              spec: line.item.spec ?? null,
+              qty: line.plannedQty,
+              receivedQty: line.receivedQty,
+              unitPrice: line.item.unitPrice ?? null,
             }
           });
         }
