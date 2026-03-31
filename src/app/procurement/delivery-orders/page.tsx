@@ -47,6 +47,7 @@ export default function DeliveryOrdersPage() {
   const [inboundWarehouseId, setInboundWarehouseId] = useState<string>("");
   const [inboundSubmitting, setInboundSubmitting] = useState(false);
   const [payTailSubmitting, setPayTailSubmitting] = useState(false);
+  const [payTailConfirmOrder, setPayTailConfirmOrder] = useState<DeliveryOrder | null>(null);
   const [generatingBills, setGeneratingBills] = useState(false);
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -288,6 +289,20 @@ export default function DeliveryOrdersPage() {
     } finally {
       setGeneratingBills(false);
     }
+  };
+
+  const handleOpenPayTailConfirm = (order: DeliveryOrder) => {
+    if (payTailSubmitting) return;
+    setPayTailConfirmOrder(order);
+  };
+
+  const handleConfirmPayTail = () => {
+    if (!payTailConfirmOrder || payTailSubmitting) return;
+    setPayTailSubmitting(true);
+    const url = new URL(window.location.origin + "/procurement/purchase-orders");
+    url.searchParams.set("payTailContractId", payTailConfirmOrder.contractId);
+    url.searchParams.set("payTailDeliveryOrderId", payTailConfirmOrder.id);
+    window.location.href = url.toString();
   };
 
   return (
@@ -642,16 +657,7 @@ export default function DeliveryOrdersPage() {
                           {!isTailPaid ? (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (payTailSubmitting) return;
-                                const ok = window.confirm(`确认为拿货单 ${order.deliveryNumber} 发起尾款付款申请吗？`);
-                                if (!ok) return;
-                                setPayTailSubmitting(true);
-                                const url = new URL(window.location.origin + "/procurement/purchase-orders");
-                                url.searchParams.set("payTailContractId", order.contractId);
-                                url.searchParams.set("payTailDeliveryOrderId", order.id);
-                                window.location.href = url.toString();
-                              }}
+                              onClick={() => handleOpenPayTailConfirm(order)}
                               disabled={payTailSubmitting}
                               className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors"
                             >
@@ -858,6 +864,50 @@ export default function DeliveryOrdersPage() {
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
               >
                 {inboundSubmitting ? "处理中…" : "确认入库"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 发起尾款付款确认弹窗（系统风格） */}
+      {payTailConfirmOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
+              <h3 className="text-lg font-semibold text-slate-100">发起尾款付款申请</h3>
+              <button
+                type="button"
+                onClick={() => setPayTailConfirmOrder(null)}
+                className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4 text-sm text-slate-300">
+              <p>
+                确认为拿货单 <span className="font-mono text-slate-100">{payTailConfirmOrder.deliveryNumber}</span>{" "}
+                发起尾款付款申请吗？
+              </p>
+              <p className="text-xs text-slate-500">
+                确认后将跳转到采购合同页面，并自动打开对应尾款付款申请流程。
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-700 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setPayTailConfirmOrder(null)}
+                className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPayTail}
+                disabled={payTailSubmitting}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
+              >
+                {payTailSubmitting ? "处理中…" : "确认发起"}
               </button>
             </div>
           </div>
