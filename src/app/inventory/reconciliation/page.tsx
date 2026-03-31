@@ -82,6 +82,7 @@ export default function InventoryReconciliationPage() {
 
   const pct = (part: number, total: number) =>
     total > 0 ? ((part / total) * 100).toFixed(1) : "0.0";
+  const fmt = (v: unknown) => Number(v ?? 0).toLocaleString("zh-CN");
 
   const exportCsv = () => {
     if (!data) {
@@ -172,7 +173,7 @@ export default function InventoryReconciliationPage() {
         {data && !isLoading && (
           <>
             <p className="text-xs text-slate-500">
-              数据生成时间：{new Date(data.generatedAt).toLocaleString("zh-CN")} · 主口径为{" "}
+              数据生成时间：{data.generatedAt ? new Date(data.generatedAt).toLocaleString("zh-CN") : "-"} · 主口径为{" "}
               <span className="text-slate-300">Stock（SKU×仓库）</span> 按仓库{" "}
               <span className="text-slate-300">location</span> 聚合，无条数上限截断。
             </p>
@@ -182,31 +183,31 @@ export default function InventoryReconciliationPage() {
               <div className="rounded-xl border border-primary-500/30 bg-primary-500/10 p-4">
                 <div className="text-xs text-primary-200/80">业务总库存（工厂+国内+在途+海外）</div>
                 <div className="text-2xl font-semibold text-primary-100 tabular-nums mt-1">
-                  {data.businessTotalQty.toLocaleString("zh-CN")}
+                  {fmt(data.businessTotalQty)}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                 <div className="text-xs text-slate-500">Stock 总件数（qty）</div>
                 <div className="text-2xl font-semibold text-slate-100 tabular-nums mt-1">
-                  {data.grandTotalQty.toLocaleString("zh-CN")}
+                  {fmt(data.grandTotalQty)}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                 <div className="text-xs text-slate-500">预留合计</div>
                 <div className="text-2xl font-semibold text-amber-300/90 tabular-nums mt-1">
-                  {data.grandReservedQty.toLocaleString("zh-CN")}
+                  {fmt(data.grandReservedQty)}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                 <div className="text-xs text-slate-500">可用约（qty − 预留）</div>
                 <div className="text-2xl font-semibold text-emerald-300/90 tabular-nums mt-1">
-                  {data.grandAvailableApprox.toLocaleString("zh-CN")}
+                  {fmt(data.grandAvailableApprox)}
                 </div>
               </div>
               <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                 <div className="text-xs text-slate-500">产品档案 · 工厂+国内+在途（参考）</div>
                 <div className="text-2xl font-semibold text-slate-300 tabular-nums mt-1">
-                  {data.variantProfile.sumProfileThree.toLocaleString("zh-CN")}
+                  {fmt(data.variantProfile?.sumProfileThree)}
                 </div>
               </div>
             </div>
@@ -236,7 +237,7 @@ export default function InventoryReconciliationPage() {
                         {b.label}
                       </div>
                       <div className="text-xl font-bold text-slate-100 tabular-nums">
-                        {b.qty.toLocaleString("zh-CN")}
+                        {fmt(b.qty)}
                       </div>
                       <div className="text-[11px] text-slate-500 mt-2">
                         占比 {pct(b.qty, total)}% · {b.warehouseCount} 个仓 · {b.skuLines} 条明细行
@@ -261,25 +262,25 @@ export default function InventoryReconciliationPage() {
                 <div>
                   <span className="text-slate-500">工厂</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.businessByLocation.FACTORY.toLocaleString("zh-CN")}
+                    {fmt(data.businessByLocation?.FACTORY)}
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500">国内</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.businessByLocation.DOMESTIC.toLocaleString("zh-CN")}
+                    {fmt(data.businessByLocation?.DOMESTIC)}
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500">海运在途</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.businessByLocation.TRANSIT.toLocaleString("zh-CN")}
+                    {fmt(data.businessByLocation?.TRANSIT)}
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500">海外仓</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.businessByLocation.OVERSEAS.toLocaleString("zh-CN")}
+                    {fmt(data.businessByLocation?.OVERSEAS)}
                   </div>
                 </div>
               </div>
@@ -295,25 +296,25 @@ export default function InventoryReconciliationPage() {
                 <div>
                   <span className="text-slate-500">atFactory</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.variantProfile.sumAtFactory.toLocaleString("zh-CN")}
+                    {fmt(data.variantProfile?.sumAtFactory)}
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500">atDomestic</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.variantProfile.sumAtDomestic.toLocaleString("zh-CN")}
+                    {fmt(data.variantProfile?.sumAtDomestic)}
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500">inTransit</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.variantProfile.sumInTransit.toLocaleString("zh-CN")}
+                    {fmt(data.variantProfile?.sumInTransit)}
                   </div>
                 </div>
                 <div>
                   <span className="text-slate-500">stockQuantity 字段合计</span>
                   <div className="text-slate-100 font-mono tabular-nums">
-                    {data.variantProfile.sumStockQuantityField.toLocaleString("zh-CN")}
+                    {fmt(data.variantProfile?.sumStockQuantityField)}
                   </div>
                 </div>
               </div>
@@ -353,10 +354,10 @@ export default function InventoryReconciliationPage() {
                         <td className="px-4 py-2 font-mono text-slate-400">{w.warehouseCode}</td>
                         <td className="px-4 py-2 text-slate-200">{w.warehouseName}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-slate-100">
-                          {w.qty.toLocaleString("zh-CN")}
+                          {fmt(w.qty)}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-amber-300/80">
-                          {w.reservedQty.toLocaleString("zh-CN")}
+                          {fmt(w.reservedQty)}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-slate-400">
                           {w.skuLineCount}
