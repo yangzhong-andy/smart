@@ -185,7 +185,7 @@ export async function POST(
         for (const item of orderWithItems.items) {
           const ship = shipMap.get(item.id) || 0;
           if (ship <= 0) continue;
-          await tx.outboundBatchItem.create({
+          await (tx as any).outboundBatchItem.create({
             data: {
               outboundBatchId: batch.id,
               outboundOrderItemId: item.id,
@@ -198,7 +198,7 @@ export async function POST(
           });
         }
       } else {
-        await tx.outboundBatchItem.create({
+        await (tx as any).outboundBatchItem.create({
           data: {
             outboundBatchId: batch.id,
             outboundOrderItemId: null,

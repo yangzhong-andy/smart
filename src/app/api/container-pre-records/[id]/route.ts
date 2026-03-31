@@ -122,13 +122,13 @@ export async function PUT(
             .filter((v: string) => v.length > 0)
         ),
       ];
-      const boxSpecs = variantIds.length
-        ? await prisma.boxSpec.findMany({
+      const boxSpecs: any[] = variantIds.length
+        ? await (prisma as any).boxSpec.findMany({
             where: { variantId: { in: variantIds } },
             orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
           })
         : [];
-      const boxSpecByVariant = new Map<string, (typeof boxSpecs)[number]>();
+      const boxSpecByVariant = new Map<string, any>();
       for (const bs of boxSpecs) {
         if (!boxSpecByVariant.has(bs.variantId)) boxSpecByVariant.set(bs.variantId, bs);
       }

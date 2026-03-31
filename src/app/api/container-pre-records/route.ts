@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
       originPort: r.originPort,
       destinationPort: r.destinationPort,
       destinationCountry: r.destinationCountry,
-      loadingProductQty: r.loadingProductQty ?? undefined,
+      loadingProductQty: (r as any).loadingProductQty ?? undefined,
       loadingLocation: (r as any).loadingLocation ?? undefined,
       formFilledAt: (r as any).formFilledAt?.toISOString?.() ?? undefined,
       loadingDate: (r as any).loadingDate?.toISOString?.() ?? undefined,
@@ -70,8 +70,6 @@ export async function GET(request: NextRequest) {
       totalWeightKG: r.totalWeightKG ? r.totalWeightKG.toString() : undefined,
       suggestedContainerType: r.suggestedContainerType,
       containerId: r.containerId,
-      outboundBatchId: r.outboundBatchId ?? undefined,
-      outboundOrderId: r.outboundOrderId ?? undefined,
       itemCount: r.items.length,
       items: r.items.map((item) => ({
         id: item.id,
@@ -127,13 +125,13 @@ export async function POST(request: NextRequest) {
           .filter((v: string) => v.length > 0)
       ),
     ];
-    const boxSpecs = variantIds.length
-      ? await prisma.boxSpec.findMany({
+    const boxSpecs: any[] = variantIds.length
+      ? await (prisma as any).boxSpec.findMany({
           where: { variantId: { in: variantIds } },
           orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
         })
       : [];
-    const boxSpecByVariant = new Map<string, (typeof boxSpecs)[number]>();
+    const boxSpecByVariant = new Map<string, any>();
     for (const bs of boxSpecs) {
       if (!boxSpecByVariant.has(bs.variantId)) boxSpecByVariant.set(bs.variantId, bs);
     }

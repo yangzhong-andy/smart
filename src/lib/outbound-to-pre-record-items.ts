@@ -61,7 +61,8 @@ export function buildPreRecordItemsFromOutboundOrder(
 ): PreRecordItemFromBatch[] {
   if (order.items.length > 0) {
     return order.items.map((item) => {
-      const v = item.variant;
+      // Prisma 类型在不同环境可能未包含关联字段（运行时是有的），这里做一次防御转换
+      const v = (item as any).variant as any;
       const unitW = v?.weightKg != null ? Number(v.weightKg) : 0;
       const unitVol = pieceVolumeM3FromCm(v?.lengthCm, v?.widthCm, v?.heightCm);
       return {
@@ -78,7 +79,7 @@ export function buildPreRecordItemsFromOutboundOrder(
     });
   }
 
-  const v = order.variant;
+  const v = (order as any).variant as any;
   const unitW = v?.weightKg != null ? Number(v.weightKg) : 0;
   const unitVol = pieceVolumeM3FromCm(v?.lengthCm, v?.widthCm, v?.heightCm);
   const q = batchQty;

@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
         select: { skuId: true, product: { select: { name: true } } },
       });
 
-      await tx.outboundBatchItem.create({
+      await (tx as any).outboundBatchItem.create({
         data: {
           outboundBatchId: newBatch.id,
           outboundOrderItemId: null,

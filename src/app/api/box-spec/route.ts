@@ -13,12 +13,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '缺少 variantId 参数' }, { status: 400 })
     }
 
-    const boxSpecs = await prisma.boxSpec.findMany({
+    const boxSpecs = await (prisma as any).boxSpec.findMany({
       where: { variantId },
       orderBy: { isDefault: 'desc' }, // 默认箱规排前面
     })
 
-    return NextResponse.json(boxSpecs.map(b => ({
+    return NextResponse.json(boxSpecs.map((b: any) => ({
       id: b.id,
       variantId: b.variantId,
       boxLengthCm: b.boxLengthCm ? Number(b.boxLengthCm) : null,
@@ -47,13 +47,13 @@ export async function POST(request: NextRequest) {
 
     // 如果设为默认箱规，先取消其他默认
     if (isDefault) {
-      await prisma.boxSpec.updateMany({
+      await (prisma as any).boxSpec.updateMany({
         where: { variantId, isDefault: true },
         data: { isDefault: false },
       })
     }
 
-    const boxSpec = await prisma.boxSpec.create({
+    const boxSpec = await (prisma as any).boxSpec.create({
       data: {
         variantId,
         boxLengthCm: boxLengthCm ? parseFloat(String(boxLengthCm)) : null,
@@ -94,16 +94,16 @@ export async function PUT(request: NextRequest) {
 
     // 如果设为默认箱规，先取消其他默认
     if (isDefault) {
-      const existing = await prisma.boxSpec.findUnique({ where: { id } })
+      const existing = await (prisma as any).boxSpec.findUnique({ where: { id } })
       if (existing) {
-        await prisma.boxSpec.updateMany({
+        await (prisma as any).boxSpec.updateMany({
           where: { variantId: existing.variantId, isDefault: true, NOT: { id } },
           data: { isDefault: false },
         })
       }
     }
 
-    const boxSpec = await prisma.boxSpec.update({
+    const boxSpec = await (prisma as any).boxSpec.update({
       where: { id },
       data: {
         boxLengthCm: boxLengthCm !== undefined ? (boxLengthCm ? parseFloat(String(boxLengthCm)) : null) : undefined,
@@ -141,7 +141,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '缺少箱规 ID' }, { status: 400 })
     }
 
-    await prisma.boxSpec.delete({ where: { id } })
+    await (prisma as any).boxSpec.delete({ where: { id } })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
