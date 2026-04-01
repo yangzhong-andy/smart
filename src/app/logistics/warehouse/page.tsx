@@ -24,6 +24,10 @@ import {
   WAREHOUSE_TYPE_LABELS
 } from "@/logistics/constants";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
+import {
+  FlashyLogisticsCardShell,
+  getWarehouseFlashyTheme,
+} from "@/components/logistics/FlashyLogisticsCardShell";
 
 // 表单数据类型
 interface WarehouseFormData {
@@ -308,9 +312,9 @@ export default function WarehousePage() {
 
       {/* 仓库列表 */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-3">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-48 rounded-xl bg-slate-800/50 animate-pulse" />
+            <div key={i} className="min-h-[280px] rounded-2xl bg-slate-800/50 animate-pulse" />
           ))}
         </div>
       ) : filteredWarehouses.length === 0 ? (
@@ -320,7 +324,7 @@ export default function WarehousePage() {
           description='点击"新增仓库"按钮创建新仓库'
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-3">
           {filteredWarehouses.map((warehouse) => (
             <WarehouseCard
               key={warehouse.id}
@@ -367,76 +371,104 @@ function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProps) {
     return map[location] || "其他";
   };
 
+  const theme = getWarehouseFlashyTheme(warehouse);
+  const typeLabel = warehouse.type === "OVERSEAS" ? "海外仓（分发）" : "国内仓（中转）";
+
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-lg font-semibold text-slate-100">{warehouse.name}</h3>
-            <span className={`px-2 py-0.5 rounded text-xs ${
-              warehouse.isActive
-                ? "bg-emerald-500/20 text-emerald-300"
-                : "bg-slate-500/20 text-slate-300"
-            }`}>
+    <div className="motion-reduce:perspective-none [perspective:1100px]">
+      <FlashyLogisticsCardShell
+        as="div"
+        theme={theme}
+        seed={warehouse.id}
+        contentMinHeightClass="min-h-[280px]"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="bg-gradient-to-r from-white via-white to-white/80 bg-clip-text text-lg font-bold leading-snug tracking-tight text-transparent drop-shadow-[0_0_24px_rgba(255,255,255,0.15)]">
+              {warehouse.name}
+            </div>
+            {warehouse.code && (
+              <div className={`mt-1 font-mono text-xs ${theme.accent}`}>编码 {warehouse.code}</div>
+            )}
+            <div className={`mt-1 text-xs ${theme.accent} drop-shadow-sm`}>
+              {typeLabel} · {getLocationLabel(warehouse.location)}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <span
+              className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-lg backdrop-blur-md ring-1 ring-white/10 ${
+                warehouse.isActive
+                  ? "border-emerald-400/50 bg-emerald-950/35 text-emerald-200"
+                  : "border-slate-500/50 bg-black/40 text-slate-300"
+              }`}
+            >
               {warehouse.isActive ? "启用" : "停用"}
             </span>
+            <div className="relative z-20 flex gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                className="rounded-lg p-2 text-white/60 transition-colors hover:bg-white/10 hover:text-primary-300"
+                title="编辑"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="rounded-lg p-2 text-white/60 transition-colors hover:bg-rose-500/15 hover:text-rose-300"
+                title="删除"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-          {warehouse.code && (
-            <p className="text-sm text-slate-400">编码：{warehouse.code}</p>
-          )}
-          <p className="text-sm text-slate-300 mt-1">
-            {warehouse.type === "OVERSEAS" ? "海外仓" : "国内仓"} · {getLocationLabel(warehouse.location)}
-          </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onEdit}
-            className="p-1.5 rounded text-slate-400 hover:text-primary-300 hover:bg-primary-500/10 transition-colors"
-            title="编辑"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
-          <button
-            onClick={onDelete}
-            className="p-1.5 rounded text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
-            title="删除"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
 
-      <div className="space-y-2 text-sm">
-        {warehouse.address && (
-          <div className="flex items-start gap-2 text-slate-300">
-            <MapPin className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
-            <span>{warehouse.address}</span>
-          </div>
-        )}
-        {warehouse.contact && (
-          <div className="flex items-center gap-2 text-slate-300">
-            <span className="text-slate-400">联系人：</span>
-            <span>{warehouse.contact}</span>
-          </div>
-        )}
-        {warehouse.phone && (
-          <div className="flex items-center gap-2 text-slate-300">
-            <Phone className="h-4 w-4 text-slate-400" />
-            <span>{warehouse.phone}</span>
-          </div>
-        )}
-        {warehouse.email && (
-          <div className="flex items-center gap-2 text-slate-300">
-            <Mail className="h-4 w-4 text-slate-400" />
-            <span>{warehouse.email}</span>
-          </div>
-        )}
-        {warehouse.capacity && (
-          <div className="text-slate-400">
-            容量：{warehouse.capacity} m²
-          </div>
-        )}
-      </div>
+        <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-white/40">
+          <span className="h-px flex-1 bg-gradient-to-r from-transparent to-white/20" />
+          仓储信息
+          <span className="h-px flex-1 bg-gradient-to-l from-transparent to-white/20" />
+        </div>
+
+        <div className="mt-3 flex flex-1 flex-col space-y-2.5 text-sm text-white/85">
+          {warehouse.address && (
+            <div className="flex items-start gap-2">
+              <MapPin className={`mt-0.5 h-4 w-4 shrink-0 ${theme.accent}`} />
+              <span className="leading-relaxed">{warehouse.address}</span>
+            </div>
+          )}
+          {warehouse.contact && (
+            <div className="flex items-center gap-2">
+              <span className="text-white/45">联系人</span>
+              <span className="font-medium text-white/95">{warehouse.contact}</span>
+            </div>
+          )}
+          {warehouse.phone && (
+            <div className="flex items-center gap-2">
+              <Phone className={`h-4 w-4 shrink-0 ${theme.accent}`} />
+              <span className="font-mono tabular-nums">{warehouse.phone}</span>
+            </div>
+          )}
+          {warehouse.email && (
+            <div className="flex items-center gap-2">
+              <Mail className={`h-4 w-4 shrink-0 ${theme.accent}`} />
+              <span className="truncate">{warehouse.email}</span>
+            </div>
+          )}
+          {warehouse.capacity != null && warehouse.capacity > 0 && (
+            <div className="mt-auto border-t border-white/5 pt-3 text-xs text-white/55">
+              容量约 <span className="font-mono text-white/80">{warehouse.capacity}</span> m²
+            </div>
+          )}
+        </div>
+      </FlashyLogisticsCardShell>
     </div>
   );
 }
