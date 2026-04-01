@@ -223,10 +223,12 @@ export default function ContainerDetailPage() {
             </div>
           </div>
           <div>
-            <div className="text-slate-500 text-xs mb-0.5">ETD / ETA</div>
-            <div className="text-slate-200">
-              {fmtDateTime(data.etd)} / {fmtDateTime(data.eta)}
-            </div>
+            <div className="text-slate-500 text-xs mb-0.5">ETD</div>
+            <div className="text-slate-200">{fmtDateTime(data.etd)}</div>
+          </div>
+          <div>
+            <div className="text-slate-500 text-xs mb-0.5">ETA</div>
+            <div className="text-slate-200">{fmtDateTime(data.eta)}</div>
           </div>
           <div>
             <div className="text-slate-500 text-xs mb-0.5">装柜日期</div>

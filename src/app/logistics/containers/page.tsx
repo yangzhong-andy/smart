@@ -80,6 +80,16 @@ function formatDateTime(value?: string | null): string {
   return d.toLocaleString("zh-CN");
 }
 
+function toDateInputValue(value?: string | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function formatNumber(value?: string | null, digits = 2): string {
   if (!value) return "-";
   const n = Number(value);
@@ -228,6 +238,9 @@ export default function ContainersPage() {
   const [detailContainer, setDetailContainer] = useState<Container | null>(null);
   const [detailData, setDetailData] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm, setEditForm] = useState<ContainerForm>(emptyForm);
   const [statusConfirm, setStatusConfirm] = useState<{
     container: Container;
     toStatus: string;
@@ -481,6 +494,125 @@ export default function ContainersPage() {
     } catch (error) {
       console.error(error);
       toast.error("状态更新失败，请稍后重试");
+    }
+  };
+
+  const openEditModal = () => {
+    if (!detailContainer) return;
+    setEditForm({
+      containerNo: detailContainer.containerNo || "",
+      containerType: detailContainer.containerType || "40HQ",
+      sealNo: detailContainer.sealNo || "",
+      shippingMethod: detailContainer.shippingMethod || "SEA",
+      shipCompany: detailContainer.shipCompany || "",
+      vesselName: detailContainer.vesselName || "",
+      voyageNo: detailContainer.voyageNo || "",
+      originPort: detailContainer.originPort || "",
+      destinationPort: detailContainer.destinationPort || "",
+      destinationCountry: detailContainer.destinationCountry || "",
+      loadingDate: toDateInputValue(detailContainer.loadingDate),
+      etd: toDateInputValue(detailContainer.etd),
+      eta: toDateInputValue(detailContainer.eta),
+      actualDeparture: toDateInputValue(detailContainer.actualDeparture),
+      actualArrival: toDateInputValue(detailContainer.actualArrival),
+      status: detailContainer.status || "PLANNED",
+      exportMode: detailContainer.exportMode || "",
+      serviceMode: detailContainer.serviceMode || "",
+      exporterId: detailContainer.exporterId || "",
+      exporterName: detailContainer.exporterName || "",
+      overseasCompanyId: detailContainer.overseasCompanyId || "",
+      overseasCompanyName: detailContainer.overseasCompanyName || "",
+      declaredValue: detailContainer.declaredValue || "",
+      declaredCurrency: detailContainer.declaredCurrency || "USD",
+      dutyAmount: detailContainer.dutyAmount || "",
+      dutyPayer: detailContainer.dutyPayer || "",
+      dutyCurrency: detailContainer.dutyCurrency || "USD",
+      dutyPaidAmount: detailContainer.dutyPaidAmount || "",
+      returnAmount: detailContainer.returnAmount || "",
+      returnDate: toDateInputValue(detailContainer.returnDate),
+      returnCurrency: detailContainer.returnCurrency || "USD",
+      warehouseId: detailContainer.warehouseId || "",
+      warehouseName: detailContainer.warehouseName || "",
+      platform: detailContainer.platform || "",
+      storeId: detailContainer.storeId || "",
+      storeName: detailContainer.storeName || "",
+      totalVolumeCBM: detailContainer.totalVolumeCBM || "",
+      totalWeightKG: detailContainer.totalWeightKG || "",
+    });
+    setIsEditOpen(true);
+  };
+
+  const submitEditContainer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!detailContainer?.id) return;
+    setEditSaving(true);
+    try {
+      const selectedExporter = exporters.find((x) => x.id === editForm.exporterId);
+      const selectedOverseasCompany = overseasCompanies.find((x) => x.id === editForm.overseasCompanyId);
+      const selectedWarehouse = warehouses.find((x) => x.id === editForm.warehouseId);
+      const selectedStore = stores.find((x) => x.id === editForm.storeId);
+      const res = await fetch(`/api/containers/${detailContainer.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          containerNo: editForm.containerNo || null,
+          containerType: editForm.containerType || null,
+          sealNo: editForm.sealNo || null,
+          shippingMethod: editForm.shippingMethod || null,
+          shipCompany: editForm.shipCompany || null,
+          vesselName: editForm.vesselName || null,
+          voyageNo: editForm.voyageNo || null,
+          originPort: editForm.originPort || null,
+          destinationPort: editForm.destinationPort || null,
+          destinationCountry: editForm.destinationCountry || null,
+          loadingDate: editForm.loadingDate || null,
+          etd: editForm.etd || null,
+          eta: editForm.eta || null,
+          actualDeparture: editForm.actualDeparture || null,
+          actualArrival: editForm.actualArrival || null,
+          status: editForm.status || null,
+          exportMode: editForm.exportMode || null,
+          serviceMode: editForm.serviceMode || null,
+          exporterId: editForm.exporterId || null,
+          exporterName: selectedExporter?.name || null,
+          overseasCompanyId: editForm.overseasCompanyId || null,
+          overseasCompanyName: selectedOverseasCompany?.name || null,
+          declaredValue: editForm.declaredValue || null,
+          declaredCurrency: editForm.declaredCurrency || null,
+          dutyAmount: editForm.dutyAmount || null,
+          dutyPayer: editForm.dutyPayer || null,
+          dutyCurrency: editForm.dutyCurrency || null,
+          dutyPaidAmount: editForm.dutyPaidAmount || null,
+          returnAmount: editForm.returnAmount || null,
+          returnDate: editForm.returnDate || null,
+          returnCurrency: editForm.returnCurrency || null,
+          warehouseId: editForm.warehouseId || null,
+          warehouseName: selectedWarehouse?.name || null,
+          platform: editForm.platform || null,
+          storeId: editForm.storeId || null,
+          storeName: selectedStore?.name || null,
+          totalVolumeCBM: editForm.totalVolumeCBM || null,
+          totalWeightKG: editForm.totalWeightKG || null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json?.error || "保存失败");
+        return;
+      }
+      toast.success("柜子信息已更新");
+      setIsEditOpen(false);
+      await mutate();
+      const fresh = await fetch(`/api/containers/${detailContainer.id}`).then((r) => (r.ok ? r.json() : null));
+      if (fresh) {
+        setDetailData(fresh);
+        setDetailContainer((prev) => (prev ? { ...prev, ...fresh } : prev));
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("保存失败，请稍后重试");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -1012,6 +1144,11 @@ export default function ContainersPage() {
                 ✕
               </button>
             </div>
+            <div className="mt-3">
+              <ActionButton type="button" variant="secondary" onClick={openEditModal}>
+                编辑信息
+              </ActionButton>
+            </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
               <InfoRow label="柜号" value={detailContainer.containerNo} />
@@ -1030,7 +1167,8 @@ export default function ContainersPage() {
                     : "-"
                 }
               />
-              <InfoRow label="ETD/ETA" value={`${formatDateTime(detailContainer.etd)} / ${formatDateTime(detailContainer.eta)}`} />
+              <InfoRow label="ETD" value={formatDateTime(detailContainer.etd)} />
+              <InfoRow label="ETA" value={formatDateTime(detailContainer.eta)} />
               <InfoRow label="实际开船/到港" value={`${formatDateTime(detailContainer.actualDeparture)} / ${formatDateTime(detailContainer.actualArrival)}`} />
               <InfoRow label="出口公司" value={detailContainer.exporterName || "-"} />
               <InfoRow label="海外公司" value={detailContainer.overseasCompanyName || "-"} />
@@ -1096,6 +1234,90 @@ export default function ContainersPage() {
                 <div className="text-sm text-slate-500">暂无关联批次</div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {isEditOpen && detailContainer && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-5xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-100">编辑柜子信息 · {detailContainer.containerNo}</h3>
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={submitEditContainer}>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">柜号</span>
+                <input value={editForm.containerNo} onChange={(e) => setEditForm((f) => ({ ...f, containerNo: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">柜型</span>
+                <input value={editForm.containerType} onChange={(e) => setEditForm((f) => ({ ...f, containerType: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">状态</span>
+                <select value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                  {statusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">装柜日期</span>
+                <input type="date" value={editForm.loadingDate} onChange={(e) => setEditForm((f) => ({ ...f, loadingDate: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">ETD</span>
+                <input type="date" value={editForm.etd} onChange={(e) => setEditForm((f) => ({ ...f, etd: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">ETA</span>
+                <input type="date" value={editForm.eta} onChange={(e) => setEditForm((f) => ({ ...f, eta: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">实际开船</span>
+                <input type="date" value={editForm.actualDeparture} onChange={(e) => setEditForm((f) => ({ ...f, actualDeparture: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">实际到港</span>
+                <input type="date" value={editForm.actualArrival} onChange={(e) => setEditForm((f) => ({ ...f, actualArrival: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">目的仓库</span>
+                <select value={editForm.warehouseId} onChange={(e) => setEditForm((f) => ({ ...f, warehouseId: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+                  <option value="">请选择</option>
+                  {warehouses.map((w: any) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">起运港</span>
+                <input value={editForm.originPort} onChange={(e) => setEditForm((f) => ({ ...f, originPort: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">目的港</span>
+                <input value={editForm.destinationPort} onChange={(e) => setEditForm((f) => ({ ...f, destinationPort: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">船公司</span>
+                <input value={editForm.shipCompany} onChange={(e) => setEditForm((f) => ({ ...f, shipCompany: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <div className="md:col-span-3 flex justify-end gap-2 pt-2">
+                <ActionButton type="button" variant="secondary" onClick={() => setIsEditOpen(false)}>
+                  取消
+                </ActionButton>
+                <ActionButton type="submit" isLoading={editSaving}>
+                  保存修改
+                </ActionButton>
+              </div>
+            </form>
           </div>
         </div>
       )}
