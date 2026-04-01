@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 type BatchLike = {
   id: string;
   batchNumber: string;
+  status?: string | null;
+  containerId?: string | null;
   warehouseId?: string | null;
   warehouseName?: string | null;
   destinationCountry?: string | null;
@@ -84,6 +86,10 @@ export async function POST(request: NextRequest) {
     }
     if (rows.length !== batchIds.length) {
       return badRequest("部分批次不存在，请刷新后重试");
+    }
+    const alreadyLoaded = rows.filter((r) => r.status === "已装柜" || !!r.containerId);
+    if (alreadyLoaded.length > 0) {
+      return badRequest(`批次已装柜，禁止二次装柜：${alreadyLoaded.map((r) => r.batchNumber).join("、")}`);
     }
 
     const batchMap = new Map(rows.map((r) => [r.id, r]));

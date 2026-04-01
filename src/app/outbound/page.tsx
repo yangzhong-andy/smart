@@ -120,7 +120,7 @@ const BATCH_STATUS_LABELS: Record<string, string> = {
   运输中: "运输中",
   已清关: "已清关",
   已到达: "已到达",
-  已装柜: "已装柜",
+  已装柜: "装柜完成",
 };
 
 const SHIPPING_METHOD_LABELS: Record<string, string> = {
@@ -657,6 +657,11 @@ export default function OutboundListPage() {
 
   const openDirectContainerModal = async (batches: BatchItem[]) => {
     if (batches.length === 0) return;
+    const alreadyLoaded = batches.filter((b) => b.status === "已装柜" || !!b.containerId);
+    if (alreadyLoaded.length > 0) {
+      toast.error("所选批次已装柜（装柜完成），不允许二次装柜");
+      return;
+    }
     const first = batches[0];
     setDirectModalBatches(batches);
     setDirectContainerForm({
@@ -731,6 +736,11 @@ export default function OutboundListPage() {
 
   const openMergeDirectContainerModal = () => {
     const selected = batches.filter((b) => selectedBatchIds.includes(b.id));
+    const alreadyLoaded = selected.filter((b) => b.status === "已装柜" || !!b.containerId);
+    if (alreadyLoaded.length > 0) {
+      toast.error("所选批次包含已装柜记录，请取消后重试");
+      return;
+    }
     if (selected.length === 0) {
       toast.error("请至少勾选 1 个批次");
       return;
@@ -1098,6 +1108,7 @@ export default function OutboundListPage() {
           {filtered.map((b) => {
             const expanded = expandedBatchId === b.id;
             const isSelected = selectedBatchIds.includes(b.id);
+            const isLoaded = b.status === "已装柜" || !!b.containerId;
             const skuLines = b.skuLines ?? [];
             const boxQty =
               skuLines.length > 0
@@ -1117,6 +1128,7 @@ export default function OutboundListPage() {
                       <input
                         type="checkbox"
                         checked={isSelected}
+                        disabled={isLoaded}
                         onChange={(e) => {
                           setSelectedBatchIds((prev) =>
                             e.target.checked
@@ -1232,6 +1244,7 @@ export default function OutboundListPage() {
                         variant="secondary"
                         size="sm"
                         icon={ContainerIcon}
+                        disabled={isLoaded}
                         onClick={() => openPreRecordModal([b])}
                       >
                         柜子预录单
@@ -1239,9 +1252,10 @@ export default function OutboundListPage() {
                       <ActionButton
                         size="sm"
                         icon={ContainerIcon}
+                        disabled={isLoaded}
                         onClick={() => openDirectContainerModal([b])}
                       >
-                        直接装柜
+                        {isLoaded ? "装柜完成" : "直接装柜"}
                       </ActionButton>
                       <Link href={`/outbound/${b.id}`}>
                         <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
@@ -1342,6 +1356,7 @@ export default function OutboundListPage() {
                       <ActionButton
                         size="sm"
                         icon={ContainerIcon}
+                        disabled={isLoaded}
                         onClick={() => openPreRecordModal([b])}
                       >
                         生成预录单（填起运/目的港等）
@@ -1349,9 +1364,10 @@ export default function OutboundListPage() {
                       <ActionButton
                         size="sm"
                         icon={ContainerIcon}
+                        disabled={isLoaded}
                         onClick={() => openDirectContainerModal([b])}
                       >
-                        直接生成柜子
+                        {isLoaded ? "装柜完成" : "直接生成柜子"}
                       </ActionButton>
                       <Link
                         href="/logistics/pre-records"
