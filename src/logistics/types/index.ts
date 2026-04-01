@@ -198,6 +198,7 @@ export interface Container {
   originPort?: string;
   destinationPort?: string;
   destinationCountry?: string;
+  loadingDate?: string;
   etd?: string;
   eta?: string;
   actualDeparture?: string;

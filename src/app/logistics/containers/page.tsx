@@ -80,6 +80,15 @@ function formatNumber(value?: string | null, digits = 2): string {
   return n.toFixed(digits);
 }
 
+function getContainerLoadingDateFromBatches(outboundBatches: any[] | undefined): string {
+  if (!Array.isArray(outboundBatches) || outboundBatches.length === 0) return "-";
+  const ts = outboundBatches
+    .map((b) => new Date(b?.shippedDate || "").getTime())
+    .filter((v) => Number.isFinite(v));
+  if (ts.length === 0) return "-";
+  return formatDate(new Date(Math.min(...ts)).toISOString());
+}
+
 // 计算航行进度信息
 function getVoyageInfo(container: Container) {
   const now = new Date();
@@ -126,6 +135,7 @@ type ContainerForm = {
   destinationPort: string;
   destinationCountry: string;
   // 日期
+  loadingDate: string;
   etd: string;
   eta: string;
   actualDeparture: string;
@@ -181,6 +191,7 @@ const emptyForm: ContainerForm = {
   originPort: "",
   destinationPort: "",
   destinationCountry: "",
+  loadingDate: "",
   etd: "",
   eta: "",
   actualDeparture: "",
@@ -341,6 +352,7 @@ export default function ContainersPage() {
           originPort: createForm.originPort || null,
           destinationPort: createForm.destinationPort || null,
           destinationCountry: createForm.destinationCountry || null,
+          loadingDate: createForm.loadingDate || null,
           etd: createForm.etd || null,
           eta: createForm.eta || null,
           actualDeparture: createForm.actualDeparture || null,
@@ -711,6 +723,15 @@ export default function ContainersPage() {
             
             {/* 日期 */}
             <label className="space-y-1">
+              <span className="text-xs text-slate-300">装柜日期</span>
+              <input
+                type="date"
+                value={createForm.loadingDate}
+                onChange={(e) => setCreateForm((f) => ({ ...f, loadingDate: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
               <span className="text-xs text-slate-300">预计开船(ETD)</span>
               <input
                 type="date"
@@ -1003,6 +1024,14 @@ export default function ContainersPage() {
               <InfoRow label="船名/航次" value={`${detailContainer.vesselName || "-"} / ${detailContainer.voyageNo || "-"}`} />
               <InfoRow label="起运港" value={detailContainer.originPort || "-"} />
               <InfoRow label="目的港" value={detailContainer.destinationPort || "-"} />
+              <InfoRow
+                label="装柜日期"
+                value={
+                  detailContainer.loadingDate
+                    ? formatDate(detailContainer.loadingDate)
+                    : getContainerLoadingDateFromBatches(detailData?.outboundBatches)
+                }
+              />
               <InfoRow label="ETD/ETA" value={`${formatDate(detailContainer.etd)} / ${formatDate(detailContainer.eta)}`} />
               <InfoRow label="实际开船/到港" value={`${formatDate(detailContainer.actualDeparture)} / ${formatDate(detailContainer.actualArrival)}`} />
               <InfoRow label="出口公司" value={detailContainer.exporterName || "-"} />

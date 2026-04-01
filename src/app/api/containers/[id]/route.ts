@@ -42,6 +42,7 @@ export async function GET(
       originPort: container.originPort ?? undefined,
       destinationPort: container.destinationPort ?? undefined,
       destinationCountry: container.destinationCountry ?? undefined,
+      loadingDate: container.loadingDate?.toISOString() ?? undefined,
       etd: container.etd?.toISOString() ?? undefined,
       eta: container.eta?.toISOString() ?? undefined,
       actualDeparture: container.actualDeparture?.toISOString() ?? undefined,
@@ -151,6 +152,7 @@ export async function PUT(
     if (body.originPort !== undefined) data.originPort = body.originPort || null;
     if (body.destinationPort !== undefined) data.destinationPort = body.destinationPort || null;
     if (body.destinationCountry !== undefined) data.destinationCountry = body.destinationCountry || null;
+    if (body.loadingDate !== undefined) data.loadingDate = body.loadingDate ? new Date(body.loadingDate) : null;
     if (body.etd !== undefined) data.etd = body.etd ? new Date(body.etd) : null;
     if (body.eta !== undefined) data.eta = body.eta ? new Date(body.eta) : null;
     if (body.actualDeparture !== undefined)

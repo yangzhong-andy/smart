@@ -920,6 +920,7 @@ model Container {
 
   originPort      String?                                  // 起运港
   destinationPort String?                                  // 目的港
+  loadingDate     DateTime?                                // 装柜时间（工厂实际装货时间）
   etd             DateTime?                                // 预计开船 ETD
   eta             DateTime?                                // 预计到港 ETA
   actualDeparture DateTime?                                // 实际开船时间

@@ -81,6 +81,7 @@ type ContainerDetail = {
   originPort?: string;
   destinationPort?: string;
   destinationCountry?: string;
+  loadingDate?: string;
   etd?: string;
   eta?: string;
   actualDeparture?: string;
@@ -111,6 +112,15 @@ function fmtDateOnly(iso?: string) {
   } catch {
     return iso;
   }
+}
+
+function getContainerLoadingDate(batches: ContainerBatchRow[]) {
+  if (!Array.isArray(batches) || batches.length === 0) return "—";
+  const ts = batches
+    .map((b) => new Date(b?.shippedDate || "").getTime())
+    .filter((v) => Number.isFinite(v));
+  if (ts.length === 0) return "—";
+  return fmtDateOnly(new Date(Math.min(...ts)).toISOString());
 }
 
 export default function ContainerDetailPage() {
@@ -216,6 +226,12 @@ export default function ContainerDetailPage() {
             <div className="text-slate-500 text-xs mb-0.5">ETD / ETA</div>
             <div className="text-slate-200">
               {fmtDateOnly(data.etd)} / {fmtDateOnly(data.eta)}
+            </div>
+          </div>
+          <div>
+            <div className="text-slate-500 text-xs mb-0.5">装柜日期</div>
+            <div className="text-slate-200">
+              {data.loadingDate ? fmtDateOnly(data.loadingDate) : getContainerLoadingDate(batches)}
             </div>
           </div>
           <div>
