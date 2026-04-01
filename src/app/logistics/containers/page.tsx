@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Download, Plus, RefreshCw } from "lucide-react";
+import { Download, LayoutGrid, Plus, RefreshCw, Table2 } from "lucide-react";
 import { PageHeader, ActionButton } from "@/components/ui";
 import type { Container } from "@/logistics/types";
 import Link from "next/link";
@@ -11,6 +11,7 @@ import { getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
 import { ContainerStats } from "./components/ContainerStats";
 import { ContainerFilters } from "./components/ContainerFilters";
 import { ContainersTable } from "./components/ContainersTable";
+import { ContainerCardsView } from "./components/ContainerCardsView";
 import { LogisticsProgressAxis } from "./components/LogisticsProgressAxis";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -53,11 +54,14 @@ function getProgress(status: string): number {
 
 function getProgressBarColor(status: string): string {
   switch (status) {
+    case "LOADING":
+      return "bg-orange-400";
     case "IN_TRANSIT":
-      return "bg-amber-400";
+      return "bg-cyan-400";
     case "ARRIVED_PORT":
-    case "CUSTOMS_CLEAR":
       return "bg-blue-400";
+    case "CUSTOMS_CLEAR":
+      return "bg-violet-400";
     case "IN_WAREHOUSE":
     case "CLOSED":
       return "bg-emerald-400";
@@ -245,6 +249,7 @@ export default function ContainersPage() {
     container: Container;
     toStatus: string;
   } | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
   const statusOptions = [
     { value: "PLANNED", label: "已计划" },
@@ -648,7 +653,33 @@ export default function ContainersPage() {
         title="柜子管理"
         description="按柜管理在途货物、海运信息和出库批次"
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="mr-1 flex rounded-lg border border-slate-700/80 bg-slate-900/80 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "table"
+                    ? "bg-primary-500/20 text-primary-200 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                表格视图
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("cards")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "cards"
+                    ? "bg-primary-500/20 text-primary-200 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                卡片视图
+              </button>
+            </div>
             <ActionButton
               variant="secondary"
               icon={RefreshCw}
@@ -1111,20 +1142,33 @@ export default function ContainersPage() {
         </div>
       )}
 
-      <ContainersTable
-        isLoading={isLoading}
-        containers={filtered}
-        statusLabels={statusLabels}
-        methodLabels={methodLabels}
-        getProgress={getProgress}
-        getProgressBarColor={getProgressBarColor}
-        getVoyageInfo={getVoyageInfo}
-        formatDate={formatDate}
-        formatNumber={formatNumber}
-        onOpenDetail={setDetailContainer}
-        onChangeStatus={handleChangeStatus}
-        statusOptions={statusOptions}
-      />
+      {viewMode === "table" ? (
+        <ContainersTable
+          isLoading={isLoading}
+          containers={filtered}
+          statusLabels={statusLabels}
+          methodLabels={methodLabels}
+          getProgress={getProgress}
+          getProgressBarColor={getProgressBarColor}
+          getVoyageInfo={getVoyageInfo}
+          formatDate={formatDate}
+          formatNumber={formatNumber}
+          onOpenDetail={setDetailContainer}
+          onChangeStatus={handleChangeStatus}
+          statusOptions={statusOptions}
+        />
+      ) : (
+        <ContainerCardsView
+          isLoading={isLoading}
+          containers={filtered}
+          statusLabels={statusLabels}
+          methodLabels={methodLabels}
+          getProgress={getProgress}
+          getProgressBarColor={getProgressBarColor}
+          formatDate={formatDate}
+          onOpenDetail={setDetailContainer}
+        />
+      )}
 
       {detailContainer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">

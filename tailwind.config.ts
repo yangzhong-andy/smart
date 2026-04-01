@@ -33,6 +33,49 @@ const config: Config = {
           "0%, 100%": { boxShadow: "0 0 20px rgba(34, 211, 238, 0.15)" },
           "50%": { boxShadow: "0 0 32px rgba(34, 211, 238, 0.25)" },
         },
+        "container-pulse-orange": {
+          "0%, 100%": {
+            boxShadow: "0 0 0 1px rgba(251, 146, 60, 0.5), 0 0 24px rgba(251, 146, 60, 0.2)",
+          },
+          "50%": {
+            boxShadow: "0 0 0 2px rgba(251, 146, 60, 0.85), 0 0 36px rgba(251, 146, 60, 0.45)",
+          },
+        },
+        "container-pulse-purple": {
+          "0%, 100%": {
+            boxShadow: "0 0 0 1px rgba(192, 132, 252, 0.45), 0 0 22px rgba(168, 85, 247, 0.2)",
+          },
+          "50%": {
+            boxShadow: "0 0 0 2px rgba(192, 132, 252, 0.8), 0 0 34px rgba(168, 85, 247, 0.4)",
+          },
+        },
+        "wave-slide": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
+        },
+        "wave-y": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-3px)" },
+        },
+        "shine-sweep": {
+          "0%": { transform: "translateX(-120%) skewX(-15deg)", opacity: "0" },
+          "15%": { opacity: "0.55" },
+          "45%": { opacity: "0.35" },
+          "100%": { transform: "translateX(220%) skewX(-15deg)", opacity: "0" },
+        },
+        "border-flow": {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+        },
+        "hud-blink": {
+          "0%, 100%": { opacity: "0.35" },
+          "50%": { opacity: "0.9" },
+        },
+        "spark-rise": {
+          "0%": { transform: "translateY(8px) scale(0.6)", opacity: "0" },
+          "30%": { opacity: "1" },
+          "100%": { transform: "translateY(-28px) scale(0.2)", opacity: "0" },
+        },
       },
       animation: {
         "progress-shrink": "progress-shrink 0.8s ease-out forwards",
@@ -41,6 +84,14 @@ const config: Config = {
         "card-in": "card-in 0.5s ease-out forwards",
         "shimmer": "shimmer 2.5s linear infinite",
         "glow-pulse": "glow-pulse 2s ease-in-out infinite",
+        "container-pulse-orange": "container-pulse-orange 2.2s ease-in-out infinite",
+        "container-pulse-purple": "container-pulse-purple 2.2s ease-in-out infinite",
+        "wave-slide": "wave-slide 10s linear infinite",
+        "wave-y": "wave-y 3s ease-in-out infinite",
+        "shine-sweep": "shine-sweep 5s ease-in-out infinite",
+        "border-flow": "border-flow 4s ease infinite",
+        "hud-blink": "hud-blink 2.5s ease-in-out infinite",
+        "spark-rise": "spark-rise 2.2s ease-out infinite",
       },
       colors: {
         primary: {
