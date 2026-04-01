@@ -1,68 +1,157 @@
+import { ContainerStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 /**
- * 同步 ProductVariant 的库存字段
- * 从采购合同的 finishedQty 和待入库单的 receivedQty 计算并更新 atFactory, atDomestic, inTransit
+ * 按 SKU 计算与「库存对账」业务口径一致的分布：
+ * - 工厂：合同明细 remaining = max(qty - pickedQty, 0) 按行汇总（与合同/拿货一致，不用 finishedQty）
+ * - 国内：入库明细 receivedQty 合计（父单未取消）− 出库批次明细 qty（批次未取消）
+ * - 海运在途：已绑柜且柜状态为装柜中/在途的出库批次明细 qty
+ */
+export async function computeVariantInventorySnapshot(variantId: string) {
+  const [contractItems, parentsWithLines, headerOnlyInbounds, outboundAgg, transitAgg] =
+    await Promise.all([
+      prisma.purchaseContractItem.findMany({
+        where: { variantId },
+        select: { qty: true, pickedQty: true },
+      }),
+      prisma.pendingInbound.findMany({
+        where: {
+          status: { not: "已取消" },
+          items: { some: { variantId } },
+        },
+        include: {
+          items: { where: { variantId }, select: { receivedQty: true } },
+        },
+      }),
+      prisma.pendingInbound.findMany({
+        where: {
+          variantId,
+          status: { not: "已取消" },
+          items: { none: {} },
+        },
+        select: { receivedQty: true },
+      }),
+      prisma.outboundBatchItem.aggregate({
+        where: {
+          variantId,
+          outboundBatch: { status: { not: "已取消" } },
+        },
+        _sum: { qty: true },
+      }),
+      prisma.outboundBatchItem.aggregate({
+        where: {
+          variantId,
+          outboundBatch: {
+            containerId: { not: null },
+            status: { not: "已取消" },
+            container: {
+              status: { in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT] },
+            },
+          },
+        },
+        _sum: { qty: true },
+      }),
+    ]);
+
+  const atFactory = contractItems.reduce(
+    (s, i) => s + Math.max(0, Number(i.qty ?? 0) - Number(i.pickedQty ?? 0)),
+    0
+  );
+  let inboundReceived = 0;
+  for (const p of parentsWithLines) {
+    inboundReceived += p.items.reduce(
+      (s, i) => s + Number(i.receivedQty ?? 0),
+      0
+    );
+  }
+  inboundReceived += headerOnlyInbounds.reduce(
+    (s, p) => s + Number(p.receivedQty ?? 0),
+    0
+  );
+  const outboundTotal = Number(outboundAgg._sum.qty ?? 0);
+  const atDomestic = Math.max(0, inboundReceived - outboundTotal);
+  const inTransit = Number(transitAgg._sum.qty ?? 0);
+  const stockQuantity = atFactory + atDomestic + inTransit;
+
+  return { atFactory, atDomestic, inTransit, stockQuantity };
+}
+
+async function collectVariantIdsForFullSync(): Promise<string[]> {
+  const [fromContracts, fromInboundLines, fromInboundHeaders, fromOutbound] =
+    await Promise.all([
+      prisma.purchaseContractItem.findMany({
+        where: { variantId: { not: null } },
+        select: { variantId: true },
+        distinct: ["variantId"],
+      }),
+      prisma.pendingInboundItem.findMany({
+        where: { variantId: { not: null } },
+        select: { variantId: true },
+        distinct: ["variantId"],
+      }),
+      prisma.pendingInbound.findMany({
+        where: { variantId: { not: null } },
+        select: { variantId: true },
+        distinct: ["variantId"],
+      }),
+      prisma.outboundBatchItem.findMany({
+        where: { variantId: { not: null } },
+        select: { variantId: true },
+        distinct: ["variantId"],
+      }),
+    ]);
+  const set = new Set<string>();
+  for (const r of fromContracts) {
+    if (r.variantId) set.add(r.variantId);
+  }
+  for (const r of fromInboundLines) {
+    if (r.variantId) set.add(r.variantId);
+  }
+  for (const r of fromInboundHeaders) {
+    if (r.variantId) set.add(r.variantId);
+  }
+  for (const r of fromOutbound) {
+    if (r.variantId) set.add(r.variantId);
+  }
+  return Array.from(set);
+}
+
+/**
+ * 将 ProductVariant 的 atFactory / atDomestic / inTransit / stockQuantity
+ * 与合同、入库明细、出库批次对齐。
  */
 export async function syncProductVariantInventory(variantId?: string) {
-  // 如果指定了 variantId，只同步该 SKU
-  const whereClause = variantId ? { id: variantId } : {};
+  const ids = variantId
+    ? [variantId]
+    : await collectVariantIdsForFullSync();
 
-  // 1. 获取所有采购合同的 finishedQty（工厂完工）
-  const contracts = await prisma.purchaseContractItem.findMany({
-    where: variantId ? { variantId } : {},
-    select: {
-      variantId: true,
-      finishedQty: true,
-    },
-  });
-
-  // 2. 获取所有已入库的待入库单的 receivedQty（国内入库）
-  const pendingInbound = await prisma.pendingInbound.findMany({
-    where: {
-      status: "已入库",
-      ...(variantId ? { variantId } : {}),
-    },
-    select: {
-      variantId: true,
-      receivedQty: true,
-    },
-  });
-
-  // 3. 汇总每个 variant 的库存
-  const stockMap: Record<string, { atFactory: number; atDomestic: number }> = {};
-
-  for (const item of contracts) {
-    if (!item.variantId) continue;
-    if (!stockMap[item.variantId]) {
-      stockMap[item.variantId] = { atFactory: 0, atDomestic: 0 };
-    }
-    stockMap[item.variantId].atFactory += item.finishedQty || 0;
-  }
-
-  for (const item of pendingInbound) {
-    if (!item.variantId) continue;
-    if (!stockMap[item.variantId]) {
-      stockMap[item.variantId] = { atFactory: 0, atDomestic: 0 };
-    }
-    stockMap[item.variantId].atDomestic += item.receivedQty || 0;
-  }
-
-  // 4. 更新 ProductVariant
-  const updates = Object.entries(stockMap).map(([vid, stock]) =>
-    prisma.productVariant.update({
-      where: { id: vid },
-      data: {
-        atFactory: stock.atFactory,
-        atDomestic: stock.atDomestic,
-        inTransit: 0,
-        stockQuantity: stock.atFactory + stock.atDomestic + 0,
-      },
+  const updates = await Promise.all(
+    ids.map(async (vid) => {
+      const snap = await computeVariantInventorySnapshot(vid);
+      return prisma.productVariant.update({
+        where: { id: vid },
+        data: {
+          atFactory: snap.atFactory,
+          atDomestic: snap.atDomestic,
+          inTransit: snap.inTransit,
+          stockQuantity: snap.stockQuantity,
+        },
+      });
     })
   );
 
-  if (updates.length > 0) {
-    await prisma.$transaction(updates);
+  const stockMap: Record<
+    string,
+    { atFactory: number; atDomestic: number; inTransit: number }
+  > = {};
+  for (let i = 0; i < ids.length; i++) {
+    const vid = ids[i];
+    const u = updates[i];
+    stockMap[vid] = {
+      atFactory: u.atFactory,
+      atDomestic: u.atDomestic,
+      inTransit: u.inTransit,
+    };
   }
 
   return stockMap;

@@ -62,7 +62,6 @@ export async function PATCH(
 
     const variantData: Record<string, unknown> = {}
     if (body.cost_price !== undefined) variantData.costPrice = body.cost_price ? parseFloat(String(body.cost_price)) : null
-    if (body.stock_quantity !== undefined) variantData.stockQuantity = body.stock_quantity
     if (body.color !== undefined) variantData.color = body.color || null
     if (body.size !== undefined) variantData.size = body.size || null
     if (body.barcode !== undefined) variantData.barcode = body.barcode || null
@@ -240,9 +239,10 @@ export async function PUT(
         weightKg: body.weight_kg !== undefined ? (body.weight_kg ? parseFloat(String(body.weight_kg)) : null) : undefined,
         barcode: body.barcode !== undefined ? (body.barcode || null) : undefined,
         costPrice: body.cost_price !== undefined ? (body.cost_price ? parseFloat(String(body.cost_price)) : null) : undefined,
-        stockQuantity: body.stock_quantity !== undefined 
-          ? body.stock_quantity 
-          : (body.at_factory !== undefined || body.at_domestic !== undefined || body.in_transit !== undefined)
+        stockQuantity:
+          body.at_factory !== undefined ||
+          body.at_domestic !== undefined ||
+          body.in_transit !== undefined
             ? (body.at_factory || 0) + (body.at_domestic || 0) + (body.in_transit || 0)
             : undefined,
         currency: body.currency || undefined,

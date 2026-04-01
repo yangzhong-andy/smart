@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { syncProductVariantInventory } from "@/lib/inventory-sync";
 import { buildOutboundBatchSkuPayload } from "@/lib/outbound-batch-serialize";
 import { ShippingMethod, InventoryLogType, InventoryLogStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
 
@@ -387,6 +388,10 @@ export async function POST(request: NextRequest) {
 
       return newBatch;
     });
+
+    if (variantId) {
+      await syncProductVariantInventory(variantId);
+    }
 
     return NextResponse.json({
       id: batch.id,

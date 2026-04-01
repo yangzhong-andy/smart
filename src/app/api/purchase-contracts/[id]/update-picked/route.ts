@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { PurchaseContractStatus } from '@prisma/client'
+import { syncProductVariantInventory } from '@/lib/inventory-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -97,6 +98,15 @@ export async function POST(
       where: { id: contractId },
       data: { pickedQty, status, updatedAt: new Date() }
     })
+
+    const variantIds = new Set<string>()
+    for (const { itemId } of updates) {
+      const it = contract.items.find((i) => i.id === itemId)
+      if (it?.variantId) variantIds.add(it.variantId)
+    }
+    for (const vid of variantIds) {
+      await syncProductVariantInventory(vid)
+    }
 
     return NextResponse.json({
       success: true,

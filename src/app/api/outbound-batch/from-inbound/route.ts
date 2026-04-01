@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { syncProductVariantInventory } from "@/lib/inventory-sync";
 import { InventoryLogType, InventoryLogStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
 import { clearCacheByPrefix } from "@/lib/redis";
 
@@ -266,6 +267,10 @@ export async function POST(request: NextRequest) {
     });
 
     await clearCacheByPrefix(OUTBOUND_ORDERS_CACHE_PREFIX);
+
+    if (variantId) {
+      await syncProductVariantInventory(variantId);
+    }
 
     return NextResponse.json({
       success: true,

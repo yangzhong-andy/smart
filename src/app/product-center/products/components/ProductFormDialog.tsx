@@ -300,9 +300,10 @@ export function ProductFormDialog({
                       type="number"
                       min={0}
                       value={form.stock_quantity}
-                      onChange={(e) => setForm((f) => ({ ...f, stock_quantity: e.target.value }))}
-                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                      readOnly
+                      className="w-full rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-slate-400 cursor-not-allowed"
                       placeholder="0"
+                      title="库存由业务单据自动计算，不支持手工编辑"
                     />
                   </label>
                 </div>

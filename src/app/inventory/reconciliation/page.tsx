@@ -61,6 +61,10 @@ type ReconciliationPayload = {
     OVERSEAS: number;
   };
   businessTotalQty: number;
+  /** 与业务 TRANSIT 一致：绑柜且在途/装柜的出库批次明细件数 */
+  seaTransitFromContainer?: number;
+  /** 计入海运在途的柜子状态（枚举值） */
+  seaTransitContainerStatuses?: string[];
 };
 
 const ORDER = ["FACTORY", "DOMESTIC", "TRANSIT", "OVERSEAS", "UNKNOWN"] as const;
@@ -73,6 +77,7 @@ export default function InventoryReconciliationPage() {
   );
 
   const [locFilter, setLocFilter] = useState<string>("all");
+  const [isSyncingProfileInventory, setIsSyncingProfileInventory] = useState(false);
 
   const filteredWarehouses = useMemo(() => {
     if (!data?.byWarehouse) return [];
@@ -118,6 +123,28 @@ export default function InventoryReconciliationPage() {
     toast.success("已导出");
   };
 
+  const syncProfileInventory = async () => {
+    if (isSyncingProfileInventory) return;
+    setIsSyncingProfileInventory(true);
+    try {
+      const res = await fetch("/api/inventory/reconciliation", {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(String(json?.error || `HTTP ${res.status}`));
+      }
+      toast.success(
+        `已重算 ${Number(json?.affectedVariantCount ?? 0).toLocaleString("zh-CN")} 个 SKU`
+      );
+      await mutate();
+    } catch (e) {
+      toast.error(`重算失败：${String((e as Error).message || e)}`);
+    } finally {
+      setIsSyncingProfileInventory(false);
+    }
+  };
+
   const iconFor = (key: string) => {
     switch (key) {
       case "FACTORY":
@@ -148,6 +175,13 @@ export default function InventoryReconciliationPage() {
               }}
             >
               刷新
+            </ActionButton>
+            <ActionButton
+              icon={RefreshCw}
+              onClick={syncProfileInventory}
+              disabled={isSyncingProfileInventory}
+            >
+              {isSyncingProfileInventory ? "重算中..." : "全量重算产品库存"}
             </ActionButton>
             <ActionButton icon={Download} onClick={exportCsv} disabled={!data}>
               导出明细
@@ -256,7 +290,13 @@ export default function InventoryReconciliationPage() {
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <h2 className="text-sm font-medium text-slate-300 mb-2">业务四段口径（你提的定义）</h2>
               <p className="text-xs text-slate-500 mb-3">
-                工厂/国内/在途取自产品档案字段，海外取自 Stock 的 OVERSEAS 段。
+                工厂：合同剩余；国内：已入库减已出库；海运在途：已绑柜子且柜状态为「装柜中/在途」的出库批次明细件数；海外：Stock 海外仓段。
+                {Array.isArray(data.seaTransitContainerStatuses) &&
+                  data.seaTransitContainerStatuses.length > 0 && (
+                    <span className="block mt-1 text-slate-600">
+                      柜状态（系统枚举）：{data.seaTransitContainerStatuses.join("、")}
+                    </span>
+                  )}
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>

@@ -93,13 +93,21 @@ export async function PUT(
       include: {
         deliveryOrder: true,
         variant: true,
-        batches: true
+        batches: true,
+        items: true,
       }
     })
 
-    // 当状态变为"已入库"时，自动同步 ProductVariant 库存
-    if (body.status === "已入库" && pendingInbound.variantId) {
-      await syncProductVariantInventory(pendingInbound.variantId);
+    // 当状态变为"已入库"时，同步相关 SKU（多明细时不能只同步表头 variantId）
+    if (body.status === "已入库") {
+      const variantIds = new Set<string>()
+      if (pendingInbound.variantId) variantIds.add(pendingInbound.variantId)
+      for (const line of pendingInbound.items) {
+        if (line.variantId) variantIds.add(line.variantId)
+      }
+      for (const vid of variantIds) {
+        await syncProductVariantInventory(vid)
+      }
     }
 
     return NextResponse.json({

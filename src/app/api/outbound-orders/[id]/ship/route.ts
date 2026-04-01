@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { syncProductVariantInventory } from "@/lib/inventory-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -233,6 +234,17 @@ export async function POST(
 
       return { batch, newStatus };
     });
+
+    const batchLines = await prisma.outboundBatchItem.findMany({
+      where: { outboundBatchId: result.batch.id },
+      select: { variantId: true },
+    });
+    const syncIds = new Set(
+      batchLines.map((r) => r.variantId).filter((v): v is string => Boolean(v))
+    );
+    for (const vid of syncIds) {
+      await syncProductVariantInventory(vid);
+    }
 
     return NextResponse.json({
       id: result.batch.id,
