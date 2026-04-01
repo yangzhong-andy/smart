@@ -3,7 +3,10 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { ContainerStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { syncProductVariantInventory } from "@/lib/inventory-sync";
+import {
+  aggregateBusinessPipelineLinkedToVariants,
+  syncProductVariantInventory,
+} from "@/lib/inventory-sync";
 
 const LOCATION_LABELS: Record<string, string> = {
   FACTORY: "工厂",
@@ -17,24 +20,17 @@ const LOCATION_LABELS: Record<string, string> = {
  * GET 库存对账聚合（服务端汇总，不截断条数）
  * - 主口径：Stock 表按仓库 location 汇总（工厂/国内/在途/海外）
  * - 参考口径：ProductVariant 上 atFactory/atDomestic/inTransit 合计（与仓库存可能不完全一致）
- * - 业务口径（用于展示）：
- *   - 工厂库存 = 合同总数 - 拿货数量（按合同明细求剩余）
- *   - 国内库存 = 拿货单已入库 - 已出库（按入库明细 receivedQty 与出库批次明细 qty 求差）
- *   - 海运在途 = 已绑柜子的出库批次明细 qty 合计（柜状态：装柜中/已装柜待开船、在途）
+ * - 业务口径（与「全量重算产品库存」一致，仅统计已关联 ProductVariant 的明细）：
+ *   - 工厂 = 合同明细 max(qty - pickedQty, 0)（variantId 非空）
+ *   - 国内 = 入库 received（明细行 + 无明细头表，父单未取消）− 出库批次明细 qty（variantId 非空、批次未取消）
+ *   - 海运在途 = 绑柜且柜状态装柜中/在途的出库明细（variantId 非空）
  */
 export async function GET(request: NextRequest) {
   try {
     const noCache = new URL(request.url).searchParams.get("noCache") === "true";
 
-    const [
-      groupByWarehouse,
-      warehouses,
-      variantAgg,
-      contractItems,
-      inboundReceivedAgg,
-      outboundBatchAgg,
-      seaTransitFromContainerAgg,
-    ] = await Promise.all([
+    const [groupByWarehouse, warehouses, variantAgg, linkedBiz] =
+      await Promise.all([
       prisma.stock.groupBy({
         by: ["warehouseId"],
         _sum: { qty: true, reservedQty: true },
@@ -58,37 +54,7 @@ export async function GET(request: NextRequest) {
           stockQuantity: true,
         },
       }),
-      prisma.purchaseContractItem.findMany({
-        select: {
-          qty: true,
-          pickedQty: true,
-        },
-      }),
-      prisma.pendingInboundItem.aggregate({
-        _sum: { receivedQty: true },
-      }),
-      prisma.outboundBatchItem.aggregate({
-        where: {
-          outboundBatch: {
-            status: { not: "已取消" },
-          },
-        },
-        _sum: { qty: true },
-      }),
-      prisma.outboundBatchItem.aggregate({
-        where: {
-          outboundBatch: {
-            containerId: { not: null },
-            status: { not: "已取消" },
-            container: {
-              status: {
-                in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT],
-              },
-            },
-          },
-        },
-        _sum: { qty: true },
-      }),
+      aggregateBusinessPipelineLinkedToVariants(),
     ]);
 
     const whMap = new Map(warehouses.map((w) => [w.id, w]));
@@ -175,24 +141,12 @@ export async function GET(request: NextRequest) {
         Number(variantAgg._sum.inTransit ?? 0),
     };
 
-    const factoryFromContracts = contractItems.reduce((sum, item) => {
-      const remain = Number(item.qty ?? 0) - Number(item.pickedQty ?? 0);
-      return sum + (remain > 0 ? remain : 0);
-    }, 0);
-    const inboundReceivedTotal = Number(inboundReceivedAgg._sum.receivedQty ?? 0);
-    const outboundTotal = Number(outboundBatchAgg._sum.qty ?? 0);
-    const domesticFromInboundMinusOutbound = Math.max(
-      0,
-      inboundReceivedTotal - outboundTotal
-    );
-    const seaTransitFromContainer = Number(
-      seaTransitFromContainerAgg._sum.qty ?? 0
-    );
+    const seaTransitFromContainer = linkedBiz.seaTransitFromContainer;
 
-    // 业务口径：工厂（合同剩余） + 国内（入库减出库） + 海运在途（绑柜且在途/装柜） + 海外仓（来自 Stock）
+    // 业务口径（与单 SKU 快照可加总一致）：工厂 + 国内 + 海运在途 + 海外仓（Stock）
     const businessByLocation = {
-      FACTORY: factoryFromContracts,
-      DOMESTIC: domesticFromInboundMinusOutbound,
+      FACTORY: linkedBiz.factoryLinked,
+      DOMESTIC: linkedBiz.domesticNet,
       TRANSIT: seaTransitFromContainer,
       OVERSEAS: Number(byLocation.OVERSEAS?.qty ?? 0),
     };
@@ -225,6 +179,12 @@ export async function GET(request: NextRequest) {
       seaTransitContainerStatuses: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT],
       businessByLocation,
       businessTotalQty,
+      /** 与业务工厂口径对比：合同行未绑定 variantId 的剩余件数（不计入产品档案） */
+      diagnostics: {
+        factoryRemainUnlinked: linkedBiz.factoryRemainUnlinked,
+        inboundReceivedLinked: linkedBiz.inboundReceived,
+        outboundQtyLinked: linkedBiz.outboundTotal,
+      },
     };
 
     return NextResponse.json(payload, {

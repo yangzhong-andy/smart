@@ -65,6 +65,11 @@ type ReconciliationPayload = {
   seaTransitFromContainer?: number;
   /** 计入海运在途的柜子状态（枚举值） */
   seaTransitContainerStatuses?: string[];
+  diagnostics?: {
+    factoryRemainUnlinked: number;
+    inboundReceivedLinked: number;
+    outboundQtyLinked: number;
+  };
 };
 
 const ORDER = ["FACTORY", "DOMESTIC", "TRANSIT", "OVERSEAS", "UNKNOWN"] as const;
@@ -164,7 +169,7 @@ export default function InventoryReconciliationPage() {
     <div className="min-h-screen bg-slate-950">
       <PageHeader
         title="库存对账"
-        description="按「仓库位置」汇总 Stock 表全量数据，并与产品档案上的分布字段对照，便于排查差异。"
+        description="Stock 实物仓与「合同/入库/出库」业务流分开展示；业务段与产品档案使用同一套重算逻辑（仅含已绑定 SKU 的明细）。"
         actions={
           <div className="flex flex-wrap gap-2">
             <ActionButton
@@ -207,10 +212,17 @@ export default function InventoryReconciliationPage() {
         {data && !isLoading && (
           <>
             <p className="text-xs text-slate-500">
-              数据生成时间：{data.generatedAt ? new Date(data.generatedAt).toLocaleString("zh-CN") : "-"} · 主口径为{" "}
-              <span className="text-slate-300">Stock（SKU×仓库）</span> 按仓库{" "}
-              <span className="text-slate-300">location</span> 聚合，无条数上限截断。
+              数据生成时间：{data.generatedAt ? new Date(data.generatedAt).toLocaleString("zh-CN") : "-"} ·{" "}
+              <span className="text-slate-300">Stock</span> 为实物仓维度（按仓库 location）；「业务四段」与产品档案字段按合同/入库/出库流水计算，仅统计{" "}
+              <span className="text-slate-300">已绑定 SKU（variantId）</span> 的明细，二者本就可能与仓内实物不一致，属正常现象。
             </p>
+            {data.diagnostics && data.diagnostics.factoryRemainUnlinked > 0 && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/95">
+                提示：合同里仍有{" "}
+                <span className="font-mono tabular-nums">{fmt(data.diagnostics.factoryRemainUnlinked)}</span>{" "}
+                件「工厂剩余」未关联到产品 SKU（无 variantId），已计入上方业务工厂以外的潜在数量；请在合同明细中补全 SKU 后重算，产品档案才能覆盖这部分。
+              </div>
+            )}
 
             {/* 总览 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -288,9 +300,11 @@ export default function InventoryReconciliationPage() {
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <h2 className="text-sm font-medium text-slate-300 mb-2">业务四段口径（你提的定义）</h2>
+              <h2 className="text-sm font-medium text-slate-300 mb-2">业务四段口径（与「全量重算产品库存」一致）</h2>
               <p className="text-xs text-slate-500 mb-3">
-                工厂：合同剩余；国内：已入库减已出库；海运在途：已绑柜子且柜状态为「装柜中/在途」的出库批次明细件数；海外：Stock 海外仓段。
+                工厂：合同明细 max(qty−picked，0)，且{" "}
+                <span className="text-slate-400">仅 variantId 非空</span>；国内：入库 received（多行明细 + 无明细头表，父单未取消）减出库批次明细（variantId
+                非空）；海运在途：已绑柜且柜状态为「装柜中/在途」的出库明细；海外：Stock 海外仓段。
                 {Array.isArray(data.seaTransitContainerStatuses) &&
                   data.seaTransitContainerStatuses.length > 0 && (
                     <span className="block mt-1 text-slate-600">
@@ -298,6 +312,12 @@ export default function InventoryReconciliationPage() {
                     </span>
                   )}
               </p>
+              {data.diagnostics && (
+                <p className="text-[11px] text-slate-600 mb-3 font-mono tabular-nums">
+                  诊断（已关联 SKU）：入库 received 合计 {fmt(data.diagnostics.inboundReceivedLinked)} · 出库 qty 合计{" "}
+                  {fmt(data.diagnostics.outboundQtyLinked)}
+                </p>
+              )}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
                   <span className="text-slate-500">工厂</span>
@@ -330,7 +350,8 @@ export default function InventoryReconciliationPage() {
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <h2 className="text-sm font-medium text-slate-300 mb-2">产品档案（ProductVariant）分布 — 参考对照</h2>
               <p className="text-xs text-slate-500 mb-3">
-                以下为变体表上的「工厂 / 国内待发 / 海运中」字段合计，可能与 Stock 仓库存因同步时机不同而不一致；海外库存主要在 Stock（海外仓）中体现。
+                以下为变体表字段合计。点击「全量重算产品库存」后，理论上应与上方「业务四段」之和（不含海外仓 Stock 段）在数值上对齐；若仍不一致多为仍有未绑定 SKU 的合同/入库行或同步未执行。
+                Stock 实物仓与业务流本就可能不同（例如已入库到国内虚拟仓但合同行未关账等）。
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
@@ -416,9 +437,9 @@ export default function InventoryReconciliationPage() {
 
             <div className="rounded-lg border border-slate-800/80 bg-slate-900/30 p-4 text-xs text-slate-500 leading-relaxed">
               <strong className="text-slate-400">说明：</strong>
-              全量件数以 <span className="text-slate-300">Stock.qty</span> 为准，按{" "}
-              <span className="text-slate-300">Warehouse.location</span> 归入工厂 / 国内 / 在途 / 海外。若某段明显偏小，请检查该段业务是否已写入
-              Stock（例如入库、调拨、海外上架）。未匹配到仓库主数据的行会归入「未匹配仓库」。
+              <span className="text-slate-300">Stock 总件数</span> 以仓库实物为准；<span className="text-slate-300">业务总库存</span>{" "}
+              为合同/入库/出库链路合计（仅含已绑定 SKU 的行）；<span className="text-slate-300">产品档案合计</span>{" "}
+              为重算后的快照之和。三者服务不同目的，不必强行相等。若希望档案与业务对齐，请先补全合同/入库行的 SKU，再点「全量重算产品库存」。
             </div>
           </>
         )}

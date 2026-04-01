@@ -76,6 +76,90 @@ export async function computeVariantInventorySnapshot(variantId: string) {
   return { atFactory, atDomestic, inTransit, stockQuantity };
 }
 
+/**
+ * 与「单 SKU 快照」可加总一致的全局业务口径（仅统计已关联 ProductVariant 的明细行），
+ * 用于库存对账页「业务四段」与产品档案重算后合计对齐。
+ */
+export async function aggregateBusinessPipelineLinkedToVariants() {
+  const [
+    contractItemsLinked,
+    contractItemsUnlinked,
+    inboundLinesAgg,
+    inboundHeadersAgg,
+    outboundAgg,
+    seaTransitAgg,
+  ] = await Promise.all([
+    prisma.purchaseContractItem.findMany({
+      where: { variantId: { not: null } },
+      select: { qty: true, pickedQty: true },
+    }),
+    prisma.purchaseContractItem.findMany({
+      where: { variantId: null },
+      select: { qty: true, pickedQty: true },
+    }),
+    prisma.pendingInboundItem.aggregate({
+      where: {
+        variantId: { not: null },
+        pendingInbound: { status: { not: "已取消" } },
+      },
+      _sum: { receivedQty: true },
+    }),
+    prisma.pendingInbound.aggregate({
+      where: {
+        status: { not: "已取消" },
+        variantId: { not: null },
+        items: { none: {} },
+      },
+      _sum: { receivedQty: true },
+    }),
+    prisma.outboundBatchItem.aggregate({
+      where: {
+        variantId: { not: null },
+        outboundBatch: { status: { not: "已取消" } },
+      },
+      _sum: { qty: true },
+    }),
+    prisma.outboundBatchItem.aggregate({
+      where: {
+        variantId: { not: null },
+        outboundBatch: {
+          containerId: { not: null },
+          status: { not: "已取消" },
+          container: {
+            status: { in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT] },
+          },
+        },
+      },
+      _sum: { qty: true },
+    }),
+  ]);
+
+  const factoryLinked = contractItemsLinked.reduce((sum, item) => {
+    const remain = Number(item.qty ?? 0) - Number(item.pickedQty ?? 0);
+    return sum + (remain > 0 ? remain : 0);
+  }, 0);
+  const factoryRemainUnlinked = contractItemsUnlinked.reduce((sum, item) => {
+    const remain = Number(item.qty ?? 0) - Number(item.pickedQty ?? 0);
+    return sum + (remain > 0 ? remain : 0);
+  }, 0);
+
+  const inboundReceived =
+    Number(inboundLinesAgg._sum.receivedQty ?? 0) +
+    Number(inboundHeadersAgg._sum.receivedQty ?? 0);
+  const outboundTotal = Number(outboundAgg._sum.qty ?? 0);
+  const domesticNet = Math.max(0, inboundReceived - outboundTotal);
+  const seaTransitFromContainer = Number(seaTransitAgg._sum.qty ?? 0);
+
+  return {
+    factoryLinked,
+    factoryRemainUnlinked,
+    inboundReceived,
+    outboundTotal,
+    domesticNet,
+    seaTransitFromContainer,
+  };
+}
+
 async function collectVariantIdsForFullSync(): Promise<string[]> {
   const [fromContracts, fromInboundLines, fromInboundHeaders, fromOutbound] =
     await Promise.all([
