@@ -66,10 +66,23 @@ const formatDate = (d: string) => {
       });
     }
     // 如果只有日期，也显示日期（兼容旧数据）
-    return date.toISOString().slice(0, 10);
+    return toLocalDateKey(date);
   } catch (e) {
     return d;
   }
+};
+
+const toLocalDateKey = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const flowDateKey = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  if (!Number.isNaN(d.getTime())) return toLocalDateKey(d);
+  return (dateStr || "").slice(0, 10);
 };
 
 // 流水列表 API（带 noCache 避免多系统/Redis 缓存导致凭证不刷新）
@@ -296,7 +309,7 @@ export default function CashFlowPage() {
 
     const reversalFlow: CashFlow = {
       id: crypto.randomUUID(),
-      date: new Date().toISOString().slice(0, 10),
+      date: toLocalDateKey(new Date()),
       summary: `[冲销] ${flow.summary}`,
       type: flow.type,
       category: flow.category,
@@ -415,19 +428,19 @@ export default function CashFlowPage() {
       
       switch (quickFilter) {
         case "today":
-          fromDate = toDate = today.toISOString().slice(0, 10);
+          fromDate = toDate = toLocalDateKey(today);
           break;
         case "yesterday": {
           const yesterday = new Date(today);
           yesterday.setDate(yesterday.getDate() - 1);
-          fromDate = toDate = yesterday.toISOString().slice(0, 10);
+          fromDate = toDate = toLocalDateKey(yesterday);
           break;
         }
         case "thisWeek": {
           const weekStart = new Date(today);
           weekStart.setDate(today.getDate() - today.getDay());
-          fromDate = weekStart.toISOString().slice(0, 10);
-          toDate = today.toISOString().slice(0, 10);
+          fromDate = toLocalDateKey(weekStart);
+          toDate = toLocalDateKey(today);
           break;
         }
         case "lastWeek": {
@@ -435,31 +448,31 @@ export default function CashFlowPage() {
           lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
           const lastWeekStart = new Date(lastWeekEnd);
           lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
-          fromDate = lastWeekStart.toISOString().slice(0, 10);
-          toDate = lastWeekEnd.toISOString().slice(0, 10);
+          fromDate = toLocalDateKey(lastWeekStart);
+          toDate = toLocalDateKey(lastWeekEnd);
           break;
         }
         case "thisMonth": {
           fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
-          toDate = today.toISOString().slice(0, 10);
+          toDate = toLocalDateKey(today);
           break;
         }
         case "lastMonth": {
           const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
           const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-          fromDate = lastMonth.toISOString().slice(0, 10);
-          toDate = lastMonthEnd.toISOString().slice(0, 10);
+          fromDate = toLocalDateKey(lastMonth);
+          toDate = toLocalDateKey(lastMonthEnd);
           break;
         }
         case "thisQuarter": {
           const quarter = Math.floor(today.getMonth() / 3);
           fromDate = `${today.getFullYear()}-${String(quarter * 3 + 1).padStart(2, "0")}-01`;
-          toDate = today.toISOString().slice(0, 10);
+          toDate = toLocalDateKey(today);
           break;
         }
         case "thisYear":
           fromDate = `${today.getFullYear()}-01-01`;
-          toDate = today.toISOString().slice(0, 10);
+          toDate = toLocalDateKey(today);
           break;
         case "lastYear": {
           const lastYear = today.getFullYear() - 1;
@@ -470,7 +483,7 @@ export default function CashFlowPage() {
       }
       
       // API 返回的 date 为 ISO 字符串（含时间），比较时取日期部分 YYYY-MM-DD
-      const toDateOnly = (d: string) => d.slice(0, 10);
+      const toDateOnly = (d: string) => flowDateKey(d);
       if (fromDate) filtered = filtered.filter((f) => toDateOnly(f.date) >= fromDate);
       if (toDate) filtered = filtered.filter((f) => toDateOnly(f.date) <= toDate);
     } else {
@@ -492,7 +505,7 @@ export default function CashFlowPage() {
       }
       
       // 日期范围筛选（API 返回的 date 可能含时间，取日期部分比较）
-      const toDateOnly = (d: string) => d.slice(0, 10);
+      const toDateOnly = (d: string) => flowDateKey(d);
       if (filterDateFrom) {
         filtered = filtered.filter((f) => toDateOnly(f.date) >= filterDateFrom);
       }
