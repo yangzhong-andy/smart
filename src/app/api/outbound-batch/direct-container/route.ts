@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
     if (!containerNo || !containerType || !shippingMethod) {
       return badRequest("请填写柜号、柜型、运输方式");
     }
+    if (!body.loadingDate || !body.etd || !body.eta) {
+      return badRequest("请完整填写装柜日期、ETD、ETA");
+    }
     if (!Number.isFinite(volumetricDivisor) || volumetricDivisor <= 0) {
       return badRequest("体积重系数必须大于 0");
     }

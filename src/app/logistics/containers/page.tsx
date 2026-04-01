@@ -87,15 +87,6 @@ function formatNumber(value?: string | null, digits = 2): string {
   return n.toFixed(digits);
 }
 
-function getContainerLoadingDateFromBatches(outboundBatches: any[] | undefined): string {
-  if (!Array.isArray(outboundBatches) || outboundBatches.length === 0) return "-";
-  const ts = outboundBatches
-    .map((b) => new Date(b?.shippedDate || "").getTime())
-    .filter((v) => Number.isFinite(v));
-  if (ts.length === 0) return "-";
-  return formatDate(new Date(Math.min(...ts)).toISOString());
-}
-
 // 计算航行进度信息
 function getVoyageInfo(container: Container) {
   const now = new Date();
@@ -1036,7 +1027,7 @@ export default function ContainersPage() {
                 value={
                   detailContainer.loadingDate
                     ? formatDateTime(detailContainer.loadingDate)
-                    : getContainerLoadingDateFromBatches(detailData?.outboundBatches)
+                    : "-"
                 }
               />
               <InfoRow label="ETD/ETA" value={`${formatDateTime(detailContainer.etd)} / ${formatDateTime(detailContainer.eta)}`} />

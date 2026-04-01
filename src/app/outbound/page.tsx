@@ -836,6 +836,18 @@ export default function OutboundListPage() {
       toast.error("请填写柜号");
       return;
     }
+    if (!directContainerForm.loadingDate) {
+      toast.error("请填写装柜日期时间");
+      return;
+    }
+    if (!directContainerForm.etd) {
+      toast.error("请填写开船时间（ETD）");
+      return;
+    }
+    if (!directContainerForm.eta) {
+      toast.error("请填写到港时间（ETA）");
+      return;
+    }
     setDirectSubmitting(true);
     try {
       const allocated = new Map<string, number>();
@@ -1465,6 +1477,7 @@ export default function OutboundListPage() {
                     value={directContainerForm.loadingDate}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, loadingDate: e.target.value }))}
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm [color-scheme:dark]"
+                    required
                   />
                 </div>
                 <div>
@@ -1536,6 +1549,7 @@ export default function OutboundListPage() {
                     value={directContainerForm.etd}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, etd: e.target.value }))}
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm [color-scheme:dark]"
+                    required
                   />
                 </div>
                 <div className="sm:col-span-2">
@@ -1545,6 +1559,7 @@ export default function OutboundListPage() {
                     value={directContainerForm.eta}
                     onChange={(e) => setDirectContainerForm((f) => ({ ...f, eta: e.target.value }))}
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm [color-scheme:dark]"
+                    required
                   />
                 </div>
                 <div className="sm:col-span-2">

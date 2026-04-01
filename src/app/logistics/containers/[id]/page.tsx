@@ -123,15 +123,6 @@ function fmtDateTime(iso?: string) {
   }
 }
 
-function getContainerLoadingDate(batches: ContainerBatchRow[]) {
-  if (!Array.isArray(batches) || batches.length === 0) return "—";
-  const ts = batches
-    .map((b) => new Date(b?.shippedDate || "").getTime())
-    .filter((v) => Number.isFinite(v));
-  if (ts.length === 0) return "—";
-  return fmtDateOnly(new Date(Math.min(...ts)).toISOString());
-}
-
 export default function ContainerDetailPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -240,7 +231,7 @@ export default function ContainerDetailPage() {
           <div>
             <div className="text-slate-500 text-xs mb-0.5">装柜日期</div>
             <div className="text-slate-200">
-              {data.loadingDate ? fmtDateTime(data.loadingDate) : getContainerLoadingDate(batches)}
+              {data.loadingDate ? fmtDateTime(data.loadingDate) : "—"}
             </div>
           </div>
           <div>
