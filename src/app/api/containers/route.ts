@@ -5,6 +5,27 @@ import { badRequest, serverError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
+function sanitizeContainerDisplayFields(c: {
+  loadingDate: Date | null;
+  actualDeparture: Date | null;
+  warehouseName: string | null;
+  shippingMethod: string;
+  destinationCountry: string | null;
+}) {
+  const hasInvalidActualDeparture =
+    !!c.loadingDate && !!c.actualDeparture && c.actualDeparture.getTime() < c.loadingDate.getTime();
+  const likelyDomesticWarehouseForSea =
+    c.shippingMethod === "SEA" &&
+    !!c.destinationCountry &&
+    !!c.warehouseName &&
+    /国内|domestic/i.test(c.warehouseName);
+
+  return {
+    actualDeparture: hasInvalidActualDeparture ? null : c.actualDeparture,
+    warehouseName: likelyDomesticWarehouseForSea ? null : c.warehouseName,
+  };
+}
+
 /**
  * GET /api/containers
  * 查询柜子列表
@@ -55,58 +76,67 @@ export async function GET(request: NextRequest) {
       prisma.container.count({ where }),
     ]);
 
-    const data = rows.map((c) => ({
-      id: c.id,
-      containerNo: c.containerNo,
-      containerType: c.containerType,
-      sealNo: c.sealNo ?? undefined,
-      shippingMethod: c.shippingMethod,
-      shipCompany: c.shipCompany ?? undefined,
-      vesselName: c.vesselName ?? undefined,
-      voyageNo: c.voyageNo ?? undefined,
-      originPort: c.originPort ?? undefined,
-      destinationPort: c.destinationPort ?? undefined,
-      destinationCountry: c.destinationCountry ?? undefined,
-      loadingDate: c.loadingDate?.toISOString() ?? undefined,
-      etd: c.etd?.toISOString() ?? undefined,
-      eta: c.eta?.toISOString() ?? undefined,
-      actualDeparture: c.actualDeparture?.toISOString() ?? undefined,
-      actualArrival: c.actualArrival?.toISOString() ?? undefined,
-      status: c.status,
-      // 出口模式
-      exportMode: c.exportMode ?? undefined,
-      serviceMode: c.serviceMode ?? undefined,
-      // 主体
-      exporterId: c.exporterId ?? undefined,
-      exporterName: c.exporterName ?? undefined,
-      overseasCompanyId: c.overseasCompanyId ?? undefined,
-      overseasCompanyName: c.overseasCompanyName ?? undefined,
-      // 申报
-      declaredValue: c.declaredValue ? c.declaredValue.toString() : undefined,
-      declaredCurrency: c.declaredCurrency ?? undefined,
-      // 关税
-      dutyAmount: c.dutyAmount ? c.dutyAmount.toString() : undefined,
-      dutyPayer: c.dutyPayer ?? undefined,
-      dutyCurrency: c.dutyCurrency ?? undefined,
-      dutyPaidAmount: c.dutyPaidAmount ? c.dutyPaidAmount.toString() : undefined,
-      // 回款
-      returnAmount: c.returnAmount ? c.returnAmount.toString() : undefined,
-      returnDate: c.returnDate?.toISOString() ?? undefined,
-      returnCurrency: c.returnCurrency ?? undefined,
-      // 仓库
-      warehouseId: c.warehouseId ?? undefined,
-      warehouseName: c.warehouseName ?? undefined,
-      // 销售
-      platform: c.platform ?? undefined,
-      storeId: c.storeId ?? undefined,
-      storeName: c.storeName ?? undefined,
-      // 汇总
-      totalVolumeCBM: c.totalVolumeCBM ? c.totalVolumeCBM.toString() : undefined,
-      totalWeightKG: c.totalWeightKG ? c.totalWeightKG.toString() : undefined,
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
-      outboundBatchCount: c.outboundBatches.length,
-    }));
+    const data = rows.map((c) => {
+      const sanitized = sanitizeContainerDisplayFields({
+        loadingDate: c.loadingDate,
+        actualDeparture: c.actualDeparture,
+        warehouseName: c.warehouseName,
+        shippingMethod: c.shippingMethod,
+        destinationCountry: c.destinationCountry,
+      });
+      return {
+        id: c.id,
+        containerNo: c.containerNo,
+        containerType: c.containerType,
+        sealNo: c.sealNo ?? undefined,
+        shippingMethod: c.shippingMethod,
+        shipCompany: c.shipCompany ?? undefined,
+        vesselName: c.vesselName ?? undefined,
+        voyageNo: c.voyageNo ?? undefined,
+        originPort: c.originPort ?? undefined,
+        destinationPort: c.destinationPort ?? undefined,
+        destinationCountry: c.destinationCountry ?? undefined,
+        loadingDate: c.loadingDate?.toISOString() ?? undefined,
+        etd: c.etd?.toISOString() ?? undefined,
+        eta: c.eta?.toISOString() ?? undefined,
+        actualDeparture: sanitized.actualDeparture?.toISOString() ?? undefined,
+        actualArrival: c.actualArrival?.toISOString() ?? undefined,
+        status: c.status,
+        // 出口模式
+        exportMode: c.exportMode ?? undefined,
+        serviceMode: c.serviceMode ?? undefined,
+        // 主体
+        exporterId: c.exporterId ?? undefined,
+        exporterName: c.exporterName ?? undefined,
+        overseasCompanyId: c.overseasCompanyId ?? undefined,
+        overseasCompanyName: c.overseasCompanyName ?? undefined,
+        // 申报
+        declaredValue: c.declaredValue ? c.declaredValue.toString() : undefined,
+        declaredCurrency: c.declaredCurrency ?? undefined,
+        // 关税
+        dutyAmount: c.dutyAmount ? c.dutyAmount.toString() : undefined,
+        dutyPayer: c.dutyPayer ?? undefined,
+        dutyCurrency: c.dutyCurrency ?? undefined,
+        dutyPaidAmount: c.dutyPaidAmount ? c.dutyPaidAmount.toString() : undefined,
+        // 回款
+        returnAmount: c.returnAmount ? c.returnAmount.toString() : undefined,
+        returnDate: c.returnDate?.toISOString() ?? undefined,
+        returnCurrency: c.returnCurrency ?? undefined,
+        // 仓库
+        warehouseId: c.warehouseId ?? undefined,
+        warehouseName: sanitized.warehouseName ?? undefined,
+        // 销售
+        platform: c.platform ?? undefined,
+        storeId: c.storeId ?? undefined,
+        storeName: c.storeName ?? undefined,
+        // 汇总
+        totalVolumeCBM: c.totalVolumeCBM ? c.totalVolumeCBM.toString() : undefined,
+        totalWeightKG: c.totalWeightKG ? c.totalWeightKG.toString() : undefined,
+        createdAt: c.createdAt.toISOString(),
+        updatedAt: c.updatedAt.toISOString(),
+        outboundBatchCount: c.outboundBatches.length,
+      };
+    });
 
     return NextResponse.json({
       data,

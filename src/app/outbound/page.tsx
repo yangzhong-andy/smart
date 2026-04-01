@@ -269,6 +269,7 @@ export default function OutboundListPage() {
     originPort: "",
     destinationPort: "",
     destinationCountry: "",
+    warehouseId: "",
     etd: "",
     eta: "",
     volumetricDivisor: "6000",
@@ -667,6 +668,7 @@ export default function OutboundListPage() {
       originPort: first.portOfLoading || "",
       destinationPort: first.portOfDischarge || "",
       destinationCountry: first.destinationCountry || "",
+      warehouseId: "",
       etd: "",
       eta: "",
       volumetricDivisor: "6000",
@@ -858,6 +860,7 @@ export default function OutboundListPage() {
         boxWeightKG: item.boxWeightKG || 0,
         boxVolumetricWeightKG: item.boxVolumetricWeightKG || 0,
       }));
+      const selectedWarehouse = warehouses.find((w) => String(w.id) === String(directContainerForm.warehouseId));
       const res = await fetch("/api/outbound-batch/direct-container", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -871,6 +874,8 @@ export default function OutboundListPage() {
           originPort: directContainerForm.originPort.trim() || null,
           destinationPort: directContainerForm.destinationPort.trim() || null,
           destinationCountry: directContainerForm.destinationCountry.trim() || null,
+          warehouseId: directContainerForm.warehouseId || null,
+          warehouseName: selectedWarehouse?.name || null,
           etd: directContainerForm.etd || null,
           eta: directContainerForm.eta || null,
           volumetricDivisor: Number(directContainerForm.volumetricDivisor) || 6000,
@@ -1489,6 +1494,23 @@ export default function OutboundListPage() {
                         ))}
                       </optgroup>
                     )}
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-slate-400 mb-1">目的仓库</label>
+                  <select
+                    value={directContainerForm.warehouseId}
+                    onChange={(e) => setDirectContainerForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  >
+                    <option value="">请选择目的仓库</option>
+                    {warehouses
+                      .filter((w: any) => w.type === "OVERSEAS" || w.location === "OVERSEAS")
+                      .map((w: any) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>

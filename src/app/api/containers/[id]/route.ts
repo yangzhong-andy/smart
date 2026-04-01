@@ -4,6 +4,27 @@ import { badRequest, handlePrismaError, serverError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
+function sanitizeContainerDisplayFields(c: {
+  loadingDate: Date | null;
+  actualDeparture: Date | null;
+  warehouseName: string | null;
+  shippingMethod: string;
+  destinationCountry: string | null;
+}) {
+  const hasInvalidActualDeparture =
+    !!c.loadingDate && !!c.actualDeparture && c.actualDeparture.getTime() < c.loadingDate.getTime();
+  const likelyDomesticWarehouseForSea =
+    c.shippingMethod === "SEA" &&
+    !!c.destinationCountry &&
+    !!c.warehouseName &&
+    /国内|domestic/i.test(c.warehouseName);
+
+  return {
+    actualDeparture: hasInvalidActualDeparture ? null : c.actualDeparture,
+    warehouseName: likelyDomesticWarehouseForSea ? null : c.warehouseName,
+  };
+}
+
 // GET /api/containers/[id] - 获取单个柜子详情（含出库批次）
 export async function GET(
   _request: NextRequest,
@@ -30,6 +51,14 @@ export async function GET(
       return NextResponse.json({ error: "柜子不存在" }, { status: 404 });
     }
 
+    const sanitized = sanitizeContainerDisplayFields({
+      loadingDate: container.loadingDate,
+      actualDeparture: container.actualDeparture,
+      warehouseName: container.warehouseName,
+      shippingMethod: container.shippingMethod,
+      destinationCountry: container.destinationCountry,
+    });
+
     return NextResponse.json({
       id: container.id,
       containerNo: container.containerNo,
@@ -45,7 +74,7 @@ export async function GET(
       loadingDate: container.loadingDate?.toISOString() ?? undefined,
       etd: container.etd?.toISOString() ?? undefined,
       eta: container.eta?.toISOString() ?? undefined,
-      actualDeparture: container.actualDeparture?.toISOString() ?? undefined,
+      actualDeparture: sanitized.actualDeparture?.toISOString() ?? undefined,
       actualArrival: container.actualArrival?.toISOString() ?? undefined,
       status: container.status,
       // 出口模式
@@ -70,7 +99,7 @@ export async function GET(
       returnCurrency: container.returnCurrency ?? undefined,
       // 仓库
       warehouseId: container.warehouseId ?? undefined,
-      warehouseName: container.warehouseName ?? undefined,
+      warehouseName: sanitized.warehouseName ?? undefined,
       // 销售
       platform: container.platform ?? undefined,
       storeId: container.storeId ?? undefined,

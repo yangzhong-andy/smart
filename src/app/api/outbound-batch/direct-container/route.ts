@@ -144,8 +144,9 @@ export async function POST(request: NextRequest) {
           exporterName: body.exporterName || null,
           overseasCompanyId: body.overseasCompanyId || null,
           overseasCompanyName: body.overseasCompanyName || null,
-          warehouseId: body.warehouseId || firstBatch.warehouseId || null,
-          warehouseName: body.warehouseName || firstBatch.warehouseName || null,
+          // 目的仓库必须显式传入，避免误用首批次的国内出库仓
+          warehouseId: body.warehouseId || null,
+          warehouseName: body.warehouseName || null,
           platform: body.platform || firstBatch.destinationPlatform || null,
           storeId: body.storeId || firstBatch.destinationStoreId || null,
           storeName: body.storeName || firstBatch.destinationStoreName || null,
