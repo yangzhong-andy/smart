@@ -259,6 +259,7 @@ export default function OutboundListPage() {
   const [converting, setConverting] = useState(false);
   const [directModalBatches, setDirectModalBatches] = useState<BatchItem[]>([]);
   const [directSubmitting, setDirectSubmitting] = useState(false);
+  const [directSkuEditorOpen, setDirectSkuEditorOpen] = useState(false);
   const [directContainerForm, setDirectContainerForm] = useState({
     containerNo: "",
     containerType: "40HQ",
@@ -650,6 +651,7 @@ export default function OutboundListPage() {
     setDirectModalBatches([]);
     setDirectSkuItems([]);
     setDirectSkuQtyBudget({});
+    setDirectSkuEditorOpen(false);
   }, []);
 
   const openDirectContainerModal = async (batches: BatchItem[]) => {
@@ -1524,7 +1526,53 @@ export default function OutboundListPage() {
                   />
                 </div>
               </div>
-              <div className="rounded-lg border border-slate-800 overflow-x-auto overflow-y-auto flex-1 min-h-0 max-h-[min(50vh,420px)]">
+              <div className="rounded-lg border border-slate-800 bg-slate-900/30 p-3 space-y-2">
+                <div className="text-xs text-slate-400">
+                  SKU 装柜明细已独立为大弹窗设置，避免在当前窗口里左右拖动。
+                </div>
+                <ActionButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setDirectSkuEditorOpen(true)}
+                >
+                  打开明细设置弹窗（{directSkuItems.length} 行）
+                </ActionButton>
+              </div>
+              <div className="text-xs text-slate-300 shrink-0">
+                汇总：总体积 <span className="font-semibold">{directTotalVolume.toFixed(3)}</span> m³，
+                实际重 <span className="font-semibold">{directTotalWeight.toFixed(2)}</span> kg，
+                体积重 <span className="font-semibold">{directTotalVolumetricWeight.toFixed(2)}</span> kg，
+                计费重（取高） <span className="font-semibold">{directChargeableWeight.toFixed(2)}</span> kg
+              </div>
+              <div className="flex gap-2 pt-2 shrink-0">
+                <ActionButton type="submit" isLoading={directSubmitting}>
+                  确认生成柜子
+                </ActionButton>
+                <ActionButton type="button" variant="secondary" onClick={closeDirectContainerModal}>
+                  取消
+                </ActionButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 直接装柜 SKU 明细设置（大弹窗） */}
+      {directModalBatches.length > 0 && directSkuEditorOpen && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4 bg-black/70">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700 shrink-0">
+              <h3 className="text-base font-semibold text-slate-100">SKU 装柜明细设置</h3>
+              <button
+                type="button"
+                onClick={() => setDirectSkuEditorOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-auto">
+              <div className="rounded-lg border border-slate-800 overflow-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-900/70 text-slate-400">
                     <tr>
@@ -1550,135 +1598,124 @@ export default function OutboundListPage() {
                       const mismatch = budget > 0 && alloc !== budget;
                       const showGroupHint = directFirstRowKeyByGroup.get(row.groupKey) === row.key;
                       return (
-                      <tr key={row.key} className="text-slate-300">
-                        <td className="px-2 py-2">
-                          <div className="font-mono">{row.sku}</div>
-                          <div className="text-[11px] text-slate-500">{row.skuName || "-"}</div>
-                          {showGroupHint ? (
-                            <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
-                              出库合计 {budget} 件 · 已分配 {alloc} 件
-                              {mismatch ? (
-                                <span className="text-amber-400 ml-1">（不一致）</span>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <div className="text-[10px] text-slate-600 mt-0.5">↳ 同 SKU 拆行</div>
-                          )}
-                        </td>
-                        <td className="px-2 py-2">
-                          {row.boxSpecOptions.length > 0 ? (
-                            <select
-                              value={row.selectedBoxSpecId}
-                              onChange={(e) => selectDirectSkuBoxSpec(row.key, e.target.value)}
-                              className="w-44 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-[11px]"
-                            >
-                              {row.boxSpecOptions.map((opt) => (
-                                <option key={opt.id} value={opt.id}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="text-slate-500">无箱规</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-center">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              title="同 SKU 再加一种箱规"
-                              onClick={() => addDirectSkuSpecRow(row.groupKey)}
-                              className="p-1 rounded border border-slate-600 text-slate-400 hover:text-primary-300 hover:border-primary-600"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
-                            {nInGroup > 1 ? (
+                        <tr key={row.key} className="text-slate-300">
+                          <td className="px-2 py-2">
+                            <div className="font-mono">{row.sku}</div>
+                            <div className="text-[11px] text-slate-500">{row.skuName || "-"}</div>
+                            {showGroupHint ? (
+                              <div className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                                出库合计 {budget} 件 · 已分配 {alloc} 件
+                                {mismatch ? <span className="text-amber-400 ml-1">（不一致）</span> : null}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-slate-600 mt-0.5">↳ 同 SKU 拆行</div>
+                            )}
+                          </td>
+                          <td className="px-2 py-2">
+                            {row.boxSpecOptions.length > 0 ? (
+                              <select
+                                value={row.selectedBoxSpecId}
+                                onChange={(e) => selectDirectSkuBoxSpec(row.key, e.target.value)}
+                                className="w-44 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-[11px]"
+                              >
+                                {row.boxSpecOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="text-slate-500">无箱规</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <div className="inline-flex items-center gap-1">
                               <button
                                 type="button"
-                                title="删除本行"
-                                onClick={() => removeDirectSkuSpecRow(row.key)}
-                                className="p-1 rounded border border-slate-600 text-slate-400 hover:text-red-300 hover:border-red-700"
+                                title="同 SKU 再加一种箱规"
+                                onClick={() => addDirectSkuSpecRow(row.groupKey)}
+                                className="p-1 rounded border border-slate-600 text-slate-400 hover:text-primary-300 hover:border-primary-600"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Plus className="w-3.5 h-3.5" />
                               </button>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-2 py-2 text-right">
-                          <input
-                            type="number"
-                            min={0}
-                            step="1"
-                            value={row.lineQty || ""}
-                            onChange={(e) => {
-                              const v = Number(e.target.value) || 0;
-                              updateDirectSkuItem(row.key, {
-                                lineQty: v,
-                                boxCount:
-                                  row.qtyPerBox > 0 ? Math.ceil(v / row.qtyPerBox) : row.boxCount,
-                              });
-                            }}
-                            className="w-20 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right tabular-nums"
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">{row.qtyPerBox || "-"}</td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {row.boxVolumeCBM > 0 ? row.boxVolumeCBM.toFixed(4) : "-"}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {row.boxWeightKG > 0 ? row.boxWeightKG.toFixed(3) : "-"}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {row.boxVolumetricWeightKG > 0 ? row.boxVolumetricWeightKG.toFixed(3) : "-"}
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            step="1"
-                            value={row.boxCount || ""}
-                            onChange={(e) => {
-                              const bc = Number(e.target.value) || 0;
-                              const qp = row.qtyPerBox;
-                              updateDirectSkuItem(row.key, {
-                                boxCount: bc,
-                                lineQty: qp > 0 ? qp * bc : row.lineQty,
-                              });
-                            }}
-                            className="w-24 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right"
-                            placeholder="箱数"
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {(row.boxVolumeCBM * row.boxCount).toFixed(3)}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {(row.boxWeightKG * row.boxCount).toFixed(2)}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums">
-                          {(row.boxVolumetricWeightKG * row.boxCount).toFixed(2)}
-                        </td>
-                      </tr>
-                    );
+                              {nInGroup > 1 ? (
+                                <button
+                                  type="button"
+                                  title="删除本行"
+                                  onClick={() => removeDirectSkuSpecRow(row.key)}
+                                  className="p-1 rounded border border-slate-600 text-slate-400 hover:text-red-300 hover:border-red-700"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-2 py-2 text-right">
+                            <input
+                              type="number"
+                              min={0}
+                              step="1"
+                              value={row.lineQty || ""}
+                              onChange={(e) => {
+                                const v = Number(e.target.value) || 0;
+                                updateDirectSkuItem(row.key, {
+                                  lineQty: v,
+                                  boxCount:
+                                    row.qtyPerBox > 0 ? Math.ceil(v / row.qtyPerBox) : row.boxCount,
+                                });
+                              }}
+                              className="w-20 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">{row.qtyPerBox || "-"}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {row.boxVolumeCBM > 0 ? row.boxVolumeCBM.toFixed(4) : "-"}
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {row.boxWeightKG > 0 ? row.boxWeightKG.toFixed(3) : "-"}
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {row.boxVolumetricWeightKG > 0 ? row.boxVolumetricWeightKG.toFixed(3) : "-"}
+                          </td>
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              step="1"
+                              value={row.boxCount || ""}
+                              onChange={(e) => {
+                                const bc = Number(e.target.value) || 0;
+                                const qp = row.qtyPerBox;
+                                updateDirectSkuItem(row.key, {
+                                  boxCount: bc,
+                                  lineQty: qp > 0 ? qp * bc : row.lineQty,
+                                });
+                              }}
+                              className="w-24 rounded border border-slate-700 bg-slate-800 px-1.5 py-1 text-right"
+                              placeholder="箱数"
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {(row.boxVolumeCBM * row.boxCount).toFixed(3)}
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {(row.boxWeightKG * row.boxCount).toFixed(2)}
+                          </td>
+                          <td className="px-2 py-2 text-right tabular-nums">
+                            {(row.boxVolumetricWeightKG * row.boxCount).toFixed(2)}
+                          </td>
+                        </tr>
+                      );
                     })}
                   </tbody>
                 </table>
               </div>
-              <div className="text-xs text-slate-300 shrink-0">
-                汇总：总体积 <span className="font-semibold">{directTotalVolume.toFixed(3)}</span> m³，
-                实际重 <span className="font-semibold">{directTotalWeight.toFixed(2)}</span> kg，
-                体积重 <span className="font-semibold">{directTotalVolumetricWeight.toFixed(2)}</span> kg，
-                计费重（取高） <span className="font-semibold">{directChargeableWeight.toFixed(2)}</span> kg
-              </div>
-              <div className="flex gap-2 pt-2 shrink-0">
-                <ActionButton type="submit" isLoading={directSubmitting}>
-                  确认生成柜子
-                </ActionButton>
-                <ActionButton type="button" variant="secondary" onClick={closeDirectContainerModal}>
-                  取消
-                </ActionButton>
-              </div>
-            </form>
+            </div>
+            <div className="p-4 border-t border-slate-700 flex justify-end">
+              <ActionButton type="button" onClick={() => setDirectSkuEditorOpen(false)}>
+                完成设置
+              </ActionButton>
+            </div>
           </div>
         </div>
       )}
