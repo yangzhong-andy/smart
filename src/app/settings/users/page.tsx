@@ -235,7 +235,7 @@ export default function UsersManagementPage() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">员工档案管理</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">系统账号管理</h1>
             <p className="text-white/70">管理系统用户账号和权限</p>
           </div>
           <button

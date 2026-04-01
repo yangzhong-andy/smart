@@ -166,7 +166,7 @@ const navItems: NavItem[] = [
     labelEn: "Settings",
     icon: Settings,
     children: [
-      { label: "员工档案管理", labelEn: "", icon: Users, href: "/settings/users" },
+      { label: "系统账号管理", labelEn: "", icon: Users, href: "/settings/users" },
       { label: "本公司信息", labelEn: "", icon: Building2, href: "/settings/company" },
       { label: "出口公司管理", labelEn: "", icon: Building2, href: "/settings/exporters" },
       { label: "海外公司管理", labelEn: "", icon: Building2, href: "/settings/overseas-companies" },
