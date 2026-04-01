@@ -24,7 +24,8 @@ import {
   LogOut,
   Upload,
   BarChart3,
-  Building2
+  Building2,
+  GripVertical
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
@@ -190,7 +191,11 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [customChildOrder, setCustomChildOrder] = useState<Record<string, string[]>>({});
+  const [draggingChildHref, setDraggingChildHref] = useState<string | null>(null);
+  const [dragOverChildHref, setDragOverChildHref] = useState<string | null>(null);
   const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SIDEBAR_CHILD_ORDER_KEY = "sidebarChildOrderV1";
 
   // 按部门权限过滤一级菜单（如全球供应链部/全球供应链部门 仅显示 产品中心、供应链；支持按 code 或 name 匹配）
   const departmentCode = session?.user?.departmentCode ?? null;
@@ -211,6 +216,12 @@ export default function Sidebar() {
       if (saved === "true") {
         setIsCollapsed(true);
       }
+      // 恢复子菜单自定义排序
+      const savedOrder = localStorage.getItem(SIDEBAR_CHILD_ORDER_KEY);
+      if (savedOrder) {
+        const parsed = JSON.parse(savedOrder) as Record<string, string[]>;
+        setCustomChildOrder(parsed);
+      }
       
       // 默认展开当前路径所在的父级菜单
       const currentPath = pathname || "";
@@ -228,6 +239,11 @@ export default function Sidebar() {
       console.error("Failed to initialize sidebar:", e);
     }
   }, [pathname, visibleNavItems]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(SIDEBAR_CHILD_ORDER_KEY, JSON.stringify(customChildOrder));
+  }, [customChildOrder]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -284,6 +300,39 @@ export default function Sidebar() {
   const isParentActive = (item: NavItem) => {
     if (!item.children) return false;
     return item.children.some((child) => child.href === pathname);
+  };
+
+  const getOrderedChildren = (item: NavItem): NavItem[] => {
+    if (!item.children) return [];
+    const order = customChildOrder[item.label];
+    if (!order?.length) return item.children;
+    const map = new Map(item.children.map((child) => [child.href || `__${child.label}`, child]));
+    const ordered: NavItem[] = [];
+    order.forEach((href) => {
+      const child = map.get(href);
+      if (child) {
+        ordered.push(child);
+        map.delete(href);
+      }
+    });
+    map.forEach((child) => ordered.push(child));
+    return ordered;
+  };
+
+  const reorderChildren = (parentLabel: string, fromHref: string, toHref: string) => {
+    const parent = visibleNavItems.find((i) => i.label === parentLabel);
+    if (!parent?.children) return;
+    const current = getOrderedChildren(parent);
+    const fromIndex = current.findIndex((c) => (c.href || `__${c.label}`) === fromHref);
+    const toIndex = current.findIndex((c) => (c.href || `__${c.label}`) === toHref);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    const next = [...current];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setCustomChildOrder((prev) => ({
+      ...prev,
+      [parentLabel]: next.map((c) => c.href || `__${c.label}`),
+    }));
   };
 
   return (
@@ -484,14 +533,40 @@ export default function Sidebar() {
                           <div className="absolute left-0 top-0 bottom-0 w-px bg-white/10" />
                           
                           <div className="space-y-0.5 pl-5">
-                            {item.children.map((child, index) => {
+                            {getOrderedChildren(item).map((child) => {
                               const isApprovalLink = child.href === "/finance/approval";
                               const active = isActive(child.href);
+                              const childKey = child.href || `__${child.label}`;
                               return (
                                 <Link
-                                  key={child.href}
+                                  key={childKey}
                                   href={child.href || "#"}
                                   prefetch
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.effectAllowed = "move";
+                                    e.dataTransfer.setData("text/plain", childKey);
+                                    setDraggingChildHref(childKey);
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = "move";
+                                    setDragOverChildHref(childKey);
+                                  }}
+                                  onDragLeave={() => {
+                                    setDragOverChildHref((prev) => (prev === childKey ? null : prev));
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const from = e.dataTransfer.getData("text/plain") || draggingChildHref;
+                                    if (from) reorderChildren(item.label, from, childKey);
+                                    setDragOverChildHref(null);
+                                    setDraggingChildHref(null);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDragOverChildHref(null);
+                                    setDraggingChildHref(null);
+                                  }}
                                   onMouseEnter={() => prefetchRoute(child.href)}
                                   onClick={(e) => {
                                     if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
@@ -510,7 +585,15 @@ export default function Sidebar() {
                                       ? "text-blue-400 font-medium bg-blue-500/10"
                                       : "text-gray-400 hover:text-white hover:bg-white/5"
                                   }`}
+                                  style={dragOverChildHref === childKey ? { outline: "1px dashed rgba(56, 189, 248, 0.7)" } : undefined}
                                 >
+                                  <div
+                                    className="text-slate-500/70 group-hover:text-slate-300"
+                                    title="拖拽排序"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                  >
+                                    <GripVertical size={14} />
+                                  </div>
                                   {/* 左侧占位/指示器区域：选中时显示圆点，未选中时透明占位保持对齐 */}
                                   <div className="w-1.5 h-1.5 flex-shrink-0 flex items-center justify-center">
                                     {active && (
