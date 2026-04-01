@@ -114,6 +114,15 @@ function fmtDateOnly(iso?: string) {
   }
 }
 
+function fmtDateTime(iso?: string) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("zh-CN");
+  } catch {
+    return iso;
+  }
+}
+
 function getContainerLoadingDate(batches: ContainerBatchRow[]) {
   if (!Array.isArray(batches) || batches.length === 0) return "—";
   const ts = batches
@@ -225,19 +234,19 @@ export default function ContainerDetailPage() {
           <div>
             <div className="text-slate-500 text-xs mb-0.5">ETD / ETA</div>
             <div className="text-slate-200">
-              {fmtDateOnly(data.etd)} / {fmtDateOnly(data.eta)}
+              {fmtDateTime(data.etd)} / {fmtDateTime(data.eta)}
             </div>
           </div>
           <div>
             <div className="text-slate-500 text-xs mb-0.5">装柜日期</div>
             <div className="text-slate-200">
-              {data.loadingDate ? fmtDateOnly(data.loadingDate) : getContainerLoadingDate(batches)}
+              {data.loadingDate ? fmtDateTime(data.loadingDate) : getContainerLoadingDate(batches)}
             </div>
           </div>
           <div>
             <div className="text-slate-500 text-xs mb-0.5">实际开船 / 到港</div>
             <div className="text-slate-200">
-              {fmtDateOnly(data.actualDeparture)} / {fmtDateOnly(data.actualArrival)}
+              {fmtDateTime(data.actualDeparture)} / {fmtDateTime(data.actualArrival)}
             </div>
           </div>
           {data.sealNo ? (

@@ -73,6 +73,13 @@ function formatDate(value?: string | null): string {
   return d.toLocaleDateString("zh-CN");
 }
 
+function formatDateTime(value?: string | null): string {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("zh-CN");
+}
+
 function formatNumber(value?: string | null, digits = 2): string {
   if (!value) return "-";
   const n = Number(value);
@@ -1028,12 +1035,12 @@ export default function ContainersPage() {
                 label="装柜日期"
                 value={
                   detailContainer.loadingDate
-                    ? formatDate(detailContainer.loadingDate)
+                    ? formatDateTime(detailContainer.loadingDate)
                     : getContainerLoadingDateFromBatches(detailData?.outboundBatches)
                 }
               />
-              <InfoRow label="ETD/ETA" value={`${formatDate(detailContainer.etd)} / ${formatDate(detailContainer.eta)}`} />
-              <InfoRow label="实际开船/到港" value={`${formatDate(detailContainer.actualDeparture)} / ${formatDate(detailContainer.actualArrival)}`} />
+              <InfoRow label="ETD/ETA" value={`${formatDateTime(detailContainer.etd)} / ${formatDateTime(detailContainer.eta)}`} />
+              <InfoRow label="实际开船/到港" value={`${formatDateTime(detailContainer.actualDeparture)} / ${formatDateTime(detailContainer.actualArrival)}`} />
               <InfoRow label="出口公司" value={detailContainer.exporterName || "-"} />
               <InfoRow label="海外公司" value={detailContainer.overseasCompanyName || "-"} />
               <InfoRow label="目的仓库" value={detailContainer.warehouseName || "-"} />

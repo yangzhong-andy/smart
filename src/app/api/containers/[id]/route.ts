@@ -7,21 +7,12 @@ export const dynamic = "force-dynamic";
 function sanitizeContainerDisplayFields(c: {
   loadingDate: Date | null;
   actualDeparture: Date | null;
-  warehouseName: string | null;
-  shippingMethod: string;
-  destinationCountry: string | null;
 }) {
   const hasInvalidActualDeparture =
     !!c.loadingDate && !!c.actualDeparture && c.actualDeparture.getTime() < c.loadingDate.getTime();
-  const likelyDomesticWarehouseForSea =
-    c.shippingMethod === "SEA" &&
-    !!c.destinationCountry &&
-    !!c.warehouseName &&
-    /国内|domestic/i.test(c.warehouseName);
 
   return {
     actualDeparture: hasInvalidActualDeparture ? null : c.actualDeparture,
-    warehouseName: likelyDomesticWarehouseForSea ? null : c.warehouseName,
   };
 }
 
@@ -54,9 +45,6 @@ export async function GET(
     const sanitized = sanitizeContainerDisplayFields({
       loadingDate: container.loadingDate,
       actualDeparture: container.actualDeparture,
-      warehouseName: container.warehouseName,
-      shippingMethod: container.shippingMethod,
-      destinationCountry: container.destinationCountry,
     });
 
     return NextResponse.json({
@@ -99,7 +87,7 @@ export async function GET(
       returnCurrency: container.returnCurrency ?? undefined,
       // 仓库
       warehouseId: container.warehouseId ?? undefined,
-      warehouseName: sanitized.warehouseName ?? undefined,
+      warehouseName: container.warehouseName ?? undefined,
       // 销售
       platform: container.platform ?? undefined,
       storeId: container.storeId ?? undefined,

@@ -184,7 +184,7 @@ function mergeSkuLines(batches: BatchItem[]): DirectSkuItem[] {
   return Array.from(map.values());
 }
 
-type WarehouseItem = { id: string; name: string; type?: string };
+type WarehouseItem = { id: string; name: string; type?: string; location?: string };
 type LogisticsChannelItem = { id: string; name: string; channelCode?: string };
 type CountryOption = { value: string; label: string };
 
@@ -358,7 +358,7 @@ export default function OutboundListPage() {
 
   const fetchWarehouses = useCallback(async () => {
     try {
-      const res = await fetch("/api/warehouses?page=1&pageSize=500");
+      const res = await fetch("/api/warehouses?all=1&activeOnly=false&page=1&pageSize=500");
       const data = await res.json().catch(() => ({}));
       setWarehouses(Array.isArray(data?.data) ? data.data : []);
     } catch {
@@ -676,6 +676,7 @@ export default function OutboundListPage() {
     const merged = mergeSkuLines(batches).map((r) => ({ ...r, key: newDirectSkuRowKey() }));
     setDirectSkuQtyBudget(Object.fromEntries(merged.map((r) => [r.groupKey, r.lineQty])));
     setDirectSkuItems(merged);
+    fetchWarehouses();
     fetchLogisticsChannels();
     fetchDestinationCountries();
     try {
@@ -1504,13 +1505,12 @@ export default function OutboundListPage() {
                     className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   >
                     <option value="">请选择目的仓库</option>
-                    {warehouses
-                      .filter((w: any) => w.type === "OVERSEAS" || w.location === "OVERSEAS")
-                      .map((w: any) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
+                    {warehouses.map((w: any) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                        {w.location ? ` (${w.location})` : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
