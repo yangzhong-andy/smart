@@ -20,6 +20,7 @@ import { AccountsTable } from "./components/AccountsTable";
 import { AccountFormDialog, type AccountFormState } from "./components/AccountFormDialog";
 import { AccountDetailDialog } from "./components/AccountDetailDialog";
 import { AccountFlowDialog } from "./components/AccountFlowDialog";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -34,6 +35,7 @@ const formatNumber = (n: number) => {
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function BankAccountsPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   
   // 使用 SWR 加载账户数据（分页接口返回 { data, pagination }，需取 data；pageSize 拉取全部）
   const { data: accountsData, isLoading: accountsLoading, mutate: mutateAccounts } = useSWR<BankAccount[] | { data: BankAccount[]; pagination: unknown }>('/api/accounts?page=1&pageSize=500', fetcher, {
@@ -694,7 +696,7 @@ export default function BankAccountsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除此账户吗？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定要删除此账户吗？", type: "danger" }))) return;
     
     try {
       const response = await fetch(`/api/accounts/${id}`, {
@@ -952,6 +954,7 @@ export default function BankAccountsPage() {
           setSelectedAccountForFlow(null);
         }}
       />
+      {confirmDialog}
     </div>
   );
 }

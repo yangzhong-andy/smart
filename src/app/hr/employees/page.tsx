@@ -11,6 +11,7 @@ import {
   type Employee,
   type Department,
 } from "@/lib/hr-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 import { EmployeeStats } from "./components/EmployeeStats";
 import { EmployeesFilters } from "./components/EmployeesFilters";
 import { EmployeesTable } from "./components/EmployeesTable";
@@ -45,6 +46,7 @@ const initialForm: EmployeeFormState = {
 };
 
 export default function EmployeesPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -234,7 +236,7 @@ export default function EmployeesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个员工吗？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定要删除这个员工吗？", type: "danger" }))) return;
     try {
       const ok = await deleteEmployee(id);
       if (ok) {
@@ -315,6 +317,7 @@ export default function EmployeesPage() {
         isSubmitting={isSubmitting}
         onSubmit={handleSubmit}
       />
+      {confirmDialog}
     </div>
   );
 }

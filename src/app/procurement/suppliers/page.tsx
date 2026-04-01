@@ -15,6 +15,7 @@ import {
   formatDateTime
 } from "@/procurement/hooks";
 import type { Supplier, SupplierFormData } from "@/procurement/types";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // 供应商等级颜色
 const getLevelColor = (level?: string) => {
@@ -55,6 +56,7 @@ const initialFormData: SupplierFormData = {
 };
 
 export default function SuppliersPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   // 使用统一 Hooks
   const { suppliers, isLoading, mutate } = useSuppliers();
   const { createSupplier, updateSupplier, deleteSupplier } = useSupplierActions();
@@ -251,7 +253,14 @@ export default function SuppliersPage() {
 
   // 删除供应商
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个供应商吗？此操作不可恢复！")) return;
+    if (
+      !(await confirm({
+        title: "删除确认",
+        message: "确定要删除这个供应商吗？此操作不可恢复！",
+        type: "danger",
+      }))
+    )
+      return;
 
     const success = await deleteSupplier(id);
     if (success) {
@@ -394,6 +403,7 @@ export default function SuppliersPage() {
           onClose={() => setDetailSupplier(null)}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

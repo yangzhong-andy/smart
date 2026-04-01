@@ -31,6 +31,7 @@ import { getSpuListFromAPI, getVariantsBySpuIdFromAPI, getProductsFromAPI, upser
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
 import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
 import { getCashFlowFromAPI, createCashFlow } from "@/lib/cash-flow-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type Supplier = SupplierType;
 
@@ -78,6 +79,7 @@ const newFormItemRow = (): FormItemRow => ({
 });
 
 export default function PurchaseOrdersPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const router = useRouter();
   const { data: session } = useSession();
   // 仅最高管理员 SUPER_ADMIN 可见删除按钮、可删采购合同
@@ -638,7 +640,14 @@ export default function PurchaseOrdersPage() {
   /** 删除采购合同（仅最高管理员可见并可用） */
   const handleDeleteContract = async (contractId: string) => {
     if (!isSuperAdmin) return;
-    if (!confirm("确定要删除该采购合同吗？\n删除后关联的拿货单等数据可能受影响，此操作不可恢复。")) return;
+    if (
+      !(await confirm({
+        title: "删除确认",
+        message: "确定要删除该采购合同吗？\n删除后关联的拿货单等数据可能受影响，此操作不可恢复。",
+        type: "danger",
+      }))
+    )
+      return;
     try {
       const res = await fetch(`/api/purchase-contracts/${contractId}`, { method: "DELETE" });
       if (!res.ok) {
@@ -1950,6 +1959,7 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

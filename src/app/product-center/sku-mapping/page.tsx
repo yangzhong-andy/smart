@@ -11,10 +11,12 @@ import {
   removePlatformSKUMapping
 } from "@/lib/products-store";
 import { Search, X, Package, Link2, Download } from "lucide-react";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
 export default function SKUMappingPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMappingSubmitting, setIsMappingSubmitting] = useState(false);
@@ -170,7 +172,7 @@ export default function SKUMappingPage() {
       (m) => m.platform === mappingForm.platform
     );
     if (existingMapping) {
-      if (!confirm(`该产品已存在 ${mappingForm.platform} 平台的映射，是否覆盖？`)) return;
+      if (!(await confirm({ title: "覆盖确认", message: `该产品已存在 ${mappingForm.platform} 平台的映射，是否覆盖？`, type: "warning" }))) return;
     }
     const mapping: PlatformSKUMapping = {
       platform: mappingForm.platform,
@@ -197,7 +199,7 @@ export default function SKUMappingPage() {
   };
 
   const handleRemoveMapping = async (product: Product, platform: string) => {
-    if (!confirm(`确定要删除 ${platform} 平台的映射吗？`)) return;
+    if (!(await confirm({ title: "删除确认", message: `确定要删除 ${platform} 平台的映射吗？`, type: "danger" }))) return;
 
     try {
       if (await removePlatformSKUMapping(product.sku_id, platform)) {
@@ -535,6 +537,7 @@ export default function SKUMappingPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

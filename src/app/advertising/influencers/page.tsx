@@ -32,6 +32,7 @@ import {
   type SampleStatus
 } from "@/lib/influencer-bd-store";
 import { StatCard, ActionButton, PageHeader, SearchBar, EmptyState } from "@/components/ui";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // 格式化粉丝数
 const formatFollowerCount = (count: number): string => {
@@ -61,6 +62,7 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 type ProductOption = { sku_id: string; name?: string; at_domestic?: number };
 
 export default function InfluencersPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSampleModalOpen, setIsSampleModalOpen] = useState(false);
@@ -213,7 +215,14 @@ export default function InfluencersPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("⚠️ 确定要删除这个达人吗？\n此操作不可恢复！")) return;
+    if (
+      !(await confirm({
+        title: "删除确认",
+        message: "⚠️ 确定要删除这个达人吗？\n此操作不可恢复！",
+        type: "danger",
+      }))
+    )
+      return;
     try {
       const ok = await deleteInfluencer(id);
       if (ok) {
@@ -764,6 +773,7 @@ export default function InfluencersPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

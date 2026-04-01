@@ -23,6 +23,7 @@ import {
   LOCATION_OPTIONS,
   WAREHOUSE_TYPE_LABELS
 } from "@/logistics/constants";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // 表单数据类型
 interface WarehouseFormData {
@@ -65,6 +66,7 @@ const initialFormData: WarehouseFormData = {
 };
 
 export default function WarehousePage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   // 使用统一 Hook 获取数据
   const { warehouses, isLoading, mutate } = useWarehouses();
   const { createWarehouse, updateWarehouse, deleteWarehouse } = useWarehouseActions();
@@ -204,7 +206,7 @@ export default function WarehousePage() {
 
   // 删除仓库
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个仓库吗？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定要删除这个仓库吗？", type: "danger" }))) return;
     
     const success = await deleteWarehouse(id);
     if (success) {
@@ -341,6 +343,7 @@ export default function WarehousePage() {
           onClose={handleCloseModal}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

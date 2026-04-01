@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { Package, Plus, Pencil, Trash2, X, ArrowRight, Check, Truck } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { toast } from "sonner";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type PreRecordItem = {
   id?: string;
@@ -74,6 +75,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function PreRecordsPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PreRecord | null>(null);
   const [form, setForm] = useState({
@@ -368,7 +370,7 @@ export default function PreRecordsPage() {
 
   // 删除预录单
   const handleDelete = async (id: string) => {
-    if (!confirm("确定删除该预录单？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定删除该预录单？", type: "danger" }))) return;
     try {
       const res = await fetch(`/api/container-pre-records/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("删除失败");
@@ -800,6 +802,7 @@ export default function PreRecordsPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

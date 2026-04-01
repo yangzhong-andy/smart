@@ -17,6 +17,7 @@ import {
 } from "@/lib/purchase-orders-store";
 import { getProductsFromAPI, type Product } from "@/lib/products-store";
 import type { Store } from "@/lib/store-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -49,6 +50,7 @@ const arrayFetcher = async (url: string) => {
 const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
 
 export default function PurchaseOrdersNewPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const { data: orders = [], mutate: mutateOrders } = useSWR<PurchaseOrder[]>("purchase-orders-new-orders", getPurchaseOrdersFromAPI, SWR_OPT);
   const { data: products = [] } = useSWR<Product[]>("purchase-orders-new-products", getProductsFromAPI, SWR_OPT);
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
@@ -192,7 +194,7 @@ export default function PurchaseOrdersNewPage() {
 
   // 取消订单
   const handleCancel = async (orderId: string) => {
-    if (!confirm("确定要取消这个订单吗？")) return;
+    if (!(await confirm({ title: "取消确认", message: "确定要取消这个订单吗？", type: "warning" }))) return;
     
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
@@ -724,6 +726,7 @@ export default function PurchaseOrdersNewPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

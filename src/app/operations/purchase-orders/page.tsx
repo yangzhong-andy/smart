@@ -12,6 +12,7 @@ import {
 } from "@/lib/purchase-orders-store";
 import { getSpuListFromAPI, getVariantsBySpuIdFromAPI, type Product, type SpuListItem } from "@/lib/products-store";
 import type { Store } from "@/lib/store-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // 按 SPU 分组：1 个 SPU 对应多个颜色变体 (SKU)
 type SpuOption = {
@@ -55,6 +56,7 @@ const STATUS_COLORS: Record<PurchaseOrderStatus, { bg: string; text: string }> =
 };
 
 export default function PurchaseOrdersNewPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   // 使用 SWR 加载采购订单数据
   const { data: ordersDataRaw, isLoading: ordersLoading, mutate: mutateOrders } = useSWR<any>('/api/purchase-orders?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
@@ -303,7 +305,7 @@ export default function PurchaseOrdersNewPage() {
 
   // 取消订单
   const handleCancel = async (orderId: string) => {
-    if (!confirm("确定要取消这个订单吗？")) return;
+    if (!(await confirm({ title: "取消确认", message: "确定要取消这个订单吗？", type: "warning" }))) return;
     
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
@@ -963,6 +965,7 @@ export default function PurchaseOrdersNewPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

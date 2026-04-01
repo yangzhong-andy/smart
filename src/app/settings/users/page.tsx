@@ -11,6 +11,7 @@ import { UsersStats } from "./components/UsersStats";
 import { UsersTable } from "./components/UsersTable";
 import { UserFormDialog } from "./components/UserFormDialog";
 import type { User, Department, EmployeeFromAPI, UserFormState } from "./components/types";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -30,6 +31,7 @@ const initialForm: UserFormState = {
 };
 
 export default function UsersManagementPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const { data: session, status } = useSession();
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -141,9 +143,11 @@ export default function UsersManagementPage() {
   const handleToggleActive = async (user: User) => {
     const action = user.isActive ? "禁用" : "启用";
     if (
-      !confirm(
-        `确定要${action}用户 "${user.name}" 吗？${user.isActive ? "\n禁用后该用户将无法登录系统。" : ""}`
-      )
+      !(await confirm({
+        title: `${action}确认`,
+        message: `确定要${action}用户 "${user.name}" 吗？${user.isActive ? "\n禁用后该用户将无法登录系统。" : ""}`,
+        type: user.isActive ? "warning" : "info",
+      }))
     ) {
       return;
     }
@@ -267,6 +271,7 @@ export default function UsersManagementPage() {
           onSubmit={handleSubmit}
           onEmployeeSelect={handleEmployeeSelect}
         />
+        {confirmDialog}
       </div>
     </div>
   );

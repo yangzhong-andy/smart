@@ -5,13 +5,22 @@ import { generateTestData } from "@/lib/generate-test-data";
 import { toast } from "sonner";
 import { Database, Loader2, CheckCircle2 } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 export default function GenerateTestDataPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [loading, setLoading] = useState(false);
   const [generated, setGenerated] = useState(false);
 
-  const handleGenerate = () => {
-    if (!confirm("⚠️ 确定要生成测试数据吗？\n\n这将覆盖现有的部分数据（供应商、产品、账户、合同、拿货单、现金流等）。\n\n建议先备份现有数据！")) {
+  const handleGenerate = async () => {
+    if (
+      !(await confirm({
+        title: "生成测试数据",
+        message:
+          "⚠️ 确定要生成测试数据吗？\n\n这将覆盖现有的部分数据（供应商、产品、账户、合同、拿货单、现金流等）。\n\n建议先备份现有数据！",
+        type: "warning",
+      }))
+    ) {
       return;
     }
 
@@ -123,6 +132,7 @@ export default function GenerateTestDataPage() {
           </div>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

@@ -5,8 +5,10 @@ import { clearAllData, getDataStats } from "@/lib/clear-all-data";
 import { toast } from "sonner";
 import { Trash2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 export default function ClearDataPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<{
     stats: Record<string, number>;
@@ -30,12 +32,25 @@ export default function ClearDataPage() {
     }
   };
 
-  const handleClearAll = () => {
-    if (!confirm("⚠️ 确定要清空系统所有数据吗？此操作不可恢复！")) {
+  const handleClearAll = async () => {
+    if (
+      !(await confirm({
+        title: "危险操作确认",
+        message: "⚠️ 确定要清空系统所有数据吗？此操作不可恢复！",
+        type: "danger",
+      }))
+    ) {
       return;
     }
 
-    if (!confirm("⚠️ 再次确认：这将删除所有业务数据，包括：\n- 所有订单、合同、账单\n- 所有产品、供应商信息\n- 所有财务记录\n- 所有通知和待办事项\n\n确定继续吗？")) {
+    if (
+      !(await confirm({
+        title: "二次确认",
+        message:
+          "⚠️ 再次确认：这将删除所有业务数据，包括：\n- 所有订单、合同、账单\n- 所有产品、供应商信息\n- 所有财务记录\n- 所有通知和待办事项\n\n确定继续吗？",
+        type: "danger",
+      }))
+    ) {
       return;
     }
 
@@ -180,6 +195,7 @@ export default function ClearDataPage() {
           </button>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

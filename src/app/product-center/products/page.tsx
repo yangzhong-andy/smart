@@ -15,6 +15,7 @@ import { AddVariantDialog } from "./components/AddVariantDialog";
 import type { ProductFormState, VariantRow } from "./components/types";
 import { newVariantRow } from "./components/types";
 import { formatNumber } from "./components/constants";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // 鍏煎鍔犺浇渚涘簲鍟嗘暟鎹紙浼樺厛�?API 鍔犺浇锛?
 async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
@@ -33,6 +34,7 @@ async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
 }
 
 export default function ProductsPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [spuList, setSpuList] = useState<SpuListItem[]>([]);
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
   const [expandedSpuId, setExpandedSpuId] = useState<string | null>(null);
@@ -820,7 +822,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (skuId: string) => {
-    if (!confirm("确定要删除这个 SKU 吗？\n此操作不可恢复。")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定要删除这个 SKU 吗？\n此操作不可恢复。", type: "danger" }))) return;
 
     try {
       const response = await fetch("/api/products/" + encodeURIComponent(skuId), {
@@ -850,7 +852,14 @@ export default function ProductsPage() {
 
   /** 鍒犻櫎鏁翠釜浜у搧锛圫PU锛夊強鍏跺叏閮ㄥ彉浣?*/
   const handleDeleteSpu = async (productId: string) => {
-    if (!confirm("确定要删除该产品及其全部变体吗？\n此操作不可恢复。")) return;
+    if (
+      !(await confirm({
+        title: "删除确认",
+        message: "确定要删除该产品及其全部变体吗？\n此操作不可恢复。",
+        type: "danger",
+      }))
+    )
+      return;
     try {
       const res = await fetch("/api/products/spu/" + encodeURIComponent(productId), { method: "DELETE" });
       if (!res.ok) {
@@ -1032,7 +1041,7 @@ export default function ProductsPage() {
       />
 
       <ProductDetailDialog product={detailProduct} onClose={() => setDetailProduct(null)} />
-
+      {confirmDialog}
     </div>
   );
 }

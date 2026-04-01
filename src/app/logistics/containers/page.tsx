@@ -219,6 +219,10 @@ export default function ContainersPage() {
   const [detailContainer, setDetailContainer] = useState<Container | null>(null);
   const [detailData, setDetailData] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [statusConfirm, setStatusConfirm] = useState<{
+    container: Container;
+    toStatus: string;
+  } | null>(null);
 
   const statusOptions = [
     { value: "PLANNED", label: "已计划" },
@@ -441,28 +445,29 @@ export default function ContainersPage() {
 
   const handleChangeStatus = async (container: Container, status: string) => {
     if (status === container.status) return;
-    const fromLabel = statusLabels[container.status] ?? container.status;
-    const toLabel = statusLabels[status] ?? status;
-    const confirmed = window.confirm(
-      `确认将柜子 ${container.containerNo} 状态从“${fromLabel}”改为“${toLabel}”吗？`
-    );
-    if (!confirmed) return;
+    setStatusConfirm({ container, toStatus: status });
+  };
+
+  const submitChangeStatus = async () => {
+    if (!statusConfirm) return;
+    const { container, toStatus } = statusConfirm;
     try {
       const res = await fetch(`/api/containers/${container.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: toStatus }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(json?.error || "状态更新失败");
         return;
       }
-      toast.success(`状态已更新为：${statusLabels[status] ?? status}`);
+      toast.success(`状态已更新为：${statusLabels[toStatus] ?? toStatus}`);
       mutate();
       if (detailContainer?.id === container.id) {
-        setDetailContainer({ ...detailContainer, status: status as any });
+        setDetailContainer({ ...detailContainer, status: toStatus as any });
       }
+      setStatusConfirm(null);
     } catch (error) {
       console.error(error);
       toast.error("状态更新失败，请稍后重试");
@@ -1033,6 +1038,22 @@ export default function ContainersPage() {
                         出库单 {b.outboundOrder?.outboundNumber || "-"} · SKU {b.outboundOrder?.sku || "-"} · 仓库{" "}
                         {b.warehouse?.name || "-"}
                       </div>
+                      {Array.isArray(b.skuLines) && b.skuLines.length > 0 ? (
+                        <div className="mt-2 rounded border border-slate-800 bg-slate-900/70 p-2">
+                          <div className="text-[11px] text-slate-500 mb-1">产品明细</div>
+                          <div className="space-y-1">
+                            {b.skuLines.map((line: any) => (
+                              <div key={line.id} className="text-[11px] text-slate-300">
+                                <span className="font-mono">{line.sku}</span>
+                                {" · "}
+                                <span>{line.skuName || "未命名"}</span>
+                                {line.spec ? <span className="text-slate-500"> · {line.spec}</span> : null}
+                                <span className="text-cyan-300"> × {line.qty}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="mt-2">
                         <Link
                           href={`/outbound?keyword=${encodeURIComponent(b.batchNumber || "")}`}
@@ -1047,6 +1068,41 @@ export default function ContainersPage() {
               ) : (
                 <div className="text-sm text-slate-500">暂无关联批次</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+            <div className="text-base font-semibold text-slate-100">确认变更状态</div>
+            <p className="mt-2 text-sm text-slate-400 leading-relaxed">
+              确认将柜子
+              <span className="mx-1 text-slate-200 font-medium">
+                {statusConfirm.container.containerNo}
+              </span>
+              的状态从
+              <span className="mx-1 text-amber-300">
+                {statusLabels[statusConfirm.container.status] ?? statusConfirm.container.status}
+              </span>
+              修改为
+              <span className="mx-1 text-emerald-300">
+                {statusLabels[statusConfirm.toStatus] ?? statusConfirm.toStatus}
+              </span>
+              吗？
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <ActionButton
+                type="button"
+                variant="secondary"
+                onClick={() => setStatusConfirm(null)}
+              >
+                取消
+              </ActionButton>
+              <ActionButton type="button" onClick={submitChangeStatus}>
+                确认
+              </ActionButton>
             </div>
           </div>
         </div>

@@ -10,6 +10,7 @@ import { getProductBySkuIdFromAPI, upsertProduct } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
@@ -34,6 +35,7 @@ const formatCurrency = (amount: number, currency: string = "CNY") => {
 type ProductionStatus = "未开始" | "生产中" | "部分完成" | "已完成" | "已取消";
 
 export default function ProductionProgressPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
     "/api/purchase-contracts?page=1&pageSize=500&noCache=true",
     fetcher,
@@ -195,7 +197,14 @@ export default function ProductionProgressPage() {
       toast.info("该合同已全部完工");
       return;
     }
-    if (!confirm(`确定将「${contract.contractNumber}」标记为生产完成吗？完工数量将设为合同总数 ${contract.totalQty}。`)) return;
+    if (
+      !(await confirm({
+        title: "确认提交",
+        message: `确定将「${contract.contractNumber}」标记为生产完成吗？完工数量将设为合同总数 ${contract.totalQty}。`,
+        type: "warning",
+      }))
+    )
+      return;
     setCompletingContractId(contractId);
     try {
       const res = await fetch(`/api/purchase-contracts/${contractId}/complete-production`, { method: "POST" });
@@ -809,6 +818,7 @@ export default function ProductionProgressPage() {
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

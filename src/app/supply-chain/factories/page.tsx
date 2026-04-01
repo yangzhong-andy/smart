@@ -8,6 +8,7 @@ import { getOrderTracking, getBatchReceipts, getDocuments, type OrderTracking, t
 import type { Store } from "@/lib/store-store";
 import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
 import { getLegacyPurchaseOrdersFromAPI, type LegacyPurchaseOrder } from "@/lib/purchase-contracts-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type PurchaseOrder = LegacyPurchaseOrder;
 
@@ -29,6 +30,7 @@ const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 600000, keepPrevio
 const cashFlowFetcher = () => getCashFlowFromAPI();
 
 export default function FactoriesPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: cashFlow = [] } = useSWR<CashFlow[]>("factories-cash-flow", cashFlowFetcher, SWR_OPT);
@@ -829,7 +831,7 @@ export default function FactoriesPage() {
                       </div>
                       <button
                         onClick={async () => {
-                          if (confirm("确定要删除这个文档吗？")) {
+                          if (await confirm({ title: "删除确认", message: "确定要删除这个文档吗？", type: "danger" })) {
                             const { deleteDocument, getDocuments } = require("@/lib/supply-chain-store");
                             await deleteDocument(doc.id);
                             setDocuments(getDocuments());
@@ -847,6 +849,7 @@ export default function FactoriesPage() {
           </section>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

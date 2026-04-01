@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 import { currency, formatDate } from "./types";
 import type { ContractDetail } from "./types";
 
@@ -53,6 +54,7 @@ export function PurchaseOrderDetailDialog({
   onPaymentTail,
   onRefresh,
 }: PurchaseOrderDetailDialogProps) {
+  const { confirm, confirmDialog } = useSystemConfirm();
   if (!open || !contractDetail) return null;
 
   const { contract, deliveryOrders } = contractDetail;
@@ -134,7 +136,7 @@ export function PurchaseOrderDetailDialog({
                     remaining > 0
                       ? `确定要手动完结该合同吗？合同数量 ${totalQty} 件，已拿货 ${pickedQty} 件，剩余 ${remaining} 件将不再跟进，合同将标记为「已结清」。`
                       : "确定要将该合同标记为「已结清」吗？";
-                  if (!confirm(msg)) return;
+                  if (!(await confirm({ title: "确认操作", message: msg, type: "warning" }))) return;
                   setSettleSaving(true);
                   try {
                     const res = await fetch(`/api/purchase-contracts/${contract.id}`, {
@@ -165,7 +167,7 @@ export function PurchaseOrderDetailDialog({
               <button
                 type="button"
                 onClick={async () => {
-                  if (!confirm("确定要删除该采购合同吗？此操作不可恢复。")) return;
+                  if (!(await confirm({ title: "删除确认", message: "确定要删除该采购合同吗？此操作不可恢复。", type: "danger" }))) return;
                   await onDelete(contract.id);
                   onClose();
                 }}
@@ -631,6 +633,7 @@ export function PurchaseOrderDetailDialog({
           </div>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

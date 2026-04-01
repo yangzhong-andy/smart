@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Truck, Pencil, Trash2, Search, X, Download, ExternalLink, Phone, Globe } from "lucide-react";
 import useSWR from "swr";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // 物流渠道类型
 type LogisticsChannel = {
@@ -41,6 +42,7 @@ const formatDate = (dateString: string): string => {
 };
 
 export default function LogisticsChannelsPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const toSafeString = (value: unknown): string => (typeof value === "string" ? value : "");
 
   // 使用 SWR 获取渠道数据（兼容分页结构 { data, pagination }）
@@ -201,7 +203,14 @@ export default function LogisticsChannelsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个物流渠道吗？\n此操作不可恢复！")) return;
+    if (
+      !(await confirm({
+        title: "删除确认",
+        message: "确定要删除这个物流渠道吗？\n此操作不可恢复！",
+        type: "danger",
+      }))
+    )
+      return;
     
     try {
       const response = await fetch(`/api/logistics-channels/${id}`, {
@@ -704,6 +713,7 @@ export default function LogisticsChannelsPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

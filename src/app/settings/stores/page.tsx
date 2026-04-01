@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import useSWR from "swr";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const formatDate = (dateString: string): string => {
   try {
@@ -29,6 +30,7 @@ const formatDate = (dateString: string): string => {
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function StoresPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const router = useRouter();
   const [influencerStats, setInfluencerStats] = useState({ pendingSample: 0, creating: 0 });
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -225,7 +227,7 @@ export default function StoresPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个店铺吗？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定要删除这个店铺吗？", type: "danger" }))) return;
     
     try {
       const response = await fetch(`/api/stores/${id}`, {
@@ -840,6 +842,7 @@ export default function StoresPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

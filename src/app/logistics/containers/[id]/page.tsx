@@ -59,6 +59,14 @@ type ContainerBatchRow = {
     outboundNumber: string;
     sku: string;
   };
+  skuLines?: Array<{
+    id: string;
+    variantId?: string;
+    sku: string;
+    skuName?: string;
+    spec?: string;
+    qty: number;
+  }>;
 };
 
 type ContainerDetail = {
@@ -118,6 +126,27 @@ export default function ContainerDetailPage() {
   const batches = data?.outboundBatches ?? [];
   const totalQty = batches.reduce((s, b) => s + b.qty, 0);
   const inTransitCount = batches.filter((b) => b.status !== "已到达").length;
+  const skuSummary = batches
+    .flatMap((b) => b.skuLines ?? [])
+    .reduce<
+      Array<{ key: string; sku: string; skuName?: string; spec?: string; qty: number }>
+    >((acc, line) => {
+      const key = `${line.sku}__${line.spec ?? ""}`;
+      const hit = acc.find((x) => x.key === key);
+      if (hit) {
+        hit.qty += Number(line.qty || 0);
+      } else {
+        acc.push({
+          key,
+          sku: line.sku,
+          skuName: line.skuName,
+          spec: line.spec,
+          qty: Number(line.qty || 0),
+        });
+      }
+      return acc;
+    }, [])
+    .sort((a, b) => b.qty - a.qty);
 
   if (isLoading && !data) {
     return (
@@ -221,6 +250,38 @@ export default function ContainerDetailPage() {
           </div>
         </div>
 
+        <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+          <div className="text-xs text-slate-500 mb-2">
+            SKU 汇总（跨批次合并）
+          </div>
+          {skuSummary.length === 0 ? (
+            <div className="text-sm text-slate-500">暂无 SKU 明细</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-500">
+                    <th className="py-2 pr-3 text-left font-medium">SKU</th>
+                    <th className="py-2 pr-3 text-left font-medium">产品名称</th>
+                    <th className="py-2 pr-3 text-left font-medium">规格</th>
+                    <th className="py-2 text-right font-medium">总件数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {skuSummary.map((line) => (
+                    <tr key={line.key} className="border-b border-slate-800/70 text-slate-300">
+                      <td className="py-2 pr-3 font-mono">{line.sku}</td>
+                      <td className="py-2 pr-3">{line.skuName || "未命名"}</td>
+                      <td className="py-2 pr-3 text-slate-400">{line.spec || "-"}</td>
+                      <td className="py-2 text-right text-cyan-300">{line.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {batches.length === 0 ? (
           <p className="text-sm text-slate-500">
             暂无绑定批次。请在「出库」列表中为批次选择本柜，或从出库流程绑定柜子。
@@ -247,6 +308,19 @@ export default function ContainerDetailPage() {
                       <div className="text-xs text-slate-500 mt-0.5">
                         {b.outboundOrder?.outboundNumber ?? "—"} · {b.outboundOrder?.sku ?? "—"}
                       </div>
+                      {Array.isArray(b.skuLines) && b.skuLines.length > 0 ? (
+                        <div className="mt-2 space-y-1">
+                          {b.skuLines.map((line) => (
+                            <div key={line.id} className="text-[11px] text-slate-400">
+                              <span className="font-mono text-slate-300">{line.sku}</span>
+                              {" · "}
+                              <span>{line.skuName || "未命名"}</span>
+                              {line.spec ? <span className="text-slate-500"> · {line.spec}</span> : null}
+                              <span className="text-cyan-300"> × {line.qty}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-3 pr-3 align-top text-slate-300">{b.qty}</td>
                     <td className="py-3 pr-3 align-top">

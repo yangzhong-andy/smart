@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Trash, Package } from "lucide-react";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type BoxSpec = {
   id: string;
@@ -21,6 +22,7 @@ type BoxSpecFormProps = {
 };
 
 export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [boxSpecs, setBoxSpecs] = useState<BoxSpec[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -92,7 +94,7 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定删除该箱规？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定删除该箱规？", type: "warning" }))) return;
     try {
       const res = await fetch(`/api/box-spec?id=${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -297,6 +299,7 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

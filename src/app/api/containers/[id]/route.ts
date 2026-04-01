@@ -19,6 +19,7 @@ export async function GET(
           include: {
             outboundOrder: true,
             warehouse: true,
+            outboundBatchItems: true,
           },
           orderBy: { shippedDate: "asc" },
         },
@@ -114,6 +115,14 @@ export async function GET(
               sku: b.outboundOrder.sku,
             }
           : undefined,
+        skuLines: b.outboundBatchItems.map((line) => ({
+          id: line.id,
+          variantId: line.variantId ?? undefined,
+          sku: line.sku,
+          skuName: line.skuName ?? undefined,
+          spec: line.spec ?? undefined,
+          qty: line.qty,
+        })),
       })),
     });
   } catch (error) {

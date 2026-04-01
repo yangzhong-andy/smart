@@ -15,6 +15,7 @@ import {
   type CommissionRule,
   type Department
 } from "@/lib/hr-store";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // SWR fetcher
 const fetcher = async (url: string) => {
@@ -33,6 +34,7 @@ interface DepartmentFromAPI {
 }
 
 export default function CommissionRulesPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [rules, setRules] = useState<CommissionRule[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -226,7 +228,7 @@ export default function CommissionRulesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定要删除这个规则吗？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定要删除这个规则吗？", type: "danger" }))) return;
     try {
       const ok = await deleteCommissionRule(id);
       if (ok) {
@@ -772,6 +774,7 @@ export default function CommissionRulesPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

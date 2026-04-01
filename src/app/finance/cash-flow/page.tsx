@@ -17,6 +17,7 @@ import { formatMoney } from "@/lib/constants/currency";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import ImageUploader from "@/components/ImageUploader";
 import DateInput from "@/components/DateInput";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 export type CashFlow = {
   id: string;
@@ -75,6 +76,7 @@ const formatDate = (d: string) => {
 const CASH_FLOW_LIST_KEY = '/api/cash-flow?page=1&pageSize=5000&noCache=true';
 
 export default function CashFlowPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }，需取 data；pageSize 拉取全部）
   const { data: cashFlowData, isLoading: cashFlowLoading } = useSWR<CashFlow[] | { data: any[]; pagination: unknown }>(CASH_FLOW_LIST_KEY, fetcher, {
     revalidateOnFocus: false,
@@ -667,7 +669,13 @@ export default function CashFlowPage() {
   };
 
   const handleClearAll = async () => {
-    if (!confirm("确定要删除所有流水记录吗？此操作不可恢复！")) {
+    if (
+      !(await confirm({
+        title: "危险操作确认",
+        message: "确定要删除所有流水记录吗？此操作不可恢复！",
+        type: "danger",
+      }))
+    ) {
       return;
     }
 
@@ -1719,6 +1727,7 @@ export default function CashFlowPage() {
           onSave={handleAddFlow}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

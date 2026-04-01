@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Globe, Plus, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type OverseasCompany = {
   id: string;
@@ -43,6 +44,7 @@ const emptyForm = {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function OverseasCompaniesPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const { data: session, status } = useSession();
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,7 +124,7 @@ export default function OverseasCompaniesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定删除该公司？")) return;
+    if (!(await confirm({ title: "删除确认", message: "确定删除该公司？", type: "danger" }))) return;
     try {
       const res = await fetch(`/api/overseas-companies/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("删除失败");
@@ -339,6 +341,7 @@ export default function OverseasCompaniesPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }
