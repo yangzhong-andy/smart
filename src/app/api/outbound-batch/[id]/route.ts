@@ -177,6 +177,24 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
+    const triesToUpdateBatchTimeline =
+      body.eta !== undefined || body.actualDepartureDate !== undefined || body.actualArrivalDate !== undefined;
+    if (triesToUpdateBatchTimeline) {
+      const existed = await prisma.outboundBatch.findUnique({
+        where: { id },
+        select: { containerId: true, batchNumber: true },
+      });
+      if (!existed) {
+        return NextResponse.json({ error: "出库批次不存在" }, { status: 404 });
+      }
+      if (existed.containerId) {
+        return NextResponse.json(
+          { error: `批次 ${existed.batchNumber} 已绑定柜子，请在柜子详情维护装柜/ETD/ETA/到港时间` },
+          { status: 400 }
+        );
+      }
+    }
+
     const updateData: Record<string, unknown> = {};
 
     if (body.destination !== undefined) updateData.destination = body.destination ?? null;

@@ -143,6 +143,7 @@ export default function OutboundBatchDetailPage() {
   const [ownerType, setOwnerType] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [ownerName, setOwnerName] = useState("");
+  const isBoundToContainer = Boolean(batch?.container?.id);
   const { data: countryData } = useSWR<{ data: Array<{ value: string; label: string }> }>(
     "/api/countries",
     batchFetcher,
@@ -190,10 +191,6 @@ export default function OutboundBatchDetailPage() {
         vesselVoyage: vesselName || undefined,
         portOfLoading: portOfLoading || undefined,
         portOfDischarge: portOfDischarge || undefined,
-        actualDepartureDate: actualDepartureDate
-          ? `${actualDepartureDate}T00:00:00.000Z`
-          : null,
-        eta: eta ? `${eta}T00:00:00.000Z` : undefined,
         status: status || "待发货",
         destinationCountry: destinationCountry || undefined,
         destinationPlatform: destinationPlatform || undefined,
@@ -203,6 +200,13 @@ export default function OutboundBatchDetailPage() {
         ownerId: ownerId || undefined,
         ownerName: ownerName || undefined,
       };
+      // 已绑定柜子的批次时间以柜子维度为准，避免口径冲突
+      if (!isBoundToContainer) {
+        body.actualDepartureDate = actualDepartureDate
+          ? `${actualDepartureDate}T00:00:00.000Z`
+          : null;
+        body.eta = eta ? `${eta}T00:00:00.000Z` : undefined;
+      }
       const res = await fetch(`/api/outbound-batch/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -522,25 +526,32 @@ export default function OutboundBatchDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-1.5">
-                ETD（实际开船时间）
+                批次 ETD（参考）
               </label>
               <DateInput
                 value={actualDepartureDate}
                 onChange={setActualDepartureDate}
                 placeholder="选择日期"
+                disabled={isBoundToContainer}
                 className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1.5">ETA（预计到达）</label>
+              <label className="block text-sm font-medium text-slate-400 mb-1.5">批次 ETA（参考）</label>
               <DateInput
                 value={eta}
                 onChange={setEta}
                 placeholder="选择日期"
+                disabled={isBoundToContainer}
                 className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-200"
               />
             </div>
           </div>
+          {isBoundToContainer ? (
+            <p className="text-xs text-amber-400/90">
+              当前批次已绑定柜子，ETD/ETA 以柜子信息为准，请到柜子详情维护时间字段。
+            </p>
+          ) : null}
 
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-1.5">状态</label>
