@@ -124,9 +124,11 @@ export async function POST(request: NextRequest) {
     } else {
       for (const batch of orderedBatches) {
         const payload = buildOutboundBatchSkuPayload(batch as any);
-        totalVolumeCBM += payload.totalVolumeCBM || 0;
-        totalActualWeightKG += payload.totalWeightKG || 0;
-        totalVolumetricWeightKG += ((payload.totalVolumeCBM || 0) * 1_000_000) / volumetricDivisor;
+        const v = payload.totalVolumeCBM || 0;
+        const w = payload.totalWeightKG || 0;
+        totalVolumeCBM += v;
+        totalActualWeightKG += w;
+        totalVolumetricWeightKG += v > 0 ? (v * 1_000_000) / volumetricDivisor : 0;
       }
     }
     const chargeableWeightKG = Math.max(totalActualWeightKG, totalVolumetricWeightKG);
@@ -159,8 +161,9 @@ export async function POST(request: NextRequest) {
           platform: body.platform || firstBatch.destinationPlatform || null,
           storeId: body.storeId || firstBatch.destinationStoreId || null,
           storeName: body.storeName || firstBatch.destinationStoreName || null,
+          // 柜子上保存“真实体积/重量”，计费重仅用于接口返回提示
           totalVolumeCBM: totalVolumeCBM || null,
-          totalWeightKG: chargeableWeightKG || null,
+          totalWeightKG: totalActualWeightKG || null,
         },
       });
 

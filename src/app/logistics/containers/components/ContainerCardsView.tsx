@@ -57,6 +57,8 @@ export function ContainerCardsView({
             const dest = formatPortDisplay(c.destinationPort);
             const method = methodLabels[c.shippingMethod] ?? c.shippingMethod;
             const vessel = c.vesselName?.trim() || "—";
+            const loadingStr = formatDate(c.loadingDate);
+            const etdStr = formatDate(c.etd);
             const etaStr = formatDate(c.eta);
 
             return (
@@ -123,6 +125,20 @@ export function ContainerCardsView({
                       <span className="font-medium text-white drop-shadow-sm">{vessel}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-white/40">装柜</span>
+                      <span
+                        className={`font-mono tabular-nums font-semibold drop-shadow-[0_0_12px_rgba(255,255,255,0.12)] ${theme.etaText}`}
+                      >
+                        {loadingStr}
+                      </span>
+                      <span className="text-white/30">·</span>
+                      <span className="text-white/40">ETD</span>
+                      <span
+                        className={`font-mono tabular-nums font-semibold drop-shadow-[0_0_12px_rgba(255,255,255,0.12)] ${theme.etaText}`}
+                      >
+                        {etdStr}
+                      </span>
+                      <span className="text-white/30">·</span>
                       <span className="text-white/40">ETA</span>
                       <span
                         className={`font-mono tabular-nums font-semibold drop-shadow-[0_0_12px_rgba(255,255,255,0.12)] ${theme.etaText}`}
