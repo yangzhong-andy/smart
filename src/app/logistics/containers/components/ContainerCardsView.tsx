@@ -14,6 +14,15 @@ interface ContainerCardsViewProps {
   methodLabels: Record<string, string>;
   getProgress: (status: string) => number;
   getProgressBarColor: (status: string) => string;
+  getVoyageInfo: (container: Container) => {
+    daysPassed: number;
+    totalDays: number;
+    daysLeft: number;
+    overdueDays: number;
+    progress: number;
+    eta?: string;
+    isOverdue: boolean;
+  } | null;
   formatDate: (value?: string | null) => string;
   onOpenDetail: (container: Container) => void;
 }
@@ -25,6 +34,7 @@ export function ContainerCardsView({
   methodLabels,
   getProgress,
   getProgressBarColor,
+  getVoyageInfo,
   formatDate,
   onOpenDetail,
 }: ContainerCardsViewProps) {
@@ -40,7 +50,8 @@ export function ContainerCardsView({
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-3">
           {containers.map((c) => {
             const theme = getContainerFlashyTheme(c.status);
-            const progress = getProgress(c.status);
+            const voyageInfo = getVoyageInfo(c);
+            const progress = voyageInfo?.progress ?? getProgress(c.status);
             const barColor = getProgressBarColor(c.status);
             const origin = formatPortDisplay(c.originPort);
             const dest = formatPortDisplay(c.destinationPort);

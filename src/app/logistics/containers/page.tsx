@@ -1165,6 +1165,7 @@ export default function ContainersPage() {
           methodLabels={methodLabels}
           getProgress={getProgress}
           getProgressBarColor={getProgressBarColor}
+          getVoyageInfo={getVoyageInfo}
           formatDate={formatDate}
           onOpenDetail={setDetailContainer}
         />
