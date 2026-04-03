@@ -112,6 +112,8 @@ type BatchItem = {
     shippedQty: number;
     status: string;
   };
+  /** 海外仓确认到货时间；已确认则列表不再显示「确认到货」 */
+  arrivalConfirmedAt?: string;
 };
 
 const BATCH_STATUS_LABELS: Record<string, string> = {
@@ -1121,6 +1123,15 @@ export default function OutboundListPage() {
             const expanded = expandedBatchId === b.id;
             const isSelected = selectedBatchIds.includes(b.id);
             const isLoaded = b.status === "已装柜" || !!b.containerId;
+            /** 与 confirm-arrival API 一致：装柜完成后即可选海外仓入库，不必先改成运输中 */
+            const canConfirmArrival =
+              !b.arrivalConfirmedAt &&
+              b.status !== "已取消" &&
+              b.status !== "已到达" &&
+              (b.status === "已装柜" ||
+                b.status === "已发货" ||
+                b.status === "运输中" ||
+                b.status === "已清关");
             const skuLines = b.skuLines ?? [];
             const boxQty =
               skuLines.length > 0
@@ -1206,7 +1217,7 @@ export default function OutboundListPage() {
                       </span>
                     </button>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      {(b.status === "运输中" || b.status === "已清关") && (
+                      {canConfirmArrival && (
                         <ActionButton
                           variant="ghost"
                           size="sm"

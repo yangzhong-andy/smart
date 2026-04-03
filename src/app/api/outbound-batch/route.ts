@@ -122,6 +122,7 @@ export async function GET(request: NextRequest) {
         eta: row.eta?.toISOString() ?? undefined,
         actualDepartureDate: row.actualDepartureDate?.toISOString() ?? undefined,
         actualArrivalDate: row.actualArrivalDate?.toISOString() ?? undefined,
+        arrivalConfirmedAt: row.arrivalConfirmedAt?.toISOString() ?? undefined,
         status: row.status,
         destinationCountry: row.destinationCountry ?? undefined,
         destinationPlatform: row.destinationPlatform ?? undefined,
