@@ -146,6 +146,11 @@ export function ContainerCardsView({
                         {etaStr}
                       </span>
                     </div>
+                    {voyageInfo && voyageInfo.totalDays > 0 && (
+                      <div className="mt-0.5 text-[10px] text-white/45">
+                        海运 · <span className="font-mono tabular-nums text-white/80">{voyageInfo.totalDays}</span> 天
+                      </div>
+                    )}
                   </div>
                 </FlashyLogisticsCardShell>
               </div>
