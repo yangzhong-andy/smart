@@ -69,7 +69,8 @@ export function ContainersTable({
               </tr>
             )}
             {containers.map((c) => {
-              const voyageInfo = c.status === "IN_TRANSIT" ? getVoyageInfo(c) : null;
+              const voyageInfo = getVoyageInfo(c);
+              const pct = voyageInfo?.progress ?? getProgress(c.status);
               return (
                 <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3">
@@ -105,12 +106,12 @@ export function ContainersTable({
                     <div className="mt-1">
                       <div className="flex justify-between text-[11px] text-slate-500 mb-1">
                         <span>运输进度</span>
-                        <span>{getProgress(c.status)}%</span>
+                        <span>{pct}%</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
                         <div
                           className={`h-full ${getProgressBarColor(c.status)} transition-all`}
-                          style={{ width: `${getProgress(c.status)}%` }}
+                          style={{ width: `${pct}%` }}
                         />
                       </div>
                     </div>

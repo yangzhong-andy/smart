@@ -63,24 +63,25 @@ export function LogisticsProgressAxis({ container }: { container: Container }) {
         key: "LOADED",
         label: "已装柜",
         pct: 25,
-        getTime: (c) => toDateLabel(c.createdAt, true),
-        getTooltipLabel: () => "装柜时间",
+        // 优先用装柜日期（loadingDate），无则退回创建时间
+        getTime: (c) => toDateLabel(c.loadingDate ?? c.createdAt, true),
+        getTooltipLabel: () => "装柜时间（装柜日期 / 创建时间）",
       },
       {
         key: "SAILED",
         label: "已开船",
         pct: 50,
-        // sailedAt → 实际开船时间（Container.actualDeparture）
-        getTime: (c) => toDateLabel(c.actualDeparture, true),
-        getTooltipLabel: () => "开船时间",
+        // 这里对齐 ETD：优先展示计划开船时间（etd），无则退回实际开船时间
+        getTime: (c) => toDateLabel(c.etd ?? c.actualDeparture, true),
+        getTooltipLabel: () => "开船时间（ETD / 实际开船）",
       },
       {
         key: "ARRIVED",
         label: "已到港",
         pct: 75,
-        // actualArrival → 实际到港时间（Container.actualArrival）
-        getTime: (c) => toDateLabel(c.actualArrival, true),
-        getTooltipLabel: () => "到港时间",
+        // 对齐 ETA：优先展示计划到港时间（eta），无则退回实际到港
+        getTime: (c) => toDateLabel(c.eta ?? c.actualArrival, true),
+        getTooltipLabel: () => "到港时间（ETA / 实际到港）",
       },
       {
         key: "WAREHOUSED",
