@@ -14,6 +14,10 @@ interface ContainersTableProps {
     totalDays: number;
     daysLeft: number;
     overdueDays: number;
+    /** 航行进度百分比（0-100） */
+    progress: number;
+    /** 预计到港日期（展示用） */
+    eta?: string;
     isOverdue: boolean;
   } | null;
   formatDate: (value?: string | null) => string;
