@@ -1249,7 +1249,17 @@ export default function ContainersPage() {
                       </div>
                       {Array.isArray(b.skuLines) && b.skuLines.length > 0 ? (
                         <div className="mt-2 rounded border border-slate-800 bg-slate-900/70 p-2">
-                          <div className="text-[11px] text-slate-500 mb-1">产品明细</div>
+                          <div className="text-[11px] text-slate-500 mb-1 flex flex-wrap items-center gap-2">
+                            <span>产品明细</span>
+                            {b.skuLinesEstimated ? (
+                              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-200/90">
+                                参考（出库单）
+                              </span>
+                            ) : null}
+                          </div>
+                          {b.skuLinesNote ? (
+                            <p className="text-[10px] text-amber-200/80 mb-1.5 leading-relaxed">{b.skuLinesNote}</p>
+                          ) : null}
                           <div className="space-y-1">
                             {b.skuLines.map((line: any) => (
                               <div key={line.id} className="text-[11px] text-slate-300">

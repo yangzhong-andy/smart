@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { badRequest, handlePrismaError, serverError } from "@/lib/api-response";
+import { buildOutboundBatchSkuPayload } from "@/lib/outbound-batch-serialize";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,14 @@ export async function GET(
       include: {
         outboundBatches: {
           include: {
-            outboundOrder: true,
+            outboundOrder: {
+              include: {
+                items: { include: { variant: true } },
+                variant: true,
+              },
+            },
             warehouse: true,
-            outboundBatchItems: true,
+            outboundBatchItems: { include: { variant: true } },
           },
           orderBy: { shippedDate: "asc" },
         },
@@ -133,14 +139,36 @@ export async function GET(
               sku: b.outboundOrder.sku,
             }
           : undefined,
-        skuLines: b.outboundBatchItems.map((line) => ({
-          id: line.id,
-          variantId: line.variantId ?? undefined,
-          sku: line.sku,
-          skuName: line.skuName ?? undefined,
-          spec: line.spec ?? undefined,
-          qty: line.qty,
-        })),
+        ...(() => {
+          const rawItems = b.outboundBatchItems ?? [];
+          if (rawItems.length > 0) {
+            return {
+              skuLines: rawItems.map((line) => ({
+                id: line.id,
+                variantId: line.variantId ?? undefined,
+                sku: line.sku,
+                skuName: line.skuName ?? undefined,
+                spec: line.spec ?? undefined,
+                qty: line.qty,
+              })),
+              skuLinesEstimated: false,
+              skuLinesNote: undefined as string | undefined,
+            };
+          }
+          const payload = buildOutboundBatchSkuPayload(b as any);
+          return {
+            skuLines: payload.skuLines.map((l, i) => ({
+              id: l.id ?? `ref-${b.id}-${i}`,
+              variantId: l.variantId ?? undefined,
+              sku: l.sku,
+              skuName: l.skuName ?? undefined,
+              spec: l.spec ?? undefined,
+              qty: l.qty,
+            })),
+            skuLinesEstimated: payload.skuLinesEstimated,
+            skuLinesNote: payload.skuLinesNote,
+          };
+        })(),
       })),
     });
   } catch (error) {
