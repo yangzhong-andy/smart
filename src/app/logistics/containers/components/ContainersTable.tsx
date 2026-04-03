@@ -90,10 +90,13 @@ export function ContainersTable({
                   <td className="px-4 py-3">
                     <div className="text-slate-200">{c.originPort || "-"} → {c.destinationPort || "-"}</div>
                     <div className="text-[11px] text-slate-500">
+                      装柜 {formatDate(c.loadingDate)}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
                       ETD {formatDate(c.etd)} · ETA {formatDate(c.eta)}
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      实际开船 {formatDate(c.actualDeparture)} · 实际到港 {formatDate(c.actualArrival)}
+                      实际开船 {formatDate(c.etd ?? c.actualDeparture)} · 实际到港 {formatDate(c.eta ?? c.actualArrival)}
                     </div>
                   </td>
                   <td className="px-4 py-3">
