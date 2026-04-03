@@ -1018,10 +1018,10 @@ export default function OutboundListPage() {
     (sum, row) => sum + (row.boxWeightKG || 0) * (row.boxCount || 0),
     0
   );
-  const directTotalVolumetricWeight = directSkuItems.reduce(
-    (sum, row) => sum + (row.boxVolumetricWeightKG || 0) * (row.boxCount || 0),
-    0
-  );
+  // 体积重统一按“总体积”换算：CBM * 1,000,000 / divisor（避免逐行累加产生偏差）
+  const volumetricDivisor = Number(directContainerForm.volumetricDivisor) || 6000;
+  const directTotalVolumetricWeight =
+    volumetricDivisor > 0 ? (directTotalVolume * 1_000_000) / volumetricDivisor : 0;
   const directChargeableWeight = Math.max(directTotalWeight, directTotalVolumetricWeight);
 
   const recalcVolumetricByDivisor = (divisorRaw: string) => {

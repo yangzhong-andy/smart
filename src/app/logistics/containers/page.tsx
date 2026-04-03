@@ -1263,12 +1263,18 @@ export default function ContainersPage() {
                           </div>
                         </div>
                       ) : null}
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <Link
-                          href={`/outbound?keyword=${encodeURIComponent(b.batchNumber || "")}`}
+                          href={`/outbound/${encodeURIComponent(b.id)}`}
                           className="inline-flex rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
                         >
-                          去出库批次页面查看
+                          打开出库批次详情
+                        </Link>
+                        <Link
+                          href={`/outbound?keyword=${encodeURIComponent(b.batchNumber || "")}`}
+                          className="inline-flex rounded border border-slate-700/60 px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-800/80"
+                        >
+                          去批次列表页筛选
                         </Link>
                       </div>
                     </div>
