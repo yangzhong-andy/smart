@@ -4,11 +4,16 @@ import type { BillStatus, BillType } from "./types";
 
 export type ActiveTab = "pending" | "history";
 
+/** 筛选支出申请 / 收入申请（月账单仅在「全部」时参与列表） */
+export type RequestKindFilter = "all" | "expense" | "income";
+
 interface ApprovalFiltersProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
   billTypeFilter: BillType | "all";
   onBillTypeFilterChange: (value: BillType | "all") => void;
+  requestKindFilter: RequestKindFilter;
+  onRequestKindFilterChange: (value: RequestKindFilter) => void;
   historyFilter: BillStatus | "all";
   onHistoryFilterChange: (value: BillStatus | "all") => void;
   pendingCount: number;
@@ -20,6 +25,8 @@ export function ApprovalFilters({
   onTabChange,
   billTypeFilter,
   onBillTypeFilterChange,
+  requestKindFilter,
+  onRequestKindFilterChange,
   historyFilter,
   onHistoryFilterChange,
   pendingCount,
@@ -72,7 +79,20 @@ export function ApprovalFilters({
         </button>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-400">申请类型：</span>
+          <select
+            value={requestKindFilter}
+            onChange={(e) => onRequestKindFilterChange(e.target.value as RequestKindFilter)}
+            className="rounded-lg border border-slate-800/50 bg-slate-900/50 px-4 py-2 text-sm text-slate-100 outline-none focus:border-primary-500/50 focus:bg-slate-900 transition-all"
+          >
+            <option value="all">全部（含月账单）</option>
+            <option value="expense">仅支出申请</option>
+            <option value="income">仅收入申请</option>
+          </select>
+        </div>
+
         <div className="flex items-center gap-2">
           <span className="text-sm text-slate-400">账单类型：</span>
           <select

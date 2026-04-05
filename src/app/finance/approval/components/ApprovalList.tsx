@@ -7,7 +7,7 @@ import { getRequestStringField } from "./types";
 import { STATUS_COLORS, STATUS_LABELS } from "./types";
 import type { MonthlyBill, BillStatus } from "@/lib/reconciliation-store";
 import type { ExpenseRequest, IncomeRequest, RequestStatus } from "@/lib/expense-income-request-store";
-import type { ActiveTab } from "./ApprovalFilters";
+import type { ActiveTab, RequestKindFilter } from "./ApprovalFilters";
 
 interface ApprovalListProps {
   activeTab: ActiveTab;
@@ -18,6 +18,9 @@ interface ApprovalListProps {
   filteredHistoryRequests: (ExpenseRequest | IncomeRequest)[];
   historyExpenseRequests: ExpenseRequest[];
   historyIncomeRequests: IncomeRequest[];
+  /** 未筛选前的历史总条数（月账单+支出+收入），用于空态区分「无数据」与「筛选无结果」 */
+  totalHistoryCount: number;
+  requestKindFilter: RequestKindFilter;
   onViewBillDetail: (bill: MonthlyBill) => void;
   onApproveBill: (billId: string) => void;
   onRejectBill: (billId: string) => void;
@@ -37,6 +40,8 @@ function ApprovalListComponent({
   filteredHistoryRequests,
   historyExpenseRequests,
   historyIncomeRequests,
+  totalHistoryCount,
+  requestKindFilter,
   onViewBillDetail,
   onApproveBill,
   onRejectBill,
@@ -404,275 +409,25 @@ function ApprovalListComponent({
             </div>
           </div>
         )}
-
-        {historyExpenseRequests.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-slate-200 mb-4">
-              支出申请历史 ({historyExpenseRequests.length})
-            </h2>
-            <div className="space-y-4">
-              {[...historyExpenseRequests]
-                .sort((a, b) => {
-                  const timeA = a.approvedAt || a.submittedAt || a.createdAt || "";
-                  const timeB = b.approvedAt || b.submittedAt || b.createdAt || "";
-                  return new Date(timeB).getTime() - new Date(timeA).getTime();
-                })
-                .map((request) => (
-                  <div
-                    key={request.id}
-                    className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">摘要</div>
-                            <div className="text-lg font-semibold text-slate-100">
-                              {request.summary}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">分类</div>
-                            <div className="text-slate-200 font-medium">{request.category}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">状态</div>
-                            <span
-                              className={`px-2 py-1 rounded text-xs border ${
-                                request.status === "Approved"
-                                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                                  : request.status === "Paid"
-                                    ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
-                                    : request.status === "Rejected"
-                                      ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                                      : "bg-slate-500/20 text-slate-300 border-slate-500/40"
-                              }`}
-                            >
-                              {request.status === "Approved"
-                                ? "已批准"
-                                : request.status === "Paid"
-                                  ? "已支付"
-                                  : request.status === "Rejected"
-                                    ? "已拒绝"
-                                    : request.status}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">申请金额</div>
-                            <div className="text-rose-300 font-medium text-lg">
-                              {formatCurrency(request.amount, request.currency, "expense")}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">币种</div>
-                            <div className="text-slate-300">{request.currency}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">申请日期</div>
-                            <div className="text-slate-300">{request.date}</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-4 text-xs text-slate-400">
-                          {request.createdBy && (
-                            <div>
-                              发起人：
-                              <span className="text-cyan-300 font-medium">{request.createdBy}</span>
-                            </div>
-                          )}
-                          {request.approvedBy && (
-                            <div>
-                              审批人：
-                              <span className="text-cyan-300 font-medium">{request.approvedBy}</span>
-                            </div>
-                          )}
-                          {request.approvedAt && (
-                            <div>
-                              审批时间：
-                              <span className="text-slate-100">
-                                {new Date(request.approvedAt).toLocaleString("zh-CN")}
-                              </span>
-                            </div>
-                          )}
-                          {"paidBy" in request && request.paidBy && (
-                            <div>
-                              付款人：
-                              <span className="text-cyan-300 font-medium">{request.paidBy}</span>
-                            </div>
-                          )}
-                          {"paidAt" in request && request.paidAt && (
-                            <div>
-                              付款时间：
-                              <span className="text-slate-100">
-                                {new Date(request.paidAt).toLocaleString("zh-CN")}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {request.rejectionReason && (
-                          <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/40 p-2">
-                            <div className="text-xs text-rose-300 mb-1">退回原因</div>
-                            <div className="text-rose-200 text-xs">{request.rejectionReason}</div>
-                          </div>
-                        )}
-                        <div className="flex gap-2 mt-4">
-                          <button
-                            onClick={() => onOpenRequestDetail(request)}
-                            className="px-3 py-1.5 rounded border border-primary-500/40 bg-primary-500/10 text-sm text-primary-100 hover:bg-primary-500/20"
-                          >
-                            查看详情
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {historyIncomeRequests.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-slate-200 mb-4">
-              收入申请历史 ({historyIncomeRequests.length})
-            </h2>
-            <div className="space-y-4">
-              {[...historyIncomeRequests]
-                .sort((a, b) => {
-                  const timeA = a.approvedAt || a.submittedAt || a.createdAt || "";
-                  const timeB = b.approvedAt || b.submittedAt || b.createdAt || "";
-                  return new Date(timeB).getTime() - new Date(timeA).getTime();
-                })
-                .map((request) => (
-                  <div
-                    key={request.id}
-                    className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 hover:border-primary-500/40 transition"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">摘要</div>
-                            <div className="text-lg font-semibold text-slate-100">
-                              {request.summary}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">分类</div>
-                            <div className="text-slate-200 font-medium">{request.category}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">状态</div>
-                            <span
-                              className={`px-2 py-1 rounded text-xs border ${
-                                request.status === "Approved"
-                                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                                  : request.status === "Received"
-                                    ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
-                                    : request.status === "Rejected"
-                                      ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                                      : "bg-slate-500/20 text-slate-300 border-slate-500/40"
-                              }`}
-                            >
-                              {request.status === "Approved"
-                                ? "已批准"
-                                : request.status === "Received"
-                                  ? "已收款"
-                                  : request.status === "Rejected"
-                                    ? "已拒绝"
-                                    : request.status}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">申请金额</div>
-                            <div className="text-emerald-300 font-medium text-lg">
-                              {formatCurrency(request.amount, request.currency, "income")}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">币种</div>
-                            <div className="text-slate-300">{request.currency}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-400 mb-1">申请日期</div>
-                            <div className="text-slate-300">{request.date}</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-4 text-xs text-slate-400">
-                          {request.createdBy && (
-                            <div>
-                              发起人：
-                              <span className="text-cyan-300 font-medium">{request.createdBy}</span>
-                            </div>
-                          )}
-                          {request.approvedBy && (
-                            <div>
-                              审批人：
-                              <span className="text-cyan-300 font-medium">{request.approvedBy}</span>
-                            </div>
-                          )}
-                          {request.approvedAt && (
-                            <div>
-                              审批时间：
-                              <span className="text-slate-100">
-                                {new Date(request.approvedAt).toLocaleString("zh-CN")}
-                              </span>
-                            </div>
-                          )}
-                          {"receivedBy" in request && request.receivedBy && (
-                            <div>
-                              收款人：
-                              <span className="text-cyan-300 font-medium">{request.receivedBy}</span>
-                            </div>
-                          )}
-                          {"receivedAt" in request && request.receivedAt && (
-                            <div>
-                              收款时间：
-                              <span className="text-slate-100">
-                                {new Date(request.receivedAt).toLocaleString("zh-CN")}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {request.rejectionReason && (
-                          <div className="mt-3 rounded-md bg-rose-500/10 border border-rose-500/40 p-2">
-                            <div className="text-xs text-rose-300 mb-1">退回原因</div>
-                            <div className="text-rose-200 text-xs">{request.rejectionReason}</div>
-                          </div>
-                        )}
-                        <div className="flex gap-2 mt-4">
-                          <button
-                            onClick={() => onOpenRequestDetail(request)}
-                            className="px-3 py-1.5 rounded border border-primary-500/40 bg-primary-500/10 text-sm text-primary-100 hover:bg-primary-500/20"
-                          >
-                            查看详情
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
   const isEmptyHistory =
-    filteredHistoryBills.length === 0 &&
-    filteredHistoryRequests.length === 0 &&
-    historyExpenseRequests.length === 0 &&
-    historyIncomeRequests.length === 0;
+    filteredHistoryBills.length === 0 && filteredHistoryRequests.length === 0;
   if (isEmptyHistory) {
+    const filteredOut = totalHistoryCount > 0;
     return (
       <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-12 text-center">
         <div className="text-slate-400 text-4xl mb-4">📋</div>
-        <p className="text-slate-300 font-medium mb-1">暂无历史审批记录</p>
-        <p className="text-sm text-slate-500">所有审批记录将显示在这里</p>
+        <p className="text-slate-300 font-medium mb-1">
+          {filteredOut ? "无符合筛选条件的历史记录" : "暂无历史审批记录"}
+        </p>
+        <p className="text-sm text-slate-500">
+          {filteredOut
+            ? "请调整「账单类型」或「筛选状态」后重试"
+            : "所有审批记录将显示在这里"}
+        </p>
       </div>
     );
   }
@@ -826,7 +581,11 @@ function ApprovalListComponent({
       {filteredHistoryRequests.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-slate-200 mb-4">
-            支出/收入申请历史 ({filteredHistoryRequests.length})
+            {requestKindFilter === "expense"
+              ? `支出申请历史 (${filteredHistoryRequests.length})`
+              : requestKindFilter === "income"
+                ? `收入申请历史 (${filteredHistoryRequests.length})`
+                : `支出/收入申请历史 (${filteredHistoryRequests.length})`}
           </h2>
           <div className="space-y-4">
             {[...filteredHistoryRequests]

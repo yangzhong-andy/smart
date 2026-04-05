@@ -63,23 +63,54 @@ const formatNumber = (n: number) => {
   return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 };
 
-const toList = (json: any) => Array.isArray(json) ? json : (json?.data ?? []);
-const agenciesFetcher = async (url: string) => {
+/** 接口可能返回数组、{ data:[] }，或 Redis/网关误缓存的非数组；必须收敛为数组避免 .map 报错 */
+function parseListResponse(json: unknown): unknown[] {
+  if (json == null) return [];
+  if (Array.isArray(json)) return json;
+  if (typeof json === "object") {
+    const o = json as Record<string, unknown>;
+    for (const key of ["data", "items", "list", "records", "results"] as const) {
+      const v = o[key];
+      if (Array.isArray(v)) return v;
+    }
+  }
+  return [];
+}
+
+function normalizeList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  return [];
+}
+
+const agenciesFetcher = async (url: string): Promise<any[]> => {
   const r = await fetch(url);
   if (!r.ok) return [];
-  return r.json().then(toList);
+  try {
+    const json = await r.json();
+    return parseListResponse(json);
+  } catch {
+    return [];
+  }
 };
 const SWR_OPT_AGENCIES = { revalidateOnFocus: false, dedupingInterval: 600000, keepPreviousData: true };
 
 export default function AdAgenciesPage() {
   const [mounted, setMounted] = useState(false);
-  const { data: agencies = [], mutate: mutateAgencies } = useSWR<Agency[]>("/api/ad-agencies?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: adAccounts = [], mutate: mutateAdAccounts } = useSWR<AdAccount[]>("/api/ad-accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: consumptions = [], mutate: mutateConsumptions } = useSWR<AdConsumption[]>("/api/ad-consumptions?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: recharges = [], mutate: mutateRecharges } = useSWR<AdRecharge[]>("/api/ad-recharges?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: bankAccounts = [], mutate: mutateBankAccounts } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: stores = [] } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
-  const { data: cashFlowList = [], mutate: mutateCashFlow } = useSWR<CashFlowStoreType[]>("agencies-cash-flow", getCashFlowFromAPI, SWR_OPT_AGENCIES);
+  const { data: agenciesRaw, mutate: mutateAgencies } = useSWR<Agency[]>("/api/ad-agencies?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: adAccountsRaw, mutate: mutateAdAccounts } = useSWR<AdAccount[]>("/api/ad-accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: consumptionsRaw, mutate: mutateConsumptions } = useSWR<AdConsumption[]>("/api/ad-consumptions?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: rechargesRaw, mutate: mutateRecharges } = useSWR<AdRecharge[]>("/api/ad-recharges?page=1&pageSize=5000", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: bankAccountsRaw, mutate: mutateBankAccounts } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: storesRaw } = useSWR<Store[]>("/api/stores?page=1&pageSize=500", agenciesFetcher, SWR_OPT_AGENCIES);
+  const { data: cashFlowRaw, mutate: mutateCashFlow } = useSWR<CashFlowStoreType[]>("agencies-cash-flow", getCashFlowFromAPI, SWR_OPT_AGENCIES);
+
+  const agencies = useMemo(() => normalizeList<Agency>(agenciesRaw), [agenciesRaw]);
+  const adAccounts = useMemo(() => normalizeList<AdAccount>(adAccountsRaw), [adAccountsRaw]);
+  const consumptions = useMemo(() => normalizeList<AdConsumption>(consumptionsRaw), [consumptionsRaw]);
+  const recharges = useMemo(() => normalizeList<AdRecharge>(rechargesRaw), [rechargesRaw]);
+  const bankAccounts = useMemo(() => normalizeList<BankAccount>(bankAccountsRaw), [bankAccountsRaw]);
+  const stores = useMemo(() => normalizeList<Store>(storesRaw), [storesRaw]);
+  const cashFlowList = useMemo(() => normalizeList<CashFlowStoreType>(cashFlowRaw), [cashFlowRaw]);
   const [activeTab, setActiveTab] = useState<"dashboard" | "agencies" | "accounts" | "consumptions" | "recharges">("dashboard");
   const [isAgencyModalOpen, setIsAgencyModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -700,7 +731,7 @@ export default function AdAgenciesPage() {
       consumptionCurrency: mainConsumptionCurrency,
       baseCurrency: "USD" // Base Currency 默认为 USD
     };
-  }, [mounted, filteredAccounts, filteredConsumptions, filteredRecharges, stores, agencies]);
+  }, [mounted, filteredAccounts, filteredConsumptions, filteredRecharges, stores, agencies, cashFlowList]);
 
   const handleCreateAgency = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

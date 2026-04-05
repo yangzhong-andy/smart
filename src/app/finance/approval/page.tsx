@@ -31,7 +31,7 @@ import {
   type IncomeRequest,
 } from "@/lib/expense-income-request-store";
 import { ApprovalStats } from "./components/ApprovalStats";
-import { ApprovalFilters, type ActiveTab } from "./components/ApprovalFilters";
+import { ApprovalFilters, type ActiveTab, type RequestKindFilter } from "./components/ApprovalFilters";
 import { ApprovalList } from "./components/ApprovalList";
 import { ApprovalDetailDialog } from "./components/ApprovalDetailDialog";
 import { broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
@@ -42,11 +42,58 @@ function getCurrentUserDisplayName(session: { user?: { name?: string | null; ema
   return (u.name && String(u.name).trim()) || (u.email && String(u.email).trim()) || "当前用户";
 }
 
+/** 支出/收入单的 category/summary 与月账单 billType 命名不一致，用关键词做近似匹配 */
+function expenseIncomeRequestMatchesBillType(
+  r: ExpenseRequest | IncomeRequest,
+  filter: BillType | "all"
+): boolean {
+  if (filter === "all") return true;
+  const cat = `${r.category || ""}/${r.summary || ""}`;
+  const hasAdAccount = "adAccountId" in r && !!(r as ExpenseRequest).adAccountId;
+
+  const isAd = /广告|投放|充值|推广|巨量|Meta|Google|Facebook/i.test(cat) || hasAdAccount;
+  const isLogistics = /物流|运费|海运|空运|快递|货代|报关|清关/i.test(cat);
+  const isFactory = /工厂|采购|生产|合同|订单|尾款|定金|拿货/i.test(cat);
+  const isStore = /店铺|回款|平台/i.test(cat);
+  const isRebate = /返点|回扣|佣金/i.test(cat);
+
+  switch (filter) {
+    case "广告":
+      return isAd;
+    case "物流":
+      return isLogistics;
+    case "工厂订单":
+      return isFactory;
+    case "店铺回款":
+      return isStore;
+    case "广告返点":
+      return isRebate;
+    case "其他":
+      return !isAd && !isLogistics && !isFactory && !isStore && !isRebate;
+    default:
+      return true;
+  }
+}
+
+/** 历史记录：筛选「已支付」时包含支出已付款 + 收入已收款 */
+function historyRequestMatchesStatusFilter(
+  r: ExpenseRequest | IncomeRequest,
+  historyFilter: BillStatus | "all"
+): boolean {
+  if (historyFilter === "all") return true;
+  if (historyFilter === "Draft" && r.rejectionReason) return true;
+  if (historyFilter === "Paid") {
+    return r.status === "Paid" || r.status === "Received";
+  }
+  return r.status === historyFilter;
+}
+
 export default function ApprovalCenterPage() {
   const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending"); // 褰撳墠鏍囩锛氬緟瀹℃壒/鍘嗗彶璁板綍
   const [historyFilter, setHistoryFilter] = useState<BillStatus | "all">("all"); // 鍘嗗彶璁板綍鐘舵€佺瓫閫?
   const [billTypeFilter, setBillTypeFilter] = useState<BillType | "all">("all"); // 璐﹀崟绫诲瀷绛涢€夛紙寰呭鎵瑰拰鍘嗗彶璁板綍鍏辩敤锛?
+  const [requestKindFilter, setRequestKindFilter] = useState<RequestKindFilter>("all");
   
   const [selectedBill, setSelectedBill] = useState<MonthlyBill | null>(null);
   const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
@@ -612,44 +659,67 @@ export default function ApprovalCenterPage() {
     setRejectModal({ open: true, type: "income", id: requestId });
   };
 
-  // 鏍规嵁绛涢€夋潯浠惰繃婊ゅ緟瀹℃壒璐﹀崟锛堟寜绫诲瀷绛涢€夛級
-  const filteredPendingBills = billTypeFilter === "all"
-    ? (Array.isArray(pendingBills) ? pendingBills : [])
-    : (Array.isArray(pendingBills) ? pendingBills.filter((b) => b.billType === billTypeFilter) : []);
+  const filteredPendingBills = useMemo(() => {
+    if (requestKindFilter === "expense" || requestKindFilter === "income") {
+      return [];
+    }
+    if (billTypeFilter === "all") return Array.isArray(pendingBills) ? pendingBills : [];
+    return Array.isArray(pendingBills) ? pendingBills.filter((b) => b.billType === billTypeFilter) : [];
+  }, [pendingBills, billTypeFilter, requestKindFilter]);
 
-  // 鏍规嵁绛涢€夋潯浠惰繃婊ゅ巻鍙茶褰曪紙鎸夌姸鎬佸拰绫诲瀷绛涢€夛級
-  const filteredHistoryBills = Array.isArray(historyBills) ? historyBills.filter((b) => {
-    // 鐘舵€佺瓫閫?
-    if (historyFilter !== "all") {
-      if (historyFilter === "Draft" && b.rejectionReason) {
-        // 濡傛灉鏈夐€€鍥炲師鍥狅紝鍗充娇鐘舵€佹槸鑽夌锛屼篃瑙嗕负閫€鍥炶褰?
-        // 缁х画妫€鏌ョ被鍨嬬瓫閫?
-      } else if (b.status !== historyFilter) {
+  const filteredPendingExpenseRequests = useMemo(() => {
+    if (requestKindFilter === "income") return [];
+    let list =
+      billTypeFilter === "all"
+        ? pendingExpenseRequests
+        : pendingExpenseRequests.filter((r) => expenseIncomeRequestMatchesBillType(r, billTypeFilter));
+    return list;
+  }, [pendingExpenseRequests, billTypeFilter, requestKindFilter]);
+
+  const filteredPendingIncomeRequests = useMemo(() => {
+    if (requestKindFilter === "expense") return [];
+    let list =
+      billTypeFilter === "all"
+        ? pendingIncomeRequests
+        : pendingIncomeRequests.filter((r) => expenseIncomeRequestMatchesBillType(r, billTypeFilter));
+    return list;
+  }, [pendingIncomeRequests, billTypeFilter, requestKindFilter]);
+
+  const filteredHistoryBills = useMemo(() => {
+    if (requestKindFilter === "expense" || requestKindFilter === "income") {
+      return [];
+    }
+    if (!Array.isArray(historyBills)) return [];
+    return historyBills.filter((b) => {
+      if (historyFilter !== "all") {
+        if (historyFilter === "Draft" && b.rejectionReason) {
+          // 有退回原因即视为退回记录
+        } else if (b.status !== historyFilter) {
+          return false;
+        }
+      }
+      if (billTypeFilter !== "all" && b.billType !== billTypeFilter) {
         return false;
       }
-    }
-    // 绫诲瀷绛涢€?
-    if (billTypeFilter !== "all" && b.billType !== billTypeFilter) {
-      return false;
-    }
-    return true;
-  }) : [];
+      return true;
+    });
+  }, [historyBills, historyFilter, billTypeFilter, requestKindFilter]);
 
-  // 鍚堝苟鏀嚭鍜屾敹鍏ョ敵璇峰巻鍙茶褰?
-  const allHistoryRequests = [
-    ...(Array.isArray(historyExpenseRequests) ? historyExpenseRequests : []),
-    ...(Array.isArray(historyIncomeRequests) ? historyIncomeRequests : [])
-  ];
-  
-  const filteredHistoryRequests = historyFilter === "all"
-    ? allHistoryRequests
-    : (Array.isArray(allHistoryRequests) ? allHistoryRequests.filter((r) => {
-        if (historyFilter === "Draft" && r.rejectionReason) {
-          // 濡傛灉鏈夐€€鍥炲師鍥狅紝鍗充娇鐘舵€佹槸鑽夌锛屼篃瑙嗕负閫€鍥炶褰?
-          return true;
-        }
-        return r.status === historyFilter;
-      }) : []);
+  const filteredHistoryRequests = useMemo(() => {
+    const expenseSource = Array.isArray(historyExpenseRequests) ? historyExpenseRequests : [];
+    const incomeSource = Array.isArray(historyIncomeRequests) ? historyIncomeRequests : [];
+    const merged =
+      requestKindFilter === "expense"
+        ? expenseSource
+        : requestKindFilter === "income"
+          ? incomeSource
+          : [...expenseSource, ...incomeSource];
+    return merged.filter((r) => {
+      if (!historyRequestMatchesStatusFilter(r, historyFilter)) return false;
+      if (!expenseIncomeRequestMatchesBillType(r, billTypeFilter)) return false;
+      return true;
+    });
+  }, [historyExpenseRequests, historyIncomeRequests, historyFilter, billTypeFilter, requestKindFilter]);
 
   const handleTabChange = useCallback((tab: ActiveTab) => {
     setActiveTab(tab);
@@ -672,8 +742,11 @@ export default function ApprovalCenterPage() {
   }, []);
 
   const pendingCount =
-    pendingBills.length + pendingExpenseRequests.length + pendingIncomeRequests.length;
-  const historyCount =
+    filteredPendingBills.length +
+    filteredPendingExpenseRequests.length +
+    filteredPendingIncomeRequests.length;
+  const historyCount = filteredHistoryBills.length + filteredHistoryRequests.length;
+  const totalHistoryCount =
     historyBills.length + historyExpenseRequests.length + historyIncomeRequests.length;
 
   return (
@@ -683,8 +756,16 @@ export default function ApprovalCenterPage() {
           <h1 className="text-2xl font-bold text-slate-100">审批中心</h1>
           <p className="text-sm text-slate-400 mt-1">
             {activeTab === "pending"
-              ? `待审批：月账单 ${pendingBills.length} 笔，支出申请 ${pendingExpenseRequests.length} 笔，收入申请 ${pendingIncomeRequests.length} 笔`
-              : `历史记录：月账单 ${historyBills.length} 笔，支出申请 ${historyExpenseRequests.length} 笔，收入申请 ${historyIncomeRequests.length} 笔`}
+              ? requestKindFilter === "all"
+                ? `待审批：月账单 ${filteredPendingBills.length} 笔，支出申请 ${filteredPendingExpenseRequests.length} 笔，收入申请 ${filteredPendingIncomeRequests.length} 笔`
+                : requestKindFilter === "expense"
+                  ? `待审批（仅支出申请）：${filteredPendingExpenseRequests.length} 笔`
+                  : `待审批（仅收入申请）：${filteredPendingIncomeRequests.length} 笔`
+              : requestKindFilter === "all"
+                ? `历史记录：月账单 ${filteredHistoryBills.length} 笔，支出/收入申请 ${filteredHistoryRequests.length} 笔`
+                : requestKindFilter === "expense"
+                  ? `历史记录（仅支出申请）：${filteredHistoryRequests.length} 笔`
+                  : `历史记录（仅收入申请）：${filteredHistoryRequests.length} 笔`}
           </p>
         </div>
       </div>
@@ -703,6 +784,8 @@ export default function ApprovalCenterPage() {
         onTabChange={handleTabChange}
         billTypeFilter={billTypeFilter}
         onBillTypeFilterChange={setBillTypeFilter}
+        requestKindFilter={requestKindFilter}
+        onRequestKindFilterChange={setRequestKindFilter}
         historyFilter={historyFilter}
         onHistoryFilterChange={setHistoryFilter}
         pendingCount={pendingCount}
@@ -712,12 +795,14 @@ export default function ApprovalCenterPage() {
       <ApprovalList
         activeTab={activeTab}
         filteredPendingBills={filteredPendingBills}
-        pendingExpenseRequests={pendingExpenseRequests}
-        pendingIncomeRequests={pendingIncomeRequests}
+        pendingExpenseRequests={filteredPendingExpenseRequests}
+        pendingIncomeRequests={filteredPendingIncomeRequests}
         filteredHistoryBills={filteredHistoryBills}
         filteredHistoryRequests={filteredHistoryRequests}
         historyExpenseRequests={historyExpenseRequests}
         historyIncomeRequests={historyIncomeRequests}
+        totalHistoryCount={totalHistoryCount}
+        requestKindFilter={requestKindFilter}
         onViewBillDetail={handleViewDetail}
         onApproveBill={handleApprove}
         onRejectBill={handleReject}
