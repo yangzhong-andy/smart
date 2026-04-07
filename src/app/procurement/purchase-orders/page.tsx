@@ -25,7 +25,7 @@ import { PurchaseOrderFilters } from "./components/PurchaseOrderFilters";
 import { PurchaseOrdersTable } from "./components/PurchaseOrdersTable";
 import { PurchaseOrderDetailDialog } from "./components/PurchaseOrderDetailDialog";
 import { PurchaseOrderCreateDialog } from "./components/PurchaseOrderCreateDialog";
-import { currency, formatDate } from "./components/types";
+import { currency, formatDate, isContractPickupComplete } from "./components/types";
 import type { Supplier as SupplierType } from "./components/types";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -1152,11 +1152,17 @@ export default function PurchaseOrdersPage() {
       );
     }
     
-    // 状态筛选（“已发货”与后端“发货完成”等价）
+    // 状态筛选（“已发货”与后端“发货完成”等价；“完结”= 拿货已全部拿清，非财务结清）
     if (filterStatus !== "all") {
-      result = result.filter(
-        (c) => c.status === filterStatus || (filterStatus === "已发货" && c.status === "发货完成")
-      );
+      if (filterStatus === "完结") {
+        result = result.filter((c) => isContractPickupComplete(c));
+      } else {
+        result = result.filter(
+          (c) =>
+            c.status === filterStatus ||
+            (filterStatus === "已发货" && c.status === "发货完成")
+        );
+      }
     }
     
     // 供应商筛选

@@ -60,9 +60,30 @@ export const STATUS_OPTIONS = [
   { value: "部分发货", label: "部分发货" },
   { value: "已发货", label: "已发货" },
   { value: "发货完成", label: "发货完成" },
+  /** 拿货数量已全部满足（与财务「已结清」区分） */
+  { value: "完结", label: "完结" },
   { value: "已结清", label: "已结清" },
   { value: "已取消", label: "已取消" },
 ] as const;
+
+/** 合同维度：各明细行已拿货 ≥ 下单量（或汇总 picked ≥ total）；已取消不算完结 */
+export function isContractPickupComplete(contract: PurchaseContract): boolean {
+  if (contract.status === "已取消") return false;
+  if (contract.items && contract.items.length > 0) {
+    const lines = contract.items.filter((it) => (Number(it.qty) || 0) > 0);
+    if (lines.length === 0) {
+      const tq = Number(contract.totalQty) || 0;
+      if (tq <= 0) return false;
+      return (Number(contract.pickedQty) || 0) >= tq;
+    }
+    return lines.every(
+      (it) => (Number(it.pickedQty) || 0) >= (Number(it.qty) || 0)
+    );
+  }
+  const tq = Number(contract.totalQty) || 0;
+  if (tq <= 0) return false;
+  return (Number(contract.pickedQty) || 0) >= tq;
+}
 
 export const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", {

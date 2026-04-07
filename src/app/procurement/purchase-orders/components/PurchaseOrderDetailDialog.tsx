@@ -23,7 +23,7 @@ import {
   type ExpenseRequest,
 } from "@/lib/expense-income-request-store";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
-import { currency, formatDate } from "./types";
+import { currency, formatDate, isContractPickupComplete } from "./types";
 import type { ContractDetail } from "./types";
 
 type ProductLike = {
@@ -127,8 +127,21 @@ export function PurchaseOrderDetailDialog({
       <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">合同详情</h2>
-            <p className="text-xs text-slate-400">{contract.contractNumber}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-slate-100">合同详情</h2>
+              {contract.status === "已结清" ? (
+                <span className="rounded px-2 py-0.5 text-xs font-medium text-emerald-300 bg-emerald-500/20">
+                  已结清
+                </span>
+              ) : contract.status === "已取消" ? (
+                <span className="rounded px-2 py-0.5 text-xs text-slate-400 bg-slate-600/40">已取消</span>
+              ) : isContractPickupComplete(contract) ? (
+                <span className="rounded px-2 py-0.5 text-xs font-medium text-teal-300 bg-teal-500/20">
+                  完结
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">{contract.contractNumber}</p>
           </div>
           <div className="flex items-center gap-2">
             {canManuallySettle && (

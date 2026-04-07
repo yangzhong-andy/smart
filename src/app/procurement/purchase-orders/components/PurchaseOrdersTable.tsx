@@ -1,6 +1,6 @@
 "use client";
 
-import { currency, formatDate, getProductionProgress } from "./types";
+import { currency, formatDate, getProductionProgress, isContractPickupComplete } from "./types";
 import type { PurchaseContract } from "./types";
 import { PurchaseOrderActions } from "./PurchaseOrderActions";
 
@@ -192,13 +192,7 @@ export function PurchaseOrdersTable({
                           })}
                         </div>
                         <div className="text-[10px] mt-0.5 flex items-center gap-1 flex-wrap">
-                          {contract.status === "已结清" ? (
-                            <span className="rounded px-1.5 py-0.5 text-emerald-300 bg-emerald-500/20 text-[10px] font-medium">已结清</span>
-                          ) : contract.status === "已取消" ? (
-                            <span className="rounded px-1.5 py-0.5 text-slate-400 bg-slate-600/40 text-[10px]">已取消</span>
-                          ) : (
-                            <span className="text-slate-500">{contract.status}</span>
-                          )}
+                          <ContractPickupStatusPill contract={contract} />
                           {remainingQty > 0 && <span className="text-slate-500">· 剩余 {remainingQty}</span>}
                         </div>
                       </div>
@@ -216,13 +210,7 @@ export function PurchaseOrdersTable({
                           </span>
                         </div>
                         <div className="text-[11px] mt-1 flex items-center gap-1 flex-wrap">
-                          {contract.status === "已结清" ? (
-                            <span className="rounded px-1.5 py-0.5 text-emerald-300 bg-emerald-500/20 text-[10px] font-medium">已结清</span>
-                          ) : contract.status === "已取消" ? (
-                            <span className="rounded px-1.5 py-0.5 text-slate-400 bg-slate-600/40 text-[10px]">已取消</span>
-                          ) : (
-                            <span className="text-slate-500">{contract.status}</span>
-                          )}
+                          <ContractPickupStatusPill contract={contract} />
                           {remainingQty > 0 && <span className="text-slate-500">· 剩余 {remainingQty}</span>}
                         </div>
                       </>
@@ -267,6 +255,27 @@ export function PurchaseOrdersTable({
       </div>
     </section>
   );
+}
+
+function ContractPickupStatusPill({ contract }: { contract: PurchaseContract }) {
+  if (contract.status === "已结清") {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-emerald-300 bg-emerald-500/20 text-[10px] font-medium">
+        已结清
+      </span>
+    );
+  }
+  if (contract.status === "已取消") {
+    return <span className="rounded px-1.5 py-0.5 text-slate-400 bg-slate-600/40 text-[10px]">已取消</span>;
+  }
+  if (isContractPickupComplete(contract)) {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-teal-300 bg-teal-500/20 text-[10px] font-medium">
+        完结
+      </span>
+    );
+  }
+  return <span className="text-slate-500">{contract.status}</span>;
 }
 
 function ProductionProgressCell({
