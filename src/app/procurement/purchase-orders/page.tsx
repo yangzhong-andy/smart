@@ -13,7 +13,12 @@ import {
 } from "@/lib/purchase-orders-store";
 import { createDeliveryOrder, type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
-import { getExpenseRequests, createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
+import {
+  getExpenseRequests,
+  createExpenseRequest,
+  findActiveTailExpenseRequestForDeliveryOrder,
+  type ExpenseRequest,
+} from "@/lib/expense-income-request-store";
 import { Package, Plus, Download, Wallet, ChevronRight, CheckCircle2, ArrowRight, XCircle, FileImage, Factory, FileText } from "lucide-react";
 import { PurchaseOrderStats } from "./components/PurchaseOrderStats";
 import { PurchaseOrderFilters } from "./components/PurchaseOrderFilters";
@@ -952,11 +957,11 @@ export default function PurchaseOrdersPage() {
         toast.error("本次支付金额需大于 0", { icon: "⚠️" });
         return;
       }
-      const existingTailRequest = expenseRequestsList.find(
-        (r) =>
-          r.relatedId === deliveryOrderId &&
-          (r.summary || "").includes("采购尾款") &&
-          ["Pending_Approval", "Approved", "Paid"].includes(r.status)
+      const latestExpenseList = await getExpenseRequests(true);
+      setExpenseRequests(latestExpenseList);
+      const existingTailRequest = findActiveTailExpenseRequestForDeliveryOrder(
+        latestExpenseList,
+        deliveryOrderId
       );
       if (existingTailRequest) {
         const statusText =
@@ -1453,6 +1458,7 @@ export default function PurchaseOrdersPage() {
         onDelete={handleDeleteContract}
         onFactoryFinished={handleFactoryFinished}
         onPaymentTail={(contractId, deliveryOrderId) => handlePayment(contractId, "tail", deliveryOrderId)}
+        expenseRequests={expenseRequestsList}
         onRefresh={mutateContracts}
       />
 

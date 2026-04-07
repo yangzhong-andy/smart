@@ -1,6 +1,6 @@
 {
   "name": "smart-erp",
-  "version": "1.5.77",
+  "version": "1.5.78",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -29,7 +29,8 @@
     "db:migrate:client-c": "npx env-cmd -f .env.client-c prisma migrate deploy",
     "db:migrate:client-d": "npx env-cmd -f .env.client-d prisma migrate deploy",
     "fix:warehouse-type": "node scripts/add-warehouse-type.js",
-    "fix:inventory-log": "node scripts/add-inventory-log-table.js"
+    "fix:inventory-log": "node scripts/add-inventory-log-table.js",
+    "dedupe:tail-expenses": "npx ts-node scripts/dedupe-pending-tail-expenses.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

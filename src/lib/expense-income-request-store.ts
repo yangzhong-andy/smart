@@ -265,6 +265,22 @@ export async function updateIncomeRequest(id: string, updates: Partial<IncomeReq
   }
 }
 
+/**
+ * 是否已有针对该拿货单的尾款支出申请（待审批 / 已审批待付款 / 已付款），用于禁止重复发起。
+ * 被退回（Rejected）或草稿不计入，可重新发起。
+ */
+export function findActiveTailExpenseRequestForDeliveryOrder(
+  requests: ExpenseRequest[],
+  deliveryOrderId: string
+): ExpenseRequest | undefined {
+  return requests.find(
+    (r) =>
+      r.relatedId === deliveryOrderId &&
+      (r.summary || "").includes("采购尾款") &&
+      ["Pending_Approval", "Approved", "Paid"].includes(r.status)
+  );
+}
+
 // ========== 通用函数 ==========
 
 export async function getPendingApprovalCount(): Promise<number> {

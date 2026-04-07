@@ -3,6 +3,11 @@
 import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
+import {
+  getExpenseRequests,
+  findActiveTailExpenseRequestForDeliveryOrder,
+  type ExpenseRequest,
+} from "@/lib/expense-income-request-store";
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
@@ -68,6 +73,13 @@ export default function DeliveryOrdersPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
+  /** 用于判断尾款是否已发起付款申请（与采购合同页逻辑一致） */
+  const { data: expenseRequestsData, isLoading: expenseRequestsLoading } = useSWR(
+    "procurement-delivery-expense-requests",
+    () => getExpenseRequests(true),
+    { revalidateOnFocus: true, dedupingInterval: 10000 }
+  );
+  const expenseRequests: ExpenseRequest[] = Array.isArray(expenseRequestsData) ? expenseRequestsData : [];
   const deliveryOrders = (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[];
   const contracts = (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[];
   const warehouses = (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[];
@@ -295,6 +307,17 @@ export default function DeliveryOrdersPage() {
 
   const handleOpenPayTailConfirm = (order: DeliveryOrder) => {
     if (payTailSubmitting) return;
+    const activeTail = findActiveTailExpenseRequestForDeliveryOrder(expenseRequests, order.id);
+    if (activeTail) {
+      const msg =
+        activeTail.status === "Pending_Approval"
+          ? "尾款已在审批中，请勿重复发起"
+          : activeTail.status === "Approved"
+            ? "尾款已审批通过，请等待财务付款，请勿重复发起"
+            : "该拿货单尾款已关联付款申请，请勿重复发起";
+      toast.error(msg);
+      return;
+    }
     const contract = contracts.find((c) => c.id === order.contractId);
     if (!contract) {
       toast.error("未找到对应采购合同，请刷新页面后重试");
@@ -334,6 +357,12 @@ export default function DeliveryOrdersPage() {
 
   const handleConfirmPayTail = () => {
     if (!payTailConfirmOrder || payTailSubmitting) return;
+    const activeTail = findActiveTailExpenseRequestForDeliveryOrder(expenseRequests, payTailConfirmOrder.id);
+    if (activeTail) {
+      toast.error("尾款付款申请已存在，请关闭后刷新列表");
+      setPayTailConfirmOrder(null);
+      return;
+    }
     const info = payTailDialogInfo;
     if (!info) {
       toast.error("数据未就绪，请重试");
@@ -568,6 +597,7 @@ export default function DeliveryOrdersPage() {
                     ? computeDeliveryOrderTailAmount(contract, order)
                     : order.tailAmount;
                   const isTailPaid = (order.tailPaid || 0) >= displayTailAmount;
+                  const activeTailReq = findActiveTailExpenseRequestForDeliveryOrder(expenseRequests, order.id);
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-800/50 transition-colors">
@@ -707,15 +737,31 @@ export default function DeliveryOrdersPage() {
                             </button>
                           )}
                           {!isTailPaid ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenPayTailConfirm(order)}
-                              disabled={payTailSubmitting}
-                              className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors"
-                            >
-                              <Wallet className="h-3 w-3" />
-                              发起付款
-                            </button>
+                            expenseRequestsLoading ? (
+                              <span className="text-xs text-slate-500 whitespace-nowrap">加载中…</span>
+                            ) : activeTailReq ? (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-xs font-medium text-slate-300 whitespace-nowrap"
+                                title="已发起尾款付款申请，请勿重复操作"
+                              >
+                                <Wallet className="h-3 w-3 opacity-70" />
+                                {activeTailReq.status === "Pending_Approval"
+                                  ? "尾款审批中"
+                                  : activeTailReq.status === "Approved"
+                                    ? "待财务付款"
+                                    : "已付款"}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPayTailConfirm(order)}
+                                disabled={payTailSubmitting}
+                                className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                              >
+                                <Wallet className="h-3 w-3" />
+                                发起付款
+                              </button>
+                            )
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-200">
                               已付清

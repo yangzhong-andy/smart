@@ -18,6 +18,10 @@ import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
+import {
+  findActiveTailExpenseRequestForDeliveryOrder,
+  type ExpenseRequest,
+} from "@/lib/expense-income-request-store";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
 import { currency, formatDate } from "./types";
 import type { ContractDetail } from "./types";
@@ -40,6 +44,8 @@ interface PurchaseOrderDetailDialogProps {
   onDelete: (contractId: string) => void;
   onFactoryFinished: (contractId: string) => void;
   onPaymentTail: (contractId: string, deliveryOrderId: string) => void;
+  /** 用于判断尾款是否已发起付款申请（可选，不传则仅依赖父级 handlePayment 内校验） */
+  expenseRequests?: ExpenseRequest[];
   onRefresh?: () => void;
 }
 
@@ -52,6 +58,7 @@ export function PurchaseOrderDetailDialog({
   onDelete,
   onFactoryFinished,
   onPaymentTail,
+  expenseRequests = [],
   onRefresh,
 }: PurchaseOrderDetailDialogProps) {
   const { confirm, confirmDialog } = useSystemConfirm();
@@ -588,6 +595,10 @@ export function PurchaseOrderDetailDialog({
                 {deliveryOrders.map((order) => {
                   const displayTail = computeDeliveryOrderTailAmount(contract, order as { qty: number; itemQtys?: Record<string, number> });
                   const isPaid = (order.tailPaid || 0) >= displayTail;
+                  const activeTailReq = findActiveTailExpenseRequestForDeliveryOrder(
+                    expenseRequests,
+                    order.id
+                  );
                   return (
                     <div
                       key={order.id}
@@ -616,14 +627,27 @@ export function PurchaseOrderDetailDialog({
                             )}
                           </div>
                         </div>
-                        {!isPaid && (
-                          <button
-                            onClick={() => onPaymentTail(contract.id, order.id)}
-                            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
-                          >
-                            支付尾款
-                          </button>
-                        )}
+                        {!isPaid &&
+                          (activeTailReq ? (
+                            <span
+                              className="rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-xs font-medium text-slate-300"
+                              title="已发起尾款付款申请"
+                            >
+                              {activeTailReq.status === "Pending_Approval"
+                                ? "尾款审批中"
+                                : activeTailReq.status === "Approved"
+                                  ? "待财务付款"
+                                  : "已付款"}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onPaymentTail(contract.id, order.id)}
+                              className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
+                            >
+                              支付尾款
+                            </button>
+                          ))}
                       </div>
                     </div>
                   );

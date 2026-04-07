@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { clearCacheByPrefix } from '@/lib/redis';
 
@@ -145,6 +147,47 @@ export async function PUT(
   } catch (error: any) {
     return NextResponse.json(
       { error: 'Failed to update expense request', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+/** 删除待审批/草稿支出申请（仅 SUPER_ADMIN，用于清理重复发起等） */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user?.role !== 'SUPER_ADMIN') {
+      return NextResponse.json(
+        { error: '权限不足，仅最高管理员可删除待审批支出申请' },
+        { status: 403 }
+      );
+    }
+
+    const existing = await prisma.expenseRequest.findUnique({
+      where: { id: params.id },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: '支出申请不存在' }, { status: 404 });
+    }
+    if (existing.status !== 'Pending_Approval' && existing.status !== 'Draft') {
+      return NextResponse.json(
+        { error: '仅允许删除「待审批」或「草稿」状态的申请' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.expenseRequest.delete({
+      where: { id: params.id },
+    });
+    await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);
+
+    return NextResponse.json({ ok: true, id: params.id });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: '删除失败', details: error.message },
       { status: 500 }
     );
   }
