@@ -34,17 +34,21 @@ export function PurchaseOrdersTable({
   return (
     <section className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[1280px] text-sm">
           <thead>
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">合同编号</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">供应商</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">SPU / SKU · 数量</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">合同总额</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">拿货进度</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">生产进度</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">财务状态</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-slate-400">操作</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top">合同编号</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top">供应商</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top min-w-[300px]">
+                SPU / SKU · 数量
+              </th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top">合同总额</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top min-w-[260px]">
+                拿货进度
+              </th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top">生产进度</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400 align-top">财务状态</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-slate-400 align-top">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 bg-slate-900/40">
@@ -64,12 +68,12 @@ export function PurchaseOrdersTable({
 
               return (
                 <tr key={contract.id}>
-                  <td className="px-4 py-2">
-                    <div className="font-medium text-slate-100">{contract.contractNumber}</div>
+                  <td className="px-4 py-2 align-top">
+                    <div className="font-medium text-slate-100 break-words">{contract.contractNumber}</div>
                     <div className="text-[11px] text-slate-500">{formatDate(contract.createdAt)}</div>
                   </td>
-                  <td className="px-4 py-2">
-                    <div className="text-slate-100">{contract.supplierName}</div>
+                  <td className="px-4 py-2 align-top">
+                    <div className="text-slate-100 break-words">{contract.supplierName}</div>
                     <div className="text-[11px] text-slate-500">
                       {contract.depositRate > 0
                         ? `定金 ${contract.depositRate}% · `
@@ -79,9 +83,9 @@ export function PurchaseOrdersTable({
                       尾款账期 {contract.tailPeriodDays} 天
                     </div>
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 align-top">
                     {contract.items && contract.items.length > 0 ? (
-                      <div className="space-y-1 max-w-[260px]">
+                      <div className="space-y-1 min-w-0">
                         {(() => {
                           const spuSet = new Set(
                             contract.items.map((i) => i.spuName).filter(Boolean)
@@ -93,7 +97,7 @@ export function PurchaseOrdersTable({
                               ? "多款"
                               : null;
                           return (
-                            <div className="text-[11px] text-slate-400 font-medium">
+                            <div className="text-[11px] text-slate-400 font-medium break-words">
                               {spuLabel ? (
                                 <span className="text-primary-300/90">SPU: {spuLabel}</span>
                               ) : null}
@@ -102,26 +106,26 @@ export function PurchaseOrdersTable({
                             </div>
                           );
                         })()}
-                        <div className="max-h-28 overflow-y-auto space-y-0.5 pr-1">
+                        <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
                           {contract.items.map((item) => (
                             <div
                               key={item.id}
-                              className="text-[11px] text-slate-300 flex justify-between items-baseline gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
+                              className="text-[11px] text-slate-300 border-b border-slate-800/60 pb-1 last:border-0 last:pb-0"
                             >
-                              <span
-                                className="truncate"
+                              <div
+                                className="break-words text-slate-200 leading-snug"
                                 title={[item.spuName, item.sku, item.skuName]
                                   .filter(Boolean)
                                   .join(" / ")}
                               >
                                 {item.spuName ? `${item.spuName} · ${item.sku}` : item.sku}
-                              </span>
-                              <span className="shrink-0 text-amber-200/90 font-medium" title="下单数量">
-                                {item.qty}
-                              </span>
-                              <span className="text-slate-500 shrink-0 text-[10px]">
-                                {currency(item.unitPrice)}
-                              </span>
+                              </div>
+                              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px]">
+                                <span className="text-amber-200/90 font-medium" title="下单数量">
+                                  数量 {item.qty}
+                                </span>
+                                <span className="text-slate-500 text-[10px]">{currency(item.unitPrice)}</span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -138,7 +142,7 @@ export function PurchaseOrdersTable({
                       </>
                     )}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 align-top">
                     <div className="text-slate-100">{currency(contract.totalAmount)}</div>
                     <div className="text-[11px] text-amber-200">
                       定金 {currency(contract.depositAmount)}
@@ -152,9 +156,9 @@ export function PurchaseOrdersTable({
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 align-top">
                     {contract.items && contract.items.length > 0 ? (
-                      <div className="space-y-1 max-w-[180px]">
+                      <div className="space-y-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <div className="flex-1 rounded-full bg-slate-800 h-1.5 overflow-hidden min-w-[60px]">
                             <div
@@ -162,25 +166,27 @@ export function PurchaseOrdersTable({
                               style={{ width: `${progressPercent}%` }}
                             />
                           </div>
-                          <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                          <span className="text-[11px] text-slate-400 whitespace-nowrap shrink-0">
                             {contract.pickedQty} / {contract.totalQty}
                           </span>
                         </div>
-                        <div className="max-h-20 overflow-y-auto space-y-0.5">
+                        <div className="max-h-48 overflow-y-auto space-y-1">
                           {contract.items.map((item) => {
                             const itemRemain = item.qty - item.pickedQty;
                             return (
                               <div
                                 key={item.id}
-                                className="text-[11px] text-slate-400 flex justify-between gap-2 border-b border-slate-800/60 pb-0.5 last:border-0 last:pb-0"
+                                className="text-[11px] border-b border-slate-800/60 pb-1 last:border-0 last:pb-0"
                               >
-                                <span className="truncate">{item.sku}</span>
-                                <span className="text-slate-500 shrink-0">
-                                  {item.pickedQty} / {item.qty}
+                                <div className="break-words text-slate-300 leading-snug">{item.sku}</div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-500">
+                                  <span className="tabular-nums">
+                                    {item.pickedQty} / {item.qty}
+                                  </span>
                                   {itemRemain > 0 && (
-                                    <span className="text-amber-500/80 ml-0.5">剩{itemRemain}</span>
+                                    <span className="text-amber-500/90 font-medium">剩 {itemRemain}</span>
                                   )}
-                                </span>
+                                </div>
                               </div>
                             );
                           })}
@@ -222,14 +228,14 @@ export function PurchaseOrdersTable({
                       </>
                     )}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 align-top">
                     <ProductionProgressCell
                       contract={contract}
                       clientNow={clientNow}
                       formatDate={formatDate}
                     />
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-4 py-2 align-top">
                     <div className="text-slate-100">
                       {currency(contract.totalPaid || 0)} / {currency(contract.totalAmount)}
                     </div>
@@ -240,7 +246,7 @@ export function PurchaseOrdersTable({
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-4 py-2 text-right align-top">
                     <PurchaseOrderActions
                       contract={contract}
                       expenseRequestsList={expenseRequestsList}
