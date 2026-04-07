@@ -618,7 +618,7 @@ export function PurchaseOrderDetailDialog({
                           <div className="text-xs text-slate-400">
                             尾款：{currency(displayTail)}
                             {isPaid ? (
-                              <span className="text-emerald-300 ml-2">（已付）</span>
+                              <span className="text-emerald-300 ml-2">（已付款）</span>
                             ) : (
                               <span className="text-amber-200 ml-2">
                                 （待付，到期日：

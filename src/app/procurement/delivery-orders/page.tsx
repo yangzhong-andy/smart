@@ -763,8 +763,11 @@ export default function DeliveryOrdersPage() {
                               </button>
                             )
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-200">
-                              已付清
+                            <span
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-200"
+                              title="本单尾款已付讫"
+                            >
+                              已付款
                             </span>
                           )}
                           <Link
