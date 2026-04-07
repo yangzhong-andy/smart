@@ -35,6 +35,9 @@ import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type Supplier = SupplierType;
 
+/** 尾款发起：可指定实付金额（如最后一笔扣除已付定金） */
+type HandlePaymentTailOptions = { tailPayAmount?: number };
+
 // 兼容新旧产品数据结构（API 返回的每条为 SKU 变体，含 product_id 用于按原型分组）
 type Product = {
   id?: string;
@@ -163,13 +166,18 @@ export default function PurchaseOrdersPage() {
   useEffect(() => {
     const contractIdFromParam = searchParams?.get("payTailContractId");
     const deliveryOrderIdFromParam = searchParams?.get("payTailDeliveryOrderId");
+    const payTailAmountParam = searchParams?.get("payTailAmount");
     if (!contractIdFromParam || !deliveryOrderIdFromParam) return;
     // 仅在数据加载完成后触发一次
     const contractExists = contracts.some((c) => c.id === contractIdFromParam);
     const orderExists = deliveryOrders.some((o) => o.id === deliveryOrderIdFromParam);
     if (!contractExists || !orderExists) return;
-    // 打开尾款付款弹窗
-    handlePayment(contractIdFromParam, "tail", deliveryOrderIdFromParam);
+    let tailOpts: HandlePaymentTailOptions | undefined;
+    if (payTailAmountParam != null && payTailAmountParam !== "") {
+      const p = parseFloat(payTailAmountParam);
+      if (Number.isFinite(p)) tailOpts = { tailPayAmount: p };
+    }
+    handlePayment(contractIdFromParam, "tail", deliveryOrderIdFromParam, tailOpts);
   }, [searchParams, contracts, deliveryOrders]);  
 
   const generateContractNumber = () => {
@@ -826,7 +834,12 @@ export default function PurchaseOrdersPage() {
   };
 
   // 处理支付
-  const handlePayment = async (contractId: string, type: "deposit" | "tail", deliveryOrderId?: string) => {
+  const handlePayment = async (
+    contractId: string,
+    type: "deposit" | "tail",
+    deliveryOrderId?: string,
+    tailOptions?: HandlePaymentTailOptions
+  ) => {
     const contract = contracts.find((c) => c.id === contractId);
     if (!contract) return;
 
@@ -925,6 +938,20 @@ export default function PurchaseOrdersPage() {
         toast.error("该笔尾款已付清", { icon: "⚠️" });
         return;
       }
+      let payAmount = remaining;
+      if (
+        tailOptions?.tailPayAmount != null &&
+        Number.isFinite(tailOptions.tailPayAmount)
+      ) {
+        payAmount = Math.min(
+          remaining,
+          Math.max(0, Number(tailOptions.tailPayAmount))
+        );
+      }
+      if (payAmount <= 0) {
+        toast.error("本次支付金额需大于 0", { icon: "⚠️" });
+        return;
+      }
       const existingTailRequest = expenseRequestsList.find(
         (r) =>
           r.relatedId === deliveryOrderId &&
@@ -948,13 +975,13 @@ export default function PurchaseOrdersPage() {
         summary: `采购尾款 - ${contract.contractNumber} - ${deliveryNumber}`,
         date: new Date().toISOString().slice(0, 10),
         category: "采购/采购尾款",
-        amount: remaining,
+        amount: payAmount,
         currency: "CNY",
         status: "Pending_Approval",
         createdBy: "系统",
         createdAt: new Date().toISOString(),
         submittedAt: new Date().toISOString(),
-        remark: `拿货单：${deliveryNumber}\n合同：${contract.contractNumber}\n供应商：${contract.supplierName}\n应付尾款：${remaining.toFixed(2)}\n收款人：${payeeName || "未维护"}\n开户行：${payeeBankName || "未维护"}\n收款账号：${payeeAccount || "未维护"}`,
+        remark: `拿货单：${deliveryNumber}\n合同：${contract.contractNumber}\n供应商：${contract.supplierName}\n本单应付尾款：${remaining.toFixed(2)}\n本次申请支付：${payAmount.toFixed(2)}${payAmount < remaining - 1e-6 ? "（已少于本单应付，通常为扣除已付定金）" : ""}\n收款人：${payeeName || "未维护"}\n开户行：${payeeBankName || "未维护"}\n收款账号：${payeeAccount || "未维护"}`,
         departmentId: undefined,
         departmentName: "全球供应链部",
         payeeName,
@@ -972,7 +999,7 @@ export default function PurchaseOrdersPage() {
         data: {
           contractNumber: contract.contractNumber,
           supplierName: contract.supplierName,
-          amount: remaining,
+          amount: payAmount,
           requestId: created.id,
           deliveryNumber,
         },
@@ -981,6 +1008,7 @@ export default function PurchaseOrdersPage() {
         const url = new URL(window.location.href);
         url.searchParams.delete("payTailContractId");
         url.searchParams.delete("payTailDeliveryOrderId");
+        url.searchParams.delete("payTailAmount");
         window.history.replaceState({}, "", url.pathname + (url.search || ""));
       }
     }

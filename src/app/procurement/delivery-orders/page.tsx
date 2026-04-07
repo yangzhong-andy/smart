@@ -48,6 +48,8 @@ export default function DeliveryOrdersPage() {
   const [inboundSubmitting, setInboundSubmitting] = useState(false);
   const [payTailSubmitting, setPayTailSubmitting] = useState(false);
   const [payTailConfirmOrder, setPayTailConfirmOrder] = useState<DeliveryOrder | null>(null);
+  /** 本次尾款申请金额（可小于本单应付，用于最后一笔扣定金） */
+  const [payTailAmountInput, setPayTailAmountInput] = useState("");
   const [generatingBills, setGeneratingBills] = useState(false);
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -293,15 +295,65 @@ export default function DeliveryOrdersPage() {
 
   const handleOpenPayTailConfirm = (order: DeliveryOrder) => {
     if (payTailSubmitting) return;
+    const contract = contracts.find((c) => c.id === order.contractId);
+    if (!contract) {
+      toast.error("未找到对应采购合同，请刷新页面后重试");
+      return;
+    }
+    const displayTail = computeDeliveryOrderTailAmount(contract, order);
+    const tailRemaining = Math.max(0, displayTail - (Number(order.tailPaid) || 0));
+    const defaultAmt = Math.round(tailRemaining * 100) / 100;
+    setPayTailAmountInput(defaultAmt > 0 ? String(defaultAmt) : "");
     setPayTailConfirmOrder(order);
   };
 
+  const payTailDialogInfo = useMemo(() => {
+    if (!payTailConfirmOrder) return null;
+    const order = payTailConfirmOrder;
+    const contract = contracts.find((c) => c.id === order.contractId);
+    if (!contract) return null;
+    const displayTail = computeDeliveryOrderTailAmount(contract, order);
+    const tailRemaining = Math.max(0, displayTail - (Number(order.tailPaid) || 0));
+    const othersUnpaidCount = deliveryOrders.filter((o) => {
+      if (o.contractId !== contract.id || o.id === order.id) return false;
+      const dt = computeDeliveryOrderTailAmount(contract, o);
+      return dt - (Number(o.tailPaid) || 0) > 1e-6;
+    }).length;
+    const depositPaid = Number(contract.depositPaid) || 0;
+    const depositAmount = Number(contract.depositAmount) || 0;
+    return {
+      contract,
+      order,
+      displayTail,
+      tailRemaining,
+      othersUnpaidCount,
+      depositPaid,
+      depositAmount,
+    };
+  }, [payTailConfirmOrder, contracts, deliveryOrders]);
+
   const handleConfirmPayTail = () => {
     if (!payTailConfirmOrder || payTailSubmitting) return;
+    const info = payTailDialogInfo;
+    if (!info) {
+      toast.error("数据未就绪，请重试");
+      return;
+    }
+    const { tailRemaining } = info;
+    const amount = parseFloat(String(payTailAmountInput).trim().replace(/,/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("请输入大于 0 的本次支付金额");
+      return;
+    }
+    if (amount - tailRemaining > 1e-6) {
+      toast.error(`本次支付不能超过本单剩余应付 ${formatCurrency(tailRemaining, "CNY", "expense")}`);
+      return;
+    }
     setPayTailSubmitting(true);
     const url = new URL(window.location.origin + "/procurement/purchase-orders");
     url.searchParams.set("payTailContractId", payTailConfirmOrder.contractId);
     url.searchParams.set("payTailDeliveryOrderId", payTailConfirmOrder.id);
+    url.searchParams.set("payTailAmount", String(amount));
     window.location.href = url.toString();
   };
 
@@ -871,14 +923,17 @@ export default function DeliveryOrdersPage() {
       )}
 
       {/* 发起尾款付款确认弹窗（系统风格） */}
-      {payTailConfirmOrder && (
+      {payTailConfirmOrder && payTailDialogInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
+          <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
               <h3 className="text-lg font-semibold text-slate-100">发起尾款付款申请</h3>
               <button
                 type="button"
-                onClick={() => setPayTailConfirmOrder(null)}
+                onClick={() => {
+                  setPayTailConfirmOrder(null);
+                  setPayTailAmountInput("");
+                }}
                 className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
               >
                 <X className="h-5 w-5" />
@@ -886,17 +941,93 @@ export default function DeliveryOrdersPage() {
             </div>
             <div className="space-y-3 p-4 text-sm text-slate-300">
               <p>
-                确认为拿货单 <span className="font-mono text-slate-100">{payTailConfirmOrder.deliveryNumber}</span>{" "}
-                发起尾款付款申请吗？
+                拿货单{" "}
+                <span className="font-mono text-slate-100">{payTailDialogInfo.order.deliveryNumber}</span>
+                ，合同{" "}
+                <span className="font-mono text-slate-100">{payTailDialogInfo.contract.contractNumber}</span>
               </p>
+              <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 space-y-1.5 text-xs">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">本单应付尾款（按数量×单价）</span>
+                  <span className="text-slate-100 font-medium">
+                    {formatCurrency(payTailDialogInfo.displayTail, "CNY", "expense")}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">本单已付尾款</span>
+                  <span>{formatCurrency(payTailDialogInfo.order.tailPaid || 0, "CNY", "expense")}</span>
+                </div>
+                <div className="flex justify-between gap-2 border-t border-slate-700/80 pt-1.5">
+                  <span className="text-slate-400">本单剩余应付</span>
+                  <span className="text-amber-200 font-semibold">
+                    {formatCurrency(payTailDialogInfo.tailRemaining, "CNY", "expense")}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">合同已付定金</span>
+                  <span className="text-emerald-300">
+                    {formatCurrency(payTailDialogInfo.depositPaid, "CNY", "expense")}
+                    {payTailDialogInfo.depositAmount > 0 ? (
+                      <span className="text-slate-500">
+                        {" "}
+                        / 约定 {formatCurrency(payTailDialogInfo.depositAmount, "CNY", "expense")}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              </div>
+              <div
+                className={`rounded-lg border p-3 text-xs leading-relaxed ${
+                  payTailDialogInfo.depositPaid > 0 && payTailDialogInfo.othersUnpaidCount === 0
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
+                    : "border-slate-600 bg-slate-800/60 text-slate-400"
+                }`}
+              >
+                {payTailDialogInfo.depositPaid > 0 && payTailDialogInfo.othersUnpaidCount === 0 ? (
+                  <>
+                    <p className="font-medium text-amber-200 mb-1">最后一笔尾款时请留意定金</p>
+                    <p>
+                      当前合同下仅本拿货单仍有尾款未付清。若本笔为<strong>最后一次</strong>向供应商支付该合同货款，通常需在实付中
+                      <strong>扣除已付定金</strong>（系统显示已付定金{" "}
+                      {formatCurrency(payTailDialogInfo.depositPaid, "CNY", "expense")}
+                      ）。请在下方填写<strong>本次实际支付金额</strong>（例如：本单剩余应付 − 定金）。
+                    </p>
+                  </>
+                ) : payTailDialogInfo.depositPaid > 0 ? (
+                  <p>
+                    合同已付定金{" "}
+                    {formatCurrency(payTailDialogInfo.depositPaid, "CNY", "expense")}
+                    。若本笔尾款中需抵扣部分定金，请将「本次支付金额」改为小于本单剩余应付的实付金额（与财务约定一致）。
+                  </p>
+                ) : (
+                  <p>本合同未记录已付定金。若需抵扣，请与财务确认后再填写本次支付金额。</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  本次支付金额（可修改，≤ 本单剩余应付）
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={payTailAmountInput}
+                  onChange={(e) => setPayTailAmountInput(e.target.value)}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-amber-500/60"
+                  placeholder="输入金额"
+                />
+              </div>
               <p className="text-xs text-slate-500">
-                确认后将跳转到采购合同页面，并自动打开对应尾款付款申请流程。
+                确认后将跳转到采购合同页并自动发起「采购尾款」审批，金额以上方填写为准。
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-700 px-4 py-3">
               <button
                 type="button"
-                onClick={() => setPayTailConfirmOrder(null)}
+                onClick={() => {
+                  setPayTailConfirmOrder(null);
+                  setPayTailAmountInput("");
+                }}
                 className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
               >
                 取消
