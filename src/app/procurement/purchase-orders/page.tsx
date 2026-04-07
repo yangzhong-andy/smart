@@ -25,7 +25,12 @@ import { PurchaseOrderFilters } from "./components/PurchaseOrderFilters";
 import { PurchaseOrdersTable } from "./components/PurchaseOrdersTable";
 import { PurchaseOrderDetailDialog } from "./components/PurchaseOrderDetailDialog";
 import { PurchaseOrderCreateDialog } from "./components/PurchaseOrderCreateDialog";
-import { currency, formatDate, isContractPickupComplete } from "./components/types";
+import {
+  currency,
+  formatDate,
+  isContractPickupComplete,
+  isContractFinanciallySettled,
+} from "./components/types";
 import type { Supplier as SupplierType } from "./components/types";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -1176,11 +1181,13 @@ export default function PurchaseOrdersPage() {
   // 合同统计摘要
   const contractSummary = useMemo(() => {
     const contractIdSet = new Set(filteredContracts.map((c) => c.id));
-    // 计算所有已拿货但未支付的尾款（按拿货单 tailAmount - tailPaid 累加）
+    // 已拿货但未付尾款（按单 displayTail - tailPaid）。合同已全额付清（含定金）时不再累加，避免定金未记入某单 tailPaid 导致虚高
     const unpaidTailAmount = deliveryOrders.reduce((sum, order) => {
       if (!contractIdSet.has(order.contractId)) return sum;
       const contract = contracts.find((c) => c.id === order.contractId);
-      const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : order.tailAmount || 0;
+      if (!contract) return sum;
+      if (isContractFinanciallySettled(contract)) return sum;
+      const displayTail = computeDeliveryOrderTailAmount(contract, order);
       const remaining = displayTail - (order.tailPaid || 0);
       return remaining > 0 ? sum + remaining : sum;
     }, 0);

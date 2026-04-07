@@ -85,6 +85,17 @@ export function isContractPickupComplete(contract: PurchaseContract): boolean {
   return (Number(contract.pickedQty) || 0) >= tq;
 }
 
+/**
+ * 合同在财务上已付清（已结清 或 已付总额 ≥ 合同总额）。
+ * 用于汇总「拿货未付款」：定金记在合同 totalPaid，未必分摊进某张拿货单 tailPaid，避免重复虚增未付尾款。
+ */
+export function isContractFinanciallySettled(contract: PurchaseContract): boolean {
+  if (contract.status === "已结清") return true;
+  const ta = Number(contract.totalAmount) || 0;
+  if (ta <= 0) return false;
+  return (Number(contract.totalPaid) || 0) >= ta - 1e-6;
+}
+
 export const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", {
     style: "currency",
