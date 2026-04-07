@@ -202,6 +202,20 @@ export default function ApprovalCenterPage() {
     dedupingInterval: 600000 // 10鍒嗛挓鍐呭幓閲?
   });
 
+  /** 审批/退回支出·收入申请后：强制拉取并写入 SWR，避免 Redis/浏览器缓存导致列表不刷新 */
+  const refreshExpenseIncomeSwrAfterMutation = useCallback(async () => {
+    const [pendingExp, pendingInc, allExp, allInc] = await Promise.all([
+      getExpenseRequestsByStatus("Pending_Approval", true),
+      getIncomeRequestsByStatus("Pending_Approval", true),
+      getExpenseRequests(true),
+      getIncomeRequests(true),
+    ]);
+    mutate("pending-expense-requests", pendingExp, { revalidate: false });
+    mutate("pending-income-requests", pendingInc, { revalidate: false });
+    mutate("expense-requests", allExp, { revalidate: false });
+    mutate("income-requests", allInc, { revalidate: false });
+  }, [mutate]);
+
   // 纭繚鏁版嵁鏄暟缁勫苟鎸囧畾绫诲瀷
   const allBills: MonthlyBill[] = Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [];
   const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
@@ -522,12 +536,7 @@ export default function ApprovalCenterPage() {
         rejectionReason: rejectReason.trim()
       })
         .then(async () => {
-          mutate("pending-expense-requests", (current: unknown) => {
-            if (!Array.isArray(current)) return current;
-            return current.filter((r: { id?: string }) => r.id !== expenseId);
-          }, false);
-          mutate("expense-requests", undefined, { revalidate: true });
-          mutate("pending-expense-requests", undefined, { revalidate: true });
+          await refreshExpenseIncomeSwrAfterMutation();
           toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
@@ -545,12 +554,7 @@ export default function ApprovalCenterPage() {
         rejectionReason: rejectReason.trim()
       })
         .then(async () => {
-          mutate("pending-income-requests", (current: unknown) => {
-            if (!Array.isArray(current)) return current;
-            return current.filter((r: { id?: string }) => r.id !== incomeId);
-          }, false);
-          mutate("income-requests", undefined, { revalidate: true });
-          mutate("pending-income-requests", undefined, { revalidate: true });
+          await refreshExpenseIncomeSwrAfterMutation();
           toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
@@ -584,13 +588,7 @@ export default function ApprovalCenterPage() {
             approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
-          // 涔愯鏇存柊锛氱珛鍗充粠寰呭鎵瑰垪琛ㄤ腑绉婚櫎璇ラ」锛岄伩鍏嶆壒鍑嗗悗浠嶆樉绀哄湪鍒楄〃
-          mutate("pending-expense-requests", (current: unknown) => {
-            if (!Array.isArray(current)) return current;
-            return current.filter((r: { id?: string }) => r.id !== requestId);
-          }, false);
-          mutate("expense-requests", undefined, { revalidate: true });
-          mutate("pending-expense-requests", undefined, { revalidate: true });
+          await refreshExpenseIncomeSwrAfterMutation();
           mutate("approved-expense-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();
@@ -626,12 +624,7 @@ export default function ApprovalCenterPage() {
             approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
-          mutate("pending-income-requests", (current: unknown) => {
-            if (!Array.isArray(current)) return current;
-            return current.filter((r: { id?: string }) => r.id !== requestId);
-          }, false);
-          mutate("income-requests", undefined, { revalidate: true });
-          mutate("pending-income-requests", undefined, { revalidate: true });
+          await refreshExpenseIncomeSwrAfterMutation();
           mutate("approved-income-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();

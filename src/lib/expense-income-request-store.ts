@@ -99,9 +99,12 @@ export type IncomeRequest = {
 
 // ========== 支出申请 ==========
 
-export async function getExpenseRequests(): Promise<ExpenseRequest[]> {
+const fetchNoStore: RequestInit = { cache: "no-store" };
+
+export async function getExpenseRequests(noCache = false): Promise<ExpenseRequest[]> {
   try {
-    const response = await fetch('/api/expense-requests?page=1&pageSize=500');
+    const q = noCache ? "&noCache=true" : "";
+    const response = await fetch(`/api/expense-requests?page=1&pageSize=500${q}`, fetchNoStore);
     if (!response.ok) {
       throw new Error('Failed to fetch expense requests');
     }
@@ -126,9 +129,13 @@ export async function getExpenseRequestById(id: string): Promise<ExpenseRequest 
   }
 }
 
-export async function getExpenseRequestsByStatus(status: RequestStatus): Promise<ExpenseRequest[]> {
+export async function getExpenseRequestsByStatus(status: RequestStatus, noCache = false): Promise<ExpenseRequest[]> {
   try {
-    const response = await fetch(`/api/expense-requests?status=${status}&page=1&pageSize=500`);
+    const q = noCache ? "&noCache=true" : "";
+    const response = await fetch(
+      `/api/expense-requests?status=${encodeURIComponent(status)}&page=1&pageSize=500${q}`,
+      fetchNoStore
+    );
     if (!response.ok) {
       throw new Error('Failed to fetch expense requests by status');
     }
@@ -177,9 +184,10 @@ export async function updateExpenseRequest(id: string, updates: Partial<ExpenseR
 
 // ========== 收入申请 ==========
 
-export async function getIncomeRequests(): Promise<IncomeRequest[]> {
+export async function getIncomeRequests(noCache = false): Promise<IncomeRequest[]> {
   try {
-    const response = await fetch('/api/income-requests?page=1&pageSize=500');
+    const q = noCache ? "&noCache=true" : "";
+    const response = await fetch(`/api/income-requests?page=1&pageSize=500${q}`, fetchNoStore);
     if (!response.ok) {
       throw new Error('Failed to fetch income requests');
     }
@@ -204,9 +212,13 @@ export async function getIncomeRequestById(id: string): Promise<IncomeRequest | 
   }
 }
 
-export async function getIncomeRequestsByStatus(status: RequestStatus): Promise<IncomeRequest[]> {
+export async function getIncomeRequestsByStatus(status: RequestStatus, noCache = false): Promise<IncomeRequest[]> {
   try {
-    const response = await fetch(`/api/income-requests?status=${status}&page=1&pageSize=500`);
+    const q = noCache ? "&noCache=true" : "";
+    const response = await fetch(
+      `/api/income-requests?status=${encodeURIComponent(status)}&page=1&pageSize=500${q}`,
+      fetchNoStore
+    );
     if (!response.ok) {
       throw new Error('Failed to fetch income requests by status');
     }

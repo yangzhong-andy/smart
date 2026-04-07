@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { clearCacheByPrefix } from '@/lib/redis';
+
+const EXPENSE_REQUESTS_CACHE_PREFIX = 'expense-requests';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,6 +131,8 @@ export async function PUT(
         }
       }
     }
+
+    await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);
 
     return NextResponse.json({
       id: updated.id,

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { clearCacheByPrefix } from '@/lib/redis';
+
+const INCOME_REQUESTS_CACHE_PREFIX = 'income-requests';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +85,8 @@ export async function PUT(
       where: { id: params.id },
       data: updateData
     });
+
+    await clearCacheByPrefix(INCOME_REQUESTS_CACHE_PREFIX);
     
     return NextResponse.json({
       id: updated.id,
