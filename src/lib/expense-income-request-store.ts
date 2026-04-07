@@ -170,7 +170,8 @@ export async function updateExpenseRequest(id: string, updates: Partial<ExpenseR
     const response = await fetch(`/api/expense-requests/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
+      body: JSON.stringify(updates),
+      cache: 'no-store',
     });
     if (!response.ok) {
       const error = await response.json();
@@ -253,7 +254,8 @@ export async function updateIncomeRequest(id: string, updates: Partial<IncomeReq
     const response = await fetch(`/api/income-requests/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
+      body: JSON.stringify(updates),
+      cache: 'no-store',
     });
     if (!response.ok) {
       const error = await response.json();

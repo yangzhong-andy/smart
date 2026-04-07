@@ -202,19 +202,33 @@ export default function ApprovalCenterPage() {
     dedupingInterval: 600000 // 10鍒嗛挓鍐呭幓閲?
   });
 
-  /** 审批/退回支出·收入申请后：强制拉取并写入 SWR，避免 Redis/浏览器缓存导致列表不刷新 */
-  const refreshExpenseIncomeSwrAfterMutation = useCallback(async () => {
-    const [pendingExp, pendingInc, allExp, allInc] = await Promise.all([
-      getExpenseRequestsByStatus("Pending_Approval", true),
-      getIncomeRequestsByStatus("Pending_Approval", true),
-      getExpenseRequests(true),
-      getIncomeRequests(true),
-    ]);
-    mutate("pending-expense-requests", pendingExp, { revalidate: false });
-    mutate("pending-income-requests", pendingInc, { revalidate: false });
-    mutate("expense-requests", allExp, { revalidate: false });
-    mutate("income-requests", allInc, { revalidate: false });
-  }, [mutate]);
+  /**
+   * 审批/退回支出·收入申请后：强制拉取并写入 SWR。
+   * stripExpenseId / stripIncomeId：若接口仍滞后，从待审批列表中再剔除对应 id（避免「批完仍占位」）。
+   */
+  const refreshExpenseIncomeSwrAfterMutation = useCallback(
+    async (opts?: { stripExpenseId?: string; stripIncomeId?: string }) => {
+      const [pendingExp, pendingInc, allExp, allInc] = await Promise.all([
+        getExpenseRequestsByStatus("Pending_Approval", true),
+        getIncomeRequestsByStatus("Pending_Approval", true),
+        getExpenseRequests(true),
+        getIncomeRequests(true),
+      ]);
+      const pe =
+        opts?.stripExpenseId != null
+          ? pendingExp.filter((r) => r.id !== opts.stripExpenseId)
+          : pendingExp;
+      const pi =
+        opts?.stripIncomeId != null
+          ? pendingInc.filter((r) => r.id !== opts.stripIncomeId)
+          : pendingInc;
+      mutate("pending-expense-requests", pe, { revalidate: false });
+      mutate("pending-income-requests", pi, { revalidate: false });
+      mutate("expense-requests", allExp, { revalidate: false });
+      mutate("income-requests", allInc, { revalidate: false });
+    },
+    [mutate]
+  );
 
   // 纭繚鏁版嵁鏄暟缁勫苟鎸囧畾绫诲瀷
   const allBills: MonthlyBill[] = Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [];
@@ -624,7 +638,15 @@ export default function ApprovalCenterPage() {
             approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
-          await refreshExpenseIncomeSwrAfterMutation();
+          mutate(
+            "pending-income-requests",
+            (current: unknown) => {
+              if (!Array.isArray(current)) return current;
+              return current.filter((r: { id?: string }) => r.id !== requestId);
+            },
+            { revalidate: false }
+          );
+          await refreshExpenseIncomeSwrAfterMutation({ stripIncomeId: requestId });
           mutate("approved-income-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();
