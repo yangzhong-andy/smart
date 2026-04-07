@@ -16,6 +16,11 @@ const formatCurrency = (n: number, curr: string = "CNY") => {
   }).format(n);
 };
 import { getMovementsBySkuId, type InventoryMovement } from "@/lib/inventory-movements-store";
+import {
+  aggregateInventoryTotals,
+  getInventoryBuckets,
+  unitCostRmb,
+} from "@/lib/inventory-display";
 
 type InventoryProductRow = {
   sku_id?: string;
@@ -25,6 +30,7 @@ type InventoryProductRow = {
   at_factory?: number;
   at_domestic?: number;
   in_transit?: number;
+  stock_quantity?: number;
   cost_price?: number;
   currency?: string;
 };
@@ -160,73 +166,12 @@ export default function InventoryPage() {
     setExpandedSkuIds(newExpanded);
   };
 
-  // 计算库存统计
-  const inventoryStats = useMemo(() => {
-    let totalValue = 0;
-    let factoryQty = 0;
-    let factoryValue = 0;
-    let domesticQty = 0;
-    let domesticValue = 0;
-    let transitQty = 0;
-    let transitValue = 0;
-    
-    products.forEach((product) => {
-      const atFactory = product.at_factory || 0;
-      const atDomestic = product.at_domestic || 0;
-      const inTransit = product.in_transit || 0;
-      const totalQty = atFactory + atDomestic + inTransit;
-      
-      if (product.cost_price) {
-        // 根据币种转换为RMB（简化处理，实际应该使用汇率）
-        const costPrice = product.cost_price;
-        const currency = product.currency || "CNY";
-        
-        // 简单汇率转换（实际应该从账户或配置中获取）
-        let exchangeRate = 1;
-        if (currency === "USD") exchangeRate = 7.2;
-        else if (currency === "HKD") exchangeRate = 0.92;
-        else if (currency === "JPY") exchangeRate = 0.048;
-        else if (currency === "EUR") exchangeRate = 7.8;
-        else if (currency === "GBP") exchangeRate = 9.1;
-        
-        const unitValue = costPrice * exchangeRate;
-        
-        if (atFactory > 0) {
-          factoryQty += atFactory;
-          factoryValue += atFactory * unitValue;
-        }
-        if (atDomestic > 0) {
-          domesticQty += atDomestic;
-          domesticValue += atDomestic * unitValue;
-        }
-        if (inTransit > 0) {
-          transitQty += inTransit;
-          transitValue += inTransit * unitValue;
-        }
-        
-        if (totalQty > 0) {
-          totalValue += totalQty * unitValue;
-        }
-      }
-    });
-    
-    return {
-      totalValue,
-      factoryQty,
-      factoryValue,
-      domesticQty,
-      domesticValue,
-      transitQty,
-      transitValue
-    };
-  }, [products]);
+  // 与下方表格同一公式；含 cost_price 为 0 的变体（旧逻辑用 if(cost_price) 会漏计件数导致卡片与表格对不上）
+  const inventoryStats = useMemo(() => aggregateInventoryTotals(products), [products]);
 
   // 筛选有库存的产品
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => {
-      const totalQty = (p.at_factory || 0) + (p.at_domestic || 0) + (p.in_transit || 0);
-      return totalQty > 0;
-    });
+    let result = products.filter((p) => getInventoryBuckets(p).totalQty > 0);
 
     // 关键词搜索
     if (searchKeyword.trim()) {
@@ -263,21 +208,10 @@ export default function InventoryPage() {
     ];
 
     const rows = filteredProducts.map((p) => {
-      const atFactory = p.at_factory || 0;
-      const atDomestic = p.at_domestic || 0;
-      const inTransit = p.in_transit || 0;
-      const totalQty = atFactory + atDomestic + inTransit;
-      
-      // 计算库存总值（RMB）
+      const b = getInventoryBuckets(p);
+      const { atFactory, atDomestic, inTransit, totalQty } = b;
+      const totalValue = totalQty * unitCostRmb(p);
       const currency = p.currency || "CNY";
-      let exchangeRate = 1;
-      if (currency === "USD") exchangeRate = 7.2;
-      else if (currency === "HKD") exchangeRate = 0.92;
-      else if (currency === "JPY") exchangeRate = 0.048;
-      else if (currency === "EUR") exchangeRate = 7.8;
-      else if (currency === "GBP") exchangeRate = 9.1;
-      
-      const totalValue = totalQty * (p.cost_price || 0) * exchangeRate;
 
       return [
         p.sku_id || "",
@@ -317,7 +251,9 @@ export default function InventoryPage() {
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">库存查询</h1>
-          <p className="mt-1 text-sm text-slate-400">查询和管理库存数据，支持多仓库、多SKU维度。</p>
+          <p className="mt-1 text-sm text-slate-400">
+            数据来自各 SKU 变体（<code className="text-slate-500">/api/products</code>）的工厂现货、国内待发、海运中与成本价；总库存 = 三者之和，与上方总览及表格一致。
+          </p>
         </div>
         <button
           onClick={handleExportData}
@@ -354,7 +290,7 @@ export default function InventoryPage() {
                 {formatCurrency(inventoryStats.totalValue, "CNY")}
               </div>
               <div className="text-xs text-white/60 mt-2">
-                总计 {inventoryStats.factoryQty + inventoryStats.domesticQty + inventoryStats.transitQty} 件
+                总计 {inventoryStats.totalPieces.toLocaleString("zh-CN")} 件
               </div>
             </div>
           </div>
@@ -491,21 +427,9 @@ export default function InventoryPage() {
               </thead>
               <tbody className="divide-y divide-slate-800 bg-slate-900/40">
                 {filteredProducts.map((product) => {
-                  const atFactory = product.at_factory || 0;
-                  const atDomestic = product.at_domestic || 0;
-                  const inTransit = product.in_transit || 0;
-                  const totalQty = atFactory + atDomestic + inTransit;
-                  
-                  // 计算库存总值（RMB）
-                  const currency = product.currency || "CNY";
-                  let exchangeRate = 1;
-                  if (currency === "USD") exchangeRate = 7.2;
-                  else if (currency === "HKD") exchangeRate = 0.92;
-                  else if (currency === "JPY") exchangeRate = 0.048;
-                  else if (currency === "EUR") exchangeRate = 7.8;
-                  else if (currency === "GBP") exchangeRate = 9.1;
-                  
-                  const totalValue = totalQty * (product.cost_price || 0) * exchangeRate;
+                  const b = getInventoryBuckets(product);
+                  const { atFactory, atDomestic, inTransit, totalQty, bucketsMismatch, unallocatedOnly } = b;
+                  const totalValue = totalQty * unitCostRmb(product);
 
                   return (
                     <Fragment key={product.sku_id}>
@@ -529,7 +453,19 @@ export default function InventoryPage() {
                         <td className="px-4 py-3 text-right text-slate-300">{atFactory.toLocaleString("zh-CN")}</td>
                         <td className="px-4 py-3 text-right text-slate-300">{atDomestic.toLocaleString("zh-CN")}</td>
                         <td className="px-4 py-3 text-right text-slate-300">{inTransit.toLocaleString("zh-CN")}</td>
-                        <td className="px-4 py-3 text-right font-medium text-slate-100">{totalQty.toLocaleString("zh-CN")}</td>
+                        <td className="px-4 py-3 text-right font-medium text-slate-100">
+                          <span title={unallocatedOnly ? "仅有总库存字段，尚未拆到三个仓位" : undefined}>
+                            {totalQty.toLocaleString("zh-CN")}
+                          </span>
+                          {bucketsMismatch && !unallocatedOnly && (
+                            <span
+                              className="ml-1 text-[10px] text-amber-400/90 align-middle"
+                              title="stockQuantity 与三分仓之和不一致，已按分仓合计展示；可在库存核对页修正"
+                            >
+                              ※
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right font-medium text-emerald-300">
                           {formatCurrency(totalValue, "CNY")}
                         </td>
