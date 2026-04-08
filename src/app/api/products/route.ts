@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import type { Product as PrismaProduct } from '@prisma/client'
+import { sumOverseasQtyByVariantIds } from '@/lib/overseas-stock'
+
+async function attachOverseasQtyToFlatRows(rows: any[]): Promise<void> {
+  const ids = rows.map((r) => r.variant_id).filter(Boolean) as string[]
+  if (ids.length === 0) {
+    for (const r of rows) r.at_overseas = 0
+    return
+  }
+  const map = await sumOverseasQtyByVariantIds(ids)
+  for (const r of rows) {
+    r.at_overseas = r.variant_id ? (map.get(r.variant_id) ?? 0) : 0
+  }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +39,7 @@ const mapToApiProduct = (p: any) => ({
   at_factory: p.atFactory ?? p.at_factory ?? 0,
   at_domestic: p.atDomestic ?? p.at_domestic ?? 0,
   in_transit: p.inTransit ?? p.in_transit ?? 0,
+  at_overseas: p.atOverseas ?? p.at_overseas ?? 0,
   suppliers: p.suppliers ? JSON.parse(JSON.stringify(p.suppliers)) : undefined,
   platform_sku_mapping: p.platformSkuMapping ? JSON.parse(JSON.stringify(p.platformSkuMapping)) : undefined,
   factory_id: p.suppliers && Array.isArray(p.suppliers)
@@ -141,6 +155,7 @@ function productToFlatVariants(product: any): any[] {
         at_factory: variant.atFactory ?? 0,
         at_domestic: variant.atDomestic ?? 0,
         in_transit: variant.inTransit ?? 0,
+        at_overseas: 0,
         suppliers: suppliers.length > 0 ? suppliers : (product.suppliers ? JSON.parse(JSON.stringify(product.suppliers)) : undefined),
         platform_sku_mapping: variant.platformSkuMapping ? JSON.parse(JSON.stringify(variant.platformSkuMapping)) : undefined,
         factory_id: primarySupplier?.id || undefined,
@@ -259,6 +274,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: '产品不存在' }, { status: 404 })
       }
       const transformed = productToFlatVariants(product)
+      await attachOverseasQtyToFlatRows(transformed)
       return NextResponse.json(transformed)
     }
 
@@ -320,6 +336,8 @@ export async function GET(request: NextRequest) {
     for (const product of products) {
       transformed.push(...productToFlatVariants(product))
     }
+
+    await attachOverseasQtyToFlatRows(transformed)
 
     return NextResponse.json(transformed)
   } catch (error: any) {
