@@ -6,7 +6,13 @@
 
 import { prisma } from "@/lib/prisma";
 import { createOutboundOrderFromPendingInbound } from "@/lib/create-outbound-from-inbound";
-import { DeliveryOrderStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
+import { patchVariantAfterOverseasReceipt } from "@/lib/variant-overseas-reconcile";
+import {
+  DeliveryOrderStatus,
+  StockLogReason,
+  InventoryMovementType,
+  WarehouseType,
+} from "@prisma/client";
 
 // 处理库存入库的辅助函数
 async function processStockInbound(
@@ -15,7 +21,8 @@ async function processStockInbound(
   warehouseId: string,
   receivedQty: number,
   deliveryOrderId: string,
-  deliveryNumber: string
+  deliveryNumber: string,
+  warehouseType: WarehouseType
 ) {
   const now = new Date();
 
@@ -68,6 +75,10 @@ async function processStockInbound(
       notes: `拿货单入库：${deliveryNumber}，实收 ${receivedQty}`,
     },
   });
+
+  if (warehouseType === WarehouseType.OVERSEAS && receivedQty > 0) {
+    await patchVariantAfterOverseasReceipt(tx, variantId, receivedQty);
+  }
 }
 
 export async function executeDeliveryOrderInbound(
@@ -162,7 +173,8 @@ export async function executeDeliveryOrderInbound(
           warehouseId,
           plannedQty,
           deliveryOrderId,
-          order.deliveryNumber
+          order.deliveryNumber,
+          warehouse.type
         );
         inboundLines.push({
           itemId: item.id,
@@ -207,7 +219,15 @@ export async function executeDeliveryOrderInbound(
       if (!singleSkuVariantId) {
         throw new Error("无法解析该合同对应的 SKU（variantId），请确认合同已关联产品");
       }
-      await processStockInbound(tx, singleSkuVariantId, warehouseId, singleReceivedQty, deliveryOrderId, order.deliveryNumber);
+      await processStockInbound(
+        tx,
+        singleSkuVariantId,
+        warehouseId,
+        singleReceivedQty,
+        deliveryOrderId,
+        order.deliveryNumber,
+        warehouse.type
+      );
     }
 
     // 更新拿货单状态

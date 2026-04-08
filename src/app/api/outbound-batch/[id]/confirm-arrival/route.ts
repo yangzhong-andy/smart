@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { patchVariantAfterOverseasReceipt } from "@/lib/variant-overseas-reconcile";
 import {
   InventoryLogType,
   InventoryLogStatus,
   StockLogReason,
   InventoryMovementType,
+  WarehouseType,
 } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +83,16 @@ export async function PATCH(
       );
     }
 
+    if (toWarehouse.type !== WarehouseType.OVERSEAS) {
+      return NextResponse.json(
+        {
+          error:
+            "确认到达仅用于货入海外仓：toWarehouseId 须为类型「海外仓」(OVERSEAS) 的仓库",
+        },
+        { status: 400 }
+      );
+    }
+
     if (fromWarehouseId === toWarehouseId) {
       return NextResponse.json(
         { error: "目的地仓库不能与出库仓库相同" },
@@ -124,6 +136,9 @@ export async function PATCH(
           },
         });
       }
+
+      // 5b. 变体：海运中 → 海外仓（扣 inTransit，stockQuantity 含海外 Stock）
+      await patchVariantAfterOverseasReceipt(tx, variantId, qty);
 
       // 6. 更新 OutboundBatch：arrivalConfirmedAt、status = "已到达"
       await tx.outboundBatch.update({

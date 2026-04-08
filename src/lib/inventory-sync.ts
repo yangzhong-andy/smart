@@ -1,4 +1,4 @@
-import { ContainerStatus } from "@prisma/client";
+import { ContainerStatus, WarehouseType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -44,6 +44,8 @@ export async function computeVariantInventorySnapshot(variantId: string) {
           outboundBatch: {
             containerId: { not: null },
             status: { not: "已取消" },
+            // 已确认到达海外仓的批次不再算「在途」（与 confirm-arrival 一致）
+            arrivalConfirmedAt: null,
             container: {
               status: { in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT] },
             },
@@ -125,6 +127,7 @@ export async function aggregateBusinessPipelineLinkedToVariants() {
         outboundBatch: {
           containerId: { not: null },
           status: { not: "已取消" },
+          arrivalConfirmedAt: null,
           container: {
             status: { in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT] },
           },
@@ -212,13 +215,23 @@ export async function syncProductVariantInventory(variantId?: string) {
   const updates = await Promise.all(
     ids.map(async (vid) => {
       const snap = await computeVariantInventorySnapshot(vid);
+      const overseasAgg = await prisma.stock.aggregate({
+        where: {
+          variantId: vid,
+          warehouse: { type: WarehouseType.OVERSEAS },
+        },
+        _sum: { qty: true },
+      });
+      const overseas = Number(overseasAgg._sum.qty ?? 0);
+      const stockQuantity =
+        snap.atFactory + snap.atDomestic + snap.inTransit + overseas;
       return prisma.productVariant.update({
         where: { id: vid },
         data: {
           atFactory: snap.atFactory,
           atDomestic: snap.atDomestic,
           inTransit: snap.inTransit,
-          stockQuantity: snap.stockQuantity,
+          stockQuantity,
         },
       });
     })

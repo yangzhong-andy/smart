@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
-import { InventoryLogType, InventoryLogStatus, StockLogReason, InventoryMovementType } from "@prisma/client";
+import {
+  InventoryLogType,
+  InventoryLogStatus,
+  StockLogReason,
+  InventoryMovementType,
+  WarehouseType,
+} from "@prisma/client";
 import { syncProductVariantInventory } from "@/lib/inventory-sync";
+import { patchVariantAfterOverseasReceipt } from "@/lib/variant-overseas-reconcile";
 
 export const dynamic = 'force-dynamic';
 
@@ -164,6 +171,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const warehouseMeta = await prisma.warehouse.findUnique({
+      where: { id: warehouseId },
+      select: { type: true },
+    });
+    if (!warehouseMeta) {
+      return NextResponse.json({ error: "所选仓库不存在" }, { status: 400 });
+    }
+
     const now = new Date();
 
     const batch = await prisma.$transaction(async (tx) => {
@@ -243,14 +258,18 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      if (warehouseMeta.type === WarehouseType.OVERSEAS && qty > 0) {
+        await patchVariantAfterOverseasReceipt(tx, variantId, qty);
+      }
+
       return newBatch;
     });
 
     // 清除入库批次缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
 
-    // 自动同步 ProductVariant 库存
-    if (variantId) {
+    // 国内仓等：按合同/出库快照重算；海外仓已在事务内扣减海运并同步 stockQuantity
+    if (variantId && warehouseMeta.type !== WarehouseType.OVERSEAS) {
       await syncProductVariantInventory(variantId);
     }
 

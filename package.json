@@ -1,6 +1,6 @@
 {
   "name": "smart-erp",
-  "version": "1.5.84",
+  "version": "1.5.85",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -34,7 +34,8 @@
     "backfill:contract-variants": "npx tsx scripts/backfill-contract-item-variant-links.ts",
     "remediate:inventory": "npx tsx scripts/remediate-inventory-and-contract-skus.ts",
     "fix:brush-stock": "npx tsx scripts/fix-brush-stock-targets.ts",
-    "move:brush-sea": "npx tsx scripts/move-brush-stock-to-sea-transit.ts"
+    "move:brush-sea": "npx tsx scripts/move-brush-stock-to-sea-transit.ts",
+    "clear:domestic-stock": "npx tsx scripts/clear-domestic-warehouse-stock.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

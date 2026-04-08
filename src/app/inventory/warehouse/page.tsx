@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Package, Warehouse as WarehouseIcon, X, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { toast } from "sonner";
 
@@ -35,15 +35,6 @@ type Warehouse = {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-function formatDate(iso: string) {
-  if (!iso) return "-";
-  try {
-    return new Date(iso).toLocaleDateString("zh-CN");
-  } catch {
-    return iso;
-  }
-}
-
 export default function WarehouseInventoryPage() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
   const [skuKeyword, setSkuKeyword] = useState<string>("");
@@ -57,6 +48,14 @@ export default function WarehouseInventoryPage() {
   const warehouses = Array.isArray(warehousesRaw)
     ? warehousesRaw
     : (warehousesRaw as any)?.data || [];
+
+  // 变体「海运中」合计（发运离境后、未入海外仓前；与国内仓 Stock 无关）
+  const { data: transitRaw } = useSWR<{ inTransitTotal?: number }>(
+    "/api/inventory/variant-in-transit-total?noCache=true",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const inTransitVariantTotal = Number(transitRaw?.inTransitTotal ?? 0);
 
   // 获取库存数据
   const { data: stocksRaw, isLoading } = useSWR<StockItem[]>(
@@ -141,7 +140,7 @@ export default function WarehouseInventoryPage() {
     <div className="min-h-screen bg-slate-950">
       <PageHeader
         title="仓库库存"
-        description="按仓库查看库存明细"
+        description="库内数为 Stock 表（物理仓账面）；货已发海运、尚未入海外仓时，请以「海运在途」与库存查询页「海运中」为准。"
         actions={
           <ActionButton
             icon={Download}
@@ -172,7 +171,7 @@ export default function WarehouseInventoryPage() {
 
       <div className="p-6 space-y-6">
         {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <StatCard
             title="仓库数量"
             value={totalStats.totalWarehouses}
@@ -198,10 +197,16 @@ export default function WarehouseInventoryPage() {
             iconColor="text-amber-400"
           />
           <StatCard
-            title="总库存"
+            title="库内库存"
             value={totalStats.totalQty.toLocaleString()}
             icon={Package}
             iconColor="text-green-400"
+          />
+          <StatCard
+            title="海运在途"
+            value={inTransitVariantTotal.toLocaleString()}
+            icon={Ship}
+            iconColor="text-orange-400"
           />
           <StatCard
             title="可用库存"
@@ -210,6 +215,16 @@ export default function WarehouseInventoryPage() {
             iconColor="text-cyan-400"
           />
         </div>
+
+        {totalStats.totalQty === 0 && inTransitVariantTotal > 0 && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
+            当前国内/海外仓 <strong className="text-amber-50">Stock 账面为 0</strong>，但系统中有{" "}
+            <strong className="tabular-nums">{inTransitVariantTotal.toLocaleString()}</strong>{" "}
+            件在<strong className="text-amber-50">海运在途</strong>（产品变体口径）。若曾误将待发数量记在国内仓，可运行脚本{" "}
+            <code className="rounded bg-slate-900/80 px-1.5 py-0.5 text-xs">npx tsx scripts/clear-domestic-warehouse-stock.ts</code>{" "}
+            仅清空国内仓 Stock，不影响变体海运数量。
+          </div>
+        )}
 
         {/* 仓库筛选 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
