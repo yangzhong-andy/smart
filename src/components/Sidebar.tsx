@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
-import { getAllowedNavLabels } from "@/lib/permissions";
+import { getAllowedNavLabels, filterSidebarNavChildren } from "@/lib/permissions";
 
 import { LucideIcon } from "lucide-react";
 
@@ -54,6 +54,7 @@ const ROUTE_PREFETCH_API: Record<string, string> = {
   "/logistics/pre-records": "/api/container-pre-records",
   "/settings/exporters": "/api/exporters",
   "/settings/overseas-companies": "/api/overseas-companies",
+  "/advertising/agencies": "/api/ad-agencies",
 };
 
 type NavItem = {
@@ -228,7 +229,13 @@ export default function Sidebar() {
       const expanded: string[] = [];
       visibleNavItems.forEach((item) => {
         if (item.children) {
-          const hasActiveChild = item.children.some((child) => child.href === currentPath);
+          const filtered = filterSidebarNavChildren(
+            item.label,
+            item.children,
+            departmentCode,
+            departmentName
+          );
+          const hasActiveChild = filtered.some((child) => child.href === currentPath);
           if (hasActiveChild) {
             expanded.push(item.label);
           }
@@ -299,14 +306,26 @@ export default function Sidebar() {
 
   const isParentActive = (item: NavItem) => {
     if (!item.children) return false;
-    return item.children.some((child) => child.href === pathname);
+    const filtered = filterSidebarNavChildren(
+      item.label,
+      item.children,
+      departmentCode,
+      departmentName
+    );
+    return filtered.some((child) => child.href === pathname);
   };
 
   const getOrderedChildren = (item: NavItem): NavItem[] => {
     if (!item.children) return [];
+    const filtered = filterSidebarNavChildren(
+      item.label,
+      item.children,
+      departmentCode,
+      departmentName
+    );
     const order = customChildOrder[item.label];
-    if (!order?.length) return item.children;
-    const map = new Map(item.children.map((child) => [child.href || `__${child.label}`, child]));
+    if (!order?.length) return filtered;
+    const map = new Map(filtered.map((child) => [child.href || `__${child.label}`, child]));
     const ordered: NavItem[] = [];
     order.forEach((href) => {
       const child = map.get(href);
@@ -322,7 +341,7 @@ export default function Sidebar() {
   const reorderChildren = (parentLabel: string, fromHref: string, toHref: string) => {
     const parent = visibleNavItems.find((i) => i.label === parentLabel);
     if (!parent?.children) return;
-    const current = getOrderedChildren(parent);
+    const current = getOrderedChildren(parent); // 已含部门子菜单过滤
     const fromIndex = current.findIndex((c) => (c.href || `__${c.label}`) === fromHref);
     const toIndex = current.findIndex((c) => (c.href || `__${c.label}`) === toHref);
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
@@ -649,7 +668,12 @@ export default function Sidebar() {
                     <div className="text-xs text-slate-400 px-3 py-1.5 mb-1 border-b border-slate-800/50">
                       {item.label}
                     </div>
-                    {item.children.map((child) => {
+                    {filterSidebarNavChildren(
+                      item.label,
+                      item.children,
+                      departmentCode,
+                      departmentName
+                    ).map((child) => {
                       const isApprovalLink = child.href === "/finance/approval";
                       const active = isActive(child.href);
                       return (

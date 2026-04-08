@@ -14,7 +14,12 @@ import { getPendingEntryCount } from "@/lib/pending-entry-store";
 import { getProductsFromAPI } from "@/lib/products-store";
 import { getFinanceRates, type FinanceRates } from "@/lib/exchange";
 import { getCashFlowFromAPI, createCashFlow, type CashFlow } from "@/lib/cash-flow-store";
-import { getLegacyPurchaseOrdersFromAPI, type LegacyPurchaseOrder, updateContractPayment } from "@/lib/purchase-contracts-store";
+import {
+  getLegacyPurchaseOrdersFromAPI,
+  computeLegacyPendingValue,
+  type LegacyPurchaseOrder,
+  updateContractPayment,
+} from "@/lib/purchase-contracts-store";
 import { getDeliveryOrdersFromAPI, upsertDeliveryOrder } from "@/lib/delivery-orders-store";
 import { saveAccounts } from "@/lib/finance-store";
 import { StatCards } from "./components/StatCards";
@@ -439,7 +444,7 @@ export default function FinanceDashboardPage() {
           poNumber: po.poNumber,
           supplierName: po.supplierName,
           pendingQuantity: pendingQty,
-          pendingValue: pendingQty * po.unitPrice
+          pendingValue: computeLegacyPendingValue(po),
         });
       }
     });

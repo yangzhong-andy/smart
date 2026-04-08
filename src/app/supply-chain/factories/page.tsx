@@ -7,7 +7,11 @@ import type { BankAccount } from "@/lib/finance-store";
 import { getOrderTracking, getBatchReceipts, getDocuments, type OrderTracking, type BatchReceipt, type Document } from "@/lib/supply-chain-store";
 import type { Store } from "@/lib/store-store";
 import { getCashFlowFromAPI, type CashFlow } from "@/lib/cash-flow-store";
-import { getLegacyPurchaseOrdersFromAPI, type LegacyPurchaseOrder } from "@/lib/purchase-contracts-store";
+import {
+  getLegacyPurchaseOrdersFromAPI,
+  computeLegacyPendingValue,
+  type LegacyPurchaseOrder,
+} from "@/lib/purchase-contracts-store";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type PurchaseOrder = LegacyPurchaseOrder;
@@ -105,21 +109,7 @@ export default function FactoriesPage() {
       const pendingQty = Math.max(0, po.quantity - (po.receivedQty || 0));
       stat.pendingQuantity += pendingQty;
 
-      // 待拿货货值：有明细时按各 SKU（待拿货数量 × 单价）汇总；否则按总额比例或 数量×单价
-      const pendingValue = (() => {
-        const items = (po as { items?: Array<{ qty: number; pickedQty: number; unitPrice: number }> }).items;
-        if (items && items.length > 0) {
-          return items.reduce(
-            (sum, item) => sum + Math.max(0, item.qty - (item.pickedQty ?? 0)) * item.unitPrice,
-            0
-          );
-        }
-        if (po.quantity > 0 && (po.totalAmount ?? 0) > 0) {
-          return (po.totalAmount! * pendingQty) / po.quantity;
-        }
-        return pendingQty * po.unitPrice;
-      })();
-      stat.pendingValue += pendingValue;
+      stat.pendingValue += computeLegacyPendingValue(po);
 
       // 存量货值 = 已付款但未提货的货值
       // 计算已付款金额（定金 + 已付尾款）
@@ -204,19 +194,12 @@ export default function FactoriesPage() {
       const pendingQty = Math.max(0, po.quantity - (po.receivedQty || 0));
 
       if (isFullyPaid && pendingQty > 0) {
-        const items = (po as { items?: Array<{ qty: number; pickedQty: number; unitPrice: number }> }).items;
-        const pv =
-          items && items.length > 0
-            ? items.reduce((s, item) => s + Math.max(0, item.qty - (item.pickedQty ?? 0)) * item.unitPrice, 0)
-            : po.quantity > 0 && (po.totalAmount ?? 0) > 0
-              ? (po.totalAmount! * pendingQty) / po.quantity
-              : pendingQty * po.unitPrice;
         alerts.push({
           poId: po.id,
           poNumber: po.poNumber,
           supplierName: po.supplierName,
           pendingQuantity: pendingQty,
-          pendingValue: pv
+          pendingValue: computeLegacyPendingValue(po),
         });
       }
     });
@@ -355,6 +338,9 @@ export default function FactoriesPage() {
               <div className="mt-2 text-[11px] text-slate-500">
                 待拿货数量：{summary.totalPendingQuantity} 件
               </div>
+              <div className="mt-1 text-[10px] text-slate-600 leading-snug">
+                货值按明细单价；单价为 0 时用行金额÷数量或合同均价（总额÷数量）估算。
+              </div>
             </div>
           </section>
           <section className="grid gap-4 md:grid-cols-2">
@@ -464,13 +450,7 @@ export default function FactoriesPage() {
             <div className="space-y-4">
               {filteredFactoryStats[0].orders.map((po) => {
                 const pendingQty = Math.max(0, po.quantity - (po.receivedQty || 0));
-                const poItems = (po as { items?: Array<{ qty: number; pickedQty: number; unitPrice: number }> }).items;
-                const pendingValue =
-                  poItems && poItems.length > 0
-                    ? poItems.reduce((s, item) => s + Math.max(0, item.qty - (item.pickedQty ?? 0)) * item.unitPrice, 0)
-                    : po.quantity > 0 && (po.totalAmount ?? 0) > 0
-                      ? (po.totalAmount! * pendingQty) / po.quantity
-                      : pendingQty * po.unitPrice;
+                const pendingValue = computeLegacyPendingValue(po);
                 const unpaidDeposit = po.depositAmount - (po.depositPaid || 0);
                 const allTailsPaid = po.receipts.every((receipt) => {
                   return cashFlow.some(
@@ -681,17 +661,7 @@ export default function FactoriesPage() {
                     {pendingQty > 0 && (
                       <div className="mt-3 pt-3 border-t border-slate-800">
                         <div className="text-xs text-amber-400">
-                          剩余待拿货：{pendingQty} 件（货值：{currency(
-                            (() => {
-                              const it = (po as { items?: Array<{ qty: number; pickedQty: number; unitPrice: number }> }).items;
-                              if (it && it.length > 0) {
-                                return it.reduce((s, item) => s + Math.max(0, item.qty - (item.pickedQty ?? 0)) * item.unitPrice, 0);
-                              }
-                              return po.quantity > 0 && (po.totalAmount ?? 0) > 0
-                                ? (po.totalAmount! * pendingQty) / po.quantity
-                                : pendingQty * po.unitPrice;
-                            })()
-                          )}）
+                          剩余待拿货：{pendingQty} 件（货值：{currency(computeLegacyPendingValue(po))}）
                         </div>
                       </div>
                     )}

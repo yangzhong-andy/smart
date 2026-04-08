@@ -21,8 +21,17 @@ export const DEPARTMENT_CODES = {
 export const SIDEBAR_NAV_BY_DEPARTMENT: Record<string, string[]> = {
   // 全球供应链部：供应链/物流中心/产品中心
   [DEPARTMENT_CODES.GLOBAL_SUPPLY_CHAIN]: ['供应链', '物流中心', '产品中心'],
-  // 履约物流中心：与全球供应链部一致（供应链/物流中心/产品中心）
-  [DEPARTMENT_CODES.FULFILLMENT_LOGISTICS]: ['供应链', '物流中心', '产品中心'],
+  // 履约物流中心：同上 + 营销与店铺（子菜单见 SIDEBAR_CHILD_HREFS_BY_DEPARTMENT，仅广告代理管理）
+  [DEPARTMENT_CODES.FULFILLMENT_LOGISTICS]: ['供应链', '物流中心', '产品中心', '营销与店铺'],
+};
+
+/**
+ * 部门下某一级菜单仅展示的子菜单 href（未配置则展示该父级下全部子项）
+ */
+export const SIDEBAR_CHILD_HREFS_BY_DEPARTMENT: Record<string, Record<string, string[]>> = {
+  [DEPARTMENT_CODES.FULFILLMENT_LOGISTICS]: {
+    营销与店铺: ['/advertising/agencies'],
+  },
 };
 
 /** 部门仅能访问的路径前缀（用于路由保护）。空数组表示不限制。 */
@@ -54,6 +63,8 @@ export const ALLOWED_PATH_PREFIXES_BY_DEPARTMENT: Record<string, string[]> = {
     '/logistics-cost',
     '/inbound',
     '/outbound',
+    // 营销与店铺：仅广告代理管理（与侧栏子项一致）
+    '/advertising/agencies',
   ],
 };
 
@@ -105,6 +116,21 @@ export function getAllowedNavLabels(departmentCode: string | null, departmentNam
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective || !SIDEBAR_NAV_BY_DEPARTMENT[effective]) return null;
   return SIDEBAR_NAV_BY_DEPARTMENT[effective];
+}
+
+/** 按部门裁剪侧栏子菜单（如履约物流中心仅见「广告代理管理」） */
+export function filterSidebarNavChildren<T extends { href?: string; label: string }>(
+  parentLabel: string,
+  children: T[],
+  departmentCode: string | null,
+  departmentName: string | null | undefined
+): T[] {
+  const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
+  if (!effective) return children;
+  const map = SIDEBAR_CHILD_HREFS_BY_DEPARTMENT[effective];
+  if (!map || !map[parentLabel]) return children;
+  const allowed = new Set(map[parentLabel]);
+  return children.filter((c) => Boolean(c.href) && allowed.has(c.href as string));
 }
 
 // 敏感字段（高度敏感，需要特殊保护）

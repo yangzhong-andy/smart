@@ -228,8 +228,56 @@ export type LegacyPurchaseOrder = {
   receipts: Array<{ id: string; qty: number; tailAmount: number; dueDate: string; createdAt: string }>;
   createdAt: string;
   /** 合同明细（多 SKU 时用于按 SKU 算待拿货货值：Σ 待拿货数量_i × 单价_i） */
-  items?: Array<{ qty: number; pickedQty: number; unitPrice: number }>;
+  items?: Array<{
+    qty: number;
+    pickedQty: number;
+    unitPrice: number;
+    /** 行总金额（单价为 0 时用于推算有效单价） */
+    totalAmount?: number;
+  }>;
 };
+
+/**
+ * 待拿货货值（工厂端/财务看板共用）：
+ * - 有明细：按「待拿货行数 × 有效单价」；有效单价优先 unitPrice，否则 totalAmount/qty，否则合同 totalAmount/totalQty。
+ * - 无明细或明细推算为 0：按合同总额 × (待拿货/订单数量)。
+ */
+export function computeLegacyPendingValue(po: LegacyPurchaseOrder): number {
+  const pendingQty = Math.max(0, po.quantity - (po.receivedQty || 0));
+  if (pendingQty <= 0) return 0;
+
+  const contractAvg =
+    po.quantity > 0 && (po.totalAmount ?? 0) > 0
+      ? Number(po.totalAmount) / po.quantity
+      : Number(po.unitPrice) || 0;
+
+  const items = po.items;
+  if (items && items.length > 0) {
+    let sum = 0;
+    for (const it of items) {
+      const linePending = Math.max(
+        0,
+        Math.trunc(Number(it.qty) || 0) - Math.trunc(Number(it.pickedQty) || 0)
+      );
+      if (linePending <= 0) continue;
+
+      let u = Number(it.unitPrice);
+      if (!Number.isFinite(u) || u <= 0) {
+        const ta = it.totalAmount;
+        const lineQty = Number(it.qty) || 0;
+        if (ta != null && lineQty > 0) u = Number(ta) / lineQty;
+        else u = contractAvg;
+      }
+      sum += linePending * u;
+    }
+    if (sum > 0) return sum;
+  }
+
+  if (po.quantity > 0 && (po.totalAmount ?? 0) > 0) {
+    return (Number(po.totalAmount) * pendingQty) / po.quantity;
+  }
+  return pendingQty * (Number(po.unitPrice) || 0);
+}
 
 const CONTRACT_STATUS_TO_LEGACY: Record<string, "待收货" | "部分收货" | "收货完成，待结清" | "已清款"> = {
   待发货: "待收货",
@@ -258,11 +306,21 @@ export async function getLegacyPurchaseOrdersFromAPI(): Promise<LegacyPurchaseOr
     }));
     const items =
       c.items && c.items.length > 0
-        ? c.items.map((it: { qty: number; pickedQty: number; unitPrice: number }) => ({
-            qty: it.qty,
-            pickedQty: it.pickedQty ?? 0,
-            unitPrice: typeof it.unitPrice === "number" ? it.unitPrice : Number(it.unitPrice)
-          }))
+        ? c.items.map(
+            (it: {
+              qty: number;
+              pickedQty: number;
+              unitPrice: number;
+              totalAmount?: number;
+            }) => ({
+              qty: it.qty,
+              pickedQty: it.pickedQty ?? 0,
+              unitPrice:
+                typeof it.unitPrice === "number" ? it.unitPrice : Number(it.unitPrice),
+              totalAmount:
+                it.totalAmount != null ? Number(it.totalAmount as number) : undefined,
+            })
+          )
         : undefined;
 
     return {
