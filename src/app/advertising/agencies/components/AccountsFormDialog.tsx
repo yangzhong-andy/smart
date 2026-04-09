@@ -1,11 +1,14 @@
 "use client";
 
 import type { Agency, AdAccount } from "@/lib/ad-agency-store";
+import type { Store } from "@/lib/store-store";
 import { COUNTRIES } from "@/lib/country-config";
 
 export type AccountFormState = {
   agencyId: string;
   accountName: string;
+  platformAccountId: string;
+  storeId: string;
   currentBalance: string;
   creditLimit: string;
   currency: AdAccount["currency"];
@@ -20,12 +23,15 @@ export type AccountsFormDialogProps = {
   form: AccountFormState;
   setForm: React.Dispatch<React.SetStateAction<AccountFormState>>;
   agencies: Agency[];
+  stores: Store[];
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
 };
 
 const initialFormState: AccountFormState = {
   agencyId: "",
   accountName: "",
+  platformAccountId: "",
+  storeId: "",
   currentBalance: "",
   creditLimit: "",
   currency: "USD",
@@ -40,6 +46,7 @@ export function AccountsFormDialog({
   form,
   setForm,
   agencies,
+  stores,
   onSubmit,
 }: AccountsFormDialogProps) {
   if (!isOpen) return null;
@@ -85,6 +92,31 @@ export function AccountsFormDialog({
               className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
               required
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">账户ID</label>
+            <input
+              type="text"
+              value={form.platformAccountId}
+              onChange={(e) => setForm((f) => ({ ...f, platformAccountId: e.target.value }))}
+              className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
+              placeholder="平台侧账户编号（选填）"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">关联店铺</label>
+            <select
+              value={form.storeId}
+              onChange={(e) => setForm((f) => ({ ...f, storeId: e.target.value }))}
+              className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
+            >
+              <option value="">不指定</option>
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name} ({store.platform} · {store.country})
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

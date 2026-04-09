@@ -1,12 +1,14 @@
 "use client";
 
 import type { AdAccount, AdConsumption, AdRecharge } from "@/lib/ad-agency-store";
+import type { Store } from "@/lib/store-store";
 import type { CashFlow as CashFlowStoreType } from "@/lib/cash-flow-store";
 import { getCountryByCode } from "@/lib/country-config";
 import { formatCurrency } from "@/lib/currency-utils";
 
 export type AccountsTableProps = {
   adAccounts: AdAccount[];
+  stores: Store[];
   consumptions: AdConsumption[];
   recharges: AdRecharge[];
   cashFlowList: CashFlowStoreType[];
@@ -19,6 +21,7 @@ export type AccountsTableProps = {
 
 export function AccountsTable({
   adAccounts,
+  stores,
   consumptions,
   recharges,
   cashFlowList,
@@ -55,6 +58,8 @@ export function AccountsTable({
             <thead className="bg-slate-800/60">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-slate-300">账户名称</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-300">账户ID</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-300">关联店铺</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-300">代理商</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-300">国家</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-300">币种</th>
@@ -107,6 +112,24 @@ export function AccountsTable({
                 return (
                   <tr key={account.id} className="hover:bg-slate-800/40">
                     <td className="px-4 py-3 text-slate-100 font-medium">{account.accountName}</td>
+                    <td className="px-4 py-3 text-slate-300 font-mono text-xs">
+                      {account.platformAccountId ? (
+                        account.platformAccountId
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {account.storeId || account.storeName ? (
+                        <span title={account.storeId ?? undefined}>
+                          {account.storeName ||
+                            stores.find((s) => s.id === account.storeId)?.name ||
+                            account.storeId}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-300">{account.agencyName}</td>
                     <td className="px-4 py-3 text-slate-300">
                       {account.country ? (getCountryByCode(account.country)?.name ?? account.country) : <span className="text-slate-500">-</span>}

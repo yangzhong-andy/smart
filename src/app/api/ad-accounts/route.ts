@@ -39,10 +39,12 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, agencyId: true, agencyName: true, accountName: true,
+          platformAccountId: true,
+          storeId: true, storeName: true,
           currentBalance: true, rebateReceivable: true, creditLimit: true,
           currency: true, country: true, notes: true,
           createdAt: true, updatedAt: true,
-          agency: { select: { id: true, name: true, platform: true } },
+          AdAgency: { select: { id: true, name: true, platform: true } },
         },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
@@ -51,14 +53,18 @@ export async function GET(request: NextRequest) {
       prisma.adAccount.count({ where }),
     ]);
 
-    const serialized = list.map((a) => ({
-      ...a,
-      currentBalance: Number(a.currentBalance),
-      rebateReceivable: Number(a.rebateReceivable),
-      creditLimit: Number(a.creditLimit),
-      createdAt: a.createdAt.toISOString(),
-      updatedAt: a.updatedAt.toISOString(),
-    }));
+    const serialized = list.map((a) => {
+      const { AdAgency, ...rest } = a;
+      return {
+        ...rest,
+        agency: AdAgency,
+        currentBalance: Number(a.currentBalance),
+        rebateReceivable: Number(a.rebateReceivable),
+        creditLimit: Number(a.creditLimit),
+        createdAt: a.createdAt.toISOString(),
+        updatedAt: a.updatedAt.toISOString(),
+      };
+    });
 
     const response = {
       data: serialized,
@@ -84,15 +90,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const account = await prisma.adAccount.create({
       data: {
+        id: body.id,
         agencyId: body.agencyId,
         agencyName: body.agencyName,
         accountName: body.accountName,
+        platformAccountId:
+          typeof body.platformAccountId === "string" && body.platformAccountId.trim()
+            ? body.platformAccountId.trim()
+            : null,
+        storeId:
+          typeof body.storeId === "string" && body.storeId.trim() ? body.storeId.trim() : null,
+        storeName:
+          typeof body.storeName === "string" && body.storeName.trim()
+            ? body.storeName.trim()
+            : null,
         currentBalance: body.currentBalance ?? 0,
         rebateReceivable: body.rebateReceivable ?? 0,
         creditLimit: body.creditLimit ?? 0,
         currency: body.currency ?? "USD",
         country: body.country,
         notes: body.notes,
+        updatedAt: new Date(),
       },
     });
 

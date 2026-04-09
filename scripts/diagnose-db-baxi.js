@@ -1,23 +1,23 @@
 /**
- * 系统 A 数据库连接诊断（不依赖 Prisma 连接，只做网络/配置检查）
- * 用法：node scripts/diagnose-db-client-a.js
- * 依赖：需存在 .env.client-a 且其中 DATABASE_URL 指向系统 A
+ * 巴西业务（baxi）数据库连接诊断（不依赖 Prisma 连接，只做网络/配置检查）
+ * 用法：node scripts/diagnose-db-baxi.js
+ * 依赖：需存在 .env.baxi 且其中 DATABASE_URL 指向 baxi 环境
  */
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
 const dns = require('dns').promises;
 
-function loadEnvClientA() {
-  const p = path.join(process.cwd(), '.env.client-a');
+function loadEnvBaxi() {
+  const p = path.join(process.cwd(), '.env.baxi');
   if (!fs.existsSync(p)) {
-    console.error('✗ 未找到 .env.client-a，请确认文件存在并配置 DATABASE_URL');
+    console.error('✗ 未找到 .env.baxi，请确认文件存在并配置 DATABASE_URL');
     process.exit(1);
   }
   const content = fs.readFileSync(p, 'utf8');
   const urlMatch = content.match(/DATABASE_URL\s*=\s*["']?([^#"'\s]+)/m);
   if (!urlMatch) {
-    console.error('✗ .env.client-a 中未找到有效的 DATABASE_URL');
+    console.error('✗ .env.baxi 中未找到有效的 DATABASE_URL');
     process.exit(1);
   }
   return urlMatch[1].trim();
@@ -54,9 +54,9 @@ function tcpConnect(host, port, timeoutMs = 8000) {
 }
 
 async function main() {
-  console.log('=== 系统 A 数据库连接诊断 ===\n');
+  console.log('=== 巴西业务（baxi）数据库连接诊断 ===\n');
 
-  const urlStr = loadEnvClientA();
+  const urlStr = loadEnvBaxi();
   const parsed = parseDbUrl(urlStr);
   if (!parsed) {
     console.error('✗ DATABASE_URL 格式无效');
@@ -97,14 +97,14 @@ async function main() {
     console.log('   - 当前网络无法访问该主机（公司/家庭防火墙、ISP 限制出站 5432）');
     console.log('   - 数据库服务仅允许特定 IP（需在控制台把本机 IP 加入白名单）');
     console.log('   - 主机名 db.prisma.io 为 Prisma 数据平台，多需在能访问外网或已配置 IP 白名单的环境运行');
-    console.log('   - 建议：在部署系统 A 的服务器上执行 db:migrate:client-a（该环境通常已能连库）');
+    console.log('   - 建议：在能连该库的服务器上执行 npm run db:migrate:baxi');
     process.exit(1);
   }
   console.log('');
 
   console.log('4. Prisma 连接:');
-  console.log('   请在本机执行: npx env-cmd -f .env.client-a prisma db execute --stdin < prisma/migrations/xxx/migration.sql');
-  console.log('   或到能访问该数据库的服务器上执行: npm run db:migrate:client-a');
+  console.log('   请在本机执行: npx env-cmd -f .env.baxi prisma db execute --stdin < prisma/migrations/xxx/migration.sql');
+  console.log('   或到能访问该数据库的服务器上执行: npm run db:migrate:baxi');
   console.log('');
   console.log('诊断完成。若 TCP 可连通仍报 P1001，请检查 SSL/认证或 Prisma 版本。');
 }

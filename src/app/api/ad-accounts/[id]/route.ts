@@ -12,13 +12,15 @@ export async function GET(
   try {
     const account = await prisma.adAccount.findUnique({
       where: { id: params.id },
-      include: { agency: true },
+      include: { AdAgency: true },
     });
     if (!account) {
       return NextResponse.json({ error: "未找到" }, { status: 404 });
     }
+    const { AdAgency, ...rest } = account;
     return NextResponse.json({
-      ...account,
+      ...rest,
+      agency: AdAgency,
       currentBalance: Number(account.currentBalance),
       rebateReceivable: Number(account.rebateReceivable),
       creditLimit: Number(account.creditLimit),
@@ -52,12 +54,28 @@ export async function PUT(
     const data: Record<string, unknown> = {};
     if (body.agencyName !== undefined) data.agencyName = body.agencyName;
     if (body.accountName !== undefined) data.accountName = body.accountName;
+    if (body.platformAccountId !== undefined) {
+      data.platformAccountId =
+        typeof body.platformAccountId === "string" && body.platformAccountId.trim()
+          ? body.platformAccountId.trim()
+          : null;
+    }
     if (body.currentBalance !== undefined) data.currentBalance = body.currentBalance;
     if (body.rebateReceivable !== undefined) data.rebateReceivable = body.rebateReceivable;
     if (body.creditLimit !== undefined) data.creditLimit = body.creditLimit;
     if (body.currency !== undefined) data.currency = body.currency;
     if (body.country !== undefined) data.country = body.country;
     if (body.notes !== undefined) data.notes = body.notes;
+    if (body.storeId !== undefined) {
+      data.storeId =
+        typeof body.storeId === "string" && body.storeId.trim() ? body.storeId.trim() : null;
+    }
+    if (body.storeName !== undefined) {
+      data.storeName =
+        typeof body.storeName === "string" && body.storeName.trim()
+          ? body.storeName.trim()
+          : null;
+    }
 
     const account = await prisma.adAccount.update({
       where: { id: params.id },

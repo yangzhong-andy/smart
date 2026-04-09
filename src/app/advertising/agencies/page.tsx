@@ -137,6 +137,8 @@ export default function AdAgenciesPage() {
   const [accountForm, setAccountForm] = useState({
     agencyId: "",
     accountName: "",
+    platformAccountId: "",
+    storeId: "",
     currentBalance: "",
     creditLimit: "",
     currency: "USD" as AdAccount["currency"],
@@ -979,12 +981,16 @@ export default function AdAgenciesPage() {
       toast.error("代理商不存在");
       return;
     }
+    const linkedStore = accountForm.storeId ? stores.find((s) => s.id === accountForm.storeId) : null;
 
     const newAccount: AdAccount = {
       id: crypto.randomUUID(),
       agencyId: accountForm.agencyId,
       agencyName: agency.name,
       accountName: accountForm.accountName.trim(),
+      platformAccountId: accountForm.platformAccountId.trim() || undefined,
+      storeId: linkedStore?.id,
+      storeName: linkedStore?.name,
       currentBalance,
       rebateReceivable: 0, // 初始应收返点为0
       creditLimit,
@@ -999,6 +1005,8 @@ export default function AdAgenciesPage() {
     setAccountForm({
       agencyId: "",
       accountName: "",
+      platformAccountId: "",
+      storeId: "",
       currentBalance: "",
       creditLimit: "",
       currency: "USD",
@@ -1013,6 +1021,8 @@ export default function AdAgenciesPage() {
     setAccountForm({
       agencyId: account.agencyId,
       accountName: account.accountName,
+      platformAccountId: account.platformAccountId || "",
+      storeId: account.storeId || "",
       currentBalance: String(account.currentBalance),
       creditLimit: String(account.creditLimit),
       currency: account.currency,
@@ -1045,6 +1055,10 @@ export default function AdAgenciesPage() {
       toast.error("代理商不存在");
       return;
     }
+    const clearStore = !accountForm.storeId.trim();
+    const linkedStore = accountForm.storeId.trim()
+      ? stores.find((s) => s.id === accountForm.storeId) ?? null
+      : null;
 
     const updatedAccounts = adAccounts.map((a) =>
       a.id === editAccount.id
@@ -1053,6 +1067,9 @@ export default function AdAgenciesPage() {
             agencyId: accountForm.agencyId,
             agencyName: agency.name,
             accountName: accountForm.accountName.trim(),
+            platformAccountId: accountForm.platformAccountId.trim(),
+            storeId: clearStore ? "" : linkedStore?.id ?? "",
+            storeName: clearStore ? "" : linkedStore?.name ?? "",
             currentBalance,
             rebateReceivable: a.rebateReceivable || 0, // 保留原有应收返点
             creditLimit,
@@ -1076,6 +1093,8 @@ export default function AdAgenciesPage() {
     setAccountForm({
       agencyId: "",
       accountName: "",
+      platformAccountId: "",
+      storeId: "",
       currentBalance: "",
       creditLimit: "",
       currency: "USD",
@@ -2519,6 +2538,7 @@ export default function AdAgenciesPage() {
       {activeTab === "accounts" && (
         <AccountsTable
           adAccounts={adAccounts}
+          stores={stores}
           consumptions={consumptions}
           recharges={recharges}
           cashFlowList={cashFlowList}
@@ -2527,6 +2547,8 @@ export default function AdAgenciesPage() {
             setAccountForm({
               agencyId: "",
               accountName: "",
+              platformAccountId: "",
+              storeId: "",
               currentBalance: "",
               creditLimit: "",
               currency: "USD",
@@ -2636,6 +2658,8 @@ export default function AdAgenciesPage() {
           setAccountForm({
             agencyId: "",
             accountName: "",
+            platformAccountId: "",
+            storeId: "",
             currentBalance: "",
             creditLimit: "",
             currency: "USD",
@@ -2647,6 +2671,7 @@ export default function AdAgenciesPage() {
         form={accountForm}
         setForm={setAccountForm}
         agencies={agencies}
+        stores={stores}
         onSubmit={editAccount ? handleUpdateAccount : handleCreateAccount}
       />
 

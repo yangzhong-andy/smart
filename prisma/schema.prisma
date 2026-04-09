@@ -8,1793 +8,48 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Platform {
-  TIKTOK
-  AMAZON
-  INSTAGRAM
-  YOUTUBE
-  OTHER
-}
-
-// 旧的部门枚举（保留用于向后兼容，Employee 和 CommissionRule 仍使用）
-enum DepartmentEnum {
-  FINANCE
-  PROCUREMENT
-  LOGISTICS
-  BD
-  OPERATIONS
-  EDITOR
-}
-
-enum EmploymentStatus {
-  ACTIVE
-  INACTIVE
-  PROBATION
-}
-
-enum CommissionRuleType {
-  FIXED_AMOUNT
-  PERCENTAGE
-  TIERED
-  CONDITIONAL
-  FORMULA
-}
-
-enum CommissionPeriod {
-  MONTHLY
-  QUARTERLY
-  YEARLY
-  PROJECT
-}
-
-enum InventoryMovementType {
-  FACTORY_DONE
-  FACTORY_SHIPMENT
-  DOMESTIC_INBOUND
-  DOMESTIC_OUTBOUND
-  OCEAN_SHIPMENT
-  OCEAN_ARRIVAL
-  TRANSFER
-  STOCKTAKE
-  ADJUSTMENT
-  SAMPLE_OUTBOUND
-}
-
-enum InventoryLocation {
-  FACTORY
-  DOMESTIC
-  TRANSIT
-  OVERSEAS
-}
-
-// 仓库类型：国内中转 / 海外分发
-enum WarehouseType {
-  DOMESTIC
-  OVERSEAS
-}
-
-// 库存流水类型：入库、出库、调拨
-enum InventoryLogType {
-  IN
-  OUT
-  TRANSFER
-}
-
-// 库存流水状态：待入库、已入库、在途中、已到达
-enum InventoryLogStatus {
-  PENDING_INBOUND  // 待入库
-  INBOUNDED       // 已入库
-  IN_TRANSIT      // 在途中（发往国外途中）
-  ARRIVED         // 已到达
-}
-
-// 库存流水原因（入库/出库原因）
-enum StockLogReason {
-  // 入库原因
-  PURCHASE_INBOUND // 采购入库
-  RETURN_INBOUND // 退货入库
-  TRANSFER_INBOUND // 调拨入库
-  STOCKTAKE_ADJUSTMENT // 盘点调整（盘盈）
-  PRODUCTION_COMPLETE // 生产完工入库
-  SAMPLE_RETURN // 样品退回
-
-  // 出库原因
-  SALE_OUTBOUND // 销售出库
-  TRANSFER_OUTBOUND // 调拨出库
-  SAMPLE_OUTBOUND // 样品出库
-  DAMAGE_WRITE_OFF // 损坏报废
-  STOCKTAKE_LOSS // 盘点调整（盘亏）
-  RETURN_SUPPLIER // 退供应商
-}
-
-enum LogisticsStatus {
-  PENDING
-  IN_TRANSIT
-  DELIVERED
-  EXCEPTION
-}
-
-enum ShippingMethod {
-  SEA      // 海运
-  AIR      // 空运
-  EXPRESS  // 快递
-}
-
-// 柜子状态：用于按柜跟踪在途货物
-enum ContainerStatus {
-  PLANNED       // 已计划，待装柜
-  LOADING       // 装柜中 / 已装柜待开船
-  IN_TRANSIT    // 在途（已开船/飞行中）
-  ARRIVED_PORT  // 已到港
-  CUSTOMS_CLEAR // 清关完成
-  IN_WAREHOUSE  // 已入目的仓/海外仓
-  CLOSED        // 已完结
-}
-
-enum PurchaseOrderStatus {
-  PENDING_RISK
-  RISK_APPROVED
-  RISK_REJECTED
-  PENDING_APPROVAL
-  APPROVED
-  REJECTED
-  PUSHED_TO_PROCUREMENT
-  CONTRACT_CREATED
-  CANCELLED
-}
-
-enum PurchaseContractStatus {
-  PENDING_APPROVAL  // 待审批（新建后需主管审批）
-  PENDING_SHIPMENT
-  PARTIAL_SHIPMENT
-  SHIPPED
-  SETTLED
-  CANCELLED
-}
-
-enum DeliveryOrderStatus {
-  PENDING
-  SHIPPED
-  IN_TRANSIT
-  RECEIVED
-  CANCELLED
-}
-
-enum VideoTaskStatus {
-  TODO
-  IN_PROGRESS
-  REVIEW
-  DONE
-  CANCELLED
-}
-
-enum SupplierLevel {
-  S
-  A
-  B
-  C
-}
-
-enum SettleBase {
-  SHIPMENT // 发货
-  INBOUND // 入库
-}
-
-enum InvoiceRequirement {
-  SPECIAL_INVOICE // 专票
-  GENERAL_INVOICE // 普票
-  NO_INVOICE // 不开票
-}
-
-enum ProductStatus {
-  ACTIVE // 在售
-  INACTIVE // 下架
-}
-
-enum AccountType {
-  CORPORATE // 对公
-  PERSONAL // 对私
-  PLATFORM // 平台
-}
-
-enum AccountCategory {
-  PRIMARY // 主账户
-  VIRTUAL // 虚拟子账号
-}
-
-enum CashFlowType {
-  INCOME // 收入
-  EXPENSE // 支出
-  TRANSFER // 划拨
-}
-
-enum CashFlowStatus {
-  CONFIRMED // 已确认
-  PENDING // 待核对
-}
-
-enum RiskControlStatus {
-  PENDING // 待评估
-  PASSED // 通过
-  REJECTED // 拒绝
-}
-
-enum ApprovalStatus {
-  PENDING // 待审批
-  PASSED // 通过
-  REJECTED // 拒绝
-}
-
-enum Urgency {
-  NORMAL // 普通
-  URGENT // 紧急
-  CRITICAL // 加急
-}
-
-model Supplier {
-  id                 String              @id @default(uuid())
-  name               String
-  contact            String
-  phone              String
-  depositRate        Decimal             @db.Decimal(5, 2)
-  tailPeriodDays     Int
-  settleBase         SettleBase
-  level              SupplierLevel?
-  category           String?
-  address            String?
-  bankAccount        String?
-  bankName           String?
-  taxId              String?
-  invoiceRequirement InvoiceRequirement?
-  invoicePoint       Decimal?            @db.Decimal(5, 2)
-  defaultLeadTime    Int?
-  moq                Int?
-  factoryImages      Json?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-
-  contracts        PurchaseContract[] @relation("SupplierToContract")
-  productSuppliers ProductSupplier[]
-  defaultProducts  Product[]          @relation("DefaultSupplier") // 作为默认供应商的产品
-}
-
-// Product (SPU) - 产品原型（父表）：通用材质、规格描述，一单多变体合同用
-model Product {
-  id          String        @id @default(uuid())
-  spuCode     String?       // SPU 码（产品层级编码，用于区分不同 SPU）
-  name        String // 产品名称（如：马扎05）
-  category    String? // 分类
-  brand       String? // 品牌
-  description String? // 产品描述
-  mainImage    String? // 主图
-  galleryImages Json? // 产品多图（JSON 数组，用于详情/轮播）
-  material    String? // 材质（合同展示用）
-  specDescription String? // 规格描述（合同展示用，参考附件）
-  status      ProductStatus @default(ACTIVE) // 产品状态
-  suppliers   Json? // 供应商信息（JSON）
-
-  // 报关信息
-  customsNameCN String? // 报关名（中文）
-  customsNameEN String? // 报关名（英文）
-
-  // 默认供应商（可选，也可以通过 ProductSupplier.isPrimary 获取）
-  defaultSupplierId String? // 默认供应商 ID
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // 子表：多个 Sku（颜色、单价、编码）
-  variants ProductVariant[]
-
-  // 关联关系
-  videoTasks       VideoTask[]
-  productSuppliers ProductSupplier[]
-
-  // 默认供应商关联（可选）
-  defaultSupplier Supplier? @relation("DefaultSupplier", fields: [defaultSupplierId], references: [id], onDelete: SetNull)
-
-  @@index([defaultSupplierId])
-}
-
-// ProductVariant (Sku 子表) - 颜色变体：颜色、单价、编码
-model ProductVariant {
-  id            String   @id @default(uuid())
-  productId     String // 关联的 Product (SPU) ID
-  skuId         String   @unique // SKU 编码（唯一标识）
-  color         String? // 颜色
-  size          String? // 尺寸
-  weightKg      Decimal? @db.Decimal(10, 3) // 重量（千克）
-  barcode       String? // 条形码
-  costPrice     Decimal? @db.Decimal(18, 2) // 成本价
-  stockQuantity Int      @default(0) // 库存数量（总库存）
-
-  // 财务信息
-  currency  String   @default("CNY") // 货币
-  targetRoi Decimal? @db.Decimal(5, 2) // 目标 ROI
-
-  // 物理尺寸（用于运费计算）
-  lengthCm          Decimal? @db.Decimal(10, 2) // 长度（cm）
-  widthCm           Decimal? @db.Decimal(10, 2) // 宽度（cm）
-  heightCm          Decimal? @db.Decimal(10, 2) // 高度（cm）
-  volumetricDivisor Int? // 体积重换算系数
-
-  // 库存分布（轻量化实现）
-  atFactory  Int @default(0) // 工厂现货数量
-  atDomestic Int @default(0) // 国内待发数量
-  inTransit  Int @default(0) // 海运中数量
-
-  // 平台 SKU 映射
-  platformSkuMapping Json? // 平台 SKU 映射（JSON）
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // 关联关系
-  product        Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
-  inventories    InventoryStock[]
-  movements      InventoryMovement[]
-  stocks         Stock[] // 新库存表关联
-  stockLogs      StockLog[] // 新库存流水表关联
-  contractItems  PurchaseContractItem[]
-  pendingInbound PendingInbound[] // 待入库单
-  pendingInboundItems PendingInboundItem[] // 入库单明细
-  outboundOrders OutboundOrder[] // 出库单
-  outboundOrderItems OutboundOrderItem[] // 出库单明细
-  outboundBatchItems OutboundBatchItem[] // 出库批次明细
-  inventoryLogs  InventoryLog[] // 库存流水（国内中转-海外分发）
-  ownershipLedgers InventoryOwnershipLedger[] // 货权台账
-
-  @@index([productId])
-  @@index([skuId])
-}
-
-model Store {
-  id          String   @id @default(uuid())
-  name        String
-  platform    Platform
-  country     String
-  currency    String
-  accountId   String
-  accountName String
-  vatNumber   String?
-  taxId       String?
-  // 海外公司关联
-  overseasCompanyId   String?
-  overseasCompanyName String?
-  createdAt   DateTime @default(now())
-
-  inventoryStocks InventoryStock[]
-  logistics       LogisticsTracking[]
-  bankAccounts    BankAccount[] // 关联的银行账户
-  purchaseOrders  PurchaseOrder[] // 关联的采购订单
-}
-
-model Influencer {
-  id                       String    @id @default(uuid())
-  accountName              String
-  platform                 Platform
-  accountUrl               String?
-  followerCount            Int
-  contactInfo              String
-  category                 String
-  cooperationStatus        String
-  sampleStatus             String
-  sampleOrderNumber        String?
-  sampleTrackingNumber     String?
-  sampleProductSku         String?
-  sampleProductId          String?
-  sampleSentAt             DateTime?
-  sampleReceivedAt         DateTime?
-  historicalEngagementRate Decimal?  @db.Decimal(5, 2)
-  estimatedOrders          Int?
-  actualOrders             Int?
-  notes                    String?
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
-
-  videoTasks VideoTask[]
-}
-
-// 部门模型
-model Department {
-  id          String   @id @default(uuid())
-  name        String   @unique // 部门名称（唯一）
-  code        String?  @unique // 部门编码（唯一，可选）
-  description String? // 部门描述
-  isActive    Boolean  @default(true) // 是否启用
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // 关联关系
-  users           User[] // 该部门的用户
-  employees       Employee[] // 该部门的员工
-  commissionRules CommissionRule[] // 该部门的提成规则
-  purchaseOrders  PurchaseOrder[] // 流转到该部门的订单
-
-  @@index([code])
-  @@index([name])
-}
-
-// 用户模型
-model User {
-  id           String    @id @default(uuid())
-  email        String    @unique // 邮箱（唯一）
-  password     String // 密码（已哈希）
-  name         String // 姓名
-  role         String    @default("USER") // 角色：USER, ADMIN, SUPER_ADMIN
-  departmentId String? // 关联的部门ID
-  isActive     Boolean   @default(true) // 是否启用
-  lastLoginAt  DateTime? // 最后登录时间
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  // 关联关系
-  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-
-  @@index([email])
-  @@index([departmentId])
-}
-
-model Employee {
-  id                     String           @id @default(uuid())
-  name                   String
-  employeeNumber         String?
-  department             DepartmentEnum // 保留旧枚举（向后兼容）
-  departmentId           String? // 关联到新的 Department 模型
-  position               String
-  joinDate               DateTime
-  phone                  String?
-  email                  String?
-  status                 EmploymentStatus @default(ACTIVE)
-  responsibleInfluencers String[]
-  responsibleSuppliers   String[]
-  responsibleStores      String[]
-  notes                  String?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
-
-  // 关联关系
-  departmentRelation Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  commissionRecords  CommissionRecord[]
-  videoTasks         VideoTask[]        @relation("Assignee")
-
-  @@index([departmentId])
-}
-
-model CommissionRule {
-  id           String             @id @default(uuid())
-  name         String
-  department   DepartmentEnum // 保留旧枚举（向后兼容）
-  departmentId String? // 关联到新的 Department 模型
-  position     String?
-  type         CommissionRuleType
-  config       Json
-  dataSource   Json
-  period       CommissionPeriod
-  startDate    DateTime?
-  endDate      DateTime?
-  enabled      Boolean            @default(true)
-  description  String?
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-
-  // 关联关系
-  departmentRelation Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  records            CommissionRecord[]
-
-  @@index([departmentId])
-}
-
-model CommissionRecord {
-  id          String   @id @default(uuid())
-  employeeId  String
-  ruleId      String
-  periodLabel String
-  amount      Decimal  @db.Decimal(18, 2)
-  currency    String   @default("CNY")
-  details     Json?
-  generatedAt DateTime @default(now())
-
-  employee Employee       @relation(fields: [employeeId], references: [id])
-  rule     CommissionRule @relation(fields: [ruleId], references: [id])
-}
-
-// 仓库表（Warehouse）
-model Warehouse {
-  id        String            @id @default(uuid())
-  code      String            @unique // 仓库编码（唯一标识）
-  name      String // 仓库名称
-  address   String? // 仓库地址
-  contact   String? // 联系人
-  phone     String? // 联系电话
-  manager   String? // 仓库管理员
-  location  InventoryLocation // 仓库位置类型（工厂/国内/在途/海外）
-  type      WarehouseType     @default(DOMESTIC) // 国内仓(DOMESTIC) / 海外仓(OVERSEAS)
-  isActive  Boolean           @default(true) // 是否启用
-  capacity  Int? // 仓库容量（可选）
-  notes     String? // 备注
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-
-  // 关联关系
-  stocks               Stock[] // 该仓库的库存记录
-  stockLogs            StockLog[] // 该仓库的库存流水
-  inboundBatches       InboundBatch[] // 入库批次
-  outboundOrders       OutboundOrder[] // 出库单
-  outboundBatches      OutboundBatch[] // 出库批次
-  inventoryLogs        InventoryLog[]  @relation("InventoryLogWarehouse") // 作为主仓库的流水
-  inventoryLogsFrom    InventoryLog[]  @relation("InventoryLogFrom") // 调拨发出
-  inventoryLogsTo      InventoryLog[]  @relation("InventoryLogTo") // 调拨接收
-
-  @@index([code])
-  @@index([location])
-  @@index([type])
-}
-
-// 库存表（Stock）- 记录 SKU 在每个仓库的数量
-model Stock {
-  id           String   @id @default(uuid())
-  variantId    String // 关联到 ProductVariant (SKU)
-  warehouseId  String // 关联到 Warehouse
-  qty          Int      @default(0) // 库存数量
-  reservedQty  Int      @default(0) // 预留数量（已分配但未出库）
-  availableQty Int      @default(0) // 可用数量（qty - reservedQty，可计算字段）
-  updatedAt    DateTime @updatedAt
-  createdAt    DateTime @default(now())
-
-  // 关联关系
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-
-  // 唯一约束：同一 SKU 在同一仓库只能有一条记录
-  @@unique([variantId, warehouseId])
-  @@index([variantId])
-  @@index([warehouseId])
-}
-
-// 保留原有的 InventoryStock 模型以保持向后兼容（可选，如果不需要可以删除）
-model InventoryStock {
-  id        String            @id @default(uuid())
-  variantId String // 关联到 ProductVariant (SKU)
-  storeId   String?
-  location  InventoryLocation
-  qty       Int               @default(0)
-  updatedAt DateTime          @updatedAt
-  createdAt DateTime          @default(now())
-
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  store   Store?         @relation(fields: [storeId], references: [id])
-
-  @@unique([variantId, location, storeId])
-  @@index([variantId])
-}
-
-// 库存流水表（StockLog）- 记录入库出库原因
-model StockLog {
-  id                 String                @id @default(uuid())
-  variantId          String // 关联到 ProductVariant (SKU)
-  warehouseId        String // 关联到 Warehouse
-  reason             StockLogReason // 入库/出库原因
-  movementType       InventoryMovementType // 移动类型（保留原有枚举）
-  qty                Int // 数量（正数表示入库，负数表示出库）
-  qtyBefore          Int // 变动前数量
-  qtyAfter           Int // 变动后数量
-  unitCost           Decimal?              @db.Decimal(18, 2) // 单价
-  totalCost          Decimal?              @db.Decimal(18, 2) // 总成本
-  currency           String? // 货币
-  operator           String? // 操作人
-  operationDate      DateTime // 操作日期
-  relatedOrderId     String? // 关联订单ID
-  relatedOrderType   String? // 关联订单类型
-  relatedOrderNumber String? // 关联订单号
-  notes              String? // 备注
-  createdAt          DateTime              @default(now())
-
-  // 关联关系
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-
-  @@index([variantId])
-  @@index([warehouseId])
-  @@index([reason])
-  @@index([operationDate])
-}
-
-// 库存流水（国内中转-海外分发）：入库/出库/调拨，状态含在途、已到达
-model InventoryLog {
-  id               String             @id @default(uuid())
-  type             InventoryLogType    // IN-入库 / OUT-出库 / TRANSFER-调拨
-  status           InventoryLogStatus  // 待入库、已入库、在途中、已到达
-  variantId        String              // SKU (ProductVariant)
-  qty              Int                 // 数量
-  warehouseId      String?             // 入库/出库时的仓库（单仓操作）
-  fromWarehouseId  String?             // 调拨：发出仓库
-  toWarehouseId    String?             // 调拨：接收仓库
-  deliveryOrderId  String?             // 国内仓入库时关联拿货单
-  relatedOrderNo   String?             // 关联单号（冗余显示）
-  notes            String?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
-
-  variant        ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  warehouse      Warehouse?     @relation("InventoryLogWarehouse", fields: [warehouseId], references: [id], onDelete: SetNull)
-  fromWarehouse  Warehouse?     @relation("InventoryLogFrom", fields: [fromWarehouseId], references: [id], onDelete: SetNull)
-  toWarehouse    Warehouse?     @relation("InventoryLogTo", fields: [toWarehouseId], references: [id], onDelete: SetNull)
-  deliveryOrder  DeliveryOrder? @relation(fields: [deliveryOrderId], references: [id], onDelete: SetNull)
-
-  @@index([variantId])
-  @@index([warehouseId])
-  @@index([deliveryOrderId])
-  @@index([type])
-  @@index([status])
-}
-
-// 保留原有的 InventoryMovement 模型以保持向后兼容
-model InventoryMovement {
-  id                 String                @id @default(uuid())
-  variantId          String // 关联到 ProductVariant (SKU)
-  location           InventoryLocation
-  movementType       InventoryMovementType
-  qty                Int
-  qtyBefore          Int
-  qtyAfter           Int
-  unitCost           Decimal?              @db.Decimal(18, 2)
-  totalCost          Decimal?              @db.Decimal(18, 2)
-  currency           String?
-  relatedOrderId     String?
-  relatedOrderType   String?
-  relatedOrderNumber String?
-  operator           String?
-  operationDate      DateTime
-  notes              String?
-  createdAt          DateTime              @default(now())
-
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-
-  @@index([variantId])
-}
-
-model LogisticsChannel {
-  id          String   @id @default(uuid())
-  name        String
-  channelCode String
-  contact     String
-  phone       String
-  queryUrl    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  trackings   LogisticsTracking[]
-  logisticsCosts LogisticsCost[]
-}
-
-model LogisticsTracking {
-  id                  String          @id @default(uuid())
-  internalOrderNumber String
-  trackingNumber      String          @unique
-  channelId           String
-  storeId             String?
-  currentStatus       LogisticsStatus
-  shippedDate         DateTime
-  lastUpdatedAt       DateTime
-  transportDays       Int?
-  orderId             String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-
-  channel LogisticsChannel @relation(fields: [channelId], references: [id])
-  store   Store?           @relation(fields: [storeId], references: [id])
-  events  TrackingEvent[]
-}
-
-model TrackingEvent {
-  id          String          @id @default(uuid())
-  trackingId  String
-  timestamp   DateTime
-  location    String?
-  description String
-  status      LogisticsStatus
-
-  tracking LogisticsTracking @relation(fields: [trackingId], references: [id])
-}
-
-model PurchaseContract {
-  id                  String                 @id @default(uuid())
-  contractNumber      String                 @unique
-  supplierId          String?
-  supplierName        String
-  supplier            Supplier?              @relation("SupplierToContract", fields: [supplierId], references: [id], onDelete: SetNull)
-  sku                 String
-  skuId               String?
-  unitPrice           Decimal                @db.Decimal(18, 2)
-  totalQty            Int
-  pickedQty           Int                    @default(0)
-  finishedQty         Int                    @default(0)
-  totalAmount         Decimal                @db.Decimal(18, 2)
-  depositRate         Decimal                @db.Decimal(5, 2)
-  depositAmount       Decimal                @db.Decimal(18, 2)
-  depositPaid         Decimal                @default(0) @db.Decimal(18, 2)
-  tailPeriodDays      Int
-  deliveryDate        DateTime?
-  status              PurchaseContractStatus
-  contractVoucher     String?
-  totalPaid           Decimal                @default(0) @db.Decimal(18, 2)
-  totalOwed           Decimal                @default(0) @db.Decimal(18, 2)
-  relatedOrderIds     String[]
-  relatedOrderNumbers String[]
-  approvedBy          String?   // 审批人（主管）
-  approvedAt          DateTime? // 审批时间
-  approvalNotes       String?   // 审批备注
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-
-  deliveryOrders      DeliveryOrder[]
-  orders              PurchaseOrder[] // 通过 contractId 关联的采购订单
-  items               PurchaseContractItem[] // 合同明细（支持多 SKU）
-  generatedContracts  GeneratedContract[]
-}
-
-model DeliveryOrder {
-  id                     String              @id @default(uuid())
-  deliveryNumber         String              @unique
-  contractId             String
-  contractNumber         String
-  qty                    Int
-  /// 按合同明细 itemId 存储的本次拿货数量 { "itemId": qty }，用于列表展示真实拿货数量
-  itemQtys               Json?
-  domesticTrackingNumber String?
-  shippedDate            DateTime?
-  status                 DeliveryOrderStatus
-  tailAmount             Decimal             @db.Decimal(18, 2)
-  tailPaid               Decimal             @default(0) @db.Decimal(18, 2)
-  tailDueDate            DateTime?
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
-
-  contract       PurchaseContract @relation(fields: [contractId], references: [id])
-  pendingInbound PendingInbound? // 关联的待入库单（反向关联）
-  inventoryLogs  InventoryLog[] // 关联的库存流水（国内仓入库时关联）
-}
-
-// 待入库单
-model PendingInbound {
-  id                     String    @id @default(uuid())
-  inboundNumber          String    @unique // 入库单号
-  // 出库单创建的预报可能没有对应的拿货单，改为可选
-  deliveryOrderId        String?   @unique // 关联的拿货单ID（可选，出库时创建预报可能没有）
-  deliveryNumber         String?   // 拿货单号（可选）
-  contractId             String?   // 关联的合同ID（可选）
-  contractNumber         String?   // 合同编号（可选）
-  sku                    String // SKU
-  variantId              String? // 关联的产品SKU ID
-  qty                    Int // 待入库数量
-  receivedQty            Int       @default(0) // 已入库数量
-  domesticTrackingNumber String? // 国内物流单号
-  shippedDate            DateTime? // 发货日期
-  status                 String    @default("待入库") // 状态：待入库、部分入库、已入库、已取消
-  // 出库时创建的海外入库预报：关联的出库单ID（仅用于关联，不需要外键约束）
-  fromOutboundId         String?   // 关联的出库单ID（出库时创建预报使用）
-  fromOutboundNumber     String?   // 关联的出库单号（冗余）
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-
-  // 关联关系
-  deliveryOrder DeliveryOrder?  @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
-  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
-  batches       InboundBatch[] // 入库批次
-  outboundOrder OutboundOrder? // 入库完成后自动创建的出库单（1:1）
-  items         PendingInboundItem[] // 多SKU入库明细
-
-  @@index([deliveryOrderId])
-  @@index([fromOutboundId])
-  @@index([variantId])
-  @@index([status])
-}
-
-// 入库单明细（支持多SKU）
-model PendingInboundItem {
-  id                String   @id @default(uuid())
-  pendingInboundId  String   // 关联的待入库单ID
-  variantId         String?  // 关联的产品SKU ID
-  sku               String   // SKU编码
-  skuName           String?  // SKU名称（产品名称）
-  spec              String?  // 规格/颜色
-  qty               Int      // 待入库数量
-  receivedQty       Int      @default(0) // 已入库数量
-  unitPrice         Decimal? @db.Decimal(18, 2) // 单价
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // 关联关系
-  pendingInbound PendingInbound   @relation(fields: [pendingInboundId], references: [id], onDelete: Cascade)
-  variant       ProductVariant?   @relation(fields: [variantId], references: [id], onDelete: SetNull)
-
-  @@index([pendingInboundId])
-  @@index([variantId])
-}
-
-// 入库批次
-model InboundBatch {
-  id               String   @id @default(uuid())
-  pendingInboundId String // 关联的待入库单ID
-  batchNumber      String // 批次号
-  warehouseId      String // 入库仓库ID
-  warehouseName    String // 入库仓库名称（冗余字段）
-  qty              Int // 本次入库数量
-  receivedDate     DateTime // 入库日期
-  notes            String? // 备注
-  createdAt        DateTime @default(now())
-
-  // 关联关系
-  pendingInbound PendingInbound @relation(fields: [pendingInboundId], references: [id], onDelete: Cascade)
-  warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-
-  @@index([pendingInboundId])
-  @@index([warehouseId])
-}
-
-// 出库单
-model OutboundOrder {
-  id                String   @id @default(uuid())
-  outboundNumber    String   @unique // 出库单号
-  // 单SKU字段（兼容旧数据）
-  variantId         String? // SKU ID
-  sku               String? // SKU名称（冗余字段）
-  qty               Int? // 出库数量
-  shippedQty        Int      @default(0) // 已出库数量
-  warehouseId       String // 出库仓库ID
-  warehouseName     String // 出库仓库名称（冗余字段）
-  destination       String? // 目的地
-  status            String   @default("待出库") // 状态：待出库、部分出库、已出库、已取消
-  reason            String? // 出库原因
-  pendingInboundId  String?  @unique // 来源待入库单（入库完成后自动创建时填写，防重复）
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // 关联关系
-  variant        ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  pendingInbound PendingInbound? @relation(fields: [pendingInboundId], references: [id], onDelete: SetNull)
-  batches             OutboundBatch[] // 出库批次
-  items               OutboundOrderItem[] // 多SKU明细
-  containerPreRecords ContainerPreRecord[]
-
-  @@index([variantId])
-  @@index([warehouseId])
-}
-
-// 出库单明细（支持多SKU）
-model OutboundOrderItem {
-  id                String   @id @default(uuid())
-  outboundOrderId   String   // 出库单ID
-  variantId         String?  // 产品SKU ID
-  sku               String   // SKU名称
-  skuName           String?  // SKU别名（产品名称）
-  spec              String?  // 规格/颜色
-  qty               Int      // 出库数量
-  shippedQty        Int      @default(0) // 已出库数量
-  unitPrice         Decimal? @db.Decimal(18, 2) // 单价
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  // 关联关系
-  outboundOrder       OutboundOrder       @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
-  variant             ProductVariant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
-  outboundBatchItems  OutboundBatchItem[]
-
-  @@index([outboundOrderId])
-  @@index([variantId])
-}
-
-// 出库批次 SKU 明细（与出库操作时的分摊一致，用于面板展示与预录单）
-model OutboundBatchItem {
-  id                  String   @id @default(uuid())
-  outboundBatchId     String
-  outboundOrderItemId String?
-  variantId           String?
-  sku                 String
-  skuName             String?
-  spec                String?
-  qty                 Int
-  createdAt           DateTime @default(now())
-
-  outboundBatch     OutboundBatch      @relation(fields: [outboundBatchId], references: [id], onDelete: Cascade)
-  outboundOrderItem OutboundOrderItem? @relation(fields: [outboundOrderItemId], references: [id], onDelete: SetNull)
-  variant           ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
-
-  @@index([outboundBatchId])
-  @@index([variantId])
-}
-
-// 柜子：用于按柜管理在途货物、海运信息
-model Container {
-  id              String           @id @default(uuid())
-  containerNo     String           @unique               // 柜号，如 MSKU1234567
-  containerType   String                                   // 柜型：20GP / 40GP / 40HQ / LCL 等
-  sealNo          String?                                  // 封号
-
-  shippingMethod  ShippingMethod                          // 运输方式（海运/空运/快递）
-  shipCompany     String?                                  // 船公司/承运人
-  vesselName      String?                                  // 船名/航班号
-  voyageNo        String?                                  // 航次
-
-  originPort      String?                                  // 起运港
-  destinationPort String?                                  // 目的港
-  loadingDate     DateTime?                                // 装柜时间（工厂实际装货时间）
-  etd             DateTime?                                // 预计开船 ETD
-  eta             DateTime?                                // 预计到港 ETA
-  actualDeparture DateTime?                                // 实际开船时间
-  actualArrival   DateTime?                                // 实际到港时间
-
-  status          ContainerStatus   @default(PLANNED)      // 柜状态
-
-  // 汇总信息（可选，用于后续成本/在途分析）
-  totalVolumeCBM  Decimal?         @db.Decimal(18, 3)      // 柜内总体积
-  totalWeightKG   Decimal?         @db.Decimal(18, 3)      // 柜内总重量
-
-  // 目的国家
-  destinationCountry String?
-
-  // 出口模式：EXW/FOB/CIF/DAP/DDP
-  exportMode String?
-  // 服务模式：双清包税/双清不包税/FOB/其他
-  serviceMode String?
-
-  // 主体
-  exporterId String? // 国内出口公司
-  exporterName String?
-  overseasCompanyId String? // 海外进口公司
-  overseasCompanyName String?
-
-  // 申报
-  declaredValue Decimal? @db.Decimal(18, 2) // 申报金额
-  declaredCurrency String? // 申报币种
-
-  // 关税
-  dutyAmount Decimal? @db.Decimal(18, 2) // 关税金额
-  dutyPayer String? // 付款主体：国内/海外
-  dutyCurrency String? // 付款币种
-  dutyPaidAmount Decimal? @db.Decimal(18, 2) // 已付金额
-
-  // 回款
-  returnAmount Decimal? @db.Decimal(18, 2) // 回款金额
-  returnDate DateTime? // 回款日期
-  returnCurrency String? // 回款币种
-
-  // 仓库
-  warehouseId String? // 目的仓库（海外仓）
-  warehouseName String?
-
-  // 销售
-  platform String? // 销售平台：TikTok/Amazon/Instagram/YouTube/其他
-  storeId String? // 店铺
-  storeName String?
-
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  // 关联关系
-  outboundBatches OutboundBatch[]
-}
-
-// 出库批次
-model OutboundBatch {
-  id                  String         @id @default(uuid())
-  outboundOrderId     String // 关联的出库单ID
-  batchNumber         String // 批次号
-  warehouseId         String // 出库仓库ID
-  warehouseName       String // 出库仓库名称（冗余字段）
-  qty                 Int // 本次出库数量
-  shippedDate         DateTime // 出库日期
-  destination         String? // 目的地
-  trackingNumber      String? // 物流单号
-
-  // 运输信息
-  shippingMethod      ShippingMethod? // 运输方式（海运/空运/快递）
-  vesselName          String? // 船名/航班号
-  vesselVoyage        String? // 航次
-  portOfLoading       String? // 装货港
-  portOfDischarge     String? // 卸货港
-  eta                 DateTime? // 预计到达时间
-  actualDepartureDate DateTime? // 实际开船/起飞日期
-  actualArrivalDate   DateTime? // 实际到达时间
-  status              String      @default("待发货") // 状态：待发货/已发货/运输中/已清关/已到达/已装柜
-
-  // 物流渠道
-  logisticsChannelId   String? // 物流渠道ID
-  logisticsChannelName String? // 物流渠道名称
-
-  // 柜子信息：一个批次可选择所属柜子
-  containerId         String?
-
-  // 归属追踪：发运去向（国家/平台/店铺）和货权主体
-  destinationCountry  String? // 目的国家（如 BR/US/DE）
-  destinationPlatform String? // 目的平台（如 TikTok/Amazon/Shopee）
-  destinationStoreId  String? // 目的店铺ID
-  destinationStoreName String? // 目的店铺名称（冗余）
-  ownerType           String? // 货权主体类型：STORE/TEAM/COMPANY/AGENT/WAREHOUSE
-  ownerId             String? // 货权主体ID
-  ownerName           String? // 货权主体名称（冗余）
-  sourceBatchNumber   String? // 来源批次号（用于串联国内入库批次）
-
-  // 物流追踪（整合在批次上，不再使用独立 LogisticsTracking）
-  currentLocation     String? // 当前位置
-  lastEvent           String? // 最新物流动态
-  lastEventTime       DateTime? // 最新动态时间
-  arrivalConfirmedAt  DateTime? // 确认到达时间（确认后海外仓加库存）
-
-  notes               String? // 备注
-  createdAt           DateTime @default(now())
-
-  // 关联关系
-  outboundOrder       OutboundOrder        @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
-  warehouse           Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  logisticsCosts      LogisticsCost[]
-  container           Container?         @relation(fields: [containerId], references: [id], onDelete: SetNull)
-  outboundBatchItems  OutboundBatchItem[]
-  containerPreRecords ContainerPreRecord[]
-
-  @@index([outboundOrderId])
-  @@index([warehouseId])
-  @@index([containerId])
-  @@index([destinationCountry])
-  @@index([destinationPlatform])
-  @@index([destinationStoreId])
-  @@index([ownerId])
-}
-
-// 库存货权台账：记录货在链路中的归属变化（谁拿走、去哪国、去哪个平台）
-model InventoryOwnershipLedger {
-  id                   String   @id @default(uuid())
-  variantId            String
-  skuId                String?
-  productName          String?
-  qty                  Int
-  unit                 String?  @default("pcs")
-
-  bizType              String   // SHIP_OUT / ARRIVE_OVERSEAS / ALLOCATE_TO_STORE / PLATFORM_SALE / ADJUST
-  bizNo                String?  // 业务单号（出库批次号/订单号）
-  relatedOrderId       String?
-  relatedOrderType     String?
-
-  fromWarehouseId      String?
-  fromWarehouseName    String?
-  toWarehouseId        String?
-  toWarehouseName      String?
-
-  fromOwnerType        String?
-  fromOwnerId          String?
-  fromOwnerName        String?
-  toOwnerType          String?
-  toOwnerId            String?
-  toOwnerName          String?
-
-  country              String?
-  platform             String?
-  storeId              String?
-  storeName            String?
-
-  sourceBatchNumber    String?
-  outboundBatchId      String?
-  outboundBatchNumber  String?
-
-  eventTime            DateTime @default(now())
-  createdAt            DateTime @default(now())
-
-  variant              ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-
-  @@index([variantId])
-  @@index([bizType])
-  @@index([bizNo])
-  @@index([country])
-  @@index([platform])
-  @@index([storeId])
-  @@index([eventTime])
-}
-
-model VideoTask {
-  id           String          @id @default(uuid())
-  title        String
-  brief        String?
-  productId    String?
-  influencerId String?
-  assigneeId   String?
-  status       VideoTaskStatus @default(TODO)
-  dueDate      DateTime?
-  videoUrl     String?
-  notes        String?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-
-  product    Product?    @relation(fields: [productId], references: [id])
-  influencer Influencer? @relation(fields: [influencerId], references: [id])
-  assignee   Employee?   @relation("Assignee", fields: [assigneeId], references: [id])
-}
-
-model BankAccount {
-  id               String          @id @default(uuid())
-  name             String
-  accountNumber    String
-  accountType      AccountType
-  accountCategory  AccountCategory
-  accountPurpose   String
-  currency         String          @default("CNY")
-  country          String          @default("CN")
-  originalBalance  Decimal         @default(0) @db.Decimal(18, 2) // 当前原币余额（会随流水变化）
-  initialCapital   Decimal         @default(0) @db.Decimal(18, 2) // 原始资金（账户初始资金，固定值）
-  exchangeRate     Decimal         @default(1) @db.Decimal(10, 4)
-  rmbBalance       Decimal         @default(0) @db.Decimal(18, 2) // 计算字段，可冗余存储
-  parentId         String? // 父账户ID（虚拟子账号关联主账户）
-  storeId          String? // 关联店铺ID
-  companyEntity    String?
-  owner            String? // 账号归属人
-  notes            String          @default("")
-  platformAccount  String?
-  platformPassword String?
-  platformUrl      String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-
-  // 自关联：主账户 -> 虚拟子账号
-  parent   BankAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children BankAccount[] @relation("AccountHierarchy")
-
-  // 关联店铺
-  store Store? @relation(fields: [storeId], references: [id], onDelete: SetNull)
-
-  // 关联流水
-  cashFlows CashFlow[]
-}
-
-model CashFlow {
-  id             String         @id @default(uuid())
-  uid            String?        @unique // 全局唯一业务ID（业财一体化）
-  date           DateTime
-  summary        String
-  category       String // 分类：采购/物流/回款/划拨/手续费等（支持一级/二级）
-  type           CashFlowType
-  amount         Decimal        @db.Decimal(18, 2)
-  accountId      String
-  accountName    String // 冗余字段，便于查询
-  currency       String         @default("CNY")
-  remark         String         @default("")
-  relatedId      String? // 关联的采购单ID等
-  businessNumber String? // 关联业务单号（如采购单号）
-  status         CashFlowStatus @default(CONFIRMED)
-  isReversal     Boolean        @default(false)
-  reversedById   String? // 被冲销的记录ID
-  voucher           String? // 旧凭证（兼容，新数据请用 paymentVoucher/transferVoucher）
-  paymentVoucher    String? // 付款凭证（发起付款时，JSON 字符串支持多图）
-  transferVoucher   String? // 转账成功凭证（财务打款后，JSON 字符串支持多图）
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-
-  // 关联账户
-  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-
-  // 自关联：冲销关系
-  reversedBy CashFlow?  @relation("Reversal", fields: [reversedById], references: [id], onDelete: SetNull)
-  reversals  CashFlow[] @relation("Reversal")
-
-  @@index([accountId])
-  @@index([date])
-  @@index([type])
-  @@index([status])
-  @@index([category])
-  @@index([createdAt])
-}
-
-// 店铺订单结算（与 docs/income_*.csv 表头一一对应，全部建字段）
-model StoreOrderSettlement {
-  id                                      String   @id @default(uuid())
-  storeId                                String?  // 所属店铺
-  statementDate                           String
-  statementId                             String
-  paymentId                               String
-  status                                  String
-  currency                                String
-  type                                    String
-  orderAdjustmentId                       String
-  skuId                                   String?
-  quantity                                Int      @default(0)
-  productName                             String   @db.Text
-  skuName                                 String?
-  orderCreatedDate                        String?
-  orderShipmentDate                       String?
-  orderDeliveryDate                       String?
-  totalSettlementAmount                    String
-  netSales                                String?
-  grossSales                              String?
-  grossSalesRefund                        String?
-  sellerDiscount                          String?
-  sellerDiscountRefund                    String?
-  shipping                                String?
-  tiktokShopShippingFee                   String?
-  fulfilledByTiktokShopShippingFee       String?
-  signatureConfirmationServiceFee         String?
-  shippingInsuranceFee                   String?
-  customerpaidShippingFee                 String?
-  customerpaidShippingFeeRefund           String?
-  tiktokShopShippingIncentive             String?
-  tiktokShopShippingIncentiveRefund       String?
-  shippingFeeSubsidy                      String?
-  returnShippingFee                       String?
-  fbtFulfillmentFee                       String?
-  customerShippingFeeOffset               String?
-  shippingFeeDiscount                     String?
-  returnShippingLabelFee                  String?
-  fbtFulfillmentFeeReimbursement          String?
-  returnShippingFeePaidByCustomers       String?
-  returnShippingFeeReimbursement          String?
-  fees                                    String?
-  transactionFee                          String?
-  referralFee                             String?
-  refundAdministrationFee                 String?
-  affiliateCommission                     String?
-  affiliatePartnerCommission              String?
-  affiliateShopAdsCommission              String?
-  tiktokShopPartnerCommission             String?
-  cofundedPromotionSellerfunded           String?
-  smartPromotionFeeTax                    String?
-  cofundedCreatorBonus                    String?
-  affiliateCommissionDeposit              String?
-  affiliateCommissionRefund               String?
-  affiliatePartnerShopAdsCommission       String?
-  campaignServiceFee                      String?
-  campaignResourceFee                     String?
-  salesTaxOnReferralFees                  String?
-  smartPromotionFee                       String?
-  adjustmentAmount                        String?
-  adjustmentReason                        String?
-  relatedOrderId                          String?
-  col60                                   String?
-  customerPayment                         String?
-  customerRefund                          String?
-  sellerCofundedVoucherDiscount            String?
-  sellerCofundedVoucherDiscountRefund      String?
-  platformDiscounts                       String?
-  platformDiscountsRefund                 String?
-  platformCofundedVoucherDiscounts         String?
-  platformCofundedVoucherDiscountsRefund   String?
-  adsReferralFeeDiscount                  String?
-  salesTaxPayment                         String?
-  salesTaxRefund                          String?
-  retailDeliveryFeePayment               String?
-  retailDeliveryFeeRefund                 String?
-  customerpaidShippingFeeBeforeDiscounts  String?
-  sellerShippingFeeDiscount               String?
-  tiktokShopShippingFeeDiscountToCustomer String?
-  modeOfTiktokShopShippingFeeDiscountToCustomer String?
-  returnShippingFeePaidByCustomers2       String?
-  estimatedChargeablePackageWeight        String?
-  chargeablePackageWeight                 String?
-  fbtChargeableGoodsWeight                String?
-  collectionMethods                       String?
-  deliveryOption                          String?
-  signatureConfirmationServiceFeeType     String?
-  col85                                   String?
-  col86                                   String?
-  col87                                   String?
-  col88                                   String?
-  col89                                   String?
-  col90                                   String?
-  col91                                   String?
-  col92                                   String?
-  col93                                   String?
-  col94                                   String?
-  col95                                   String?
-  col96                                   String?
-  col97                                   String?
-  col98                                   String?
-  col99                                   String?
-  col100                                  String?
-  col101                                  String?
-  col102                                  String?
-  col103                                  String?
-  col104                                  String?
-  col105                                  String?
-  col106                                  String?
-  col107                                  String?
-  col108                                  String?
-  col109                                  String?
-  col110                                  String?
-  col111                                  String?
-  col112                                  String?
-  col113                                  String?
-  col114                                  String?
-  col115                                  String?
-  col116                                  String?
-  col117                                  String?
-  col118                                  String?
-  col119                                  String?
-  col120                                  String?
-  col121                                  String?
-  col122                                  String?
-  col123                                  String?
-  col124                                  String?
-  col125                                  String?
-  col126                                  String?
-  col127                                  String?
-  col128                                  String?
-  col129                                  String?
-  col130                                  String?
-  col131                                  String?
-  col132                                  String?
-  col133                                  String?
-  col134                                  String?
-  col135                                  String?
-  col136                                  String?
-  col137                                  String?
-  col138                                  String?
-  col139                                  String?
-  col140                                  String?
-  col141                                  String?
-  col142                                  String?
-  col143                                  String?
-  col144                                  String?
-  col145                                  String?
-  col146                                  String?
-  col147                                  String?
-  col148                                  String?
-  col149                                  String?
-  col150                                  String?
-  col151                                  String?
-  col152                                  String?
-  col153                                  String?
-  col154                                  String?
-  col155                                  String?
-  col156                                  String?
-  col157                                  String?
-  col158                                  String?
-  col159                                  String?
-  col160                                  String?
-  col161                                  String?
-  col162                                  String?
-  col163                                  String?
-  col164                                  String?
-  col165                                  String?
-  col166                                  String?
-  col167                                  String?
-  col168                                  String?
-  col169                                  String?
-  col170                                  String?
-  col171                                  String?
-  sourceFileName                          String?
-  createdAt                               DateTime @default(now())
-
-  @@index([storeId])
-  @@index([statementDate])
-  @@index([orderAdjustmentId])
-  @@index([paymentId])
-  @@index([createdAt])
-}
-
-// 采购订单行（多 SKU 明细）
-model OrderItem {
-  id          String   @id @default(uuid())
-  orderId     String
-  sku         String
-  skuId       String?
-  skuName     String?  // 品名
-  spec        String?  // 规格
-  quantity    Int
-  unitPrice   Decimal  @db.Decimal(18, 2)
-  totalAmount Decimal  @db.Decimal(18, 2)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-}
-
-model PurchaseOrder {
-  id          String  @id @default(uuid())
-  orderNumber String  @unique
-  uid         String? @unique // 全局唯一业务ID
-
-  // 下单信息（运营填写）
-  createdBy            String
-  platform             Platform
-  storeId              String?
-  storeName            String?
-  // 兼容旧单：无明细时使用以下字段
-  sku                  String?
-  skuId                String?
-  productName          String?
-  quantity             Int?
-  expectedDeliveryDate DateTime?
-  urgency              String    @default("普通")
-  notes                String?
-
-  items OrderItem[] // 订单明细（多 SKU）
-
-  // 风控评估
-  riskControlStatus   String    @default("待评估")
-  riskControlBy       String?
-  riskControlAt       DateTime?
-  riskControlNotes    String?
-  riskControlSnapshot Json? // 风控时的库存快照
-
-  // 审批流程
-  approvalStatus String    @default("待审批")
-  approvedBy     String?
-  approvedAt     DateTime?
-  approvalNotes  String?
-
-  // 采购关联
-  pushedToProcurementAt DateTime?
-  pushedBy              String?
-  procurementNotes      String?
-
-  // 合同关联（采购完成后）
-  contractId String?           @unique
-  contract   PurchaseContract? @relation(fields: [contractId], references: [id])
-
-  // 订单流转（标记现在流转到了哪个部门）
-  currentStep String? // 当前流转到的部门ID（关联到 Department）
-
-  // 状态
-  status    PurchaseOrderStatus @default(PENDING_RISK)
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
-
-  // 关联关系
-  store               Store?               @relation(fields: [storeId], references: [id], onDelete: SetNull)
-  currentStepDept     Department?          @relation(fields: [currentStep], references: [id], onDelete: SetNull)
-  generatedContracts  GeneratedContract[]
-
-  @@index([currentStep])
-  @@index([status])
-  @@index([storeId])
-  @@index([createdBy])
-  @@index([createdAt])
-  @@index([approvalStatus])
-  @@index([riskControlStatus])
-  @@index([contractId])
-}
-
-// 生成的合同文档（下单即生成，用于预览/打印/PDF）
-model GeneratedContract {
-  id                  String    @id @default(uuid())
-  contractNumber      String    // 合同编号（与采购合同号或订单号关联）
-  purchaseOrderId     String?   // 关联采购订单（可选）
-  purchaseContractId  String?   // 关联采购合同（可选）
-  snapshot            Json      // 填充后的合同数据：供应商、物料、金额大写、交货日期等
-  createdAt           DateTime  @default(now())
-
-  purchaseOrder    PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
-  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id], onDelete: SetNull)
-
-  @@index([purchaseOrderId])
-  @@index([purchaseContractId])
-}
-
-// 本公司（甲方）信息，用于合同生成等；系统内可编辑，优先于环境变量
-model CompanyProfile {
-  id                String   @id @default("default")
-  name              String?   // 公司全称
-  address           String?   // 地址
-  phone             String?   // 电话
-  contact           String?   // 联系代表/签字人
-  bankAccount       String?   // 付款账号（卡号）
-  bankAccountName   String?   // 付款账号户名
-  bankName          String?   // 开户行
-  taxId             String?   // 税号
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-}
-
-// 产品-供应商关联表（多对多关系）
-model ProductSupplier {
-  id         String   @id @default(uuid())
-  productId  String
-  supplierId String
-  price      Decimal? @db.Decimal(18, 2) // 供应商对该产品的报价
-  moq        Int? // 最小起订量
-  leadTime   Int? // 交期（天）
-  isPrimary  Boolean  @default(false) // 是否为主供应商
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-
-  @@unique([productId, supplierId])
-  @@index([productId])
-  @@index([supplierId])
-}
-
-// 采购合同明细表（支持一个合同多个 SKU）
-model PurchaseContractItem {
-  id          String   @id @default(uuid())
-  contractId  String
-  variantId   String?  // 产品变体 (SKU) ID
-  sku         String   // SKU 编码（冗余字段）
-  skuName     String?  // 品名（合同物料明细用）
-  spec        String?  // 规格（合同物料明细用）
-  unitPrice   Decimal  @db.Decimal(18, 2)
-  qty         Int
-  pickedQty   Int      @default(0) // 已取货数
-  finishedQty Int      @default(0) // 工厂完工数
-  totalAmount Decimal  @db.Decimal(18, 2)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  contract PurchaseContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  variant  ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
-
-  @@index([contractId])
-  @@index([variantId])
-}
-
-// 支出申请模型
-model ExpenseRequest {
-  id             String   @id @default(uuid())
-  uid            String?  @unique // 全局唯一业务ID
-  date           DateTime // 日期
-  summary        String // 摘要
-  category       String // 支出分类
-  amount         Decimal  @db.Decimal(18, 2) // 金额
-  currency       String   @default("CNY") // 币种
-  businessNumber String? // 关联单号
-  relatedId      String? // 关联的业务ID
-  remark         String? // 备注
-  payeeName      String? // 收款人（付款时钱打给谁）
-  payeeAccount   String? // 收款账号（银行卡/支付宝等）
-  voucher        String? // 凭证（JSON 字符串，支持多图）
-
-  // 店铺相关字段（从 PaymentRequest 合并）
-  storeId   String? // 所属店铺ID
-  storeName String? // 所属店铺名称（冗余）
-  country   String? // 所属国家
-
-  // 海外公司和柜子关联
-  overseasCompanyId   String? // 海外公司ID
-  overseasCompanyName String? // 海外公司名称
-  containerId         String? // 柜子ID
-  containerNo         String? // 柜号
-
-  // 部门权限控制
-  departmentId   String? // 发起部门ID（用于权限控制）
-  departmentName String? // 发起部门名称（冗余）
-
-  // 状态机
-  status String @default("Draft") // Draft, Pending_Approval, Approved, Rejected, Paid
-
-  // 审批信息
-  createdBy       String // 发起人
-  createdAt       DateTime  @default(now())
-  submittedAt     DateTime? // 提交审批时间
-  approvedBy      String? // 主管审批人
-  approvedAt      DateTime? // 主管审批时间
-  rejectionReason String? // 退回原因
-
-  // 财务处理信息
-  financeAccountId   String? // 财务选择的账户ID
-  financeAccountName String? // 财务选择的账户名称（冗余）
-  paidBy             String? // 付款人（财务）
-  paidAt             DateTime? // 付款时间
-  paymentFlowId      String? // 关联的财务流水ID
-  paymentVoucher     String? // 付款凭证（JSON 字符串，支持多图）
-
-  // 特殊字段（广告充值等）
-  adAccountId  String? // 广告账户ID
-  rebateAmount Decimal? @db.Decimal(18, 2) // 返点金额
-
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([createdBy])
-  @@index([createdAt])
-  @@index([approvedAt])
-  @@index([departmentId])
-  @@index([date])
-  @@index([storeId])
-}
-
-// 收入申请模型
-model IncomeRequest {
-  id        String   @id @default(uuid())
-  uid       String?  @unique // 全局唯一业务ID
-  date      DateTime // 日期
-  summary   String // 摘要
-  category  String // 收入分类
-  amount    Decimal  @db.Decimal(18, 2) // 金额
-  currency  String   @default("CNY") // 币种
-  storeId   String? // 所属店铺ID
-  storeName String? // 所属店铺名称（冗余）
-
-  // 海外公司和柜子关联
-  overseasCompanyId   String? // 海外公司ID
-  overseasCompanyName String? // 海外公司名称
-  containerId         String? // 柜子ID
-  containerNo         String? // 柜号
-
-  remark    String? // 备注
-  voucher   String? // 凭证（JSON 字符串，支持多图）
-
-  // 状态机
-  status String @default("Draft") // Draft, Pending_Approval, Approved, Rejected, Received
-
-  // 审批信息
-  createdBy       String // 发起人
-  createdAt       DateTime  @default(now())
-  submittedAt     DateTime? // 提交审批时间
-  approvedBy      String? // 主管审批人
-  approvedAt      DateTime? // 主管审批时间
-  rejectionReason String? // 退回原因
-
-  // 财务处理信息
-  financeAccountId   String? // 财务选择的账户ID
-  financeAccountName String? // 财务选择的账户名称（冗余）
-  receivedBy         String? // 收款人（财务）
-  receivedAt         DateTime? // 收款时间
-  paymentFlowId      String? // 关联的财务流水ID
-  paymentVoucher     String? // 收款凭证（JSON 字符串，支持多图）
-
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([createdBy])
-  @@index([createdAt])
-  @@index([approvedAt])
-  @@index([date])
-  @@index([storeId])
-}
-
-// 月账单模型
-model MonthlyBill {
-  id           String  @id @default(uuid())
-  uid          String? @unique // 全局唯一业务ID
-  month        String // 账单月份，格式：YYYY-MM
-  billCategory String // 账单分类：Payable（应付款）/Receivable（应收款）
-  billType     String // 账单类型：广告、物流、工厂订单、店铺回款、广告返点等
-  agencyId     String? // 关联代理商ID（可选，广告账单使用）
-  agencyName   String? // 代理商名称（冗余字段）
-  adAccountId  String? // 关联广告账户ID（可选）
-  accountName  String? // 广告账户名称（冗余字段）
-  supplierId   String? // 关联供应商ID（可选）
-  supplierName String? // 供应商名称（冗余字段）
-  factoryId    String? // 关联工厂ID（可选）
-  factoryName  String? // 工厂名称（冗余字段）
-
-  // 账单明细
-  totalAmount  Decimal @db.Decimal(18, 2) // 账单总金额
-  currency     String  @default("CNY") // 币种
-  rebateAmount Decimal @default(0) @db.Decimal(18, 2) // 返点金额
-  netAmount    Decimal @db.Decimal(18, 2) // 净金额
-
-  // 关联数据（JSON 数组）
-  consumptionIds String? // JSON 字符串，关联的消耗记录ID列表
-  rechargeIds    String? // JSON 字符串，关联的充值记录ID列表
-
-  // 状态机
-  status String @default("Draft") // 账单状态
-
-  // 审批信息
-  createdBy                 String // 创建人
-  createdAt                 DateTime  @default(now())
-  submittedToFinanceAt      DateTime? // 提交给财务审批时间
-  paymentApplicationVoucher String? // 付款申请书凭证（JSON 字符串，支持多图）
-  financeReviewedBy         String? // 财务审批人
-  financeReviewedAt         DateTime? // 财务审批时间
-  submittedAt               DateTime? // 提交给主管审批时间
-  approvedBy                String? // 审批人
-  approvedAt                DateTime? // 审批时间
-  cashierApprovedBy         String? // 出纳审核人
-  cashierApprovedAt         DateTime? // 出纳审核时间
-  rejectionReason           String? // 退回原因
-
-  // 付款信息
-  paidBy               String? // 付款人
-  paidAt               DateTime? // 付款时间
-  paymentMethod        String? // 付款方式
-  paymentAccountId     String? // 付款账户ID
-  paymentAccountName   String? // 付款账户名称
-  paymentVoucher       String? // 付款凭证（JSON 字符串，支持多图）
-  paymentFlowId        String? // 关联的财务流水ID
-  paymentVoucherNumber String? // 付款单号
-  paymentRemarks       String? // 付款备注
-
-  // 备注
-  notes String? // 备注信息
-
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([month])
-  @@index([billCategory])
-  @@index([createdAt])
-  @@index([approvedAt])
-}
-
-// 广告平台枚举
-enum AdPlatform {
-  FB
-  Google
-  TikTok
-  OTHER
-}
-
-// 待入账任务
-model PendingEntry {
-  id               String    @id @default(uuid())
-  type             String // Bill | PaymentRequest
-  relatedId        String
-  billCategory     String?
-  billType         String?
-  month            String?
+model AdAccount {
+  id               String          @id
+  agencyId         String
   agencyName       String?
-  supplierName     String?
-  factoryName      String?
-  accountName      String?
-  expenseItem      String?
-  storeName        String?
-  amount           Decimal   @db.Decimal(18, 2)
+  accountName       String
+  platformAccountId String?
+  storeId           String?
+  storeName         String?
+  currentBalance   Decimal         @default(0) @db.Decimal(18, 2)
+  rebateReceivable Decimal         @default(0) @db.Decimal(18, 2)
+  creditLimit      Decimal         @default(0) @db.Decimal(18, 2)
   currency         String
-  netAmount        Decimal   @db.Decimal(18, 2)
-  approvedBy       String
-  approvedAt       DateTime
-  status           String    @default("Pending") // Pending | Completed | Cancelled
-  entryAccountId   String?
-  entryAccountName String?
-  entryDate        DateTime?
-  entryBy          String?
-  entryAt          DateTime?
-  entryFlowId      String?
+  country          String?
   notes            String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  AdAgency         AdAgency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  Store            Store?          @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  AdConsumption    AdConsumption[]
+  AdRecharge       AdRecharge[]
 
-  @@index([type])
-  @@index([relatedId])
-  @@index([status])
+  @@index([storeId])
 }
 
-// 广告代理商
 model AdAgency {
-  id                 String     @id @default(uuid())
+  id                 String      @id
   name               String
-  platform           AdPlatform @default(OTHER)
-  rebateRate         Decimal    @default(0) @db.Decimal(5, 2)
-  rebateConfig       Json? // { rate, period }
+  platform           AdPlatform  @default(OTHER)
+  rebateRate         Decimal     @default(0) @db.Decimal(5, 2)
+  rebateConfig       Json?
   settlementCurrency String?
   creditTerm         String?
   contact            String?
   phone              String?
   notes              String?
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
-
-  accounts AdAccount[]
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime
+  AdAccount          AdAccount[]
 }
 
-// 广告账户
-model AdAccount {
-  id               String   @id @default(uuid())
-  agencyId         String
-  agencyName       String?
-  accountName      String
-  currentBalance   Decimal  @default(0) @db.Decimal(18, 2)
-  rebateReceivable Decimal  @default(0) @db.Decimal(18, 2)
-  creditLimit      Decimal  @default(0) @db.Decimal(18, 2)
-  currency         String
-  country          String?
-  notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  agency       AdAgency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  consumptions AdConsumption[]
-  recharges    AdRecharge[]
-}
-
-// 广告消耗记录
 model AdConsumption {
-  id               String    @id @default(uuid())
+  id               String    @id
   adAccountId      String
   accountName      String?
   agencyId         String?
@@ -1816,37 +71,1212 @@ model AdConsumption {
   voucher          String?
   notes            String?
   createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  account AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  updatedAt        DateTime
+  AdAccount        AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
 }
 
-// 广告充值记录
 model AdRecharge {
-  id            String   @id @default(uuid())
-  uid           String?  @unique
+  id            String    @id
+  uid           String?   @unique
   adAccountId   String
   accountName   String?
   agencyId      String
   agencyName    String?
-  amount        Decimal  @db.Decimal(18, 2)
+  amount        Decimal   @db.Decimal(18, 2)
   currency      String
-  rebateAmount  Decimal? @db.Decimal(18, 2)
-  rebateRate    Decimal? @db.Decimal(5, 2)
+  rebateAmount  Decimal?  @db.Decimal(18, 2)
+  rebateRate    Decimal?  @db.Decimal(5, 2)
   date          DateTime
   month         String
-  paymentStatus String   @default("Pending") // Pending | Paid | Cancelled
+  paymentStatus String    @default("Pending")
   voucher       String?
   notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  account AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime
+  AdAccount     AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
 }
 
-// 返点应收款
+model BankAccount {
+  id                String          @id
+  name              String
+  accountNumber     String
+  accountType       AccountType
+  accountCategory   AccountCategory
+  accountPurpose    String
+  currency          String          @default("CNY")
+  country           String          @default("CN")
+  originalBalance   Decimal         @default(0) @db.Decimal(18, 2)
+  initialCapital    Decimal         @default(0) @db.Decimal(18, 2)
+  exchangeRate      Decimal         @default(1) @db.Decimal(10, 4)
+  rmbBalance        Decimal         @default(0) @db.Decimal(18, 2)
+  parentId          String?
+  storeId           String?
+  companyEntity     String?
+  owner             String?
+  notes             String          @default("")
+  platformAccount   String?
+  platformPassword  String?
+  platformUrl       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  BankAccount       BankAccount?    @relation("BankAccountToBankAccount", fields: [parentId], references: [id])
+  other_BankAccount BankAccount[]   @relation("BankAccountToBankAccount")
+  Store             Store?          @relation(fields: [storeId], references: [id])
+  CashFlow          CashFlow[]
+}
+
+model BatchReceipt {
+  id           String   @id
+  poId         String
+  receiptId    String
+  qty          Int
+  receivedQty  Int
+  ownership    Json
+  receivedDate DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([poId])
+}
+
+model BoxSpec {
+  id          String   @id
+  variantId   String
+  boxLengthCm Decimal? @db.Decimal(10, 2)
+  boxWidthCm  Decimal? @db.Decimal(10, 2)
+  boxHeightCm Decimal? @db.Decimal(10, 2)
+  qtyPerBox   Int
+  isDefault   Boolean  @default(false)
+  weightKg    Decimal? @db.Decimal(10, 3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([variantId])
+}
+
+model BusinessRelation {
+  id           String   @id
+  sourceUID    String
+  targetUID    String
+  relationType String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@unique([sourceUID, targetUID, relationType])
+  @@index([sourceUID])
+  @@index([targetUID])
+}
+
+model BusinessUidMapping {
+  id         String   @id
+  entityType String
+  oldId      String   @unique
+  uid        String
+  createdAt  DateTime @default(now())
+
+  @@index([entityType])
+  @@index([uid])
+}
+
+model CashFlow {
+  id              String         @id
+  uid             String?        @unique
+  date            DateTime
+  summary         String
+  category        String
+  type            CashFlowType
+  amount          Decimal        @db.Decimal(18, 2)
+  accountId       String
+  accountName     String
+  currency        String         @default("CNY")
+  remark          String         @default("")
+  relatedId       String?
+  businessNumber  String?
+  status          CashFlowStatus @default(CONFIRMED)
+  isReversal      Boolean        @default(false)
+  reversedById    String?
+  voucher         String?
+  paymentVoucher  String?
+  transferVoucher String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime
+  BankAccount     BankAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  CashFlow        CashFlow?      @relation("CashFlowToCashFlow", fields: [reversedById], references: [id])
+  other_CashFlow  CashFlow[]     @relation("CashFlowToCashFlow")
+
+  @@index([accountId])
+  @@index([category])
+  @@index([createdAt])
+  @@index([date])
+  @@index([status])
+  @@index([type])
+}
+
+model CommissionRecord {
+  id             String         @id
+  employeeId     String
+  ruleId         String
+  periodLabel    String
+  amount         Decimal        @db.Decimal(18, 2)
+  currency       String         @default("CNY")
+  details        Json?
+  generatedAt    DateTime       @default(now())
+  Employee       Employee       @relation(fields: [employeeId], references: [id])
+  CommissionRule CommissionRule @relation(fields: [ruleId], references: [id])
+}
+
+model CommissionRule {
+  id               String             @id
+  name             String
+  department       DepartmentEnum
+  departmentId     String?
+  position         String?
+  type             CommissionRuleType
+  config           Json
+  dataSource       Json
+  period           CommissionPeriod
+  startDate        DateTime?
+  endDate          DateTime?
+  enabled          Boolean            @default(true)
+  description      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  CommissionRecord CommissionRecord[]
+  Department       Department?        @relation(fields: [departmentId], references: [id])
+
+  @@index([departmentId])
+}
+
+model CompanyProfile {
+  id              String   @id @default("default")
+  name            String?
+  address         String?
+  phone           String?
+  contact         String?
+  bankAccount     String?
+  bankAccountName String?
+  bankName        String?
+  taxId           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+}
+
+model Container {
+  id                  String          @id
+  containerNo         String          @unique
+  containerType       String
+  sealNo              String?
+  shippingMethod      ShippingMethod
+  shipCompany         String?
+  vesselName          String?
+  voyageNo            String?
+  originPort          String?
+  destinationPort     String?
+  etd                 DateTime?
+  eta                 DateTime?
+  actualDeparture     DateTime?
+  actualArrival       DateTime?
+  status              ContainerStatus @default(PLANNED)
+  totalVolumeCBM      Decimal?        @db.Decimal(18, 3)
+  totalWeightKG       Decimal?        @db.Decimal(18, 3)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime
+  declaredCurrency    String?
+  declaredValue       Decimal?        @db.Decimal(18, 2)
+  destinationCountry  String?
+  dutyAmount          Decimal?        @db.Decimal(18, 2)
+  dutyCurrency        String?
+  dutyPaidAmount      Decimal?        @db.Decimal(18, 2)
+  dutyPayer           String?
+  exportMode          String?
+  exporterId          String?
+  exporterName        String?
+  overseasCompanyId   String?
+  overseasCompanyName String?
+  platform            String?
+  returnAmount        Decimal?        @db.Decimal(18, 2)
+  returnCurrency      String?
+  returnDate          DateTime?
+  serviceMode         String?
+  storeId             String?
+  storeName           String?
+  warehouseId         String?
+  warehouseName       String?
+  loadingDate         DateTime?
+  OutboundBatch       OutboundBatch[]
+}
+
+model ContainerPreRecord {
+  id                      String                   @id
+  name                    String?
+  status                  String                   @default("Draft")
+  notes                   String?
+  exporterId              String?
+  exporterName            String?
+  overseasCompanyId       String?
+  overseasCompanyName     String?
+  shippingMethod          String?
+  originPort              String?
+  destinationPort         String?
+  destinationCountry      String?
+  warehouseId             String?
+  warehouseName           String?
+  platform                String?
+  storeId                 String?
+  storeName               String?
+  totalVolumeCBM          Decimal?                 @db.Decimal(18, 3)
+  totalWeightKG           Decimal?                 @db.Decimal(18, 3)
+  suggestedContainerType  String?
+  containerId             String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime
+  outboundBatchId         String?
+  outboundOrderId         String?
+  formFilledAt            DateTime?
+  loadingDate             DateTime?
+  loadingLocation         String?
+  loadingLogisticsCompany String?
+  loadingProductQty       Int?
+  shippingWarehouseId     String?
+  shippingWarehouseName   String?
+  OutboundBatch           OutboundBatch?           @relation(fields: [outboundBatchId], references: [id])
+  OutboundOrder           OutboundOrder?           @relation(fields: [outboundOrderId], references: [id])
+  ContainerPreRecordItem  ContainerPreRecordItem[]
+
+  @@index([containerId])
+  @@index([outboundBatchId])
+  @@index([outboundOrderId])
+  @@index([status])
+}
+
+model ContainerPreRecordItem {
+  id                 String             @id
+  preRecordId        String
+  variantId          String?
+  sku                String
+  skuName            String?
+  spec               String?
+  qty                Int
+  unitVolumeCBM      Decimal?           @db.Decimal(18, 6)
+  unitWeightKG       Decimal?           @db.Decimal(10, 3)
+  totalVolumeCBM     Decimal?           @db.Decimal(18, 3)
+  totalWeightKG      Decimal?           @db.Decimal(18, 3)
+  createdAt          DateTime           @default(now())
+  ContainerPreRecord ContainerPreRecord @relation(fields: [preRecordId], references: [id], onDelete: Cascade)
+
+  @@index([preRecordId])
+  @@index([variantId])
+}
+
+model DeliveryOrder {
+  id                     String              @id
+  deliveryNumber         String              @unique
+  contractId             String
+  contractNumber         String
+  qty                    Int
+  itemQtys               Json?
+  domesticTrackingNumber String?
+  shippedDate            DateTime?
+  status                 DeliveryOrderStatus
+  tailAmount             Decimal             @db.Decimal(18, 2)
+  tailPaid               Decimal             @default(0) @db.Decimal(18, 2)
+  tailDueDate            DateTime?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime
+  PurchaseContract       PurchaseContract    @relation(fields: [contractId], references: [id])
+  InventoryLog           InventoryLog[]
+  PendingInbound         PendingInbound?
+}
+
+model Department {
+  id             String           @id
+  name           String           @unique
+  code           String?          @unique
+  description    String?
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  CommissionRule CommissionRule[]
+  Employee       Employee[]
+  PurchaseOrder  PurchaseOrder[]
+  User           User[]
+
+  @@index([code])
+  @@index([name])
+}
+
+model Document {
+  id         String             @id
+  entityType DocumentEntityType
+  entityId   String
+  name       String
+  type       DocumentType
+  fileUrl    String?
+  uploadDate DateTime           @default(now())
+  uploadedBy String?
+  notes      String?
+
+  @@index([entityType, entityId])
+}
+
+model Employee {
+  id                     String             @id
+  name                   String
+  employeeNumber         String?
+  department             DepartmentEnum
+  departmentId           String?
+  position               String
+  joinDate               DateTime
+  phone                  String?
+  email                  String?
+  status                 EmploymentStatus   @default(ACTIVE)
+  responsibleInfluencers String[]
+  responsibleSuppliers   String[]
+  responsibleStores      String[]
+  notes                  String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime
+  CommissionRecord       CommissionRecord[]
+  Department             Department?        @relation(fields: [departmentId], references: [id])
+  VideoTask              VideoTask[]
+
+  @@index([departmentId])
+}
+
+model ExpenseRequest {
+  id                  String    @id
+  uid                 String?   @unique
+  date                DateTime
+  summary             String
+  category            String
+  amount              Decimal   @db.Decimal(18, 2)
+  currency            String    @default("CNY")
+  businessNumber      String?
+  relatedId           String?
+  remark              String?
+  voucher             String?
+  storeId             String?
+  storeName           String?
+  country             String?
+  departmentId        String?
+  departmentName      String?
+  status              String    @default("Draft")
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  submittedAt         DateTime?
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectionReason     String?
+  financeAccountId    String?
+  financeAccountName  String?
+  paidBy              String?
+  paidAt              DateTime?
+  paymentFlowId       String?
+  paymentVoucher      String?
+  adAccountId         String?
+  rebateAmount        Decimal?  @db.Decimal(18, 2)
+  updatedAt           DateTime
+  payeeAccount        String?
+  payeeName           String?
+  containerId         String?
+  containerNo         String?
+  overseasCompanyId   String?
+  overseasCompanyName String?
+
+  @@index([approvedAt])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@index([date])
+  @@index([departmentId])
+  @@index([status])
+  @@index([storeId])
+}
+
+model Exporter {
+  id          String   @id
+  name        String
+  country     String   @default("CN")
+  companyType String   @default("exporter")
+  contact     String?
+  phone       String?
+  email       String?
+  address     String?
+  taxId       String?
+  bankName    String?
+  bankAccount String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([country])
+  @@index([name])
+}
+
+model GeneratedContract {
+  id                 String            @id
+  contractNumber     String
+  purchaseOrderId    String?
+  purchaseContractId String?
+  snapshot           Json
+  createdAt          DateTime          @default(now())
+  PurchaseContract   PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
+  PurchaseOrder      PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id])
+
+  @@index([purchaseContractId])
+  @@index([purchaseOrderId])
+}
+
+model InboundBatch {
+  id               String         @id
+  pendingInboundId String
+  batchNumber      String
+  warehouseId      String
+  warehouseName    String
+  qty              Int
+  receivedDate     DateTime
+  notes            String?
+  createdAt        DateTime       @default(now())
+  PendingInbound   PendingInbound @relation(fields: [pendingInboundId], references: [id], onDelete: Cascade)
+  Warehouse        Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([pendingInboundId])
+  @@index([warehouseId])
+}
+
+model IncomeRequest {
+  id                  String    @id
+  uid                 String?   @unique
+  date                DateTime
+  summary             String
+  category            String
+  amount              Decimal   @db.Decimal(18, 2)
+  currency            String    @default("CNY")
+  storeId             String?
+  storeName           String?
+  remark              String?
+  voucher             String?
+  status              String    @default("Draft")
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  submittedAt         DateTime?
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectionReason     String?
+  financeAccountId    String?
+  financeAccountName  String?
+  receivedBy          String?
+  receivedAt          DateTime?
+  paymentFlowId       String?
+  paymentVoucher      String?
+  updatedAt           DateTime
+  containerId         String?
+  containerNo         String?
+  overseasCompanyId   String?
+  overseasCompanyName String?
+
+  @@index([approvedAt])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@index([date])
+  @@index([status])
+  @@index([storeId])
+}
+
+model Influencer {
+  id                       String      @id
+  accountName              String
+  platform                 Platform
+  accountUrl               String?
+  followerCount            Int
+  contactInfo              String
+  category                 String
+  cooperationStatus        String
+  sampleStatus             String
+  sampleOrderNumber        String?
+  sampleTrackingNumber     String?
+  sampleProductSku         String?
+  sampleProductId          String?
+  sampleSentAt             DateTime?
+  sampleReceivedAt         DateTime?
+  historicalEngagementRate Decimal?    @db.Decimal(5, 2)
+  estimatedOrders          Int?
+  actualOrders             Int?
+  notes                    String?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime
+  VideoTask                VideoTask[]
+}
+
+model InventoryLog {
+  id                                                String             @id
+  type                                              InventoryLogType
+  status                                            InventoryLogStatus
+  variantId                                         String
+  qty                                               Int
+  warehouseId                                       String?
+  fromWarehouseId                                   String?
+  toWarehouseId                                     String?
+  deliveryOrderId                                   String?
+  relatedOrderNo                                    String?
+  notes                                             String?
+  createdAt                                         DateTime           @default(now())
+  updatedAt                                         DateTime
+  DeliveryOrder                                     DeliveryOrder?     @relation(fields: [deliveryOrderId], references: [id])
+  Warehouse_InventoryLog_fromWarehouseIdToWarehouse Warehouse?         @relation("InventoryLog_fromWarehouseIdToWarehouse", fields: [fromWarehouseId], references: [id])
+  Warehouse_InventoryLog_toWarehouseIdToWarehouse   Warehouse?         @relation("InventoryLog_toWarehouseIdToWarehouse", fields: [toWarehouseId], references: [id])
+  ProductVariant                                    ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  Warehouse_InventoryLog_warehouseIdToWarehouse     Warehouse?         @relation("InventoryLog_warehouseIdToWarehouse", fields: [warehouseId], references: [id])
+
+  @@index([deliveryOrderId])
+  @@index([status])
+  @@index([type])
+  @@index([variantId])
+  @@index([warehouseId])
+}
+
+model InventoryMovement {
+  id                 String                @id
+  variantId          String
+  location           InventoryLocation
+  movementType       InventoryMovementType
+  qty                Int
+  qtyBefore          Int
+  qtyAfter           Int
+  unitCost           Decimal?              @db.Decimal(18, 2)
+  totalCost          Decimal?              @db.Decimal(18, 2)
+  currency           String?
+  relatedOrderId     String?
+  relatedOrderType   String?
+  relatedOrderNumber String?
+  operator           String?
+  operationDate      DateTime
+  notes              String?
+  createdAt          DateTime              @default(now())
+  ProductVariant     ProductVariant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+}
+
+model InventoryOwnershipLedger {
+  id                  String         @id
+  variantId           String
+  skuId               String?
+  productName         String?
+  qty                 Int
+  unit                String?        @default("pcs")
+  bizType             String
+  bizNo               String?
+  relatedOrderId      String?
+  relatedOrderType    String?
+  fromWarehouseId     String?
+  fromWarehouseName   String?
+  toWarehouseId       String?
+  toWarehouseName     String?
+  fromOwnerType       String?
+  fromOwnerId         String?
+  fromOwnerName       String?
+  toOwnerType         String?
+  toOwnerId           String?
+  toOwnerName         String?
+  country             String?
+  platform            String?
+  storeId             String?
+  storeName           String?
+  sourceBatchNumber   String?
+  outboundBatchId     String?
+  outboundBatchNumber String?
+  eventTime           DateTime       @default(now())
+  createdAt           DateTime       @default(now())
+  ProductVariant      ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([bizNo])
+  @@index([bizType])
+  @@index([country])
+  @@index([eventTime])
+  @@index([platform])
+  @@index([storeId])
+  @@index([variantId])
+}
+
+model InventoryStock {
+  id             String            @id
+  variantId      String
+  storeId        String?
+  location       InventoryLocation
+  qty            Int               @default(0)
+  updatedAt      DateTime
+  createdAt      DateTime          @default(now())
+  Store          Store?            @relation(fields: [storeId], references: [id])
+  ProductVariant ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, location, storeId])
+  @@index([variantId])
+}
+
+model LogisticsChannel {
+  id                String              @id
+  name              String
+  channelCode       String
+  contact           String
+  phone             String
+  queryUrl          String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  LogisticsCost     LogisticsCost[]
+  LogisticsTracking LogisticsTracking[]
+}
+
+model LogisticsCost {
+  id                 String            @id
+  outboundBatchId    String?
+  logisticsChannelId String?
+  costType           String
+  amount             Decimal           @db.Decimal(18, 2)
+  currency           String
+  paymentType        String
+  creditDays         Int?
+  dueDate            DateTime?
+  paymentStatus      String
+  paidDate           DateTime?
+  invoiceNumber      String?
+  invoiceStatus      String?
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime
+  LogisticsChannel   LogisticsChannel? @relation(fields: [logisticsChannelId], references: [id])
+  OutboundBatch      OutboundBatch?    @relation(fields: [outboundBatchId], references: [id])
+
+  @@index([logisticsChannelId])
+  @@index([outboundBatchId])
+}
+
+model LogisticsTracking {
+  id                  String           @id
+  internalOrderNumber String
+  trackingNumber      String           @unique
+  channelId           String
+  storeId             String?
+  currentStatus       LogisticsStatus
+  shippedDate         DateTime
+  lastUpdatedAt       DateTime
+  transportDays       Int?
+  orderId             String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime
+  LogisticsChannel    LogisticsChannel @relation(fields: [channelId], references: [id])
+  Store               Store?           @relation(fields: [storeId], references: [id])
+  TrackingEvent       TrackingEvent[]
+}
+
+model MonthlyBill {
+  id                        String    @id
+  uid                       String?   @unique
+  month                     String
+  billCategory              String
+  billType                  String
+  agencyId                  String?
+  agencyName                String?
+  adAccountId               String?
+  accountName               String?
+  supplierId                String?
+  supplierName              String?
+  factoryId                 String?
+  factoryName               String?
+  totalAmount               Decimal   @db.Decimal(18, 2)
+  currency                  String    @default("CNY")
+  rebateAmount              Decimal   @default(0) @db.Decimal(18, 2)
+  netAmount                 Decimal   @db.Decimal(18, 2)
+  consumptionIds            String?
+  rechargeIds               String?
+  status                    String    @default("Draft")
+  createdBy                 String
+  createdAt                 DateTime  @default(now())
+  submittedToFinanceAt      DateTime?
+  paymentApplicationVoucher String?
+  financeReviewedBy         String?
+  financeReviewedAt         DateTime?
+  submittedAt               DateTime?
+  approvedBy                String?
+  approvedAt                DateTime?
+  cashierApprovedBy         String?
+  cashierApprovedAt         DateTime?
+  rejectionReason           String?
+  paidBy                    String?
+  paidAt                    DateTime?
+  paymentMethod             String?
+  paymentAccountId          String?
+  paymentAccountName        String?
+  paymentVoucher            String?
+  paymentFlowId             String?
+  paymentVoucherNumber      String?
+  paymentRemarks            String?
+  notes                     String?
+  updatedAt                 DateTime
+
+  @@index([approvedAt])
+  @@index([billCategory])
+  @@index([createdAt])
+  @@index([month])
+  @@index([status])
+}
+
+model Notification {
+  id          String                  @id
+  type        NotificationType
+  title       String
+  message     String
+  relatedId   String
+  relatedType NotificationRelatedType
+  read        Boolean                 @default(false)
+  readAt      DateTime?
+  actionUrl   String?
+  priority    NotificationPriority    @default(medium)
+  createdAt   DateTime                @default(now())
+
+  @@index([read])
+  @@index([relatedId, relatedType])
+}
+
+model OrderItem {
+  id            String        @id
+  orderId       String
+  sku           String
+  skuId         String?
+  skuName       String?
+  spec          String?
+  quantity      Int
+  unitPrice     Decimal       @db.Decimal(18, 2)
+  totalAmount   Decimal       @db.Decimal(18, 2)
+  sortOrder     Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  PurchaseOrder PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model OrderTracking {
+  id         String              @id
+  poId       String
+  status     OrderTrackingStatus
+  statusDate DateTime
+  notes      String?
+  createdAt  DateTime            @default(now())
+
+  @@index([poId])
+}
+
+model OutboundBatch {
+  id                   String               @id
+  outboundOrderId      String
+  batchNumber          String
+  warehouseId          String
+  warehouseName        String
+  qty                  Int
+  shippedDate          DateTime
+  destination          String?
+  trackingNumber       String?
+  shippingMethod       ShippingMethod?
+  vesselName           String?
+  vesselVoyage         String?
+  portOfLoading        String?
+  portOfDischarge      String?
+  eta                  DateTime?
+  actualDepartureDate  DateTime?
+  actualArrivalDate    DateTime?
+  status               String               @default("待发货")
+  currentLocation      String?
+  lastEvent            String?
+  lastEventTime        DateTime?
+  arrivalConfirmedAt   DateTime?
+  notes                String?
+  createdAt            DateTime             @default(now())
+  containerId          String?
+  logisticsChannelId   String?
+  logisticsChannelName String?
+  destinationCountry   String?
+  destinationPlatform  String?
+  destinationStoreId   String?
+  destinationStoreName String?
+  ownerId              String?
+  ownerName            String?
+  ownerType            String?
+  sourceBatchNumber    String?
+  ContainerPreRecord   ContainerPreRecord[]
+  LogisticsCost        LogisticsCost[]
+  Container            Container?           @relation(fields: [containerId], references: [id])
+  OutboundOrder        OutboundOrder        @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  Warehouse            Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  OutboundBatchItem    OutboundBatchItem[]
+
+  @@index([containerId])
+  @@index([destinationCountry])
+  @@index([destinationPlatform])
+  @@index([destinationStoreId])
+  @@index([outboundOrderId])
+  @@index([ownerId])
+  @@index([warehouseId])
+}
+
+model OutboundBatchItem {
+  id                  String             @id
+  outboundBatchId     String
+  outboundOrderItemId String?
+  variantId           String?
+  sku                 String
+  skuName             String?
+  spec                String?
+  qty                 Int
+  createdAt           DateTime           @default(now())
+  OutboundBatch       OutboundBatch      @relation(fields: [outboundBatchId], references: [id], onDelete: Cascade)
+  OutboundOrderItem   OutboundOrderItem? @relation(fields: [outboundOrderItemId], references: [id])
+  ProductVariant      ProductVariant?    @relation(fields: [variantId], references: [id])
+
+  @@index([outboundBatchId])
+  @@index([variantId])
+}
+
+model OutboundOrder {
+  id                 String               @id
+  outboundNumber     String               @unique
+  variantId          String?
+  sku                String?
+  qty                Int?
+  shippedQty         Int                  @default(0)
+  warehouseId        String
+  warehouseName      String
+  destination        String?
+  status             String               @default("待出库")
+  reason             String?
+  pendingInboundId   String?              @unique
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  ContainerPreRecord ContainerPreRecord[]
+  OutboundBatch      OutboundBatch[]
+  PendingInbound     PendingInbound?      @relation(fields: [pendingInboundId], references: [id])
+  ProductVariant     ProductVariant?      @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  Warehouse          Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  OutboundOrderItem  OutboundOrderItem[]
+
+  @@index([variantId])
+  @@index([warehouseId])
+}
+
+model OutboundOrderItem {
+  id                String              @id
+  outboundOrderId   String
+  variantId         String?
+  sku               String
+  skuName           String?
+  spec              String?
+  qty               Int
+  shippedQty        Int                 @default(0)
+  unitPrice         Decimal?            @db.Decimal(18, 2)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  OutboundBatchItem OutboundBatchItem[]
+  OutboundOrder     OutboundOrder       @relation(fields: [outboundOrderId], references: [id], onDelete: Cascade)
+  ProductVariant    ProductVariant?     @relation(fields: [variantId], references: [id])
+
+  @@index([outboundOrderId])
+  @@index([variantId])
+}
+
+model OverseasCompany {
+  id          String   @id
+  name        String
+  country     String
+  companyType String
+  contact     String?
+  phone       String?
+  email       String?
+  address     String?
+  taxId       String?
+  bankName    String?
+  bankAccount String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([country])
+  @@index([name])
+}
+
+model PendingEntry {
+  id               String    @id
+  type             String
+  relatedId        String
+  billCategory     String?
+  billType         String?
+  month            String?
+  agencyName       String?
+  supplierName     String?
+  factoryName      String?
+  accountName      String?
+  expenseItem      String?
+  storeName        String?
+  amount           Decimal   @db.Decimal(18, 2)
+  currency         String
+  netAmount        Decimal   @db.Decimal(18, 2)
+  approvedBy       String
+  approvedAt       DateTime
+  status           String    @default("Pending")
+  entryAccountId   String?
+  entryAccountName String?
+  entryDate        DateTime?
+  entryBy          String?
+  entryAt          DateTime?
+  entryFlowId      String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+
+  @@index([relatedId])
+  @@index([status])
+  @@index([type])
+}
+
+model PendingInbound {
+  id                     String               @id
+  inboundNumber          String               @unique
+  deliveryOrderId        String?              @unique
+  deliveryNumber         String?
+  contractId             String?
+  contractNumber         String?
+  sku                    String
+  variantId              String?
+  qty                    Int
+  receivedQty            Int                  @default(0)
+  domesticTrackingNumber String?
+  shippedDate            DateTime?
+  status                 String               @default("待入库")
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime
+  fromOutboundId         String?
+  fromOutboundNumber     String?
+  InboundBatch           InboundBatch[]
+  OutboundOrder          OutboundOrder?
+  DeliveryOrder          DeliveryOrder?       @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
+  ProductVariant         ProductVariant?      @relation(fields: [variantId], references: [id])
+  PendingInboundItem     PendingInboundItem[]
+
+  @@index([deliveryOrderId])
+  @@index([fromOutboundId])
+  @@index([status])
+  @@index([variantId])
+}
+
+model PendingInboundItem {
+  id               String          @id
+  pendingInboundId String
+  variantId        String?
+  sku              String
+  skuName          String?
+  spec             String?
+  qty              Int
+  receivedQty      Int             @default(0)
+  unitPrice        Decimal?        @db.Decimal(18, 2)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  PendingInbound   PendingInbound  @relation(fields: [pendingInboundId], references: [id], onDelete: Cascade)
+  ProductVariant   ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([pendingInboundId])
+  @@index([variantId])
+}
+
+model Product {
+  id                String            @id
+  spuCode           String?
+  name              String
+  category          String?
+  brand             String?
+  description       String?
+  mainImage         String?
+  galleryImages     Json?
+  material          String?
+  specDescription   String?
+  status            ProductStatus     @default(ACTIVE)
+  suppliers         Json?
+  customsNameCN     String?
+  customsNameEN     String?
+  defaultSupplierId String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime
+  Supplier          Supplier?         @relation(fields: [defaultSupplierId], references: [id])
+  ProductSupplier   ProductSupplier[]
+  ProductVariant    ProductVariant[]
+  VideoTask         VideoTask[]
+
+  @@index([defaultSupplierId])
+}
+
+model ProductSupplier {
+  id         String   @id
+  productId  String
+  supplierId String
+  price      Decimal? @db.Decimal(18, 2)
+  moq        Int?
+  leadTime   Int?
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  Product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  Supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, supplierId])
+  @@index([productId])
+  @@index([supplierId])
+}
+
+model ProductVariant {
+  id                       String                     @id
+  productId                String
+  skuId                    String                     @unique
+  color                    String?
+  size                     String?
+  weightKg                 Decimal?                   @db.Decimal(10, 3)
+  barcode                  String?
+  costPrice                Decimal?                   @db.Decimal(18, 2)
+  stockQuantity            Int                        @default(0)
+  currency                 String                     @default("CNY")
+  targetRoi                Decimal?                   @db.Decimal(5, 2)
+  lengthCm                 Decimal?                   @db.Decimal(10, 2)
+  widthCm                  Decimal?                   @db.Decimal(10, 2)
+  heightCm                 Decimal?                   @db.Decimal(10, 2)
+  volumetricDivisor        Int?
+  atFactory                Int                        @default(0)
+  atDomestic               Int                        @default(0)
+  inTransit                Int                        @default(0)
+  platformSkuMapping       Json?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime
+  InventoryLog             InventoryLog[]
+  InventoryMovement        InventoryMovement[]
+  InventoryOwnershipLedger InventoryOwnershipLedger[]
+  InventoryStock           InventoryStock[]
+  OutboundBatchItem        OutboundBatchItem[]
+  OutboundOrder            OutboundOrder[]
+  OutboundOrderItem        OutboundOrderItem[]
+  PendingInbound           PendingInbound[]
+  PendingInboundItem       PendingInboundItem[]
+  Product                  Product                    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  PurchaseContractItem     PurchaseContractItem[]
+  Stock                    Stock[]
+  StockLog                 StockLog[]
+
+  @@index([productId])
+  @@index([skuId])
+}
+
+model PurchaseContract {
+  id                   String                 @id
+  contractNumber       String                 @unique
+  supplierId           String?
+  supplierName         String
+  sku                  String
+  skuId                String?
+  unitPrice            Decimal                @db.Decimal(18, 2)
+  totalQty             Int
+  pickedQty            Int                    @default(0)
+  finishedQty          Int                    @default(0)
+  totalAmount          Decimal                @db.Decimal(18, 2)
+  depositRate          Decimal                @db.Decimal(5, 2)
+  depositAmount        Decimal                @db.Decimal(18, 2)
+  depositPaid          Decimal                @default(0) @db.Decimal(18, 2)
+  tailPeriodDays       Int
+  deliveryDate         DateTime?
+  status               PurchaseContractStatus
+  contractVoucher      String?
+  totalPaid            Decimal                @default(0) @db.Decimal(18, 2)
+  totalOwed            Decimal                @default(0) @db.Decimal(18, 2)
+  relatedOrderIds      String[]
+  relatedOrderNumbers  String[]
+  approvedBy           String?
+  approvedAt           DateTime?
+  approvalNotes        String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  DeliveryOrder        DeliveryOrder[]
+  GeneratedContract    GeneratedContract[]
+  Supplier             Supplier?              @relation(fields: [supplierId], references: [id])
+  PurchaseContractItem PurchaseContractItem[]
+  PurchaseOrder        PurchaseOrder?
+}
+
+model PurchaseContractItem {
+  id               String           @id
+  contractId       String
+  variantId        String?
+  sku              String
+  skuName          String?
+  spec             String?
+  unitPrice        Decimal          @db.Decimal(18, 2)
+  qty              Int
+  pickedQty        Int              @default(0)
+  finishedQty      Int              @default(0)
+  totalAmount      Decimal          @db.Decimal(18, 2)
+  sortOrder        Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime
+  PurchaseContract PurchaseContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  ProductVariant   ProductVariant?  @relation(fields: [variantId], references: [id])
+
+  @@index([contractId])
+  @@index([variantId])
+}
+
+model PurchaseOrder {
+  id                    String              @id
+  orderNumber           String              @unique
+  uid                   String?             @unique
+  createdBy             String
+  platform              Platform
+  storeId               String?
+  storeName             String?
+  sku                   String?
+  skuId                 String?
+  productName           String?
+  quantity              Int?
+  expectedDeliveryDate  DateTime?
+  urgency               String              @default("普通")
+  notes                 String?
+  riskControlStatus     String              @default("待评估")
+  riskControlBy         String?
+  riskControlAt         DateTime?
+  riskControlNotes      String?
+  riskControlSnapshot   Json?
+  approvalStatus        String              @default("待审批")
+  approvedBy            String?
+  approvedAt            DateTime?
+  approvalNotes         String?
+  pushedToProcurementAt DateTime?
+  pushedBy              String?
+  procurementNotes      String?
+  contractId            String?             @unique
+  currentStep           String?
+  status                PurchaseOrderStatus @default(PENDING_RISK)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime
+  GeneratedContract     GeneratedContract[]
+  OrderItem             OrderItem[]
+  PurchaseContract      PurchaseContract?   @relation(fields: [contractId], references: [id])
+  Department            Department?         @relation(fields: [currentStep], references: [id])
+  Store                 Store?              @relation(fields: [storeId], references: [id])
+
+  @@index([approvalStatus])
+  @@index([contractId])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@index([currentStep])
+  @@index([riskControlStatus])
+  @@index([status])
+  @@index([storeId])
+}
+
 model RebateReceivable {
-  id              String   @id @default(uuid())
+  id              String   @id
   rechargeId      String
   rechargeDate    DateTime
   agencyId        String
@@ -1857,193 +1287,545 @@ model RebateReceivable {
   rebateAmount    Decimal  @db.Decimal(18, 2)
   currency        String
   currentBalance  Decimal  @db.Decimal(18, 2)
-  status          String   @default("待核销") // 待核销 | 核销中 | 已结清
-  writeoffRecords Json?    @default("[]") // 核销流水 JSON
-  adjustments     Json?    @default("[]") // 手动修正 JSON
+  status          String   @default("待核销")
+  writeoffRecords Json?    @default("[]")
+  adjustments     Json?    @default("[]")
   notes           String?
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime
 
-  @@index([agencyId])
   @@index([adAccountId])
+  @@index([agencyId])
   @@index([rechargeId])
   @@index([status])
 }
 
-// ========== 通知、供应商对账、供应链扩展、业财关联（原 localStorage 迁移） ==========
+model SalesVelocity {
+  id                 String   @id
+  storeId            String
+  storeName          String
+  sku                String
+  dailySales         Decimal  @db.Decimal(12, 2)
+  currentStock       Int
+  inTransitQty       Int      @default(0)
+  daysUntilStockout  Int
+  recommendedRestock Int
+  lastUpdated        DateTime
 
-enum NotificationType {
-  payment_required
-  approval_rejected
-  payment_completed
-  cashier_review_required
-  finance_payment_required
+  @@unique([storeId, sku])
+  @@index([storeId])
 }
 
-enum NotificationRelatedType {
-  monthly_bill
-  payment_request
-  other
+model Stock {
+  id             String         @id
+  variantId      String
+  warehouseId    String
+  qty            Int            @default(0)
+  reservedQty    Int            @default(0)
+  availableQty   Int            @default(0)
+  updatedAt      DateTime
+  createdAt      DateTime       @default(now())
+  ProductVariant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  Warehouse      Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, warehouseId])
+  @@index([variantId])
+  @@index([warehouseId])
 }
 
-enum NotificationPriority {
-  high
-  medium
-  low
+model StockLog {
+  id                 String                @id
+  variantId          String
+  warehouseId        String
+  reason             StockLogReason
+  movementType       InventoryMovementType
+  qty                Int
+  qtyBefore          Int
+  qtyAfter           Int
+  unitCost           Decimal?              @db.Decimal(18, 2)
+  totalCost          Decimal?              @db.Decimal(18, 2)
+  currency           String?
+  operator           String?
+  operationDate      DateTime
+  relatedOrderId     String?
+  relatedOrderType   String?
+  relatedOrderNumber String?
+  notes              String?
+  createdAt          DateTime              @default(now())
+  ProductVariant     ProductVariant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  Warehouse          Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([operationDate])
+  @@index([reason])
+  @@index([variantId])
+  @@index([warehouseId])
 }
 
-model Notification {
-  id         String                 @id @default(uuid())
-  type       NotificationType
-  title      String
-  message    String
-  relatedId  String
-  relatedType NotificationRelatedType
-  read       Boolean                @default(false)
-  readAt     DateTime?
-  actionUrl  String?
-  priority   NotificationPriority   @default(medium)
-  createdAt  DateTime               @default(now())
-
-  @@index([relatedId, relatedType])
-  @@index([read])
+model Store {
+  id                  String              @id
+  name                String
+  platform            Platform
+  country             String
+  currency            String
+  accountId           String
+  accountName         String
+  vatNumber           String?
+  taxId               String?
+  createdAt           DateTime            @default(now())
+  overseasCompanyId   String?
+  overseasCompanyName String?
+  AdAccount           AdAccount[]
+  BankAccount         BankAccount[]
+  InventoryStock      InventoryStock[]
+  LogisticsTracking   LogisticsTracking[]
+  PurchaseOrder       PurchaseOrder[]
 }
 
-enum SupplierTypeEnum {
-  AD_AGENCY   // 广告代理商
-  LOGISTICS   // 物流商
-  VENDOR      // 供货商
+model StoreOrderSettlement {
+  id                                            String   @id
+  storeId                                       String?
+  statementDate                                 String
+  statementId                                   String
+  paymentId                                     String
+  status                                        String
+  currency                                      String
+  type                                          String
+  orderAdjustmentId                             String
+  skuId                                         String?
+  quantity                                      Int      @default(0)
+  productName                                   String
+  skuName                                       String?
+  orderCreatedDate                              String?
+  orderShipmentDate                             String?
+  orderDeliveryDate                             String?
+  totalSettlementAmount                         String
+  netSales                                      String?
+  grossSales                                    String?
+  grossSalesRefund                              String?
+  sellerDiscount                                String?
+  sellerDiscountRefund                          String?
+  shipping                                      String?
+  tiktokShopShippingFee                         String?
+  fulfilledByTiktokShopShippingFee              String?
+  signatureConfirmationServiceFee               String?
+  shippingInsuranceFee                          String?
+  customerpaidShippingFee                       String?
+  customerpaidShippingFeeRefund                 String?
+  tiktokShopShippingIncentive                   String?
+  tiktokShopShippingIncentiveRefund             String?
+  shippingFeeSubsidy                            String?
+  returnShippingFee                             String?
+  fbtFulfillmentFee                             String?
+  customerShippingFeeOffset                     String?
+  shippingFeeDiscount                           String?
+  returnShippingLabelFee                        String?
+  fbtFulfillmentFeeReimbursement                String?
+  returnShippingFeePaidByCustomers              String?
+  returnShippingFeeReimbursement                String?
+  fees                                          String?
+  transactionFee                                String?
+  referralFee                                   String?
+  refundAdministrationFee                       String?
+  affiliateCommission                           String?
+  affiliatePartnerCommission                    String?
+  affiliateShopAdsCommission                    String?
+  tiktokShopPartnerCommission                   String?
+  cofundedPromotionSellerfunded                 String?
+  smartPromotionFeeTax                          String?
+  cofundedCreatorBonus                          String?
+  affiliateCommissionDeposit                    String?
+  affiliateCommissionRefund                     String?
+  affiliatePartnerShopAdsCommission             String?
+  campaignServiceFee                            String?
+  campaignResourceFee                           String?
+  salesTaxOnReferralFees                        String?
+  smartPromotionFee                             String?
+  adjustmentAmount                              String?
+  adjustmentReason                              String?
+  relatedOrderId                                String?
+  col60                                         String?
+  customerPayment                               String?
+  customerRefund                                String?
+  sellerCofundedVoucherDiscount                 String?
+  sellerCofundedVoucherDiscountRefund           String?
+  platformDiscounts                             String?
+  platformDiscountsRefund                       String?
+  platformCofundedVoucherDiscounts              String?
+  platformCofundedVoucherDiscountsRefund        String?
+  adsReferralFeeDiscount                        String?
+  salesTaxPayment                               String?
+  salesTaxRefund                                String?
+  retailDeliveryFeePayment                      String?
+  retailDeliveryFeeRefund                       String?
+  customerpaidShippingFeeBeforeDiscounts        String?
+  sellerShippingFeeDiscount                     String?
+  tiktokShopShippingFeeDiscountToCustomer       String?
+  modeOfTiktokShopShippingFeeDiscountToCustomer String?
+  returnShippingFeePaidByCustomers2             String?
+  estimatedChargeablePackageWeight              String?
+  chargeablePackageWeight                       String?
+  fbtChargeableGoodsWeight                      String?
+  collectionMethods                             String?
+  deliveryOption                                String?
+  signatureConfirmationServiceFeeType           String?
+  col85                                         String?
+  col86                                         String?
+  col87                                         String?
+  col88                                         String?
+  col89                                         String?
+  col90                                         String?
+  col91                                         String?
+  col92                                         String?
+  col93                                         String?
+  col94                                         String?
+  col95                                         String?
+  col96                                         String?
+  col97                                         String?
+  col98                                         String?
+  col99                                         String?
+  col100                                        String?
+  col101                                        String?
+  col102                                        String?
+  col103                                        String?
+  col104                                        String?
+  col105                                        String?
+  col106                                        String?
+  col107                                        String?
+  col108                                        String?
+  col109                                        String?
+  col110                                        String?
+  col111                                        String?
+  col112                                        String?
+  col113                                        String?
+  col114                                        String?
+  col115                                        String?
+  col116                                        String?
+  col117                                        String?
+  col118                                        String?
+  col119                                        String?
+  col120                                        String?
+  col121                                        String?
+  col122                                        String?
+  col123                                        String?
+  col124                                        String?
+  col125                                        String?
+  col126                                        String?
+  col127                                        String?
+  col128                                        String?
+  col129                                        String?
+  col130                                        String?
+  col131                                        String?
+  col132                                        String?
+  col133                                        String?
+  col134                                        String?
+  col135                                        String?
+  col136                                        String?
+  col137                                        String?
+  col138                                        String?
+  col139                                        String?
+  col140                                        String?
+  col141                                        String?
+  col142                                        String?
+  col143                                        String?
+  col144                                        String?
+  col145                                        String?
+  col146                                        String?
+  col147                                        String?
+  col148                                        String?
+  col149                                        String?
+  col150                                        String?
+  col151                                        String?
+  col152                                        String?
+  col153                                        String?
+  col154                                        String?
+  col155                                        String?
+  col156                                        String?
+  col157                                        String?
+  col158                                        String?
+  col159                                        String?
+  col160                                        String?
+  col161                                        String?
+  col162                                        String?
+  col163                                        String?
+  col164                                        String?
+  col165                                        String?
+  col166                                        String?
+  col167                                        String?
+  col168                                        String?
+  col169                                        String?
+  col170                                        String?
+  col171                                        String?
+  sourceFileName                                String?
+  createdAt                                     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([orderAdjustmentId])
+  @@index([paymentId])
+  @@index([statementDate])
+  @@index([storeId])
+}
+
+model Supplier {
+  id                 String              @id
+  name               String
+  contact            String
+  phone              String
+  depositRate        Decimal             @db.Decimal(5, 2)
+  tailPeriodDays     Int
+  settleBase         SettleBase
+  level              SupplierLevel?
+  category           String?
+  address            String?
+  bankAccount        String?
+  bankName           String?
+  taxId              String?
+  invoiceRequirement InvoiceRequirement?
+  invoicePoint       Decimal?            @db.Decimal(5, 2)
+  defaultLeadTime    Int?
+  moq                Int?
+  factoryImages      Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime
+  Product            Product[]
+  ProductSupplier    ProductSupplier[]
+  PurchaseContract   PurchaseContract[]
+}
+
+model SupplierMonthlyBill {
+  id                 String             @id
+  uid                String?            @unique
+  supplierProfileId  String
+  supplierName       String
+  supplierType       SupplierTypeEnum
+  month              String
+  billNumber         String?
+  billDate           DateTime
+  supplierBillAmount Decimal            @db.Decimal(18, 2)
+  systemAmount       Decimal            @db.Decimal(18, 2)
+  difference         Decimal            @db.Decimal(18, 2)
+  currency           String
+  rebateAmount       Decimal            @db.Decimal(18, 2)
+  rebateRate         Decimal?           @db.Decimal(5, 2)
+  netAmount          Decimal            @db.Decimal(18, 2)
+  relatedFlowIds     String[]           @default([])
+  uploadedBillFile   String?
+  status             SupplierBillStatus
+  createdBy          String
+  createdAt          DateTime           @default(now())
+  submittedAt        DateTime?
+  approvedBy         String?
+  approvedAt         DateTime?
+  rejectionReason    String?
+  paidBy             String?
+  paidAt             DateTime?
+  paymentAccountId   String?
+  paymentAccountName String?
+  paymentMethod      String?
+  paymentFlowId      String?
+  paymentVoucher     String?
+  notes              String?
+  SupplierProfile    SupplierProfile    @relation(fields: [supplierProfileId], references: [id], onDelete: Cascade)
+  SupplierPayment    SupplierPayment?
+
+  @@index([month])
+  @@index([status])
+  @@index([supplierProfileId])
+}
+
+model SupplierPayment {
+  id                  String              @id
+  billId              String              @unique
+  supplierProfileId   String
+  supplierName        String
+  amount              Decimal             @db.Decimal(18, 2)
+  currency            String
+  paymentDate         DateTime
+  paymentAccountId    String
+  paymentAccountName  String
+  paymentMethod       String
+  paymentFlowId       String
+  paymentVoucher      String?
+  paidBy              String
+  paidAt              DateTime
+  notes               String?
+  SupplierMonthlyBill SupplierMonthlyBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  SupplierProfile     SupplierProfile     @relation(fields: [supplierProfileId], references: [id], onDelete: Cascade)
+
+  @@index([supplierProfileId])
 }
 
 model SupplierProfile {
-  id            String    @id @default(uuid())
-  name          String
-  type          SupplierTypeEnum
-  contact       String
-  phone         String
-  email         String?
-  address       String?
-  rebateRate    Decimal?   @db.Decimal(5, 2)
-  settlementDay Int?
-  creditTerm    String?
-  currency      String?    // USD | CNY | HKD
-  agencyId      String?
-  supplierId    String?
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  monthlyBills  SupplierMonthlyBill[]
-  payments      SupplierPayment[]
+  id                  String                @id
+  name                String
+  type                SupplierTypeEnum
+  contact             String
+  phone               String
+  email               String?
+  address             String?
+  rebateRate          Decimal?              @db.Decimal(5, 2)
+  settlementDay       Int?
+  creditTerm          String?
+  currency            String?
+  agencyId            String?
+  supplierId          String?
+  notes               String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  SupplierMonthlyBill SupplierMonthlyBill[]
+  SupplierPayment     SupplierPayment[]
 
   @@index([type])
 }
 
-enum SupplierBillStatus {
-  Draft
-  Pending_Approval
-  Approved
-  Paid
-  Rejected
+model TrackingEvent {
+  id                String            @id
+  trackingId        String
+  timestamp         DateTime
+  location          String?
+  description       String
+  status            LogisticsStatus
+  LogisticsTracking LogisticsTracking @relation(fields: [trackingId], references: [id])
 }
 
-model SupplierMonthlyBill {
-  id                  String              @id @default(uuid())
-  uid                 String?             @unique
-  supplierProfileId   String
-  supplierName        String
-  supplierType        SupplierTypeEnum
-  month               String
-  billNumber          String?
-  billDate            DateTime
-  supplierBillAmount Decimal             @db.Decimal(18, 2)
-  systemAmount        Decimal             @db.Decimal(18, 2)
-  difference          Decimal             @db.Decimal(18, 2)
-  currency            String
-  rebateAmount        Decimal             @db.Decimal(18, 2)
-  rebateRate          Decimal?            @db.Decimal(5, 2)
-  netAmount           Decimal             @db.Decimal(18, 2)
-  relatedFlowIds      String[]            @default([])
-  uploadedBillFile    String?
-  status              SupplierBillStatus
-  createdBy           String
-  createdAt           DateTime            @default(now())
-  submittedAt         DateTime?
-  approvedBy          String?
-  approvedAt          DateTime?
-  rejectionReason     String?
-  paidBy              String?
-  paidAt              DateTime?
-  paymentAccountId    String?
-  paymentAccountName  String?
-  paymentMethod       String?
-  paymentFlowId       String?
-  paymentVoucher      String?
-  notes               String?
+model User {
+  id           String      @id
+  email        String      @unique
+  password     String
+  name         String
+  role         String      @default("USER")
+  departmentId String?
+  isActive     Boolean     @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime
+  Department   Department? @relation(fields: [departmentId], references: [id])
 
-  profile             SupplierProfile     @relation(fields: [supplierProfileId], references: [id], onDelete: Cascade)
-  payment             SupplierPayment?
-
-  @@index([supplierProfileId])
-  @@index([month])
-  @@index([status])
+  @@index([departmentId])
+  @@index([email])
 }
 
-model SupplierPayment {
-  id                  String   @id @default(uuid())
-  billId              String
-  supplierProfileId  String
-  supplierName       String
-  amount             Decimal  @db.Decimal(18, 2)
-  currency           String
-  paymentDate        DateTime
-  paymentAccountId   String
-  paymentAccountName String
-  paymentMethod      String
-  paymentFlowId      String
-  paymentVoucher     String?
-  paidBy             String
-  paidAt             DateTime
-  notes              String?
-
-  profile             SupplierProfile     @relation(fields: [supplierProfileId], references: [id], onDelete: Cascade)
-  bill                SupplierMonthlyBill @relation(fields: [billId], references: [id], onDelete: Cascade)
-
-  @@unique([billId])
-  @@index([supplierProfileId])
+model VideoTask {
+  id           String          @id
+  title        String
+  brief        String?
+  productId    String?
+  influencerId String?
+  assigneeId   String?
+  status       VideoTaskStatus @default(TODO)
+  dueDate      DateTime?
+  videoUrl     String?
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime
+  Employee     Employee?       @relation(fields: [assigneeId], references: [id])
+  Influencer   Influencer?     @relation(fields: [influencerId], references: [id])
+  Product      Product?        @relation(fields: [productId], references: [id])
 }
 
-enum OrderTrackingStatus {
-  PURCHASING    // 采购中
-  PRODUCING     // 生产中
-  SHIPPED       // 已发货
-  PARTIAL_ARRIVAL  // 部分到货
-  ARRIVED       // 已到货
-  COMPLETED     // 已完成
+model Warehouse {
+  id                                                   String            @id
+  code                                                 String            @unique
+  name                                                 String
+  address                                              String?
+  contact                                              String?
+  phone                                                String?
+  manager                                              String?
+  location                                             InventoryLocation
+  type                                                 WarehouseType     @default(DOMESTIC)
+  isActive                                             Boolean           @default(true)
+  capacity                                             Int?
+  notes                                                String?
+  createdAt                                            DateTime          @default(now())
+  updatedAt                                            DateTime
+  InboundBatch                                         InboundBatch[]
+  InventoryLog_InventoryLog_fromWarehouseIdToWarehouse InventoryLog[]    @relation("InventoryLog_fromWarehouseIdToWarehouse")
+  InventoryLog_InventoryLog_toWarehouseIdToWarehouse   InventoryLog[]    @relation("InventoryLog_toWarehouseIdToWarehouse")
+  InventoryLog_InventoryLog_warehouseIdToWarehouse     InventoryLog[]    @relation("InventoryLog_warehouseIdToWarehouse")
+  OutboundBatch                                        OutboundBatch[]
+  OutboundOrder                                        OutboundOrder[]
+  Stock                                                Stock[]
+  StockLog                                             StockLog[]
+
+  @@index([code])
+  @@index([location])
+  @@index([type])
 }
 
-model OrderTracking {
-  id         String              @id @default(uuid())
-  poId       String
-  status     OrderTrackingStatus
-  statusDate DateTime
-  notes      String?
-  createdAt  DateTime            @default(now())
-
-  @@index([poId])
+enum AccountCategory {
+  PRIMARY
+  VIRTUAL
 }
 
-model BatchReceipt {
-  id           String   @id @default(uuid())
-  poId         String
-  receiptId    String
-  qty          Int
-  receivedQty  Int
-  ownership    Json     // [{ storeId, storeName, percentage }]
-  receivedDate DateTime
-  createdAt    DateTime @default(now())
+enum AccountType {
+  CORPORATE
+  PERSONAL
+  PLATFORM
+}
 
-  @@index([poId])
+enum AdPlatform {
+  FB
+  Google
+  TikTok
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  PASSED
+  REJECTED
+}
+
+enum CashFlowStatus {
+  CONFIRMED
+  PENDING
+}
+
+enum CashFlowType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum CommissionPeriod {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  PROJECT
+}
+
+enum CommissionRuleType {
+  FIXED_AMOUNT
+  PERCENTAGE
+  TIERED
+  CONDITIONAL
+  FORMULA
+}
+
+enum ContainerStatus {
+  PLANNED
+  LOADING
+  IN_TRANSIT
+  ARRIVED_PORT
+  CUSTOMS_CLEAR
+  IN_WAREHOUSE
+  CLOSED
+}
+
+enum DeliveryOrderStatus {
+  PENDING
+  SHIPPED
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+enum DepartmentEnum {
+  FINANCE
+  PROCUREMENT
+  LOGISTICS
+  BD
+  OPERATIONS
+  EDITOR
 }
 
 enum DocumentEntityType {
@@ -2058,233 +1840,189 @@ enum DocumentType {
   other
 }
 
-model Document {
-  id         String             @id @default(uuid())
-  entityType DocumentEntityType
-  entityId   String
-  name       String
-  type       DocumentType
-  fileUrl    String?
-  uploadDate DateTime           @default(now())
-  uploadedBy String?
-  notes      String?
-
-  @@index([entityType, entityId])
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  PROBATION
 }
 
-model SalesVelocity {
-  id                 String   @id @default(uuid())
-  storeId            String
-  storeName          String
-  sku                String
-  dailySales         Decimal   @db.Decimal(12, 2)
-  currentStock        Int
-  inTransitQty        Int       @default(0)
-  daysUntilStockout   Int
-  recommendedRestock Int
-  lastUpdated        DateTime  @updatedAt
-
-  @@unique([storeId, sku])
-  @@index([storeId])
+enum InventoryLocation {
+  FACTORY
+  DOMESTIC
+  TRANSIT
+  OVERSEAS
 }
 
-model BusinessRelation {
-  id         String   @id @default(uuid())
-  sourceUID  String
-  targetUID  String
-  relationType String
-  metadata   Json?
-  createdAt  DateTime @default(now())
-
-  @@index([sourceUID])
-  @@index([targetUID])
-  @@unique([sourceUID, targetUID, relationType])
+enum InventoryLogStatus {
+  PENDING_INBOUND
+  INBOUNDED
+  IN_TRANSIT
+  ARRIVED
 }
 
-// 业财 UID 映射：业务 ID（oldId）↔ 业务 UID，用于穿透查询兼容
-model BusinessUidMapping {
-  id         String   @id @default(uuid())
-  entityType String   // ORDER, CASH_FLOW, BILL 等
-  oldId      String   // 原业务表 id
-  uid        String   // 业务 UID
-  createdAt  DateTime @default(now())
-
-  @@unique([oldId])
-  @@index([entityType])
-  @@index([uid])
+enum InventoryLogType {
+  IN
+  OUT
+  TRANSFER
 }
 
-model LogisticsCost {
-  id              String   @id @default(uuid())
-  
-  // 关联
-  outboundBatchId    String?  
-  logisticsChannelId String? 
-  
-  // 费用明细
-  costType        String   
-  amount          Decimal  @db.Decimal(18, 2)
-  currency        String   
-  
-  // 付款方式
-  paymentType     String   
-  creditDays      Int?     
-  dueDate         DateTime? 
-  paymentStatus   String   
-  paidDate        DateTime? 
-  invoiceNumber   String?   
-  invoiceStatus   String?   
-  notes           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  // 关联关系
-  outboundBatch    OutboundBatch?    @relation(fields: [outboundBatchId], references: [id], onDelete: SetNull)
-  logisticsChannel LogisticsChannel? @relation(fields: [logisticsChannelId], references: [id], onDelete: SetNull)
-
-  @@index([outboundBatchId])
-  @@index([logisticsChannelId])
+enum InventoryMovementType {
+  FACTORY_DONE
+  FACTORY_SHIPMENT
+  DOMESTIC_INBOUND
+  DOMESTIC_OUTBOUND
+  OCEAN_SHIPMENT
+  OCEAN_ARRIVAL
+  TRANSFER
+  STOCKTAKE
+  ADJUSTMENT
+  SAMPLE_OUTBOUND
 }
 
-// 国内出口公司
-model Exporter {
-  id          String   @id @default(uuid())
-  name        String // 公司名
-  country     String   @default("CN")
-  companyType String   @default("exporter")
-  contact     String? // 联系人
-  phone       String?
-  email       String?
-  address     String?
-  taxId       String? // 税号
-  bankName    String? // 银行名称
-  bankAccount String? // 银行账号
-  notes       String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([name])
-  @@index([country])
+enum InvoiceRequirement {
+  SPECIAL_INVOICE
+  GENERAL_INVOICE
+  NO_INVOICE
 }
 
-// 海外公司
-model OverseasCompany {
-  id          String   @id @default(uuid())
-  name        String // 公司名
-  country     String // 国家
-  companyType String // 公司类型
-  contact     String?
-  phone       String?
-  email       String?
-  address     String?
-  taxId       String? // 税号
-  bankName    String? // 银行名称
-  bankAccount String? // 银行账号
-  notes       String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([name])
-  @@index([country])
+enum LogisticsStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+  EXCEPTION
 }
 
-// 预录单 - 用于预先录入产品明细，计算体积后转为正式柜子
-model ContainerPreRecord {
-  id          String   @id @default(uuid())
-  name        String?  // 预录单名称/批次号
-  status      String   @default("Draft") // Draft(草稿), Confirmed(已确认/待转柜), Converted(已转柜)
-  notes       String?
-  loadingProductQty Int? // 装柜产品总数量（自动汇总）
-  
-  // 主体信息
-  exporterId         String?
-  exporterName        String?
-  overseasCompanyId   String?
-  overseasCompanyName String?
-  loadingLocation     String? // 装柜地点
-  formFilledAt        DateTime? // 填表时间
-  loadingDate         DateTime? // 装柜日期
-  shippingWarehouseId String? // 发货仓库ID
-  shippingWarehouseName String? // 发货仓库名称
-  loadingLogisticsCompany String? // 装柜物流公司
-  
-  // 物流信息
-  shippingMethod     String? // 运输方式
-  originPort         String? // 起运港
-  destinationPort    String? // 目的港
-  destinationCountry String? // 目的国
-  
-  // 仓库
-  warehouseId   String?
-  warehouseName String?
-  
-  // 销售
-  platform     String?
-  storeId      String?
-  storeName    String?
-  
-  // 计算结果
-  totalVolumeCBM Decimal? @db.Decimal(18, 3) // 总体积
-  totalWeightKG  Decimal? @db.Decimal(18, 3) // 总重量
-  suggestedContainerType String? // 建议柜型
-  
-  // 关联的正式柜子（转正后）
-  containerId   String?
-
-  // 来源：出库批次 / 出库单（生成预录单时写入，便于追溯与一键转柜后绑定批次）
-  outboundBatchId String?
-  outboundOrderId String?
-  outboundBatch   OutboundBatch? @relation(fields: [outboundBatchId], references: [id], onDelete: SetNull)
-  outboundOrder   OutboundOrder? @relation(fields: [outboundOrderId], references: [id], onDelete: SetNull)
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // 关联产品明细
-  items ContainerPreRecordItem[]
-
-  @@index([status])
-  @@index([containerId])
-  @@index([outboundBatchId])
-  @@index([outboundOrderId])
+enum NotificationPriority {
+  high
+  medium
+  low
 }
 
-// 预录单产品明细
-model ContainerPreRecordItem {
-  id           String   @id @default(uuid())
-  preRecordId  String   // 预录单ID
-  variantId    String?  // SKU ID
-  sku          String   // SKU编码
-  skuName      String?  // SKU名称
-  spec         String?  // 规格
-  qty          Int      // 数量
-  unitVolumeCBM Decimal? @db.Decimal(18, 6) // 单件体积(CBM)
-  unitWeightKG  Decimal? @db.Decimal(10, 3) // 单件重量(KG)
-  totalVolumeCBM Decimal? @db.Decimal(18, 3) // 总计体积
-  totalWeightKG  Decimal? @db.Decimal(18, 3) // 总计重量
-  
-  createdAt    DateTime @default(now())
-  
-  preRecord ContainerPreRecord @relation(fields: [preRecordId], references: [id], onDelete: Cascade)
-  
-  @@index([preRecordId])
-  @@index([variantId])
+enum NotificationRelatedType {
+  monthly_bill
+  payment_request
+  other
 }
 
-// 箱规表
-model BoxSpec {
-  id          String   @id @default(uuid())
-  variantId   String   // 关联 SKU (ProductVariant)
-  boxLengthCm Decimal? @db.Decimal(10, 2) // 箱子长度(cm)
-  boxWidthCm  Decimal? @db.Decimal(10, 2) // 箱子宽度(cm)
-  boxHeightCm Decimal? @db.Decimal(10, 2) // 箱子高度(cm)
-  qtyPerBox   Int      // 一箱装多少个
-  isDefault   Boolean  @default(false) // 是否默认箱规
-  weightKg    Decimal? @db.Decimal(10, 3) // 箱子重量(kg)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+enum NotificationType {
+  payment_required
+  approval_rejected
+  payment_completed
+  cashier_review_required
+  finance_payment_required
+}
 
-  @@index([variantId])
+enum OrderTrackingStatus {
+  PURCHASING
+  PRODUCING
+  SHIPPED
+  PARTIAL_ARRIVAL
+  ARRIVED
+  COMPLETED
+}
+
+enum Platform {
+  TIKTOK
+  AMAZON
+  INSTAGRAM
+  YOUTUBE
+  OTHER
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PurchaseContractStatus {
+  PENDING_APPROVAL
+  PENDING_SHIPMENT
+  PARTIAL_SHIPMENT
+  SHIPPED
+  SETTLED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  PENDING_RISK
+  RISK_APPROVED
+  RISK_REJECTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PUSHED_TO_PROCUREMENT
+  CONTRACT_CREATED
+  CANCELLED
+}
+
+enum RiskControlStatus {
+  PENDING
+  PASSED
+  REJECTED
+}
+
+enum SettleBase {
+  SHIPMENT
+  INBOUND
+}
+
+enum ShippingMethod {
+  SEA
+  AIR
+  EXPRESS
+}
+
+enum StockLogReason {
+  PURCHASE_INBOUND
+  RETURN_INBOUND
+  TRANSFER_INBOUND
+  STOCKTAKE_ADJUSTMENT
+  PRODUCTION_COMPLETE
+  SAMPLE_RETURN
+  SALE_OUTBOUND
+  TRANSFER_OUTBOUND
+  SAMPLE_OUTBOUND
+  DAMAGE_WRITE_OFF
+  STOCKTAKE_LOSS
+  RETURN_SUPPLIER
+}
+
+enum SupplierBillStatus {
+  Draft
+  Pending_Approval
+  Approved
+  Paid
+  Rejected
+}
+
+enum SupplierLevel {
+  S
+  A
+  B
+  C
+}
+
+enum SupplierTypeEnum {
+  AD_AGENCY
+  LOGISTICS
+  VENDOR
+}
+
+enum Urgency {
+  NORMAL
+  URGENT
+  CRITICAL
+}
+
+enum VideoTaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  CANCELLED
+}
+
+enum WarehouseType {
+  DOMESTIC
+  OVERSEAS
 }
