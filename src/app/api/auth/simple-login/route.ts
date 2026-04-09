@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
       include: {
-        department: true
+        Department: true
       }
     })
 
@@ -84,8 +84,8 @@ export async function POST(request: NextRequest) {
 
     // 如果用户没有部门，查找"品牌增长中心"并分配
     let departmentId = user.departmentId
-    let departmentName = user.department?.name || null
-    let departmentCode = user.department?.code || null
+    let departmentName = user.Department?.name || null
+    let departmentCode = user.Department?.code || null
 
     if (!departmentId || !departmentName) {
       try {

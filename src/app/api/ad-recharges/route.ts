@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
@@ -88,13 +89,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const recharge = await prisma.adRecharge.create({
       data: {
+        id: randomUUID(),
+        updatedAt: new Date(),
         agencyId: body.agencyId,
         agencyName: body.agencyName,
         adAccountId: body.accountId,
         accountName: body.accountName,
         date: new Date(body.date),
         month: body.month || new Date(body.date).toISOString().slice(0, 7),
-        account: { connect: { id: body.accountId } },
         amount: body.amount,
         currency: body.currency || "USD",
         paymentStatus: body.paymentStatus || "Pending",

@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
       include: {
-        department: true // 包含部门信息
+        Department: true // 包含部门信息
       }
     })
 
@@ -95,8 +95,8 @@ export async function POST(request: NextRequest) {
 
     // 确定跳转路径
     let redirectPath = DEFAULT_REDIRECT
-    if (user.department?.code) {
-      redirectPath = DEPARTMENT_WORKBENCH_MAP[user.department.code] || DEFAULT_REDIRECT
+    if (user.Department?.code) {
+      redirectPath = DEPARTMENT_WORKBENCH_MAP[user.Department.code] || DEFAULT_REDIRECT
     }
 
     // 返回用户信息和 token
@@ -109,8 +109,8 @@ export async function POST(request: NextRequest) {
         name: user.name,
         role: user.role,
         departmentId: user.departmentId,
-        departmentName: user.department?.name || null,
-        departmentCode: user.department?.code || null
+        departmentName: user.Department?.name || null,
+        departmentCode: user.Department?.code || null
       },
       redirectPath
     })

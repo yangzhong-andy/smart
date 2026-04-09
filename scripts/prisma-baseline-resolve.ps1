@@ -1,10 +1,10 @@
 # Mark prisma/migrations as applied without running SQL (baseline for P3005).
-# Run from repo root: npm run db:baseline:client-b
-# Then: npm run db:migrate:client-b
+# Run from repo root: npm run db:baseline:hangguo
+# Then: npm run db:migrate:hangguo
 # Only use if DB schema already matches migrations (e.g. you used db push before).
 
 $ErrorActionPreference = "Stop"
-$envFile = ".env.client-b"
+$envFile = ".env.hangguo"
 
 if (-not (Test-Path $envFile)) {
   Write-Error "Missing $envFile. Run this script from the project root (D:\smart)."
@@ -36,4 +36,4 @@ foreach ($m in $migrations) {
 }
 
 Write-Host ""
-Write-Host "Baseline done. Next run: npm run db:migrate:client-b" -ForegroundColor Green
+Write-Host "Baseline done. Next run: npm run db:migrate:hangguo" -ForegroundColor Green

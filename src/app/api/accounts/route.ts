@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { AccountType } from '@prisma/client'
@@ -45,10 +46,10 @@ export async function GET(request: NextRequest) {
       prisma.bankAccount.findMany({
         where,
         include: {
-          cashFlows: {
+          CashFlow: {
             select: { amount: true, type: true },
           },
-          children: {
+          other_BankAccount: {
             select: { id: true },
           },
         },
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
         // 根据流水计算实时余额：初始资金 + 收入 - 支出
         const initialCapital = Number(acc.initialCapital) || 0;
         let balance = initialCapital;
-        acc.cashFlows.forEach((flow: any) => {
+        acc.CashFlow.forEach((flow: any) => {
           if (flow.type === 'income') {
             balance += Number(flow.amount);
           } else if (flow.type === 'expense') {
@@ -95,8 +96,8 @@ export async function GET(request: NextRequest) {
           platformUrl: acc.platformUrl || undefined,
           createdAt: acc.createdAt.toISOString(),
           updatedAt: acc.updatedAt.toISOString(),
-          childCount: acc.children?.length || 0,
-          cashFlowCount: acc.cashFlows?.length || 0,
+          childCount: acc.other_BankAccount?.length || 0,
+          cashFlowCount: acc.CashFlow?.length || 0,
         };
       }),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
@@ -140,6 +141,7 @@ export async function POST(request: NextRequest) {
     
     const account = await prisma.bankAccount.create({
       data: {
+        id: typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID(),
         name: body.name,
         accountNumber: body.accountNumber,
         accountType: normalizedAccountType,
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest) {
         platformAccount: body.platformAccount ?? null,
         platformPassword: body.platformPassword ?? null,
         platformUrl: body.platformUrl ?? null,
+        updatedAt: new Date(),
       }
     })
 

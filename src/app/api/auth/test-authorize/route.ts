@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
       include: {
-        department: true
+        Department: true
       }
     })
     
@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
       debugInfo.userIsActive = user.isActive
       debugInfo.userRole = user.role
       debugInfo.userDepartmentId = user.departmentId
-      debugInfo.hasDepartment = !!user.department
-      if (user.department) {
-        debugInfo.departmentName = user.department.name
-        debugInfo.departmentCode = user.department.code
+      debugInfo.hasDepartment = !!user.Department
+      if (user.Department) {
+        debugInfo.departmentName = user.Department.name
+        debugInfo.departmentCode = user.Department.code
       }
     }
     
@@ -81,8 +81,8 @@ export async function POST(request: NextRequest) {
     
     // 步骤 4: 构建返回对象
     debugInfo.step = 'buildResponse'
-    const departmentName = user.department?.name || null
-    const departmentCode = user.department?.code || null
+    const departmentName = user.Department?.name || null
+    const departmentCode = user.Department?.code || null
     const departmentId = user.departmentId || null
     
     const userInfo = {

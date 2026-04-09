@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
@@ -47,14 +48,16 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password.trim(), 10)
     const user = await prisma.user.create({
       data: {
+        id: randomUUID(),
         email: emailNorm,
         password: hashedPassword,
         name: (name || '').trim(),
         role: role || 'USER',
         departmentId: departmentId || null,
         isActive: typeof isActive === 'boolean' ? isActive : true,
+        updatedAt: new Date(),
       },
-      include: { department: true },
+      include: { Department: true },
     })
 
     return NextResponse.json({
@@ -63,8 +66,8 @@ export async function POST(request: NextRequest) {
       name: user.name,
       role: user.role,
       departmentId: user.departmentId,
-      departmentName: user.department?.name || null,
-      departmentCode: user.department?.code || null,
+      departmentName: user.Department?.name || null,
+      departmentCode: user.Department?.code || null,
       isActive: user.isActive,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
@@ -118,8 +121,8 @@ export async function GET(request: NextRequest) {
       name: u.name,
       role: u.role,
       departmentId: u.departmentId,
-      departmentName: u.department?.name || null,
-      departmentCode: u.department?.code || null,
+      departmentName: u.Department?.name || null,
+      departmentCode: u.Department?.code || null,
       isActive: u.isActive,
       lastLoginAt: u.lastLoginAt?.toISOString() || null,
       createdAt: u.createdAt.toISOString(),
