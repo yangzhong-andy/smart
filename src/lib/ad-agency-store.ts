@@ -26,7 +26,7 @@ export type AdAccount = {
   agencyId: string; // 关联代理商ID
   agencyName: string; // 代理商名称（冗余字段）
   accountName: string; // 账户名称
-  platformAccountId?: string; // 平台侧账户 ID（如媒体后台账户编号）
+  platformAccountId?: string; // 平台侧账户 ID（账户ID）
   storeId?: string; // 关联店铺 ID
   storeName?: string; // 关联店铺名称（冗余，便于列表展示）
   currentBalance: number; // 当前余额（实付本金 - 消耗本金，不含返点）
