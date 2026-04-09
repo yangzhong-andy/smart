@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = 'force-dynamic';
+const CACHE_KEY_PREFIX = 'ad-accounts';
 
 export async function GET(
   _req: NextRequest,
@@ -64,6 +66,7 @@ export async function PUT(
       where: { id: params.id },
       data,
     });
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
     return NextResponse.json({
       ...account,
       currentBalance: Number(account.currentBalance),
@@ -96,6 +99,7 @@ export async function DELETE(
     }
 
     await prisma.adAccount.delete({ where: { id: params.id } });
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(

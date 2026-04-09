@@ -72,6 +72,12 @@ export function AccountsTable({
             <tbody className="divide-y divide-slate-800">
               {adAccounts.map((account) => {
                 const accountConsumptions = consumptions.filter((c) => c.adAccountId === account.id);
+                const relatedStoreIds = Array.from(
+                  new Set(accountConsumptions.map((c) => c.storeId).filter((id): id is string => Boolean(id)))
+                );
+                const relatedStoreNames = relatedStoreIds
+                  .map((id) => stores.find((store) => store.id === id)?.name ?? id)
+                  .filter(Boolean);
                 const totalConsumption = accountConsumptions.reduce((sum, c) => sum + c.amount, 0);
                 const totalEstimatedRebate = accountConsumptions.reduce((sum, c) => sum + (c.estimatedRebate || 0), 0);
                 const settledRebates = accountConsumptions
@@ -115,6 +121,17 @@ export function AccountsTable({
                     <td className="px-4 py-3 text-slate-300 font-mono text-xs">
                       {account.accountId ? (
                         account.accountId
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {relatedStoreNames.length > 0 ? (
+                        relatedStoreNames.length <= 2 ? (
+                          relatedStoreNames.join("、")
+                        ) : (
+                          `${relatedStoreNames.slice(0, 2).join("、")} +${relatedStoreNames.length - 2}`
+                        )
                       ) : (
                         <span className="text-slate-500">-</span>
                       )}

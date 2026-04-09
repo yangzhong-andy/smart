@@ -986,6 +986,7 @@ export default function AdAgenciesPage() {
       agencyId: accountForm.agencyId,
       agencyName: agency.name,
       accountName: accountForm.accountName.trim(),
+      accountId: accountForm.accountId.trim() || undefined,
       currentBalance,
       rebateReceivable: 0, // 初始应收返点为0
       creditLimit,
@@ -995,8 +996,8 @@ export default function AdAgenciesPage() {
       createdAt: new Date().toISOString()
     };
 
-    mutateAdAccounts();
     await saveAdAccounts([...adAccounts, newAccount]);
+    await mutateAdAccounts();
     setAccountForm({
       agencyId: "",
       accountName: "",
@@ -1056,6 +1057,7 @@ export default function AdAgenciesPage() {
             agencyId: accountForm.agencyId,
             agencyName: agency.name,
             accountName: accountForm.accountName.trim(),
+            accountId: accountForm.accountId.trim() || undefined,
             currentBalance,
             rebateReceivable: a.rebateReceivable || 0, // 保留原有应收返点
             creditLimit,
@@ -1066,8 +1068,8 @@ export default function AdAgenciesPage() {
         : a
     );
 
-    mutateAdAccounts();
     await saveAdAccounts(updatedAccounts);
+    await mutateAdAccounts();
 
     // 更新消耗记录中的账户名称
     const updatedConsumptions = consumptions.map((c) =>
@@ -1099,8 +1101,8 @@ export default function AdAgenciesPage() {
       onConfirm: async () => {
         try {
           const updatedAccounts = adAccounts.filter((a) => a.id !== id);
-          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
+          await mutateAdAccounts();
           
           // 删除关联的消耗记录
           const updatedConsumptions = consumptions.filter((c) => c.adAccountId !== id);

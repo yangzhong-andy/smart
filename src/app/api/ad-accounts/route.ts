@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, agencyId: true, agencyName: true, accountName: true,
+          accountId: true,
           currentBalance: true, rebateReceivable: true, creditLimit: true,
           currency: true, country: true, notes: true,
           createdAt: true, updatedAt: true,
