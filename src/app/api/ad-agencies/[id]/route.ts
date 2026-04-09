@@ -20,13 +20,15 @@ export async function GET(
   try {
     const agency = await prisma.adAgency.findUnique({
       where: { id: params.id },
-      include: { accounts: true },
+      include: { AdAccount: true },
     });
     if (!agency) {
       return NextResponse.json({ error: "未找到" }, { status: 404 });
     }
+    const { AdAccount, ...rest } = agency;
     return NextResponse.json({
-      ...agency,
+      ...rest,
+      accounts: AdAccount,
       platform: agency.platform === "OTHER" ? "其他" : agency.platform,
       rebateRate: Number(agency.rebateRate),
       createdAt: agency.createdAt.toISOString(),

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // 查找用户
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
-      include: { department: true }
+      include: { Department: true }
     })
     
     if (!user) {
@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
         name: user.name,
         role: user.role,
         departmentId: user.departmentId,
-        departmentName: user.department?.name || null,
-        departmentCode: user.department?.code || null
+        departmentName: user.Department?.name || null,
+        departmentCode: user.Department?.code || null
       },
       message: isPasswordValid 
         ? '登录验证成功' 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
         rebateConfig: true, settlementCurrency: true, creditTerm: true,
         contact: true, phone: true, notes: true,
         createdAt: true, updatedAt: true,
-        _count: { select: { accounts: true } },
+        _count: { select: { AdAccount: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
       platform: a.platform === "OTHER" ? "其他" : a.platform,
       rebateRate: Number(a.rebateRate),
       rebateConfig: a.rebateConfig as object | null,
-      accountCount: a._count.accounts,
+      accountCount: a._count.AdAccount,
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     }));
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
     const platform = PLATFORM_MAP[body.platform] ?? "OTHER";
     const agency = await prisma.adAgency.create({
       data: {
+        id: randomUUID(),
         name: body.name,
         platform,
         rebateRate: body.rebateRate ?? 0,
@@ -78,6 +80,7 @@ export async function POST(request: NextRequest) {
         contact: body.contact,
         phone: body.phone,
         notes: body.notes,
+        updatedAt: new Date(),
       },
     });
 

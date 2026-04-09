@@ -69,7 +69,7 @@ export async function PUT(
       where: { id },
       data: updateData,
       include: {
-        department: true
+        Department: true
       }
     })
 
@@ -79,8 +79,8 @@ export async function PUT(
       name: user.name,
       role: user.role,
       departmentId: user.departmentId,
-      departmentName: user.department?.name || null,
-      departmentCode: user.department?.code || null,
+      departmentName: user.Department?.name || null,
+      departmentCode: user.Department?.code || null,
       isActive: user.isActive,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString()

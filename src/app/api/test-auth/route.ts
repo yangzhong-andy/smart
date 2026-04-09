@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       userCount = await prisma.user.count()
       adminUser = await prisma.user.findUnique({
         where: { email: 'admin@yourcompany.com' },
-        include: { department: true }
+        include: { Department: true }
       })
     } catch (dbErr: any) {
       dbError = dbErr.message
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
           email: adminUser.email,
           name: adminUser.name,
           role: adminUser.role,
-          department: adminUser.department?.name || null,
+          department: adminUser.Department?.name || null,
           isActive: adminUser.isActive
         } : null
       },
