@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
+import { ensureAdAccountSchema } from "@/lib/ad-account-schema";
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,8 @@ const CACHE_KEY_PREFIX = 'ad-accounts';
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureAdAccountSchema();
+
     const { searchParams } = new URL(request.url);
     const agencyId = searchParams.get("agencyId");
     const page = parseInt(searchParams.get("page") || "1");
@@ -83,6 +86,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureAdAccountSchema();
+
     const body = await request.json();
     const account = await prisma.adAccount.create({
       data: {
