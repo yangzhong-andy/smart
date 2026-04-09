@@ -113,8 +113,8 @@ export function AccountsTable({
                   <tr key={account.id} className="hover:bg-slate-800/40">
                     <td className="px-4 py-3 text-slate-100 font-medium">{account.accountName}</td>
                     <td className="px-4 py-3 text-slate-300 font-mono text-xs">
-                      {account.platformAccountId ? (
-                        account.platformAccountId
+                      {account.accountId ? (
+                        account.accountId
                       ) : (
                         <span className="text-slate-500">-</span>
                       )}
