@@ -119,17 +119,6 @@ export function AccountsTable({
                         <span className="text-slate-500">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-300">
-                      {account.storeId || account.storeName ? (
-                        <span title={account.storeId ?? undefined}>
-                          {account.storeName ||
-                            stores.find((s) => s.id === account.storeId)?.name ||
-                            account.storeId}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">-</span>
-                      )}
-                    </td>
                     <td className="px-4 py-3 text-slate-300">{account.agencyName}</td>
                     <td className="px-4 py-3 text-slate-300">
                       {account.country ? (getCountryByCode(account.country)?.name ?? account.country) : <span className="text-slate-500">-</span>}
