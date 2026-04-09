@@ -104,39 +104,6 @@ export function AccountsFormDialog({
             <p className="mt-1 text-xs text-slate-400">按 Ctrl/Command 可多选。绑定后将以店铺ID做精确关联。</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">关联店铺（可选）</label>
-            <select
-              defaultValue=""
-              onChange={(e) => {
-                const storeId = e.target.value;
-                if (!storeId) return;
-                const store = stores.find((s) => s.id === storeId);
-                if (!store) return;
-                const supportedCurrency: AdAccount["currency"][] = ["USD", "RMB", "EUR", "GBP", "JPY"];
-                const nextCurrency = supportedCurrency.includes(store.currency as AdAccount["currency"])
-                  ? (store.currency as AdAccount["currency"])
-                  : undefined;
-                setForm((f) => ({
-                  ...f,
-                  accountId: store.accountId || f.accountId,
-                  accountName: f.accountName.trim() ? f.accountName : store.accountName || f.accountName,
-                  country: f.country || store.country || "",
-                  currency: nextCurrency || f.currency,
-                }));
-                e.target.value = "";
-              }}
-              className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
-            >
-              <option value="">选择店铺后自动回填账户信息</option>
-              {stores.map((store) => (
-                <option key={store.id} value={store.id}>
-                  {store.name}（{store.platform}/{store.country}）- {store.accountName}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-400">会自动回填账户ID，并在账户名称为空时回填账户名称。</p>
-          </div>
-          <div>
             <label className="block text-sm font-medium text-slate-300 mb-1">账户名称 *</label>
             <input
               type="text"
