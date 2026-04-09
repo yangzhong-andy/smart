@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
 
@@ -63,13 +64,16 @@ async function main() {
       update: {
         code: dept.code,
         description: dept.description,
-        isActive: true
+        isActive: true,
+        updatedAt: new Date()
       },
       create: {
+        id: randomUUID(),
         name: dept.name,
         code: dept.code,
         description: dept.description,
-        isActive: true
+        isActive: true,
+        updatedAt: new Date()
       }
     })
     departmentMap[dept.name] = department.id
@@ -97,15 +101,18 @@ async function main() {
       name: '老板',
       role: 'SUPER_ADMIN',
       departmentId: financeCenterDeptId,
-      isActive: true
+      isActive: true,
+      updatedAt: new Date()
     },
     create: {
+      id: randomUUID(),
       email: 'admin@yourcompany.com',
       password: hashedPassword,
       name: '老板',
       role: 'SUPER_ADMIN',
       departmentId: financeCenterDeptId,
-      isActive: true
+      isActive: true,
+      updatedAt: new Date()
     }
   })
 
