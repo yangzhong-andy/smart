@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, agencyId: true, agencyName: true, adAccountId: true, accountName: true,
-          date: true, amount: true, currency: true, paymentStatus: true,
+          date: true, month: true, amount: true, currency: true, paymentStatus: true,
+          rebateAmount: true, rebateRate: true, voucher: true,
           notes: true, createdAt: true, updatedAt: true,
         },
         orderBy: { date: 'desc' },
@@ -59,12 +60,18 @@ export async function GET(request: NextRequest) {
         id: r.id,
         agencyId: r.agencyId,
         agencyName: r.agencyName,
+        adAccountId: r.adAccountId,
         accountId: r.adAccountId,
         accountName: r.accountName,
         date: r.date.toISOString().split('T')[0],
+        month: r.month,
         amount: Number(r.amount),
         currency: r.currency,
+        rebateAmount: r.rebateAmount != null ? Number(r.rebateAmount) : undefined,
+        rebateRate: r.rebateRate != null ? Number(r.rebateRate) : undefined,
+        paymentStatus: r.paymentStatus,
         status: r.paymentStatus,
+        voucher: r.voucher || undefined,
         notes: r.notes || undefined,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
@@ -87,19 +94,28 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const adAccountId = body.adAccountId ?? body.accountId;
+    if (!adAccountId || typeof adAccountId !== "string") {
+      return NextResponse.json({ error: "缺少广告账户ID（adAccountId）" }, { status: 400 });
+    }
+    const id =
+      typeof body.id === "string" && body.id.trim().length > 0 ? body.id.trim() : randomUUID();
     const recharge = await prisma.adRecharge.create({
       data: {
-        id: randomUUID(),
+        id,
         updatedAt: new Date(),
         agencyId: body.agencyId,
         agencyName: body.agencyName,
-        adAccountId: body.accountId,
+        adAccountId,
         accountName: body.accountName,
         date: new Date(body.date),
         month: body.month || new Date(body.date).toISOString().slice(0, 7),
         amount: body.amount,
         currency: body.currency || "USD",
+        rebateAmount: body.rebateAmount,
+        rebateRate: body.rebateRate,
         paymentStatus: body.paymentStatus || "Pending",
+        voucher: body.voucher,
         notes: body.notes,
       },
     });
@@ -109,8 +125,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: recharge.id,
+      adAccountId: recharge.adAccountId,
       agencyName: recharge.agencyName,
       amount: Number(recharge.amount),
+      month: recharge.month,
+      date: recharge.date.toISOString().split("T")[0],
       createdAt: recharge.createdAt.toISOString(),
     });
   } catch (error: any) {

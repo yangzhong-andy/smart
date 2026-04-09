@@ -1232,10 +1232,16 @@ export default function AdAgenciesPage() {
     console.log("保存充值记录，凭证数据长度:", newRecharge.voucher?.length || 0);
     console.log("凭证数据前缀:", newRecharge.voucher?.substring(0, 50) || "无");
 
-    // 保存充值记录
+    // 保存充值记录（必须先落库再触发 SWR，否则会拉到旧数据并把余额重算为 0）
     const updatedRecharges = [...recharges, newRecharge];
-    mutateRecharges();
-    saveAdRecharges(updatedRecharges);
+    try {
+      await saveAdRecharges(updatedRecharges);
+      await mutateRecharges();
+    } catch (e) {
+      console.error("保存充值记录失败", e);
+      toast.error(e instanceof Error ? e.message : "保存充值记录失败，请重试");
+      return;
+    }
 
     // 自动生成月账单并推送到对账中心
     try {
@@ -1413,8 +1419,14 @@ export default function AdAgenciesPage() {
           }
         : acc
     );
-    mutateAdAccounts();
-    await saveAdAccounts(updatedAccounts);
+    try {
+      await saveAdAccounts(updatedAccounts);
+      await mutateAdAccounts();
+    } catch (e) {
+      console.error("更新广告账户余额失败", e);
+      toast.error(e instanceof Error ? e.message : "更新广告账户余额失败，请重试");
+      return;
+    }
 
     // 显示成功提示
     toast.success(
@@ -1456,20 +1468,23 @@ export default function AdAgenciesPage() {
             return;
           }
 
-          // 扣减广告账户余额（包括返点）
-          const totalDeduction = recharge.amount + (recharge.rebateAmount || 0);
+          // 扣减：实付金额从可用余额扣，返点从待结返点扣（与充值入账逻辑一致）
           const updatedAccounts = adAccounts.map((acc) =>
             acc.id === recharge.adAccountId
-              ? { ...acc, currentBalance: Math.max(0, acc.currentBalance - totalDeduction) }
+              ? {
+                  ...acc,
+                  currentBalance: Math.max(0, acc.currentBalance - recharge.amount),
+                  rebateReceivable: Math.max(0, (acc.rebateReceivable || 0) - (recharge.rebateAmount || 0)),
+                }
               : acc
           );
-          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
+          await mutateAdAccounts();
 
           // 删除充值记录
           const updatedRecharges = recharges.filter((r) => r.id !== id);
-          mutateRecharges();
           await saveAdRecharges(updatedRecharges);
+          await mutateRecharges();
 
           // 重新计算余额
           await recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);

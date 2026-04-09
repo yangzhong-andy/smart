@@ -386,15 +386,27 @@ export async function saveAdRecharges(recharges: AdRecharge[]): Promise<void> {
     const newIds = new Set(recharges.map((r) => r.id));
     for (const e of existing) {
       if (!newIds.has(e.id)) {
-        await fetch(`/api/ad-recharges/${e.id}`, { method: "DELETE" });
+        const res = await fetch(`/api/ad-recharges/${e.id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`删除充值记录失败(${e.id}): ${detail || res.statusText}`);
+        }
       }
     }
     for (const r of recharges) {
       const body = { ...r, date: r.date?.length === 10 ? r.date : r.date?.slice(0, 10) };
       if (existingIds.has(r.id)) {
-        await fetch(`/api/ad-recharges/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch(`/api/ad-recharges/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`更新充值记录失败(${r.id}): ${detail || res.statusText}`);
+        }
       } else {
-        await fetch("/api/ad-recharges", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch("/api/ad-recharges", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`创建充值记录失败: ${detail || res.statusText}`);
+        }
       }
     }
   } catch (e) {
