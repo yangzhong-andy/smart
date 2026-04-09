@@ -27,7 +27,7 @@ export const authOptions: NextAuthOptions = {
           const user = await prisma.user.findUnique({
             where: { email: credentials.email.trim().toLowerCase() },
             include: {
-              Department: true
+              department: true
             }
           })
 
@@ -63,8 +63,8 @@ export const authOptions: NextAuthOptions = {
             name: user.name,
             role: user.role,
             departmentId: user.departmentId,
-            departmentName: user.Department?.name || null,
-            departmentCode: user.Department?.code || null
+            departmentName: user.department?.name || null,
+            departmentCode: user.department?.code || null
           }
         } catch (error: any) {
           console.error('Login error:', error)

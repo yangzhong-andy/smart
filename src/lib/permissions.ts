@@ -405,7 +405,7 @@ export async function getCurrentUserFromRequest(request: Request): Promise<{
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
         include: {
-          Department: true
+          department: true
         }
       });
       
@@ -419,8 +419,8 @@ export async function getCurrentUserFromRequest(request: Request): Promise<{
       const userInfo = {
         userId: user.id,
         departmentId: user.departmentId || undefined,
-        departmentCode: user.Department?.code || undefined,
-        departmentName: user.Department?.name || undefined,
+        departmentCode: user.department?.code || undefined,
+        departmentName: user.department?.name || undefined,
         role: user.role || undefined
       };
       

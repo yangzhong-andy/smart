@@ -2523,6 +2523,7 @@ export default function AdAgenciesPage() {
       {activeTab === "accounts" && (
         <AccountsTable
           adAccounts={adAccounts}
+          stores={stores}
           consumptions={consumptions}
           recharges={recharges}
           cashFlowList={cashFlowList}

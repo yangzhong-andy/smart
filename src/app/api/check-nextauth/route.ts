@@ -38,13 +38,13 @@ export async function GET(request: NextRequest) {
     try {
       const adminUser = await prisma.user.findUnique({
         where: { email: 'admin@yourcompany.com' },
-        include: { Department: true }
+        include: { department: true }
       })
       results.checks.user = {
         exists: !!adminUser,
         isActive: adminUser?.isActive || false,
         hasDepartment: !!adminUser?.departmentId,
-        departmentName: adminUser?.Department?.name || null
+        departmentName: adminUser?.department?.name || null
       }
     } catch (userError: any) {
       results.checks.user = {

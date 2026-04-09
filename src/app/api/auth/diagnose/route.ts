@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     try {
       user = await prisma.user.findUnique({
         where: { email: email.trim().toLowerCase() },
-        include: { Department: true }
+        include: { department: true }
       })
       results.steps[results.steps.length - 1].success = !!user
       results.steps[results.steps.length - 1].userFound = !!user
@@ -57,10 +57,10 @@ export async function POST(request: NextRequest) {
       email: user.email,
       name: user.name,
       isActive: user.isActive,
-      hasDepartment: !!user.Department,
+      hasDepartment: !!user.department,
       departmentId: user.departmentId,
-      departmentName: user.Department?.name || null,
-      departmentCode: user.Department?.code || null
+      departmentName: user.department?.name || null,
+      departmentCode: user.department?.code || null
     }
 
     // 步骤 3: 检查用户状态
@@ -106,8 +106,8 @@ export async function POST(request: NextRequest) {
       name: user.name || '用户',
       role: user.role || null,
       departmentId: user.departmentId || null,
-      departmentName: user.Department?.name || null,
-      departmentCode: user.Department?.code || null
+      departmentName: user.department?.name || null,
+      departmentCode: user.department?.code || null
     }
     results.steps[results.steps.length - 1].success = true
     results.steps[results.steps.length - 1].userInfo = userInfo

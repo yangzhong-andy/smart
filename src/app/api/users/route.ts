@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         isActive: typeof isActive === 'boolean' ? isActive : true,
         updatedAt: new Date(),
       },
-      include: { Department: true },
+      include: { department: true },
     })
 
     return NextResponse.json({
@@ -66,8 +66,8 @@ export async function POST(request: NextRequest) {
       name: user.name,
       role: user.role,
       departmentId: user.departmentId,
-      departmentName: user.Department?.name || null,
-      departmentCode: user.Department?.code || null,
+      departmentName: user.department?.name || null,
+      departmentCode: user.department?.code || null,
       isActive: user.isActive,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
@@ -121,8 +121,8 @@ export async function GET(request: NextRequest) {
       name: u.name,
       role: u.role,
       departmentId: u.departmentId,
-      departmentName: u.Department?.name || null,
-      departmentCode: u.Department?.code || null,
+      departmentName: u.department?.name || null,
+      departmentCode: u.department?.code || null,
       isActive: u.isActive,
       lastLoginAt: u.lastLoginAt?.toISOString() || null,
       createdAt: u.createdAt.toISOString(),

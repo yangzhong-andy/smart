@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         rebateConfig: true, settlementCurrency: true, creditTerm: true,
         contact: true, phone: true, notes: true,
         createdAt: true, updatedAt: true,
-        _count: { select: { AdAccount: true } },
+        _count: { select: { accounts: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       platform: a.platform === "OTHER" ? "其他" : a.platform,
       rebateRate: Number(a.rebateRate),
       rebateConfig: a.rebateConfig as object | null,
-      accountCount: a._count.AdAccount,
+      accountCount: a._count.accounts,
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     }));
