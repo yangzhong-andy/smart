@@ -1,10 +1,11 @@
 {
   "name": "smart-erp",
-  "version": "1.5.90",
+  "version": "1.5.91",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma db push && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
+    "build": "prisma generate && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
+    "build:with-db": "prisma generate && prisma db push && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
