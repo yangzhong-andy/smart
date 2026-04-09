@@ -14,7 +14,7 @@ import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const before = await prisma.stock.findMany({
-    where: { warehouse: { type: WarehouseType.DOMESTIC }, qty: { gt: 0 } },
+    where: { Warehouse: { type: WarehouseType.DOMESTIC }, qty: { gt: 0 } },
     select: { id: true, variantId: true, qty: true },
   });
 
@@ -27,7 +27,7 @@ async function main() {
   console.log(`即将清零 ${before.length} 条国内仓库存行，合计 ${sumQty} 件。`);
 
   const result = await prisma.stock.updateMany({
-    where: { warehouse: { type: WarehouseType.DOMESTIC }, qty: { gt: 0 } },
+    where: { Warehouse: { type: WarehouseType.DOMESTIC }, qty: { gt: 0 } },
     data: {
       qty: 0,
       availableQty: 0,
