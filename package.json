@@ -1,6 +1,6 @@
 {
   "name": "smart-erp",
-  "version": "1.5.91",
+  "version": "1.5.92",
   "private": true,
   "scripts": {
     "dev": "next dev",

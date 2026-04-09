@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { AccountType } from '@prisma/client'
@@ -140,6 +141,7 @@ export async function POST(request: NextRequest) {
     
     const account = await prisma.bankAccount.create({
       data: {
+        id: typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID(),
         name: body.name,
         accountNumber: body.accountNumber,
         accountType: normalizedAccountType,
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest) {
         platformAccount: body.platformAccount ?? null,
         platformPassword: body.platformPassword ?? null,
         platformUrl: body.platformUrl ?? null,
+        updatedAt: new Date(),
       }
     })
 
