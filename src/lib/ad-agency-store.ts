@@ -197,7 +197,7 @@ export async function saveAgencies(agencies: Agency[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
     const existing: Agency[] = toList(
-      await fetch("/api/ad-agencies").then((r) => (r.ok ? r.json() : []))
+      await fetch("/api/ad-agencies?page=1&pageSize=500&noCache=true").then((r) => (r.ok ? r.json() : []))
     ) as Agency[];
     const existingIds = new Set(existing.map((a) => a.id));
     const newIds = new Set(agencies.map((a) => a.id));
@@ -249,21 +249,33 @@ export async function getAdAccountsFromAPI(): Promise<AdAccount[]> {
 export async function saveAdAccounts(accounts: AdAccount[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const raw = await fetch("/api/ad-accounts?page=1&pageSize=500").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/ad-accounts?page=1&pageSize=500&noCache=true").then((r) => (r.ok ? r.json() : []));
     const existing: AdAccount[] = toList(raw) as AdAccount[];
     const existingIds = new Set(existing.map((a) => a.id));
     const newIds = new Set(accounts.map((a) => a.id));
     for (const e of existing) {
       if (!newIds.has(e.id)) {
-        await fetch(`/api/ad-accounts/${e.id}`, { method: "DELETE" });
+        const res = await fetch(`/api/ad-accounts/${e.id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`删除广告账户失败(${e.id}): ${detail || res.statusText}`);
+        }
       }
     }
     for (const a of accounts) {
       const body = { ...a, currentBalance: a.currentBalance ?? 0, rebateReceivable: a.rebateReceivable ?? 0, creditLimit: a.creditLimit ?? 0 };
       if (existingIds.has(a.id)) {
-        await fetch(`/api/ad-accounts/${a.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch(`/api/ad-accounts/${a.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`更新广告账户失败(${a.accountName}): ${detail || res.statusText}`);
+        }
       } else {
-        await fetch("/api/ad-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch("/api/ad-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`创建广告账户失败(${a.accountName}): ${detail || res.statusText}`);
+        }
       }
     }
   } catch (e) {
@@ -300,7 +312,7 @@ export async function getAdConsumptionsFromAPI(): Promise<AdConsumption[]> {
 export async function saveAdConsumptions(consumptions: AdConsumption[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const raw = await fetch("/api/ad-consumptions?page=1&pageSize=5000").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/ad-consumptions?page=1&pageSize=5000&noCache=true").then((r) => (r.ok ? r.json() : []));
     const existing: AdConsumption[] = toList(raw) as AdConsumption[];
     const existingIds = new Set(existing.map((c) => c.id));
     const newIds = new Set(consumptions.map((c) => c.id));
@@ -367,7 +379,7 @@ export async function getAdRechargesFromAPI(): Promise<AdRecharge[]> {
 export async function saveAdRecharges(recharges: AdRecharge[]): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const raw = await fetch("/api/ad-recharges?page=1&pageSize=5000").then((r) => (r.ok ? r.json() : []));
+    const raw = await fetch("/api/ad-recharges?page=1&pageSize=5000&noCache=true").then((r) => (r.ok ? r.json() : []));
     const existing: AdRecharge[] = toList(raw) as AdRecharge[];
     const existingIds = new Set(existing.map((r) => r.id));
     const newIds = new Set(recharges.map((r) => r.id));

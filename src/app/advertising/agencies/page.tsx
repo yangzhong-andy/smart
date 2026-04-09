@@ -774,8 +774,12 @@ export default function AdAgenciesPage() {
     try {
       mutateAgencies();
       await saveAgencies([...agencies, newAgency]);
-    setAgencyForm(initialAgencyFormState);
-    setIsAgencyModalOpen(false);
+      setAgencyForm(initialAgencyFormState);
+      setIsAgencyModalOpen(false);
+      toast.success("代理商创建成功");
+    } catch (e) {
+      console.error("创建代理商失败", e);
+      toast.error("创建代理商失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -842,16 +846,20 @@ export default function AdAgenciesPage() {
       mutateAgencies();
       await saveAgencies(updatedAgencies);
     
-    // 更新关联的广告账户中的代理商名称
-    const updatedAccounts = adAccounts.map((acc) =>
-      acc.agencyId === editAgency.id ? { ...acc, agencyName: agencyForm.name.trim() } : acc
-    );
-    mutateAdAccounts();
-    await saveAdAccounts(updatedAccounts);
+      // 更新关联的广告账户中的代理商名称
+      const updatedAccounts = adAccounts.map((acc) =>
+        acc.agencyId === editAgency.id ? { ...acc, agencyName: agencyForm.name.trim() } : acc
+      );
+      mutateAdAccounts();
+      await saveAdAccounts(updatedAccounts);
 
-    setAgencyForm(initialAgencyFormState);
-    setEditAgency(null);
-    setIsAgencyModalOpen(false);
+      setAgencyForm(initialAgencyFormState);
+      setEditAgency(null);
+      setIsAgencyModalOpen(false);
+      toast.success("代理商更新成功");
+    } catch (e) {
+      console.error("更新代理商失败", e);
+      toast.error("更新代理商失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -880,6 +888,7 @@ export default function AdAgenciesPage() {
           mutateConsumptions();
           await saveAdConsumptions(updatedConsumptions);
           setConfirmDialog(null);
+          toast.success("代理商删除成功");
         } catch (e) {
           console.error("删除代理商失败", e);
           toast.error("操作失败，请重试");
@@ -996,19 +1005,25 @@ export default function AdAgenciesPage() {
       createdAt: new Date().toISOString()
     };
 
-    await saveAdAccounts([...adAccounts, newAccount]);
-    await mutateAdAccounts();
-    setAccountForm({
-      agencyId: "",
-      accountName: "",
-      accountId: "",
-      currentBalance: "",
-      creditLimit: "",
-      currency: "USD",
-      country: "",
-      notes: ""
-    });
-    setIsAccountModalOpen(false);
+    try {
+      await saveAdAccounts([...adAccounts, newAccount]);
+      await mutateAdAccounts();
+      setAccountForm({
+        agencyId: "",
+        accountName: "",
+        accountId: "",
+        currentBalance: "",
+        creditLimit: "",
+        currency: "USD",
+        country: "",
+        notes: ""
+      });
+      setIsAccountModalOpen(false);
+      toast.success("广告账户创建成功");
+    } catch (e) {
+      console.error("创建广告账户失败", e);
+      toast.error(e instanceof Error ? e.message : "创建广告账户失败，请重试");
+    }
   };
 
   const handleEditAccount = (account: AdAccount) => {
@@ -1068,28 +1083,34 @@ export default function AdAgenciesPage() {
         : a
     );
 
-    await saveAdAccounts(updatedAccounts);
-    await mutateAdAccounts();
+    try {
+      await saveAdAccounts(updatedAccounts);
+      await mutateAdAccounts();
 
-    // 更新消耗记录中的账户名称
-    const updatedConsumptions = consumptions.map((c) =>
-      c.adAccountId === editAccount.id ? { ...c, accountName: accountForm.accountName.trim() } : c
-    );
-    mutateConsumptions();
-    await saveAdConsumptions(updatedConsumptions);
+      // 更新消耗记录中的账户名称
+      const updatedConsumptions = consumptions.map((c) =>
+        c.adAccountId === editAccount.id ? { ...c, accountName: accountForm.accountName.trim() } : c
+      );
+      mutateConsumptions();
+      await saveAdConsumptions(updatedConsumptions);
 
-    setAccountForm({
-      agencyId: "",
-      accountName: "",
-      accountId: "",
-      currentBalance: "",
-      creditLimit: "",
-      currency: "USD",
-      country: "",
-      notes: ""
-    });
-    setEditAccount(null);
-    setIsAccountModalOpen(false);
+      setAccountForm({
+        agencyId: "",
+        accountName: "",
+        accountId: "",
+        currentBalance: "",
+        creditLimit: "",
+        currency: "USD",
+        country: "",
+        notes: ""
+      });
+      setEditAccount(null);
+      setIsAccountModalOpen(false);
+      toast.success("广告账户更新成功");
+    } catch (e) {
+      console.error("更新广告账户失败", e);
+      toast.error(e instanceof Error ? e.message : "更新广告账户失败，请重试");
+    }
   };
 
   const handleDeleteAccount = (id: string) => {
@@ -1109,6 +1130,7 @@ export default function AdAgenciesPage() {
           mutateConsumptions();
           await saveAdConsumptions(updatedConsumptions);
           setConfirmDialog(null);
+          toast.success("广告账户删除成功");
         } catch (e) {
           console.error("删除广告账户失败", e);
           toast.error("操作失败，请重试");
@@ -1446,6 +1468,7 @@ export default function AdAgenciesPage() {
           // 重新计算余额
           await recalculateAccountBalances(updatedAccounts, consumptions, updatedRecharges);
           setConfirmDialog(null);
+          toast.success("充值记录删除成功");
         } catch (e) {
           console.error("删除充值记录失败", e);
           toast.error("操作失败，请重试");
@@ -1457,16 +1480,16 @@ export default function AdAgenciesPage() {
   const handleCreateConsumption = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!consumptionForm.adAccountId) {
-      alert("请选择广告账户");
+      toast.error("请选择广告账户");
       return;
     }
     if (!consumptionForm.month) {
-      alert("请选择月份");
+      toast.error("请选择月份");
       return;
     }
     const amount = Number(consumptionForm.amount);
     if (Number.isNaN(amount) || amount <= 0) {
-      alert("消耗金额需为正数");
+      toast.error("消耗金额需为正数");
       return;
     }
 
@@ -1687,6 +1710,7 @@ export default function AdAgenciesPage() {
       notes: ""
     });
     setIsConsumptionModalOpen(false);
+    toast.success("消耗记录创建成功");
   };
 
   const handleDeleteConsumption = (id: string) => {
@@ -1717,6 +1741,7 @@ export default function AdAgenciesPage() {
           mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
           setConfirmDialog(null);
+          toast.success("消耗记录删除成功");
         } catch (e) {
           console.error("删除消耗记录失败", e);
           toast.error("操作失败，请重试");
