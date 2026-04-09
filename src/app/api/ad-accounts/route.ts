@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
         agencyId: body.agencyId,
         agencyName: body.agencyName,
         accountName: body.accountName,
+        accountId: body.accountId,
         currentBalance: body.currentBalance ?? 0,
         rebateReceivable: body.rebateReceivable ?? 0,
         creditLimit: body.creditLimit ?? 0,

@@ -137,6 +137,7 @@ export default function AdAgenciesPage() {
   const [accountForm, setAccountForm] = useState({
     agencyId: "",
     accountName: "",
+    accountId: "",
     currentBalance: "",
     creditLimit: "",
     currency: "USD" as AdAccount["currency"],
@@ -999,6 +1000,7 @@ export default function AdAgenciesPage() {
     setAccountForm({
       agencyId: "",
       accountName: "",
+      accountId: "",
       currentBalance: "",
       creditLimit: "",
       currency: "USD",
@@ -1013,6 +1015,7 @@ export default function AdAgenciesPage() {
     setAccountForm({
       agencyId: account.agencyId,
       accountName: account.accountName,
+      accountId: account.accountId || "",
       currentBalance: String(account.currentBalance),
       creditLimit: String(account.creditLimit),
       currency: account.currency,
@@ -1076,6 +1079,7 @@ export default function AdAgenciesPage() {
     setAccountForm({
       agencyId: "",
       accountName: "",
+      accountId: "",
       currentBalance: "",
       creditLimit: "",
       currency: "USD",
@@ -2527,6 +2531,7 @@ export default function AdAgenciesPage() {
             setAccountForm({
               agencyId: "",
               accountName: "",
+              accountId: "",
               currentBalance: "",
               creditLimit: "",
               currency: "USD",
@@ -2636,6 +2641,7 @@ export default function AdAgenciesPage() {
           setAccountForm({
             agencyId: "",
             accountName: "",
+            accountId: "",
             currentBalance: "",
             creditLimit: "",
             currency: "USD",

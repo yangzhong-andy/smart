@@ -52,6 +52,7 @@ export async function PUT(
     const data: Record<string, unknown> = {};
     if (body.agencyName !== undefined) data.agencyName = body.agencyName;
     if (body.accountName !== undefined) data.accountName = body.accountName;
+    if (body.accountId !== undefined) data.accountId = body.accountId;
     if (body.currentBalance !== undefined) data.currentBalance = body.currentBalance;
     if (body.rebateReceivable !== undefined) data.rebateReceivable = body.rebateReceivable;
     if (body.creditLimit !== undefined) data.creditLimit = body.creditLimit;

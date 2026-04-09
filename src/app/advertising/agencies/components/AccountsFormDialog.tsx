@@ -6,6 +6,7 @@ import { COUNTRIES } from "@/lib/country-config";
 export type AccountFormState = {
   agencyId: string;
   accountName: string;
+  accountId: string;
   currentBalance: string;
   creditLimit: string;
   currency: AdAccount["currency"];
@@ -26,6 +27,7 @@ export type AccountsFormDialogProps = {
 const initialFormState: AccountFormState = {
   agencyId: "",
   accountName: "",
+  accountId: "",
   currentBalance: "",
   creditLimit: "",
   currency: "USD",
@@ -84,6 +86,16 @@ export function AccountsFormDialog({
               onChange={(e) => setForm((f) => ({ ...f, accountName: e.target.value }))}
               className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
               required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">账户ID</label>
+            <input
+              type="text"
+              value={form.accountId}
+              onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
+              className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
+              placeholder="平台账户ID（如Facebook广告账户ID）"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
