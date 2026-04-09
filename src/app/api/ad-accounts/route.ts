@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
         select: {
           id: true, agencyId: true, agencyName: true, accountName: true,
           accountId: true,
+          storeIds: true,
           currentBalance: true, rebateReceivable: true, creditLimit: true,
           currency: true, country: true, notes: true,
           createdAt: true, updatedAt: true,
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
         agencyName: body.agencyName,
         accountName: body.accountName,
         accountId: body.accountId,
+        storeIds: Array.isArray(body.storeIds) ? body.storeIds.filter((id: unknown) => typeof id === "string") : [],
         currentBalance: body.currentBalance ?? 0,
         rebateReceivable: body.rebateReceivable ?? 0,
         creditLimit: body.creditLimit ?? 0,

@@ -1779,6 +1779,7 @@ model AdAccount {
   agencyName       String?
   accountName      String
   accountId        String?  @unique // 平台账户ID（如Facebook广告账户ID）
+  storeIds         String[] @default([]) // 显式绑定的店铺ID列表
   currentBalance   Decimal  @default(0) @db.Decimal(18, 2)
   rebateReceivable Decimal  @default(0) @db.Decimal(18, 2)
   creditLimit      Decimal  @default(0) @db.Decimal(18, 2)

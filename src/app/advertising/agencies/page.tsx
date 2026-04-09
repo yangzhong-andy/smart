@@ -138,6 +138,7 @@ export default function AdAgenciesPage() {
     agencyId: "",
     accountName: "",
     accountId: "",
+    storeIds: [] as string[],
     currentBalance: "",
     creditLimit: "",
     currency: "USD" as AdAccount["currency"],
@@ -996,6 +997,7 @@ export default function AdAgenciesPage() {
       agencyName: agency.name,
       accountName: accountForm.accountName.trim(),
       accountId: accountForm.accountId.trim() || undefined,
+      storeIds: accountForm.storeIds,
       currentBalance,
       rebateReceivable: 0, // 初始应收返点为0
       creditLimit,
@@ -1012,6 +1014,7 @@ export default function AdAgenciesPage() {
         agencyId: "",
         accountName: "",
         accountId: "",
+        storeIds: [] as string[],
         currentBalance: "",
         creditLimit: "",
         currency: "USD",
@@ -1032,6 +1035,7 @@ export default function AdAgenciesPage() {
       agencyId: account.agencyId,
       accountName: account.accountName,
       accountId: account.accountId || "",
+      storeIds: account.storeIds || [],
       currentBalance: String(account.currentBalance),
       creditLimit: String(account.creditLimit),
       currency: account.currency,
@@ -1073,6 +1077,7 @@ export default function AdAgenciesPage() {
             agencyName: agency.name,
             accountName: accountForm.accountName.trim(),
             accountId: accountForm.accountId.trim() || undefined,
+            storeIds: accountForm.storeIds,
             currentBalance,
             rebateReceivable: a.rebateReceivable || 0, // 保留原有应收返点
             creditLimit,
@@ -1098,6 +1103,7 @@ export default function AdAgenciesPage() {
         agencyId: "",
         accountName: "",
         accountId: "",
+        storeIds: [] as string[],
         currentBalance: "",
         creditLimit: "",
         currency: "USD",
@@ -2560,6 +2566,7 @@ export default function AdAgenciesPage() {
               agencyId: "",
               accountName: "",
               accountId: "",
+              storeIds: [] as string[],
               currentBalance: "",
               creditLimit: "",
               currency: "USD",
@@ -2670,6 +2677,7 @@ export default function AdAgenciesPage() {
             agencyId: "",
             accountName: "",
             accountId: "",
+            storeIds: [] as string[],
             currentBalance: "",
             creditLimit: "",
             currency: "USD",
@@ -2681,6 +2689,7 @@ export default function AdAgenciesPage() {
         form={accountForm}
         setForm={setAccountForm}
         agencies={agencies}
+        stores={stores}
         onSubmit={editAccount ? handleUpdateAccount : handleCreateAccount}
       />
 

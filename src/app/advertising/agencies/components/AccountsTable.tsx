@@ -72,6 +72,7 @@ export function AccountsTable({
             <tbody className="divide-y divide-slate-800">
               {adAccounts.map((account) => {
                 const accountConsumptions = consumptions.filter((c) => c.adAccountId === account.id);
+                const relatedByBinding = stores.filter((store) => (account.storeIds || []).includes(store.id));
                 const relatedByStoreConfig = stores.filter((store) => {
                   const accountIdMatched = Boolean(account.accountId) && store.accountId === account.accountId;
                   const accountNameMatched = store.accountName.trim() === account.accountName.trim();
@@ -84,7 +85,7 @@ export function AccountsTable({
                   .map((id) => stores.find((store) => store.id === id))
                   .filter((store): store is Store => Boolean(store));
                 const relatedStoreNames = Array.from(
-                  new Set([...relatedByStoreConfig, ...relatedByConsumption].map((store) => store.name))
+                  new Set([...relatedByBinding, ...relatedByStoreConfig, ...relatedByConsumption].map((store) => store.name))
                 );
                 const totalConsumption = accountConsumptions.reduce((sum, c) => sum + c.amount, 0);
                 const totalEstimatedRebate = accountConsumptions.reduce((sum, c) => sum + (c.estimatedRebate || 0), 0);
@@ -146,7 +147,10 @@ export function AccountsTable({
                     </td>
                     <td className="px-4 py-3 text-slate-300">{account.agencyName}</td>
                     <td className="px-4 py-3 text-slate-300">
-                      {account.country ? (getCountryByCode(account.country)?.name ?? account.country) : <span className="text-slate-500">-</span>}
+                      {account.country ? (() => {
+                        const country = getCountryByCode(account.country);
+                        return country ? `${country.name} (${country.code})` : account.country;
+                      })() : <span className="text-slate-500">-</span>}
                     </td>
                     <td className="px-4 py-3 text-slate-300">{account.currency}</td>
                     <td className="px-4 py-3 text-right">

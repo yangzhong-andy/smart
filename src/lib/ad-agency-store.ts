@@ -27,6 +27,7 @@ export type AdAccount = {
   agencyName: string; // 代理商名称（冗余字段）
   accountName: string; // 账户名称
   accountId?: string; // 平台账户ID（如Facebook广告账户ID）
+  storeIds?: string[]; // 显式绑定店铺ID（Store.id）
   currentBalance: number; // 当前余额（实付本金 - 消耗本金，不含返点）
   rebateReceivable: number; // 应收返点（待结算的返点额度，不计入余额）
   creditLimit: number; // 账期授信额度

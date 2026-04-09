@@ -1,12 +1,14 @@
 "use client";
 
 import type { Agency, AdAccount } from "@/lib/ad-agency-store";
-import { COUNTRIES } from "@/lib/country-config";
+import type { Store } from "@/lib/store-store";
+import { getCountriesByRegion, getCountryByCode } from "@/lib/country-config";
 
 export type AccountFormState = {
   agencyId: string;
   accountName: string;
   accountId: string;
+  storeIds: string[];
   currentBalance: string;
   creditLimit: string;
   currency: AdAccount["currency"];
@@ -21,6 +23,7 @@ export type AccountsFormDialogProps = {
   form: AccountFormState;
   setForm: React.Dispatch<React.SetStateAction<AccountFormState>>;
   agencies: Agency[];
+  stores: Store[];
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
 };
 
@@ -28,6 +31,7 @@ const initialFormState: AccountFormState = {
   agencyId: "",
   accountName: "",
   accountId: "",
+  storeIds: [],
   currentBalance: "",
   creditLimit: "",
   currency: "USD",
@@ -42,9 +46,11 @@ export function AccountsFormDialog({
   form,
   setForm,
   agencies,
+  stores,
   onSubmit,
 }: AccountsFormDialogProps) {
   if (!isOpen) return null;
+  const countriesByRegion = getCountriesByRegion();
 
   const handleClose = () => {
     setForm(initialFormState);
@@ -77,6 +83,58 @@ export function AccountsFormDialog({
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">绑定店铺（可多选）</label>
+            <select
+              multiple
+              value={form.storeIds}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                setForm((f) => ({ ...f, storeIds: selected }));
+              }}
+              className="w-full min-h-[96px] rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
+            >
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name}（{store.platform}/{store.country}）
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">按 Ctrl/Command 可多选。绑定后将以店铺ID做精确关联。</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">关联店铺（可选）</label>
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                const storeId = e.target.value;
+                if (!storeId) return;
+                const store = stores.find((s) => s.id === storeId);
+                if (!store) return;
+                const supportedCurrency: AdAccount["currency"][] = ["USD", "RMB", "EUR", "GBP", "JPY"];
+                const nextCurrency = supportedCurrency.includes(store.currency as AdAccount["currency"])
+                  ? (store.currency as AdAccount["currency"])
+                  : undefined;
+                setForm((f) => ({
+                  ...f,
+                  accountId: store.accountId || f.accountId,
+                  accountName: f.accountName.trim() ? f.accountName : store.accountName || f.accountName,
+                  country: f.country || store.country || "",
+                  currency: nextCurrency || f.currency,
+                }));
+                e.target.value = "";
+              }}
+              className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
+            >
+              <option value="">选择店铺后自动回填账户信息</option>
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name}（{store.platform}/{store.country}）- {store.accountName}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">会自动回填账户ID，并在账户名称为空时回填账户名称。</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1">账户名称 *</label>
@@ -115,16 +173,31 @@ export function AccountsFormDialog({
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">所属国家</label>
+              <input
+                type="text"
+                value={form.country ? (() => {
+                  const country = getCountryByCode(form.country);
+                  return country ? `${country.name} (${country.code})` : form.country;
+                })() : "不指定"}
+                readOnly
+                className="mb-2 w-full rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-300 outline-none"
+              />
               <select
                 value={form.country}
                 onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
                 className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
               >
                 <option value="">不指定</option>
-                {COUNTRIES.filter((c) => c.code !== "GLOBAL").map((country) => (
-                  <option key={country.code} value={country.code}>
-                    {country.name}
-                  </option>
+                {Object.entries(countriesByRegion).map(([region, countries]) => (
+                  <optgroup key={region} label={region}>
+                    {countries
+                      .filter((country) => country.code !== "GLOBAL")
+                      .map((country) => (
+                        <option key={country.code} value={country.code}>
+                          {country.name} ({country.code})
+                        </option>
+                      ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

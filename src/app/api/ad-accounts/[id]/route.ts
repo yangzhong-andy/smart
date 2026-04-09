@@ -43,6 +43,9 @@ export async function PUT(
     if (body.agencyName !== undefined) data.agencyName = body.agencyName;
     if (body.accountName !== undefined) data.accountName = body.accountName;
     if (body.accountId !== undefined) data.accountId = body.accountId;
+    if (body.storeIds !== undefined) {
+      data.storeIds = Array.isArray(body.storeIds) ? body.storeIds.filter((id: unknown) => typeof id === "string") : [];
+    }
     if (body.currentBalance !== undefined) data.currentBalance = body.currentBalance;
     if (body.rebateReceivable !== undefined) data.rebateReceivable = body.rebateReceivable;
     if (body.creditLimit !== undefined) data.creditLimit = body.creditLimit;
