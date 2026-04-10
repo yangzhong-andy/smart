@@ -71,6 +71,7 @@ export function PurchaseOrderDetailDialog({
     contract?.contractVoucher
   );
   const [voucherSaving, setVoucherSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // 编辑定金：按比例 或 固定金额
   const [depositType, setDepositType] = useState<"ratio" | "fixed">(
     (contract?.depositRate ?? 0) > 0 ? "ratio" : "fixed"
@@ -188,15 +189,21 @@ export function PurchaseOrderDetailDialog({
             {isSuperAdmin && (
               <button
                 type="button"
+                disabled={deleting}
                 onClick={async () => {
                   if (!(await confirm({ title: "删除确认", message: "确定要删除该采购合同吗？此操作不可恢复。", type: "danger" }))) return;
-                  await onDelete(contract.id);
-                  onClose();
+                  setDeleting(true);
+                  try {
+                    await onDelete(contract.id);
+                    onClose();
+                  } finally {
+                    setDeleting(false);
+                  }
                 }}
-                className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+                className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-xs font-medium text-rose-100 hover:bg-rose-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                删除合同
+                {deleting ? "删除中…" : "删除合同"}
               </button>
             )}
             <button

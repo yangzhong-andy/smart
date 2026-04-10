@@ -666,6 +666,7 @@ export default function PurchaseOrdersPage() {
       }))
     )
       return;
+    const deletingToastId = toast.loading("正在删除采购合同...");
     try {
       const res = await fetch(`/api/purchase-contracts/${contractId}`, { method: "DELETE" });
       if (!res.ok) {
@@ -673,8 +674,10 @@ export default function PurchaseOrdersPage() {
         throw new Error(err.error || "删除失败");
       }
       await mutateContracts();
+      toast.dismiss(deletingToastId);
       toast.success("采购合同已删除");
     } catch (e: any) {
+      toast.dismiss(deletingToastId);
       toast.error(e?.message || "删除采购合同失败");
     }
   };
