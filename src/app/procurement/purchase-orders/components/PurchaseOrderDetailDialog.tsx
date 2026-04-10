@@ -62,44 +62,46 @@ export function PurchaseOrderDetailDialog({
   onRefresh,
 }: PurchaseOrderDetailDialogProps) {
   const { confirm, confirmDialog } = useSystemConfirm();
-  if (!open || !contractDetail) return null;
-
-  const { contract, deliveryOrders } = contractDetail;
+  const contract = contractDetail?.contract;
+  const deliveryOrders = contractDetail?.deliveryOrders ?? [];
   const [voucherDraft, setVoucherDraft] = useState<string | string[]>(
-    contract.contractVoucher ?? ""
+    contract?.contractVoucher ?? ""
   );
   const [voucherDisplay, setVoucherDisplay] = useState<string | string[] | undefined>(
-    contract.contractVoucher
+    contract?.contractVoucher
   );
   const [voucherSaving, setVoucherSaving] = useState(false);
   // 编辑定金：按比例 或 固定金额
   const [depositType, setDepositType] = useState<"ratio" | "fixed">(
-    (contract.depositRate ?? 0) > 0 ? "ratio" : "fixed"
+    (contract?.depositRate ?? 0) > 0 ? "ratio" : "fixed"
   );
-  const [depositRateInput, setDepositRateInput] = useState(stringifyNum(contract.depositRate));
-  const [depositAmountInput, setDepositAmountInput] = useState(stringifyNum(contract.depositAmount));
+  const [depositRateInput, setDepositRateInput] = useState(stringifyNum(contract?.depositRate));
+  const [depositAmountInput, setDepositAmountInput] = useState(stringifyNum(contract?.depositAmount));
   const [depositSaving, setDepositSaving] = useState(false);
   const [settleSaving, setSettleSaving] = useState(false);
-  const canManuallySettle =
-    contract.status !== "已结清" && contract.status !== "已取消";
+  const canManuallySettle = !!contract && contract.status !== "已结清" && contract.status !== "已取消";
   useEffect(() => {
+    if (!contract) return;
     setVoucherDraft(contract.contractVoucher ?? "");
     setVoucherDisplay(contract.contractVoucher);
-  }, [contract.id, contract.contractVoucher]);
+  }, [contract?.id, contract?.contractVoucher]);
   useEffect(() => {
+    if (!contract) return;
     setDepositType((contract.depositRate ?? 0) > 0 ? "ratio" : "fixed");
     setDepositRateInput(stringifyNum(contract.depositRate));
     setDepositAmountInput(stringifyNum(contract.depositAmount));
-  }, [contract.id, contract.depositRate, contract.depositAmount]);
+  }, [contract?.id, contract?.depositRate, contract?.depositAmount]);
   function stringifyNum(n: number | undefined) {
     if (n == null || !Number.isFinite(n)) return "";
     return String(n);
   }
   const product = products.find(
     (p) =>
-      p.sku_id === contract.skuId ||
-      (p.id || p.sku) === contract.skuId
+      p.sku_id === contract?.skuId ||
+      (p.id || p.sku) === contract?.skuId
   );
+
+  if (!open || !contract) return null;
 
   const openImageModal = (imageSrc: string) => {
     const modal = document.createElement("div");
