@@ -552,35 +552,38 @@ export default function AdAgenciesPage() {
     const mainRebateCurrency = Object.keys(estimatedRebateByCurrency).includes("USD") ? "USD" : Object.keys(estimatedRebateByCurrency)[0] || "USD";
     const totalEstimatedRebate = estimatedRebateByCurrency[mainRebateCurrency] || 0;
     
-    // 本季度预计待返点总额（未结算的预估返点）
+    // 当前返点周期内预计待返点（按代理商各自周期：月/季）
     const now = new Date();
-    const currentQuarter = Math.floor(now.getMonth() / 3) + 1; // 当前季度（1-4）
     const currentYear = now.getFullYear();
-    const quarterStartMonth = (currentQuarter - 1) * 3 + 1; // 季度起始月份（1, 4, 7, 10）
-    const quarterEndMonth = currentQuarter * 3; // 季度结束月份（3, 6, 9, 12）
-    
-    // 筛选本季度的未结算消耗记录
-    // 注意：isSettled 字段可能不存在（旧数据），默认为 false（未结算）
-    const currentQuarterConsumptions = filteredConsumptions.filter((c) => {
-      if (c.isSettled === true) return false; // 已结算的不算（明确检查是否为 true）
-      if (!c.month) return false;
-      const [year, month] = c.month.split("-").map(Number);
-      if (isNaN(year) || isNaN(month)) return false;
-      return year === currentYear && month >= quarterStartMonth && month <= quarterEndMonth;
-    });
-    
-    // 本季度预计待返点（按币种分组）
-    // 注意：如果消耗记录没有 estimatedRebate 字段，尝试根据消耗金额和代理商返点率计算
+    const currentMonth = now.getMonth() + 1;
+    const currentQuarter = Math.floor((currentMonth - 1) / 3) + 1;
+
+    const isInCurrentRebateCycle = (monthValue: string | undefined, period: "月" | "季") => {
+      if (!monthValue) return false;
+      const [year, month] = monthValue.split("-").map(Number);
+      if (Number.isNaN(year) || Number.isNaN(month)) return false;
+      if (period === "月") {
+        return year === currentYear && month === currentMonth;
+      }
+      const quarter = Math.floor((month - 1) / 3) + 1;
+      return year === currentYear && quarter === currentQuarter;
+    };
+
+    // 当前返点周期预计待返点（按币种分组）
     const pendingRebateByCurrency: Record<string, number> = {};
-    currentQuarterConsumptions.forEach((c) => {
+    filteredConsumptions.forEach((c) => {
+      if (c.isSettled === true) return;
       const agency = c.agencyId ? agencies.find((a) => a.id === c.agencyId) : null;
+      const period = agency?.rebateConfig?.period || "月";
+      if (!isInCurrentRebateCycle(c.month, period)) return;
       const currency = agency?.settlementCurrency || c.currency || "USD";
       // 如果有 estimatedRebate 字段，使用它；否则根据消耗金额和返点率计算
       let rebateAmount = c.estimatedRebate;
       if (rebateAmount === undefined || rebateAmount === null) {
         // 如果没有返点字段，尝试根据消耗金额和返点率计算
-        if (agency && agency.rebateRate && c.amount) {
-          rebateAmount = (c.amount * agency.rebateRate) / 100;
+        const rate = agency?.rebateConfig?.rate ?? agency?.rebateRate ?? c.rebateRate ?? 0;
+        if (rate > 0 && c.amount) {
+          rebateAmount = (c.amount * rate) / 100;
         } else if (c.rebateRate && c.amount) {
           // 如果消耗记录中有返点率，使用它
           rebateAmount = (c.amount * c.rebateRate) / 100;
@@ -685,8 +688,8 @@ export default function AdAgenciesPage() {
       }
     });
     
-    const totalRebateAmount = totalEstimatedRebate; // 总返点金额 = 预估返点总额
-    const totalUnsettledRebateAmount = Math.max(0, totalRebateAmount - totalSettledRebateAmount); // 未返点金额
+    const totalUnsettledRebateAmount = totalPendingRebate; // 当前返点周期预计待返点
+    const totalRebateAmount = totalSettledRebateAmount + totalUnsettledRebateAmount; // 已返点 + 当前周期待返点
     
     // 各账户金额详细数据：用于图表显示
     const accountDetailData = filteredAccounts.map((acc) => {
@@ -729,7 +732,7 @@ export default function AdAgenciesPage() {
       accountBalanceCurrency: mainAccountCurrency,
       pendingSettlementCurrency: mainSettlementCurrency,
       settledConsumptionCurrency: mainSettledCurrency,
-      rebateCurrency: mainRebateCurrency,
+      rebateCurrency: mainPendingRebateCurrency || mainRebateCurrency,
       rechargeCurrency: mainRechargeCurrency,
       consumptionCurrency: mainConsumptionCurrency,
       baseCurrency: "USD" // Base Currency 默认为 USD
@@ -2322,7 +2325,7 @@ export default function AdAgenciesPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-400 mb-1">总返点金额</p>
+                  <p className="text-xs text-slate-400 mb-1">本期返点金额</p>
                   <p className="text-2xl font-bold text-slate-100" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                     {formatCurrency(
                       dashboardStats.totalRebateAmount,
@@ -2330,7 +2333,7 @@ export default function AdAgenciesPage() {
                       "income"
                     )}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">累计充值额 × 返点率</p>
+                  <p className="text-xs text-slate-500 mt-1">已返点 + 当前周期预计待返点（按月/季）</p>
                 </div>
               </div>
             </div>
@@ -2372,7 +2375,7 @@ export default function AdAgenciesPage() {
                       "income"
                     )}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">总返点 - 已返点</p>
+                  <p className="text-xs text-slate-500 mt-1">当前返点周期预计待返点（按月/季）</p>
                 </div>
               </div>
             </div>
