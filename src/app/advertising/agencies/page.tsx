@@ -191,6 +191,7 @@ export default function AdAgenciesPage() {
     notes?: string;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAccountSubmitting, setIsAccountSubmitting] = useState(false);
   const [confirmRechargeModal, setConfirmRechargeModal] = useState<{
     open: boolean;
     accountName: string;
@@ -966,6 +967,7 @@ export default function AdAgenciesPage() {
 
   const handleCreateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isAccountSubmitting) return;
     if (!accountForm.agencyId) {
       toast.error("请选择代理商");
       return;
@@ -1007,6 +1009,7 @@ export default function AdAgenciesPage() {
       createdAt: new Date().toISOString()
     };
 
+    setIsAccountSubmitting(true);
     try {
       await saveAdAccounts([...adAccounts, newAccount]);
       await mutateAdAccounts();
@@ -1026,6 +1029,8 @@ export default function AdAgenciesPage() {
     } catch (e) {
       console.error("创建广告账户失败", e);
       toast.error(e instanceof Error ? e.message : "创建广告账户失败，请重试");
+    } finally {
+      setIsAccountSubmitting(false);
     }
   };
 
@@ -1047,6 +1052,7 @@ export default function AdAgenciesPage() {
 
   const handleUpdateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isAccountSubmitting) return;
     if (!editAccount) return;
     if (!accountForm.accountName.trim()) {
       toast.error("账户名称是必填项");
@@ -1088,6 +1094,7 @@ export default function AdAgenciesPage() {
         : a
     );
 
+    setIsAccountSubmitting(true);
     try {
       await saveAdAccounts(updatedAccounts);
       await mutateAdAccounts();
@@ -1116,6 +1123,8 @@ export default function AdAgenciesPage() {
     } catch (e) {
       console.error("更新广告账户失败", e);
       toast.error(e instanceof Error ? e.message : "更新广告账户失败，请重试");
+    } finally {
+      setIsAccountSubmitting(false);
     }
   };
 
@@ -2686,6 +2695,7 @@ export default function AdAgenciesPage() {
       <AccountsFormDialog
         isOpen={isAccountModalOpen}
         onClose={() => {
+          if (isAccountSubmitting) return;
           setIsAccountModalOpen(false);
           setEditAccount(null);
           setAccountForm({
@@ -2705,6 +2715,7 @@ export default function AdAgenciesPage() {
         setForm={setAccountForm}
         agencies={agencies}
         stores={stores}
+        isSubmitting={isAccountSubmitting}
         onSubmit={editAccount ? handleUpdateAccount : handleCreateAccount}
       />
 

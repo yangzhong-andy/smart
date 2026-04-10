@@ -24,6 +24,7 @@ export type AccountsFormDialogProps = {
   setForm: React.Dispatch<React.SetStateAction<AccountFormState>>;
   agencies: Agency[];
   stores: Store[];
+  isSubmitting: boolean;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
 };
 
@@ -47,12 +48,14 @@ export function AccountsFormDialog({
   setForm,
   agencies,
   stores,
+  isSubmitting,
   onSubmit,
 }: AccountsFormDialogProps) {
   if (!isOpen) return null;
   const countriesByRegion = getCountriesByRegion();
 
   const handleClose = () => {
+    if (isSubmitting) return;
     setForm(initialFormState);
     onClose();
   };
@@ -62,7 +65,12 @@ export function AccountsFormDialog({
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">{editAccount ? "编辑广告账户" : "新增广告账户"}</h2>
-          <button onClick={handleClose} className="text-slate-400 hover:text-slate-200">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={isSubmitting}
+            className="text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             ✕
           </button>
         </div>
@@ -206,15 +214,17 @@ export function AccountsFormDialog({
             <button
               type="button"
               onClick={handleClose}
-              className="px-4 py-2 rounded-md border border-white/10 text-slate-300 hover:bg-white/5 hover:border-white/20 transition-all duration-200"
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-md border border-white/10 text-slate-300 hover:bg-white/5 hover:border-white/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               取消
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-md bg-[#00E5FF] text-slate-900 font-semibold hover:bg-[#00B8CC] transition-all duration-200 shadow-lg shadow-[#00E5FF]/20"
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-md bg-[#00E5FF] text-slate-900 font-semibold hover:bg-[#00B8CC] transition-all duration-200 shadow-lg shadow-[#00E5FF]/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {editAccount ? "更新" : "创建"}
+              {isSubmitting ? (editAccount ? "更新中…" : "创建中…") : editAccount ? "更新" : "创建"}
             </button>
           </div>
         </form>
