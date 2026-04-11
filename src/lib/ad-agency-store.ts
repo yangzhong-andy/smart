@@ -211,9 +211,17 @@ export async function saveAgencies(agencies: Agency[]): Promise<void> {
     for (const a of agencies) {
       const body = { ...a, platform: platformMap[a.platform] ?? "OTHER", rebateRate: a.rebateRate ?? 0 };
       if (existingIds.has(a.id)) {
-        await fetch(`/api/ad-agencies/${a.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch(`/api/ad-agencies/${a.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`更新代理商失败(${a.name}): ${detail || res.statusText}`);
+        }
       } else {
-        await fetch("/api/ad-agencies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const res = await fetch("/api/ad-agencies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          throw new Error(`创建代理商失败(${a.name}): ${detail || res.statusText}`);
+        }
       }
     }
   } catch (e) {

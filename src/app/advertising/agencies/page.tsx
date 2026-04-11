@@ -32,7 +32,25 @@ import {
   getRebateReceivableByRechargeId,
   saveRebateReceivables
 } from "@/lib/rebate-receivable-store";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  type TooltipProps,
+} from "recharts";
+
+/** 与 Recharts `Tooltip<number, string>` 的 `formatter`（即 `Formatter<number, string>`）一致 */
+type DashboardChartTooltipFormatter = NonNullable<TooltipProps<number, string>["formatter"]>;
 import { AgencyStats as AgencyStatsComponent } from "./components/AgencyStats";
 import { AgencyFilters } from "./components/AgencyFilters";
 import { AgenciesTable } from "./components/AgenciesTable";
@@ -777,8 +795,8 @@ export default function AdAgenciesPage() {
 
     setIsSubmitting(true);
     try {
-      mutateAgencies();
       await saveAgencies([...agencies, newAgency]);
+      await mutateAgencies();
       setAgencyForm(initialAgencyFormState);
       setIsAgencyModalOpen(false);
       toast.success("代理商创建成功");
@@ -848,15 +866,15 @@ export default function AdAgenciesPage() {
 
     setIsSubmitting(true);
     try {
-      mutateAgencies();
       await saveAgencies(updatedAgencies);
+      await mutateAgencies();
     
       // 更新关联的广告账户中的代理商名称
       const updatedAccounts = adAccounts.map((acc) =>
         acc.agencyId === editAgency.id ? { ...acc, agencyName: agencyForm.name.trim() } : acc
       );
-      mutateAdAccounts();
       await saveAdAccounts(updatedAccounts);
+      await mutateAdAccounts();
 
       setAgencyForm(initialAgencyFormState);
       setEditAgency(null);
@@ -879,13 +897,13 @@ export default function AdAgenciesPage() {
       onConfirm: async () => {
         try {
           const updatedAgencies = agencies.filter((a) => a.id !== id);
-          mutateAgencies();
           await saveAgencies(updatedAgencies);
+          await mutateAgencies();
           
           // 删除关联的广告账户
           const updatedAccounts = adAccounts.filter((acc) => acc.agencyId !== id);
-          mutateAdAccounts();
           await saveAdAccounts(updatedAccounts);
+          await mutateAdAccounts();
           
           // 删除关联的消耗记录
           const accountIds = adAccounts.filter((acc) => acc.agencyId === id).map((acc) => acc.id);
@@ -2408,12 +2426,12 @@ export default function AdAgenciesPage() {
                         return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
                       })}
                     </Pie>
-                    <Tooltip
-                      formatter={(value: number | undefined) => {
-                        if (value === undefined) return "";
+                    <Tooltip<number, string>
+                      formatter={((value, _name, _item, _index, _payload) => {
+                        if (value === undefined || typeof value !== "number") return "";
                         const symbol = dashboardStats.baseCurrency === "USD" ? "$" : "¥";
                         return `${symbol} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
-                      }}
+                      }) satisfies DashboardChartTooltipFormatter}
                       contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }}
                     />
                     <Legend />
@@ -2441,12 +2459,12 @@ export default function AdAgenciesPage() {
                       tick={{ fill: "#94a3b8", fontSize: 12 }}
                     />
                     <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                    <Tooltip
-                      formatter={(value: number | undefined) => {
-                        if (value === undefined) return "";
+                    <Tooltip<number, string>
+                      formatter={((value, _name, _item, _index, _payload) => {
+                        if (value === undefined || typeof value !== "number") return "";
                         const symbol = dashboardStats.baseCurrency === "USD" ? "$" : "¥";
                         return `${symbol} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
-                      }}
+                      }) satisfies DashboardChartTooltipFormatter}
                       contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }}
                     />
                     <Bar dataKey="amount" fill="#8884d8" radius={[4, 4, 0, 0]} />
@@ -2468,12 +2486,12 @@ export default function AdAgenciesPage() {
                     tick={{ fill: "#94a3b8", fontSize: 12 }}
                   />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(value: number | undefined) => {
-                      if (value === undefined) return "";
+                  <Tooltip<number, string>
+                    formatter={((value, _name, _item, _index, _payload) => {
+                      if (value === undefined || typeof value !== "number") return "";
                       const symbol = dashboardStats.baseCurrency === "USD" ? "$" : "¥";
                       return `${symbol} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
-                    }}
+                    }) satisfies DashboardChartTooltipFormatter}
                     contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }}
                   />
                   <Line type="monotone" dataKey="amount" stroke="#8884d8" strokeWidth={2} dot={{ fill: "#8884d8", r: 4 }} />
@@ -2496,12 +2514,15 @@ export default function AdAgenciesPage() {
                     width={150}
                     tick={{ fill: "#94a3b8", fontSize: 11 }}
                   />
-                  <Tooltip
-                    formatter={(value: number | undefined, name: string | undefined) => {
-                      if (value === undefined) return "";
+                  <Tooltip<number, string>
+                    formatter={((value, name, _item, _index, _payload) => {
+                      if (value === undefined || typeof value !== "number") return "";
                       const symbol = "$";
-                      return [`${symbol} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`, name || ""];
-                    }}
+                      return [
+                        `${symbol} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`,
+                        name ?? "",
+                      ];
+                    }) satisfies DashboardChartTooltipFormatter}
                     contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#e2e8f0" }}
                   />
                   <Legend />

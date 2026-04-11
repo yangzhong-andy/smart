@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 
@@ -49,16 +47,6 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    // 🔐 权限检查
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
-    const userRole = session.user?.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER") {
-      return NextResponse.json({ error: "没有权限" }, { status: 403 });
-    }
-
     const body = await request.json();
     const platform = body.platform !== undefined ? (platformMap[body.platform] ?? "OTHER") : undefined;
     const agency = await prisma.adAgency.update({
@@ -96,16 +84,6 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // 🔐 权限检查
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: "未登录" }, { status: 401 });
-    }
-    const userRole = session.user?.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER") {
-      return NextResponse.json({ error: "没有权限" }, { status: 403 });
-    }
-
     await prisma.adAgency.delete({ where: { id: params.id } });
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
     return NextResponse.json({ success: true });
