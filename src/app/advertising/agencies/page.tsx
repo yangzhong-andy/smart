@@ -2426,7 +2426,7 @@ export default function AdAgenciesPage() {
                         return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
                       })}
                     </Pie>
-                    <Tooltip<number, string>
+                    <Tooltip
                       formatter={((value, _name, _item, _index, _payload) => {
                         if (value === undefined || typeof value !== "number") return "";
                         const symbol = dashboardStats.baseCurrency === "USD" ? "$" : "¥";
