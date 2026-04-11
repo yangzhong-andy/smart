@@ -49,8 +49,10 @@ import {
   type TooltipProps,
 } from "recharts";
 
-/** 与 Recharts `Tooltip<number, string>` 的 `formatter`（即 `Formatter<number, string>`）一致 */
-type DashboardChartTooltipFormatter = NonNullable<TooltipProps<number, string>["formatter"]>;
+/** 与无泛型 `<Tooltip>` 一致：等价于 `TooltipProps<ValueType, NameType>["formatter"]` */
+type DashboardChartTooltipFormatter = NonNullable<
+  TooltipProps<number | string | ReadonlyArray<number | string>, number | string>["formatter"]
+>;
 import { AgencyStats as AgencyStatsComponent } from "./components/AgencyStats";
 import { AgencyFilters } from "./components/AgencyFilters";
 import { AgenciesTable } from "./components/AgenciesTable";
@@ -2459,7 +2461,7 @@ export default function AdAgenciesPage() {
                       tick={{ fill: "#94a3b8", fontSize: 12 }}
                     />
                     <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                    <Tooltip<number, string>
+                    <Tooltip
                       formatter={((value, _name, _item, _index, _payload) => {
                         if (value === undefined || typeof value !== "number") return "";
                         const symbol = dashboardStats.baseCurrency === "USD" ? "$" : "¥";
@@ -2486,7 +2488,7 @@ export default function AdAgenciesPage() {
                     tick={{ fill: "#94a3b8", fontSize: 12 }}
                   />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                  <Tooltip<number, string>
+                  <Tooltip
                     formatter={((value, _name, _item, _index, _payload) => {
                       if (value === undefined || typeof value !== "number") return "";
                       const symbol = dashboardStats.baseCurrency === "USD" ? "$" : "¥";
@@ -2514,7 +2516,7 @@ export default function AdAgenciesPage() {
                     width={150}
                     tick={{ fill: "#94a3b8", fontSize: 11 }}
                   />
-                  <Tooltip<number, string>
+                  <Tooltip
                     formatter={((value, name, _item, _index, _payload) => {
                       if (value === undefined || typeof value !== "number") return "";
                       const symbol = "$";
