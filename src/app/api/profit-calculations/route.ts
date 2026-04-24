@@ -26,6 +26,8 @@ export async function GET() {
         const salePriceBrl = Number(row.salePriceBrl);
         const exchangeRate = Number(row.exchangeRate);
         const qty = row.quantity;
+        // 与测算页一致：营业额(BRL) = 有效售价(BRL)×件数
+        const grossRevenueBrl = salePriceBrl * qty;
         // 与测算页一致：营业额(CNY) = 有效售价(BRL)×件数×汇率
         const grossRevenueCny = salePriceBrl * qty * exchangeRate;
         return {
@@ -45,6 +47,7 @@ export async function GET() {
           warehouseFeeBrl: Number(row.warehouseFeeBrl),
           targetRoi: row.targetRoi == null ? null : Number(row.targetRoi),
           settlementBrl: Number(row.settlementBrl),
+          grossRevenueBrl,
           grossRevenueCny,
           netProfitCny: Number(row.netProfitCny),
           roi: Number(row.roi),

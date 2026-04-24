@@ -17,11 +17,12 @@ type HistoryItem = {
   id: string;
   productName: string;
   skuId: string | null;
-  /** 营业额(CNY)，接口由 有效售价×件数×汇率 推算 */
-  grossRevenueCny: number;
+  isCommissionFree: boolean;
+  /** 营业额(BRL)，接口由 有效售价×件数 推算 */
+  grossRevenueBrl: number;
+  exchangeRate: number;
   netProfitCny: number;
   settlementBrl: number;
-  roi: number;
   breakEvenRoi: number;
   createdAt: string;
 };
@@ -510,10 +511,10 @@ export default function ProfitCalculationPage() {
               <tr className="text-slate-400 border-b border-slate-800/80">
                 <th className="text-left py-2">商品</th>
                 <th className="text-left py-2">SKU</th>
-                <th className="text-left py-2">营业额(CNY)</th>
+                <th className="text-left py-2">营业额(BRL)</th>
                 <th className="text-left py-2">结算额(BRL)</th>
-                <th className="text-left py-2">净利润(CNY)</th>
-                <th className="text-left py-2">ROI</th>
+                <th className="text-left py-2">净利润(BRL/CNY)</th>
+                <th className="text-left py-2">免佣任务状态</th>
                 <th className="text-left py-2">保本ROI</th>
                 <th className="text-left py-2">时间</th>
                 <th className="text-right py-2">操作</th>
@@ -524,10 +525,20 @@ export default function ProfitCalculationPage() {
                 <tr key={row.id} className="border-b border-slate-800/50 text-slate-200 hover:bg-slate-800/30 transition-all">
                   <td className="py-2">{row.productName}</td>
                   <td>{row.skuId || "-"}</td>
-                  <td>{money(row.grossRevenueCny)}</td>
+                  <td>{money(row.grossRevenueBrl)}</td>
                   <td>{money(row.settlementBrl)}</td>
-                  <td className={row.netProfitCny < 0 ? "text-rose-400" : "text-emerald-300"}>{money(row.netProfitCny)}</td>
-                  <td>{row.roi.toFixed(4)}</td>
+                  <td className={row.netProfitCny < 0 ? "text-rose-400" : "text-emerald-300"}>
+                    <div className="leading-tight">
+                      <div className="font-medium">
+                        {money(
+                          row.exchangeRate > 0 ? num(row.netProfitCny) / num(row.exchangeRate) : 0
+                        )}{" "}
+                        BRL
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-normal">{money(row.netProfitCny)} CNY</div>
+                    </div>
+                  </td>
+                  <td className={row.isCommissionFree ? "text-emerald-300" : "text-rose-300"}>{row.isCommissionFree ? "有效" : "无效"}</td>
                   <td>{row.breakEvenRoi.toFixed(4)}</td>
                   <td>{new Date(row.createdAt).toLocaleString("zh-CN")}</td>
                   <td className="text-right">
