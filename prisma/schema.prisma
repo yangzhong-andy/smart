@@ -225,6 +225,11 @@ enum ApprovalStatus {
   REJECTED // 拒绝
 }
 
+enum ProfitShippingMode {
+  SFP
+  WAREHOUSE_3PL
+}
+
 enum Urgency {
   NORMAL // 普通
   URGENT // 紧急
@@ -343,6 +348,7 @@ model ProductVariant {
   outboundBatchItems OutboundBatchItem[] // 出库批次明细
   inventoryLogs  InventoryLog[] // 库存流水（国内中转-海外分发）
   ownershipLedgers InventoryOwnershipLedger[] // 货权台账
+  profitCalculations ProfitCalculation[]
 
   @@index([productId])
   @@index([skuId])
@@ -2289,4 +2295,33 @@ model BoxSpec {
   updatedAt   DateTime @updatedAt
 
   @@index([variantId])
+}
+
+model ProfitCalculation {
+  id                   String             @id @default(uuid())
+  productId            String?
+  productName          String
+  purchaseCostCny      Decimal            @db.Decimal(18, 2)
+  weightKg             Decimal?           @db.Decimal(10, 3)
+  firstLegShippingCny  Decimal            @db.Decimal(18, 2)
+  adCostCny            Decimal            @db.Decimal(18, 2)
+  salePriceBrl         Decimal            @db.Decimal(18, 2)
+  exchangeRate         Decimal            @default(1.35) @db.Decimal(10, 4)
+  quantity             Int                @default(1)
+  shippingMode         ProfitShippingMode
+  isCommissionFree     Boolean            @default(true)
+  warehouseFeeBrl      Decimal            @default(0) @db.Decimal(18, 2)
+  targetRoi            Decimal?           @db.Decimal(10, 4)
+  settlementBrl        Decimal            @db.Decimal(18, 2)
+  netProfitCny         Decimal            @db.Decimal(18, 2)
+  roi                  Decimal            @db.Decimal(10, 4)
+  breakEvenRoi         Decimal            @db.Decimal(10, 4)
+  expectedProfitCny    Decimal?           @db.Decimal(18, 2)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  product              ProductVariant?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([createdAt])
 }
