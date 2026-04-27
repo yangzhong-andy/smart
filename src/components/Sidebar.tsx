@@ -157,7 +157,8 @@ const navItems: NavItem[] = [
     labelEn: "Ops Tools",
     icon: BarChart3,
     children: [
-      { label: "巴西利润测算", labelEn: "", icon: BarChart3, href: "/finance/profit-calculation" }
+      { label: "巴西利润测算", labelEn: "", icon: BarChart3, href: "/finance/profit-calculation" },
+      { label: "代理IP管理", labelEn: "", icon: BarChart3, href: "/operations/proxy-ip" }
     ]
   },
   {
