@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { badRequest, serverError } from "@/lib/api-response";
+import { badRequest } from "@/lib/api-response";
 import { wanziServerRequest } from "@/lib/wanzi-server";
 
 export const dynamic = "force-dynamic";
 
 type Params = { action: string };
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "未知错误";
+}
 
 export async function GET(
   _request: NextRequest,
@@ -22,7 +28,14 @@ export async function GET(
     }
     return badRequest("不支持的操作");
   } catch (error) {
-    return serverError("代理IP接口请求失败", error, { includeDetailsInDev: true });
+    const details = extractErrorMessage(error);
+    return NextResponse.json(
+      {
+        error: "代理IP接口请求失败",
+        details,
+      },
+      { status: 500 }
+    );
   }
 }
 
@@ -84,6 +97,13 @@ export async function POST(
     }
     return badRequest("不支持的操作");
   } catch (error) {
-    return serverError("代理IP接口请求失败", error, { includeDetailsInDev: true });
+    const details = extractErrorMessage(error);
+    return NextResponse.json(
+      {
+        error: "代理IP接口请求失败",
+        details,
+      },
+      { status: 500 }
+    );
   }
 }

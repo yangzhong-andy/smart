@@ -263,6 +263,11 @@ export default function ProxyIPPage() {
   );
 
   const handlePurchase = (cityName: string, count = 1) => {
+    const confirmed = window.confirm(`确认购买 ${cityName} 的代理IP，数量 ${count} 个？`);
+    if (!confirmed) {
+      toast.info("已取消购买");
+      return;
+    }
     void (async () => {
       try {
         const res = await fetch("/api/proxy-ip/purchase", {
@@ -287,6 +292,11 @@ export default function ProxyIPPage() {
   const getRowCount = (rowKey: string) => rowPurchaseCount[rowKey] ?? 1;
 
   const handleRenew = (proxyId: number) => {
+    const confirmed = window.confirm(`确认续费 Proxy ID: ${proxyId} 吗？`);
+    if (!confirmed) {
+      toast.info("已取消续费");
+      return;
+    }
     void (async () => {
       try {
         const res = await fetch("/api/proxy-ip/renew", {
@@ -318,6 +328,11 @@ export default function ProxyIPPage() {
     const password = newPassword.trim();
     if (!username || !password) {
       toast.error("用户名和密码都不能为空");
+      return;
+    }
+    const confirmed = window.confirm(`确认修改 Proxy ID: ${proxyId} 的用户名和密码吗？`);
+    if (!confirmed) {
+      toast.info("已取消修改");
       return;
     }
     setChangingUserPass(true);
