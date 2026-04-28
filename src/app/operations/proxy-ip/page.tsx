@@ -15,6 +15,7 @@ interface ProxyIP {
   created_at: string;
   expired_at: string;
   order_id: string;
+  permissions?: boolean;
 }
 
 interface CityInventory {
@@ -206,6 +207,7 @@ export default function ProxyIPPage() {
   const [newUsername, setNewUsername] = useState<string>("");
   const [newPassword, setNewPassword] = useState<string>("");
   const [changingUserPass, setChangingUserPass] = useState(false);
+  const [dedicatedPullMap, setDedicatedPullMap] = useState<Record<number, boolean>>({});
   const continentOptions = useMemo(() => {
     return Array.from(new Set(COUNTRY_CATALOG.map((item) => item.continent)));
   }, []);
@@ -445,6 +447,18 @@ export default function ProxyIPPage() {
     if (activeTab !== "list") return;
     void loadMyIPs().catch((e) => toast.error(e instanceof Error ? e.message : "获取IP列表失败"));
   }, [activeTab, proxiesType, selectedCityName, expiringDays]);
+
+  useEffect(() => {
+    setDedicatedPullMap((prev) => {
+      const next = { ...prev };
+      for (const ip of myIPs) {
+        if (next[ip.proxy_id] === undefined) {
+          next[ip.proxy_id] = Boolean(ip.permissions);
+        }
+      }
+      return next;
+    });
+  }, [myIPs]);
 
   return (
     <div className="p-6 space-y-6 text-slate-200">
@@ -725,12 +739,14 @@ export default function ProxyIPPage() {
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-medium">国家</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">城市</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">代理串</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">IP</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">端口</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">账号</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">密码</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">购买时间</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">到期时间</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">专线拉取</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">操作</th>
                 </tr>
               </thead>
@@ -744,6 +760,9 @@ export default function ProxyIPPage() {
                           {COUNTRY_NAME_MAP[ip.country_code] || ip.country_code} ({ip.country_code})
                         </td>
                         <td className="px-4 py-3">{ip.city_name}</td>
+                        <td className="px-4 py-3 font-mono text-sm">
+                          {`${ip.proxy_address}:${ip.port}:${ip.username}:${ip.password}`}
+                        </td>
                         <td className="px-4 py-3 font-mono text-sm">{ip.proxy_address}</td>
                         <td className="px-4 py-3">{ip.port}</td>
                         <td className="px-4 py-3">{ip.username}</td>
@@ -755,6 +774,42 @@ export default function ProxyIPPage() {
                           <div className="text-sm">{new Date(ip.expired_at).toLocaleString("zh-CN")}</div>
                           <div className={`text-xs ${days < 7 ? "text-rose-400" : days < 30 ? "text-amber-300" : "text-emerald-300"}`}>
                             {days > 0 ? `${days}天后到期` : "已过期"}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="inline-flex rounded-md bg-slate-800/80 p-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDedicatedPullMap((prev) => ({
+                                  ...prev,
+                                  [ip.proxy_id]: true,
+                                }))
+                              }
+                              className={`px-2.5 py-1 text-xs rounded transition-all ${
+                                dedicatedPullMap[ip.proxy_id]
+                                  ? "bg-emerald-500 text-white"
+                                  : "text-slate-300 hover:text-white"
+                              }`}
+                            >
+                              是
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDedicatedPullMap((prev) => ({
+                                  ...prev,
+                                  [ip.proxy_id]: false,
+                                }))
+                              }
+                              className={`px-2.5 py-1 text-xs rounded transition-all ${
+                                !dedicatedPullMap[ip.proxy_id]
+                                  ? "bg-slate-600 text-white"
+                                  : "text-slate-300 hover:text-white"
+                              }`}
+                            >
+                              否
+                            </button>
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -776,7 +831,7 @@ export default function ProxyIPPage() {
                       </tr>
                       {editingProxyId === ip.proxy_id && (
                         <tr className="border-t border-slate-800 bg-slate-950/40">
-                          <td className="px-4 py-3 text-slate-400 text-sm" colSpan={9}>
+                          <td className="px-4 py-3 text-slate-400 text-sm" colSpan={11}>
                             <div className="flex flex-wrap items-end gap-3">
                               <div>
                                 <label className="block text-xs text-slate-400 mb-1">新用户名</label>
