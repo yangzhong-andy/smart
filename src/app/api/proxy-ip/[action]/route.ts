@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { badRequest } from "@/lib/api-response";
+import { prisma } from "@/lib/prisma";
 import { wanziServerRequest } from "@/lib/wanzi-server";
 
 export const dynamic = "force-dynamic";
@@ -70,12 +71,42 @@ export async function POST(
     }
     if (action === "list") {
       if (!body?.proxies_type) return badRequest("缺少 proxies_type");
-      const data = await wanziServerRequest("/OpenApiList", {
+      const data = (await wanziServerRequest("/OpenApiList", {
         proxies_type: body.proxies_type,
         ...(body.city_name ? { city_name: body.city_name } : {}),
         ...(body.expiring_days ? { expiring_days: Number(body.expiring_days) } : {}),
+      })) as { results?: Array<{ proxy_id: number }> } | null;
+      const results = Array.isArray(data?.results) ? data!.results! : [];
+      const ids = results.map((r) => r.proxy_id).filter((id) => Number.isFinite(id));
+      const lineRows =
+        ids.length > 0
+          ? await prisma.proxyIpDedicatedLine.findMany({ where: { proxyId: { in: ids } } })
+          : [];
+      const byId = new Map(lineRows.map((row) => [row.proxyId, row.dedicatedLineString]));
+      const mergedResults = results.map((r) => ({
+        ...r,
+        dedicated_line_string: byId.get(r.proxy_id) ?? "",
+      }));
+      return NextResponse.json({
+        success: true,
+        data: { ...data, results: mergedResults },
       });
-      return NextResponse.json({ success: true, data });
+    }
+    if (action === "dedicated-line") {
+      const proxyId = Number(body?.proxy_id);
+      if (!Number.isFinite(proxyId)) return badRequest("缺少 proxy_id");
+      const dedicated_line_string =
+        typeof body?.dedicated_line_string === "string" ? body.dedicated_line_string : "";
+      if (dedicated_line_string === "") {
+        await prisma.proxyIpDedicatedLine.deleteMany({ where: { proxyId } });
+      } else {
+        await prisma.proxyIpDedicatedLine.upsert({
+          where: { proxyId },
+          create: { proxyId, dedicatedLineString: dedicated_line_string },
+          update: { dedicatedLineString: dedicated_line_string },
+        });
+      }
+      return NextResponse.json({ success: true });
     }
     if (action === "renew") {
       if (!Array.isArray(body?.proxy_ids) || body.proxy_ids.length === 0) return badRequest("缺少 proxy_ids");

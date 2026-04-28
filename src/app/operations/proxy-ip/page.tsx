@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AlertCircle, CreditCard, Globe, Package, RefreshCw } from "lucide-react";
 
@@ -16,6 +16,8 @@ interface ProxyIP {
   expired_at: string;
   order_id: string;
   permissions?: boolean;
+  /** 来自 ERP 数据库（万子 API 无此字段） */
+  dedicated_line_string?: string;
 }
 
 interface CityInventory {
@@ -208,6 +210,45 @@ export default function ProxyIPPage() {
   const [newPassword, setNewPassword] = useState<string>("");
   const [changingUserPass, setChangingUserPass] = useState(false);
   const [dedicatedPullMap, setDedicatedPullMap] = useState<Record<number, boolean>>({});
+  /** 专线拉取为「是」时编辑的专线代理串（点「保存」后写入数据库） */
+  const [dedicatedLineStringMap, setDedicatedLineStringMap] = useState<Record<number, string>>({});
+  const [savingDedicatedLineProxyId, setSavingDedicatedLineProxyId] = useState<number | null>(null);
+
+  const saveDedicatedLineToDb = useCallback(async (proxyId: number, value: string): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/proxy-ip/dedicated-line", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proxy_id: proxyId, dedicated_line_string: value }),
+      });
+      const json = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || !json?.success) throw new Error(json?.error || "保存失败");
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "专线代理串保存失败");
+      return false;
+    }
+  }, []);
+
+  const commitDedicatedLine = useCallback(
+    async (ip: ProxyIP) => {
+      const value = dedicatedLineStringMap[ip.proxy_id] ?? "";
+      setSavingDedicatedLineProxyId(ip.proxy_id);
+      try {
+        const ok = await saveDedicatedLineToDb(ip.proxy_id, value);
+        if (ok) {
+          setMyIPs((prev) =>
+            prev.map((p) => (p.proxy_id === ip.proxy_id ? { ...p, dedicated_line_string: value } : p))
+          );
+          toast.success("已保存");
+        }
+      } finally {
+        setSavingDedicatedLineProxyId(null);
+      }
+    },
+    [dedicatedLineStringMap, saveDedicatedLineToDb]
+  );
+
   const continentOptions = useMemo(() => {
     return Array.from(new Set(COUNTRY_CATALOG.map((item) => item.continent)));
   }, []);
@@ -455,6 +496,16 @@ export default function ProxyIPPage() {
         if (next[ip.proxy_id] === undefined) {
           next[ip.proxy_id] = Boolean(ip.permissions);
         }
+      }
+      return next;
+    });
+  }, [myIPs]);
+
+  useEffect(() => {
+    setDedicatedLineStringMap(() => {
+      const next: Record<number, string> = {};
+      for (const ip of myIPs) {
+        next[ip.proxy_id] = ip.dedicated_line_string ?? "";
       }
       return next;
     });
@@ -753,6 +804,10 @@ export default function ProxyIPPage() {
               <tbody>
                 {myIPs.map((ip) => {
                   const days = Math.ceil((new Date(ip.expired_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  const dedicatedDraft = dedicatedLineStringMap[ip.proxy_id] ?? "";
+                  const dedicatedSaved = ip.dedicated_line_string ?? "";
+                  const dedicatedUnchanged = dedicatedDraft === dedicatedSaved;
+                  const savingDedicatedLine = savingDedicatedLineProxyId === ip.proxy_id;
                   return (
                     <Fragment key={ip.proxy_id}>
                       <tr className="border-t border-slate-800">
@@ -760,8 +815,38 @@ export default function ProxyIPPage() {
                           {COUNTRY_NAME_MAP[ip.country_code] || ip.country_code} ({ip.country_code})
                         </td>
                         <td className="px-4 py-3">{ip.city_name}</td>
-                        <td className="px-4 py-3 font-mono text-sm">
-                          {`${ip.proxy_address}:${ip.port}:${ip.username}:${ip.password}`}
+                        <td className="px-4 py-3 font-mono text-sm align-top">
+                          <div className="flex flex-col gap-2 min-w-[200px] max-w-[360px]">
+                            <div className="break-all">
+                              {`${ip.proxy_address}:${ip.port}:${ip.username}:${ip.password}`}
+                            </div>
+                            {dedicatedPullMap[ip.proxy_id] ? (
+                              <div className="font-sans">
+                                <div className="text-[10px] text-slate-500 mb-1">专线代理串</div>
+                                <textarea
+                                  value={dedicatedDraft}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setDedicatedLineStringMap((prev) => ({
+                                      ...prev,
+                                      [ip.proxy_id]: v,
+                                    }));
+                                  }}
+                                  rows={2}
+                                  placeholder="请粘贴专线代理串，填写后点保存写入数据库"
+                                  className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-slate-100 outline-none focus:border-cyan-500/60"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={dedicatedUnchanged || savingDedicatedLine}
+                                  onClick={() => void commitDedicatedLine(ip)}
+                                  className="mt-1.5 rounded bg-cyan-700/90 px-2 py-1 text-[11px] text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  {savingDedicatedLine ? "保存中…" : "保存"}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 font-mono text-sm">{ip.proxy_address}</td>
                         <td className="px-4 py-3">{ip.port}</td>
@@ -796,12 +881,26 @@ export default function ProxyIPPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() =>
-                                setDedicatedPullMap((prev) => ({
-                                  ...prev,
-                                  [ip.proxy_id]: false,
-                                }))
-                              }
+                              onClick={() => {
+                                void (async () => {
+                                  const ok = await saveDedicatedLineToDb(ip.proxy_id, "");
+                                  if (!ok) return;
+                                  setDedicatedPullMap((prev) => ({
+                                    ...prev,
+                                    [ip.proxy_id]: false,
+                                  }));
+                                  setDedicatedLineStringMap((prev) => {
+                                    const next = { ...prev };
+                                    delete next[ip.proxy_id];
+                                    return next;
+                                  });
+                                  setMyIPs((prev) =>
+                                    prev.map((p) =>
+                                      p.proxy_id === ip.proxy_id ? { ...p, dedicated_line_string: "" } : p
+                                    )
+                                  );
+                                })();
+                              }}
                               className={`px-2.5 py-1 text-xs rounded transition-all ${
                                 !dedicatedPullMap[ip.proxy_id]
                                   ? "bg-slate-600 text-white"
