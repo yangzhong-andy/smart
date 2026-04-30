@@ -78,15 +78,21 @@ export async function POST(
       })) as { results?: Array<{ proxy_id: number }> } | null;
       const results = Array.isArray(data?.results) ? data!.results! : [];
       const ids = results.map((r) => r.proxy_id).filter((id) => Number.isFinite(id));
-      const lineRows =
-        ids.length > 0
-          ? await prisma.proxyIpDedicatedLine.findMany({ where: { proxyId: { in: ids } } })
-          : [];
-      const byId = new Map(lineRows.map((row) => [row.proxyId, row.dedicatedLineString]));
-      const mergedResults = results.map((r) => ({
-        ...r,
-        dedicated_line_string: byId.get(r.proxy_id) ?? "",
-      }));
+      let mergedResults = results.map((r) => ({ ...r, dedicated_line_string: "" as string }));
+      try {
+        const lineRows =
+          ids.length > 0
+            ? await prisma.proxyIpDedicatedLine.findMany({ where: { proxyId: { in: ids } } })
+            : [];
+        const byId = new Map(lineRows.map((row) => [row.proxyId, row.dedicatedLineString]));
+        mergedResults = results.map((r) => ({
+          ...r,
+          dedicated_line_string: byId.get(r.proxy_id) ?? "",
+        }));
+      } catch (mergeErr) {
+        console.error("[proxy-ip/list] merge ProxyIpDedicatedLine failed:", mergeErr);
+        // 线上若未跑迁移或 DB 不可用，仍返回万子列表，避免整页「我的 IP」不可用
+      }
       return NextResponse.json({
         success: true,
         data: { ...data, results: mergedResults },
