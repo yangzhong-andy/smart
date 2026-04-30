@@ -75,19 +75,26 @@ export async function POST(
         proxies_type: body.proxies_type,
         ...(body.city_name ? { city_name: body.city_name } : {}),
         ...(body.expiring_days ? { expiring_days: Number(body.expiring_days) } : {}),
-      })) as { results?: Array<{ proxy_id: number }> } | null;
+      })) as { results?: Array<{ proxy_id: number | string }> } | null;
       const results = Array.isArray(data?.results) ? data!.results! : [];
-      const ids = results.map((r) => r.proxy_id).filter((id) => Number.isFinite(id));
+      const idStrings = [
+        ...new Set(
+          results
+            .map((r) => (r.proxy_id == null ? "" : String(r.proxy_id).trim()))
+            .filter((s) => /^\d+$/.test(s))
+        ),
+      ];
+      const bigIds = idStrings.map((s) => BigInt(s));
       let mergedResults = results.map((r) => ({ ...r, dedicated_line_string: "" as string }));
       try {
         const lineRows =
-          ids.length > 0
-            ? await prisma.proxyIpDedicatedLine.findMany({ where: { proxyId: { in: ids } } })
+          bigIds.length > 0
+            ? await prisma.proxyIpDedicatedLine.findMany({ where: { proxyId: { in: bigIds } } })
             : [];
-        const byId = new Map(lineRows.map((row) => [row.proxyId, row.dedicatedLineString]));
+        const byId = new Map(lineRows.map((row) => [String(row.proxyId), row.dedicatedLineString]));
         mergedResults = results.map((r) => ({
           ...r,
-          dedicated_line_string: byId.get(r.proxy_id) ?? "",
+          dedicated_line_string: byId.get(String(r.proxy_id)) ?? "",
         }));
       } catch (mergeErr) {
         console.error("[proxy-ip/list] merge ProxyIpDedicatedLine failed:", mergeErr);
@@ -99,18 +106,33 @@ export async function POST(
       });
     }
     if (action === "dedicated-line") {
-      const proxyId = Number(body?.proxy_id);
-      if (!Number.isFinite(proxyId)) return badRequest("缺少 proxy_id");
+      const idRaw = body?.proxy_id;
+      const idStr = idRaw === null || idRaw === undefined ? "" : String(idRaw).trim();
+      if (!/^\d+$/.test(idStr)) return badRequest("缺少或非法 proxy_id");
+      let proxyId: bigint;
+      try {
+        proxyId = BigInt(idStr);
+      } catch {
+        return badRequest("proxy_id 无法解析为整数");
+      }
       const dedicated_line_string =
         typeof body?.dedicated_line_string === "string" ? body.dedicated_line_string : "";
-      if (dedicated_line_string === "") {
-        await prisma.proxyIpDedicatedLine.deleteMany({ where: { proxyId } });
-      } else {
-        await prisma.proxyIpDedicatedLine.upsert({
-          where: { proxyId },
-          create: { proxyId, dedicatedLineString: dedicated_line_string },
-          update: { dedicatedLineString: dedicated_line_string },
-        });
+      try {
+        if (dedicated_line_string === "") {
+          await prisma.proxyIpDedicatedLine.deleteMany({ where: { proxyId } });
+        } else {
+          await prisma.proxyIpDedicatedLine.upsert({
+            where: { proxyId },
+            create: { proxyId, dedicatedLineString: dedicated_line_string },
+            update: { dedicatedLineString: dedicated_line_string },
+          });
+        }
+      } catch (dbErr) {
+        const details = extractErrorMessage(dbErr);
+        return NextResponse.json(
+          { success: false, error: "专线代理串保存失败", details },
+          { status: 500 }
+        );
       }
       return NextResponse.json({ success: true });
     }

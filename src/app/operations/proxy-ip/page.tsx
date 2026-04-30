@@ -192,10 +192,13 @@ export default function ProxyIPPage() {
       const res = await fetch("/api/proxy-ip/dedicated-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proxy_id: proxyId, dedicated_line_string: value }),
+        body: JSON.stringify({ proxy_id: String(proxyId), dedicated_line_string: value }),
       });
-      const json = (await res.json()) as { success?: boolean; error?: string };
-      if (!res.ok || !json?.success) throw new Error(json?.error || "保存失败");
+      const json = (await res.json()) as { success?: boolean; error?: string; details?: string };
+      if (!res.ok || json?.success === false) {
+        const parts = [json?.error, json?.details].filter(Boolean);
+        throw new Error(parts.length ? parts.join("：") : "保存失败");
+      }
       return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "专线代理串保存失败");

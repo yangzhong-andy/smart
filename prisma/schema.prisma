@@ -2328,7 +2328,7 @@ model ProfitCalculation {
 
 // 万子代理 IP 在本地的扩展字段（供应商 API 无此字段时由 ERP 落库）
 model ProxyIpDedicatedLine {
-  proxyId             Int      @id // 与万子 OpenApiList 返回的 proxy_id 一致
+  proxyId             BigInt   @id // 万子 proxy_id 可能超过 32 位整数上限
   dedicatedLineString String   @default("") @db.Text
   updatedAt           DateTime @updatedAt
 }
