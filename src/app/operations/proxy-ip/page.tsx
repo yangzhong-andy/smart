@@ -187,12 +187,16 @@ export default function ProxyIPPage() {
   const [dedicatedLineStringMap, setDedicatedLineStringMap] = useState<Record<number, string>>({});
   const [savingDedicatedLineProxyId, setSavingDedicatedLineProxyId] = useState<number | null>(null);
 
-  const saveDedicatedLineToDb = useCallback(async (proxyId: number, value: string): Promise<boolean> => {
+  const saveDedicatedLineToDb = useCallback(async (ip: ProxyIP, value: string): Promise<boolean> => {
     try {
       const res = await fetch("/api/proxy-ip/dedicated-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proxy_id: String(proxyId), dedicated_line_string: value }),
+        body: JSON.stringify({
+          proxy_address: ip.proxy_address,
+          port: ip.port,
+          dedicated_line_string: value,
+        }),
       });
       const json = (await res.json()) as { success?: boolean; error?: string; details?: string };
       if (!res.ok || json?.success === false) {
@@ -211,7 +215,7 @@ export default function ProxyIPPage() {
       const value = dedicatedLineStringMap[ip.proxy_id] ?? "";
       setSavingDedicatedLineProxyId(ip.proxy_id);
       try {
-        const ok = await saveDedicatedLineToDb(ip.proxy_id, value);
+        const ok = await saveDedicatedLineToDb(ip, value);
         if (ok) {
           setMyIPs((prev) =>
             prev.map((p) => (p.proxy_id === ip.proxy_id ? { ...p, dedicated_line_string: value } : p))
@@ -866,7 +870,7 @@ export default function ProxyIPPage() {
                               type="button"
                               onClick={() => {
                                 void (async () => {
-                                  const ok = await saveDedicatedLineToDb(ip.proxy_id, "");
+                                  const ok = await saveDedicatedLineToDb(ip, "");
                                   if (!ok) return;
                                   setDedicatedPullMap((prev) => ({
                                     ...prev,

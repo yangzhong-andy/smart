@@ -75,26 +75,39 @@ export async function POST(
         proxies_type: body.proxies_type,
         ...(body.city_name ? { city_name: body.city_name } : {}),
         ...(body.expiring_days ? { expiring_days: Number(body.expiring_days) } : {}),
-      })) as { results?: Array<{ proxy_id: number | string }> } | null;
+      })) as { results?: Array<{ proxy_address?: string; port?: number; proxy_id?: number | string }> } | null;
       const results = Array.isArray(data?.results) ? data!.results! : [];
-      const idStrings = [
-        ...new Set(
-          results
-            .map((r) => (r.proxy_id == null ? "" : String(r.proxy_id).trim()))
-            .filter((s) => /^\d+$/.test(s))
-        ),
-      ];
-      const bigIds = idStrings.map((s) => BigInt(s));
+      const lineKey = (host: unknown, port: unknown) => {
+        const h = String(host ?? "").trim();
+        const p = Math.trunc(Number(port));
+        if (!h || !Number.isFinite(p) || p < 1 || p > 65535) return "";
+        return `${h}:${p}`;
+      };
+      const seenKeys = new Set<string>();
+      const orFilters: Array<{ proxyHost: string; proxyPort: number }> = [];
+      for (const r of results) {
+        const h = String(r.proxy_address ?? "").trim();
+        const p = Math.trunc(Number(r.port));
+        if (!h || !Number.isFinite(p) || p < 1 || p > 65535) continue;
+        const k = `${h}:${p}`;
+        if (seenKeys.has(k)) continue;
+        seenKeys.add(k);
+        orFilters.push({ proxyHost: h, proxyPort: p });
+      }
       let mergedResults = results.map((r) => ({ ...r, dedicated_line_string: "" as string }));
       try {
         const lineRows =
-          bigIds.length > 0
-            ? await prisma.proxyIpDedicatedLine.findMany({ where: { proxyId: { in: bigIds } } })
+          orFilters.length > 0
+            ? await prisma.proxyIpDedicatedLine.findMany({
+                where: { OR: orFilters },
+              })
             : [];
-        const byId = new Map(lineRows.map((row) => [String(row.proxyId), row.dedicatedLineString]));
+        const byKey = new Map(
+          lineRows.map((row) => [lineKey(row.proxyHost, row.proxyPort), row.dedicatedLineString])
+        );
         mergedResults = results.map((r) => ({
           ...r,
-          dedicated_line_string: byId.get(String(r.proxy_id)) ?? "",
+          dedicated_line_string: byKey.get(lineKey(r.proxy_address, r.port)) ?? "",
         }));
       } catch (mergeErr) {
         console.error("[proxy-ip/list] merge ProxyIpDedicatedLine failed:", mergeErr);
@@ -106,24 +119,24 @@ export async function POST(
       });
     }
     if (action === "dedicated-line") {
-      const idRaw = body?.proxy_id;
-      const idStr = idRaw === null || idRaw === undefined ? "" : String(idRaw).trim();
-      if (!/^\d+$/.test(idStr)) return badRequest("缺少或非法 proxy_id");
-      let proxyId: bigint;
-      try {
-        proxyId = BigInt(idStr);
-      } catch {
-        return badRequest("proxy_id 无法解析为整数");
+      const proxyHost = typeof body?.proxy_address === "string" ? body.proxy_address.trim() : "";
+      const proxyPort = Math.trunc(Number(body?.port));
+      if (!proxyHost || !Number.isFinite(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
+        return badRequest("缺少或非法 proxy_address / port");
       }
       const dedicated_line_string =
         typeof body?.dedicated_line_string === "string" ? body.dedicated_line_string : "";
       try {
         if (dedicated_line_string === "") {
-          await prisma.proxyIpDedicatedLine.deleteMany({ where: { proxyId } });
+          await prisma.proxyIpDedicatedLine.deleteMany({
+            where: { proxyHost, proxyPort },
+          });
         } else {
           await prisma.proxyIpDedicatedLine.upsert({
-            where: { proxyId },
-            create: { proxyId, dedicatedLineString: dedicated_line_string },
+            where: {
+              proxyHost_proxyPort: { proxyHost, proxyPort },
+            },
+            create: { proxyHost, proxyPort, dedicatedLineString: dedicated_line_string },
             update: { dedicatedLineString: dedicated_line_string },
           });
         }

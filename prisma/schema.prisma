@@ -2326,9 +2326,12 @@ model ProfitCalculation {
   @@index([createdAt])
 }
 
-// 万子代理 IP 在本地的扩展字段（供应商 API 无此字段时由 ERP 落库）
+// 万子代理 IP 在本地的扩展字段（用 IP+端口 作主键，避免 proxy_id 在 JSON 中丢精度导致刷新读不回）
 model ProxyIpDedicatedLine {
-  proxyId             BigInt   @id // 万子 proxy_id 可能超过 32 位整数上限
+  proxyHost           String
+  proxyPort           Int
   dedicatedLineString String   @default("") @db.Text
   updatedAt           DateTime @updatedAt
+
+  @@id([proxyHost, proxyPort])
 }
