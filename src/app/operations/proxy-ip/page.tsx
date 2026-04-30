@@ -162,33 +162,6 @@ const MOCK_INVENTORY: CityInventory[] = [
   { city_name: "Kuala Lumpur", country_code: "MY", number: 127 },
   { city_name: "Sao Paulo", country_code: "BR", number: 26 },
 ];
-const MOCK_IPS: ProxyIP[] = [
-  {
-    proxy_id: 11111111,
-    username: "test01",
-    password: "test01",
-    proxy_address: "1.1.1.1",
-    port: 7778,
-    city_name: "Manila",
-    country_code: "PH",
-    created_at: "2026-04-10T08:00:00.000Z",
-    expired_at: "2026-05-10T08:00:00.000Z",
-    order_id: "769uKf",
-  },
-  {
-    proxy_id: 11111112,
-    username: "test02",
-    password: "test02",
-    proxy_address: "1.1.1.2",
-    port: 8837,
-    city_name: "Kuala Lumpur",
-    country_code: "MY",
-    created_at: "2026-04-18T08:00:00.000Z",
-    expired_at: "2026-05-18T08:00:00.000Z",
-    order_id: "124Yyi",
-  },
-];
-
 export default function ProxyIPPage() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "purchase" | "list">("dashboard");
   const [selectedBusiness, setSelectedBusiness] = useState<string>(MOCK_BUSINESSES[0]);
@@ -204,7 +177,7 @@ export default function ProxyIPPage() {
   const [inventory, setInventory] = useState<CityInventory[]>(MOCK_INVENTORY);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
-  const [myIPs, setMyIPs] = useState<ProxyIP[]>(MOCK_IPS);
+  const [myIPs, setMyIPs] = useState<ProxyIP[]>([]);
   const [editingProxyId, setEditingProxyId] = useState<number | null>(null);
   const [newUsername, setNewUsername] = useState<string>("");
   const [newPassword, setNewPassword] = useState<string>("");
@@ -802,6 +775,13 @@ export default function ProxyIPPage() {
                 </tr>
               </thead>
               <tbody>
+                {myIPs.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={11}>
+                      暂无已购 IP 数据。接口成功刷新后将显示万子返回的列表；若长期为空请先购买或检查筛选条件。
+                    </td>
+                  </tr>
+                ) : null}
                 {myIPs.map((ip) => {
                   const days = Math.ceil((new Date(ip.expired_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                   const dedicatedDraft = dedicatedLineStringMap[ip.proxy_id] ?? "";
