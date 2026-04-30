@@ -75,7 +75,11 @@ export default function ProfitCalculationPage() {
   const [purchaseCostCny, setPurchaseCostCny] = useState<number | "">(0);
   const [weightKg, setWeightKg] = useState<number | "">("");
   const [firstLegShippingCny, setFirstLegShippingCny] = useState<number | "">(0);
+  /** 留空则按 6%；有值则按「结算额(CNY)×该百分比」摊到每件成本 */
+  const [invoiceFeePercentManual, setInvoiceFeePercentManual] = useState<number | "">("");
   const [adCostCny, setAdCostCny] = useState<number | "">(0);
+  /** 留空则按 1%；有值则按「结算额(CNY)×该百分比」摊到每件成本 */
+  const [remittanceFeePercentManual, setRemittanceFeePercentManual] = useState<number | "">("");
   const [salePriceBrl, setSalePriceBrl] = useState<number | "">(0);
   const [discountSalePriceBrl, setDiscountSalePriceBrl] = useState<number | "">("");
   const [exchangeRate, setExchangeRate] = useState<number | "">(1.35);
@@ -117,10 +121,24 @@ export default function ProfitCalculationPage() {
     // 业务口径：海外仓费不在结算额(BRL)扣减，单独在净利润阶段按 CNY 成本计入
     const settlementBrl = effectiveSale * qty - sfpCommission - extraPlatformFee;
     const settlementCny = settlementBrl * rate;
-    const invoiceFeeTotalCny = settlementCny * 0.06;
+    const DEFAULT_INVOICE_FEE_PERCENT = 6;
+    const invoiceFeePercentUsed =
+      invoiceFeePercentManual !== "" &&
+      Number.isFinite(Number(invoiceFeePercentManual)) &&
+      Number(invoiceFeePercentManual) >= 0
+        ? num(Number(invoiceFeePercentManual))
+        : DEFAULT_INVOICE_FEE_PERCENT;
+    const invoiceFeeTotalCny = settlementCny * (invoiceFeePercentUsed / 100);
     const invoiceFeePerPieceCny = qty > 0 ? invoiceFeeTotalCny / qty : 0;
     const invoiceFee = invoiceFeePerPieceCny;
-    const remittanceFeeTotalCny = settlementCny * 0.01;
+    const DEFAULT_REMITTANCE_FEE_PERCENT = 1;
+    const remittanceFeePercentUsed =
+      remittanceFeePercentManual !== "" &&
+      Number.isFinite(Number(remittanceFeePercentManual)) &&
+      Number(remittanceFeePercentManual) >= 0
+        ? num(Number(remittanceFeePercentManual))
+        : DEFAULT_REMITTANCE_FEE_PERCENT;
+    const remittanceFeeTotalCny = settlementCny * (remittanceFeePercentUsed / 100);
     const remittanceFeePerPieceCny = qty > 0 ? remittanceFeeTotalCny / qty : 0;
     const remittanceFee = remittanceFeePerPieceCny;
 
@@ -166,8 +184,10 @@ export default function ProfitCalculationPage() {
       settlementCny,
       totalCostCny,
       totalCostWithWarehouseCny,
+      invoiceFeePercentUsed,
       invoiceFeePerPieceCny,
       invoiceFeeTotalCny,
+      remittanceFeePercentUsed,
       remittanceFeePerPieceCny,
       remittanceFeeTotalCny,
       grossRevenueCny,
@@ -194,6 +214,8 @@ export default function ProfitCalculationPage() {
     isCommissionFree,
     targetRoi,
     weightKg,
+    invoiceFeePercentManual,
+    remittanceFeePercentManual,
   ]);
 
   const warning = calculated.netProfitCny < 0 || calculated.roi < calculated.breakEvenRoi;
@@ -205,6 +227,8 @@ export default function ProfitCalculationPage() {
     setProductName(selected.name);
     setPurchaseCostCny(selected.purchaseCostCny || 0);
     setWeightKg(selected.weightKg ?? "");
+    setInvoiceFeePercentManual("");
+    setRemittanceFeePercentManual("");
   };
 
   const saveCalculation = async () => {
@@ -315,23 +339,47 @@ export default function ProfitCalculationPage() {
               <input type="number" value={adCostCny} onChange={(e) => setAdCostCny(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
             </label>
             <label className={labelClassName}>
-              财务开票费用(CNY/件，结算额×6%)
-              <div className={`${inputClassName} flex items-center justify-between`}>
-                <span className="text-slate-300">自动计算</span>
-                <span className="font-semibold text-cyan-300">{money(calculated.invoiceFeePerPieceCny)}</span>
+              财务开票费用（结算额 CNY × 比例，默认 6%）
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={invoiceFeePercentManual}
+                  onChange={(e) => setInvoiceFeePercentManual(e.target.value === "" ? "" : Number(e.target.value))}
+                  className={`${inputClassName} flex-1 mt-0`}
+                  placeholder="留空按 6%"
+                />
+                <span className="shrink-0 text-sm text-slate-400 pb-0.5">%</span>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
-                合计 {money(calculated.invoiceFeeTotalCny)} CNY
+                当前按结算额 × <span className="text-cyan-400/90">{calculated.invoiceFeePercentUsed}%</span>
+                ，折合{" "}
+                <span className="text-cyan-400/90">{money(calculated.invoiceFeePerPieceCny)}</span> /件，合计{" "}
+                {money(calculated.invoiceFeeTotalCny)} CNY
+                {invoiceFeePercentManual === "" ? "（未填比例，按 6%）" : "（自定义比例）"}
               </div>
             </label>
             <label className={labelClassName}>
-              回款三方平台手续费(CNY/件，结算额×1%)
-              <div className={`${inputClassName} flex items-center justify-between`}>
-                <span className="text-slate-300">自动计算</span>
-                <span className="font-semibold text-cyan-300">{money(calculated.remittanceFeePerPieceCny)}</span>
+              回款三方平台手续费（结算额 CNY × 比例，默认 1%）
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={remittanceFeePercentManual}
+                  onChange={(e) => setRemittanceFeePercentManual(e.target.value === "" ? "" : Number(e.target.value))}
+                  className={`${inputClassName} flex-1 mt-0`}
+                  placeholder="留空按 1%"
+                />
+                <span className="shrink-0 text-sm text-slate-400 pb-0.5">%</span>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
-                合计 {money(calculated.remittanceFeeTotalCny)} CNY
+                当前按结算额 × <span className="text-cyan-400/90">{calculated.remittanceFeePercentUsed}%</span>
+                ，折合{" "}
+                <span className="text-cyan-400/90">{money(calculated.remittanceFeePerPieceCny)}</span> /件，合计{" "}
+                {money(calculated.remittanceFeeTotalCny)} CNY
+                {remittanceFeePercentManual === "" ? "（未填比例，按 1%）" : "（自定义比例）"}
               </div>
             </label>
             <label className={labelClassName}>
