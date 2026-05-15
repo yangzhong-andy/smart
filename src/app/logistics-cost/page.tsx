@@ -38,6 +38,8 @@ type BatchOption = {
   id: string;
   batchNumber: string;
   outboundOrder?: { outboundNumber: string };
+  /** 出库批次绑定的柜子（与 /api/outbound-batch 列表一致） */
+  container?: { id: string; containerNo: string };
 };
 
 type ChannelOption = {
@@ -114,8 +116,10 @@ const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviou
 
 const containersListFetcher = async (url: string): Promise<ContainerOption[]> => {
   const r = await fetch(url);
-  if (!r.ok) return [];
-  const j = await r.json();
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error(typeof j?.error === "string" ? j.error : "获取柜子列表失败");
+  }
   return Array.isArray(j?.data) ? j.data : [];
 };
 
@@ -142,11 +146,39 @@ export default function LogisticsCostPage() {
 
   const { data: batches = [] } = useSWR<BatchOption[]>("/api/outbound-batch?pageSize=200", arrayFetcher, SWR_OPT);
   const { data: channels = [] } = useSWR<ChannelOption[]>("/api/logistics-channels?pageSize=200", arrayFetcher, SWR_OPT);
-  const { data: containers = [] } = useSWR<ContainerOption[]>(
-    "/api/containers?pageSize=50",
+  const {
+    data: containersFromApi,
+    error: containersListError,
+    isLoading: containersListLoading,
+  } = useSWR<ContainerOption[]>(
+    modalOpen ? "/api/containers?pageSize=50&page=1" : null,
     containersListFetcher,
     SWR_OPT
   );
+
+  /** 从已加载的出库批次里提取柜子（API 失败或未返回时的兜底，与业务「批次绑柜」一致） */
+  const containersFromBatches = useMemo(() => {
+    const m = new Map<string, ContainerOption>();
+    for (const b of batches) {
+      const c = b.container;
+      if (c?.id && c.containerNo) {
+        m.set(c.id, { id: c.id, containerNo: c.containerNo });
+      }
+    }
+    return [...m.values()].sort((a, b) => a.containerNo.localeCompare(b.containerNo));
+  }, [batches]);
+
+  const containerSelectOptions = useMemo(() => {
+    const m = new Map<string, ContainerOption>();
+    for (const c of containersFromApi ?? []) {
+      m.set(c.id, { id: c.id, containerNo: c.containerNo, containerType: c.containerType });
+    }
+    for (const c of containersFromBatches) {
+      if (!m.has(c.id)) m.set(c.id, c);
+    }
+    return [...m.values()].sort((a, b) => a.containerNo.localeCompare(b.containerNo));
+  }, [containersFromApi, containersFromBatches]);
+
   const loading = isLoading;
 
   // 表单
@@ -367,18 +399,37 @@ export default function LogisticsCostPage() {
                 <select
                   value={modalContainerId}
                   onChange={(e) => setModalContainerId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  disabled={containersListLoading}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 disabled:opacity-60"
                 >
-                  <option value="">不筛选 — 显示全部出库批次</option>
-                  {containers.map((c) => (
+                  <option value="">
+                    {containersListLoading ? "正在加载柜子列表…" : "不筛选 — 显示全部出库批次"}
+                  </option>
+                  {containerSelectOptions.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.containerNo}
                       {c.containerType ? ` · ${c.containerType}` : ""}
                     </option>
                   ))}
                 </select>
+                {containersListError && (
+                  <p className="mt-1 text-xs text-rose-400">
+                    柜子接口加载失败：{containersListError instanceof Error ? containersListError.message : "请刷新重试"}
+                    {containersFromBatches.length > 0
+                      ? "（已用下方批次中带出的柜子作为备选）"
+                      : ""}
+                  </p>
+                )}
+                {!containersListLoading &&
+                  !containersListError &&
+                  containerSelectOptions.length === 0 &&
+                  batches.length > 0 && (
+                    <p className="mt-1 text-xs text-amber-400/90">
+                      当前出库批次均未绑定柜子；请先在批次或柜子管理中完成绑定，或确认数据库中已有柜子数据。
+                    </p>
+                  )}
                 <p className="mt-1 text-xs text-slate-500">
-                  选择柜子后，下方仅列出已绑定到该柜的出库批次。
+                  选择柜子后，下方仅列出已绑定到该柜的出库批次。列表合并「柜子接口」与「当前页已加载批次上的柜子」。
                 </p>
               </div>
               <div>
@@ -394,6 +445,9 @@ export default function LogisticsCostPage() {
                     <option key={b.id} value={b.id}>
                       {b.batchNumber}
                       {b.outboundOrder ? ` / ${b.outboundOrder.outboundNumber}` : ""}
+                      {!modalContainerId && b.container?.containerNo
+                        ? ` · 柜 ${b.container.containerNo}`
+                        : ""}
                     </option>
                   ))}
                 </select>
