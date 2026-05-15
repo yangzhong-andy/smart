@@ -118,7 +118,9 @@ const containersListFetcher = async (url: string): Promise<ContainerOption[]> =>
   const r = await fetch(url);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
-    throw new Error(typeof j?.error === "string" ? j.error : "获取柜子列表失败");
+    const base = typeof j?.error === "string" ? j.error : "获取柜子列表失败";
+    const details = typeof j?.details === "string" ? j.details : "";
+    throw new Error(details ? `${base}（${details}）` : base);
   }
   return Array.isArray(j?.data) ? j.data : [];
 };
@@ -413,11 +415,15 @@ export default function LogisticsCostPage() {
                   ))}
                 </select>
                 {containersListError && (
-                  <p className="mt-1 text-xs text-rose-400">
-                    柜子接口加载失败：{containersListError instanceof Error ? containersListError.message : "请刷新重试"}
+                  <p
+                    className={`mt-1 text-xs leading-relaxed ${
+                      containersFromBatches.length > 0 ? "text-amber-300/95" : "text-rose-400"
+                    }`}
+                  >
                     {containersFromBatches.length > 0
-                      ? "（已用下方批次中带出的柜子作为备选）"
-                      : ""}
+                      ? "柜子列表接口暂不可用，已自动使用当前出库批次里绑定的柜号作为备选。"
+                      : "柜子列表加载失败："}
+                    {containersListError instanceof Error ? containersListError.message : "请刷新重试"}
                   </p>
                 )}
                 {!containersListLoading &&

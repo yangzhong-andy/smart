@@ -33,8 +33,10 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const shippingMethod = searchParams.get("shippingMethod");
     const containerNo = searchParams.get("containerNo");
-    const page = parseInt(searchParams.get("page") || "1", 10);
-    const pageSize = Math.min(parseInt(searchParams.get("pageSize") || "20", 10) || 20, 50);
+    const pageRaw = parseInt(searchParams.get("page") || "1", 10);
+    const pageSizeRaw = parseInt(searchParams.get("pageSize") || "20", 10);
+    const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
+    const pageSize = Math.min(50, Math.max(1, Number.isFinite(pageSizeRaw) && pageSizeRaw >= 1 ? pageSizeRaw : 20));
 
     const where: any = {};
     if (status) where.status = status;
@@ -50,16 +52,51 @@ export async function GET(request: NextRequest) {
       prisma.container.findMany({
         where,
         orderBy: { createdAt: "desc" },
-        include: {
-          outboundBatches: {
-            select: {
-              id: true,
-              batchNumber: true,
-              qty: true,
-              shippedDate: true,
-              status: true,
-            },
-          },
+        select: {
+          id: true,
+          containerNo: true,
+          containerType: true,
+          sealNo: true,
+          shippingMethod: true,
+          shipCompany: true,
+          vesselName: true,
+          voyageNo: true,
+          originPort: true,
+          destinationPort: true,
+          destinationCountry: true,
+          loadingDate: true,
+          etd: true,
+          eta: true,
+          actualDeparture: true,
+          actualArrival: true,
+          customsClearanceAt: true,
+          warehouseInboundAt: true,
+          status: true,
+          exportMode: true,
+          serviceMode: true,
+          exporterId: true,
+          exporterName: true,
+          overseasCompanyId: true,
+          overseasCompanyName: true,
+          declaredValue: true,
+          declaredCurrency: true,
+          dutyAmount: true,
+          dutyPayer: true,
+          dutyCurrency: true,
+          dutyPaidAmount: true,
+          returnAmount: true,
+          returnDate: true,
+          returnCurrency: true,
+          warehouseId: true,
+          warehouseName: true,
+          platform: true,
+          storeId: true,
+          storeName: true,
+          totalVolumeCBM: true,
+          totalWeightKG: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: { select: { outboundBatches: true } },
         },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -124,7 +161,7 @@ export async function GET(request: NextRequest) {
         totalWeightKG: c.totalWeightKG ? c.totalWeightKG.toString() : undefined,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
-        outboundBatchCount: c.outboundBatches.length,
+        outboundBatchCount: c._count.outboundBatches,
       };
     });
 
@@ -138,7 +175,12 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    return serverError("获取柜子列表失败", error, { includeDetailsInDev: true });
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[GET /api/containers]", detail);
+    return NextResponse.json(
+      { error: "获取柜子列表失败", details: detail },
+      { status: 500 }
+    );
   }
 }
 
