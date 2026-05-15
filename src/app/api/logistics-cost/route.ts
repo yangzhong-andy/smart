@@ -151,8 +151,8 @@ export async function POST(request: NextRequest) {
 
     const rawIds = Array.isArray(body.outboundBatchIds) ? body.outboundBatchIds : [];
     const fromArray = rawIds
-      .filter((x: unknown) => typeof x === "string" && String(x).trim().length > 0)
-      .map((x: string) => String(x).trim());
+      .filter((x: unknown): x is string => typeof x === "string" && String(x).trim().length > 0)
+      .map((x) => x.trim());
     const seen = new Set<string>();
     const outboundBatchIds = fromArray.filter((id) => {
       if (seen.has(id)) return false;
