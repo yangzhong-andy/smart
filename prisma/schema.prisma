@@ -931,6 +931,8 @@ model Container {
   eta             DateTime?                                // 预计到港 ETA
   actualDeparture DateTime?                                // 实际开船时间
   actualArrival   DateTime?                                // 实际到港时间
+  customsClearanceAt DateTime?                             // 清关完成时间
+  warehouseInboundAt DateTime?                             // 入仓时间
 
   status          ContainerStatus   @default(PLANNED)      // 柜状态
 

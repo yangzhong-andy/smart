@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
         eta: c.eta?.toISOString() ?? undefined,
         actualDeparture: sanitized.actualDeparture?.toISOString() ?? undefined,
         actualArrival: c.actualArrival?.toISOString() ?? undefined,
+        customsClearanceAt: c.customsClearanceAt?.toISOString() ?? undefined,
+        warehouseInboundAt: c.warehouseInboundAt?.toISOString() ?? undefined,
         status: c.status,
         // 出口模式
         exportMode: c.exportMode ?? undefined,
@@ -187,6 +189,8 @@ export async function POST(request: NextRequest) {
         eta: body.eta ? new Date(body.eta) : null,
         actualDeparture: body.actualDeparture ? new Date(body.actualDeparture) : null,
         actualArrival: body.actualArrival ? new Date(body.actualArrival) : null,
+        customsClearanceAt: body.customsClearanceAt ? new Date(body.customsClearanceAt) : null,
+        warehouseInboundAt: body.warehouseInboundAt ? new Date(body.warehouseInboundAt) : null,
         status: normalizedStatus,
         // 出口模式
         exportMode: body.exportMode ?? null,

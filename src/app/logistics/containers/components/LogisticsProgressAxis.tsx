@@ -80,16 +80,20 @@ export function LogisticsProgressAxis({ container }: { container: Container }) {
         label: "已到港",
         pct: 75,
         // 对齐 ETA：优先展示计划到港时间（eta），无则退回实际到港
-        getTime: (c) => toDateLabel(c.eta ?? c.actualArrival, true),
-        getTooltipLabel: () => "到港时间（ETA / 实际到港）",
+        getTime: (c) => toDateLabel(c.actualArrival ?? c.eta, true),
+        getTooltipLabel: () => "到港时间（实际到港 / ETA）",
       },
       {
         key: "WAREHOUSED",
         label: "已入库",
         pct: 100,
-        // 目前模型无入库时间字段：用 updatedAt 兜底（仅用于展示）
-        getTime: (c) => (c.status === "IN_WAREHOUSE" || c.status === "CLOSED" ? toDateLabel(c.updatedAt, true) : null),
-        getTooltipLabel: () => "入库时间",
+        getTime: (c) =>
+          c.warehouseInboundAt
+            ? toDateLabel(c.warehouseInboundAt, true)
+            : c.status === "IN_WAREHOUSE" || c.status === "CLOSED"
+              ? toDateLabel(c.updatedAt, true)
+              : null,
+        getTooltipLabel: () => "入仓时间（录入；未填且已入仓时用更新时间兜底）",
       },
     ],
     []

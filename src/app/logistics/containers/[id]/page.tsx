@@ -86,6 +86,8 @@ type ContainerDetail = {
   eta?: string;
   actualDeparture?: string;
   actualArrival?: string;
+  customsClearanceAt?: string;
+  warehouseInboundAt?: string;
   status: string;
   outboundBatches: ContainerBatchRow[];
 };
@@ -237,10 +239,20 @@ export default function ContainerDetailPage() {
             </div>
           </div>
           <div>
-            <div className="text-slate-500 text-xs mb-0.5">实际开船 / 到港</div>
-            <div className="text-slate-200">
-              {fmtDateTime(data.actualDeparture)} / {fmtDateTime(data.actualArrival)}
-            </div>
+            <div className="text-slate-500 text-xs mb-0.5">实际开船</div>
+            <div className="text-slate-200">{fmtDateTime(data.actualDeparture)}</div>
+          </div>
+          <div>
+            <div className="text-slate-500 text-xs mb-0.5">到港时间</div>
+            <div className="text-slate-200">{fmtDateTime(data.actualArrival)}</div>
+          </div>
+          <div>
+            <div className="text-slate-500 text-xs mb-0.5">清关时间</div>
+            <div className="text-slate-200">{fmtDateTime(data.customsClearanceAt)}</div>
+          </div>
+          <div>
+            <div className="text-slate-500 text-xs mb-0.5">入仓时间</div>
+            <div className="text-slate-200">{fmtDateTime(data.warehouseInboundAt)}</div>
           </div>
           {data.sealNo ? (
             <div>

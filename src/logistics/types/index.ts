@@ -203,6 +203,10 @@ export interface Container {
   eta?: string;
   actualDeparture?: string;
   actualArrival?: string;
+  /** 清关完成时间 */
+  customsClearanceAt?: string;
+  /** 入仓时间 */
+  warehouseInboundAt?: string;
   status: ContainerStatus;
   // 出口模式
   exportMode?: string;

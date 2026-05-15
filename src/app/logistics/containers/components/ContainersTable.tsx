@@ -21,6 +21,7 @@ interface ContainersTableProps {
     isOverdue: boolean;
   } | null;
   formatDate: (value?: string | null) => string;
+  formatDateTime: (value?: string | null) => string;
   formatNumber: (value?: string | null, digits?: number) => string;
   onOpenDetail: (container: Container) => void;
   onChangeStatus: (container: Container, status: string) => void;
@@ -36,6 +37,7 @@ export function ContainersTable({
   getProgressBarColor,
   getVoyageInfo,
   formatDate,
+  formatDateTime,
   formatNumber,
   onOpenDetail,
   onChangeStatus,
@@ -50,6 +52,9 @@ export function ContainersTable({
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">柜号/类型</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">运输信息</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">航线与时间</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">到港时间</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">清关时间</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">入仓时间</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">业务主体</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">体积/重量</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">批次/进度</th>
@@ -60,14 +65,14 @@ export function ContainersTable({
           <tbody className="divide-y divide-slate-800 bg-slate-900/40">
             {!isLoading && containers.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-center text-slate-500" colSpan={8}>
+                <td className="px-4 py-6 text-center text-slate-500" colSpan={11}>
                   暂无柜子记录，请点击右上角“新增柜子”
                 </td>
               </tr>
             )}
             {isLoading && (
               <tr>
-                <td className="px-4 py-6 text-slate-500" colSpan={8}>
+                <td className="px-4 py-6 text-slate-500" colSpan={11}>
                   正在加载柜子数据...
                 </td>
               </tr>
@@ -96,8 +101,17 @@ export function ContainersTable({
                       ETD {formatDate(c.etd)} · ETA {formatDate(c.eta)}
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      实际开船 {formatDate(c.etd ?? c.actualDeparture)} · 实际到港 {formatDate(c.eta ?? c.actualArrival)}
+                      实际开船 {formatDate(c.actualDeparture)} · 计划到港 ETA {formatDate(c.eta)}
                     </div>
+                  </td>
+                  <td className="px-4 py-3 text-[11px] text-slate-300 whitespace-nowrap">
+                    {formatDateTime(c.actualArrival)}
+                  </td>
+                  <td className="px-4 py-3 text-[11px] text-slate-300 whitespace-nowrap">
+                    {formatDateTime(c.customsClearanceAt)}
+                  </td>
+                  <td className="px-4 py-3 text-[11px] text-slate-300 whitespace-nowrap">
+                    {formatDateTime(c.warehouseInboundAt)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="text-slate-200">{c.exporterName || "-"}</div>

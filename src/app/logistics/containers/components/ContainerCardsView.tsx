@@ -24,6 +24,7 @@ interface ContainerCardsViewProps {
     isOverdue: boolean;
   } | null;
   formatDate: (value?: string | null) => string;
+  formatDateTime: (value?: string | null) => string;
   onOpenDetail: (container: Container) => void;
 }
 
@@ -36,6 +37,7 @@ export function ContainerCardsView({
   getProgressBarColor,
   getVoyageInfo,
   formatDate,
+  formatDateTime,
   onOpenDetail,
 }: ContainerCardsViewProps) {
   return (
@@ -151,6 +153,20 @@ export function ContainerCardsView({
                         海运 · <span className="font-mono tabular-nums text-white/80">{voyageInfo.totalDays}</span> 天
                       </div>
                     )}
+                    <div className="mt-1.5 space-y-0.5 text-[10px] text-white/50">
+                      <div>
+                        <span className="text-white/35">到港</span>{" "}
+                        <span className="font-mono text-white/75">{formatDateTime(c.actualArrival)}</span>
+                      </div>
+                      <div>
+                        <span className="text-white/35">清关</span>{" "}
+                        <span className="font-mono text-white/75">{formatDateTime(c.customsClearanceAt)}</span>
+                      </div>
+                      <div>
+                        <span className="text-white/35">入仓</span>{" "}
+                        <span className="font-mono text-white/75">{formatDateTime(c.warehouseInboundAt)}</span>
+                      </div>
+                    </div>
                   </div>
                 </FlashyLogisticsCardShell>
               </div>

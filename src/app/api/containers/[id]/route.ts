@@ -70,6 +70,8 @@ export async function GET(
       eta: container.eta?.toISOString() ?? undefined,
       actualDeparture: sanitized.actualDeparture?.toISOString() ?? undefined,
       actualArrival: container.actualArrival?.toISOString() ?? undefined,
+      customsClearanceAt: container.customsClearanceAt?.toISOString() ?? undefined,
+      warehouseInboundAt: container.warehouseInboundAt?.toISOString() ?? undefined,
       status: container.status,
       // 出口模式
       exportMode: container.exportMode ?? undefined,
@@ -204,6 +206,10 @@ export async function PUT(
       data.actualDeparture = body.actualDeparture ? new Date(body.actualDeparture) : null;
     if (body.actualArrival !== undefined)
       data.actualArrival = body.actualArrival ? new Date(body.actualArrival) : null;
+    if (body.customsClearanceAt !== undefined)
+      data.customsClearanceAt = body.customsClearanceAt ? new Date(body.customsClearanceAt) : null;
+    if (body.warehouseInboundAt !== undefined)
+      data.warehouseInboundAt = body.warehouseInboundAt ? new Date(body.warehouseInboundAt) : null;
     if (body.status) data.status = body.status;
     // 出口模式
     if (body.exportMode !== undefined) data.exportMode = body.exportMode || null;

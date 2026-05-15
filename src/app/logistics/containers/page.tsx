@@ -152,6 +152,8 @@ type ContainerForm = {
   eta: string;
   actualDeparture: string;
   actualArrival: string;
+  customsClearanceAt: string;
+  warehouseInboundAt: string;
   // 状态
   status: string;
   // 物流模式
@@ -208,6 +210,8 @@ const emptyForm: ContainerForm = {
   eta: "",
   actualDeparture: "",
   actualArrival: "",
+  customsClearanceAt: "",
+  warehouseInboundAt: "",
   status: "PLANNED",
   exportMode: "",
   serviceMode: "",
@@ -373,6 +377,8 @@ export default function ContainersPage() {
           eta: createForm.eta || null,
           actualDeparture: createForm.actualDeparture || null,
           actualArrival: createForm.actualArrival || null,
+          customsClearanceAt: createForm.customsClearanceAt || null,
+          warehouseInboundAt: createForm.warehouseInboundAt || null,
           status: createForm.status,
           exportMode: createForm.exportMode || null,
           serviceMode: createForm.serviceMode || null,
@@ -430,6 +436,9 @@ export default function ContainersPage() {
       "目的港",
       "ETD",
       "ETA",
+      "到港时间",
+      "清关时间",
+      "入仓时间",
       "体积CBM",
       "重量KG",
       "批次数",
@@ -447,6 +456,9 @@ export default function ContainersPage() {
       c.destinationPort || "",
       formatDate(c.etd),
       formatDate(c.eta),
+      formatDateTime(c.actualArrival),
+      formatDateTime(c.customsClearanceAt),
+      formatDateTime(c.warehouseInboundAt),
       formatNumber(c.totalVolumeCBM),
       formatNumber(c.totalWeightKG),
       String(c.outboundBatchCount ?? 0),
@@ -520,6 +532,8 @@ export default function ContainersPage() {
       eta: toDateInputValue(detailContainer.eta),
       actualDeparture: toDateInputValue(detailContainer.actualDeparture),
       actualArrival: toDateInputValue(detailContainer.actualArrival),
+      customsClearanceAt: toDateInputValue(detailContainer.customsClearanceAt),
+      warehouseInboundAt: toDateInputValue(detailContainer.warehouseInboundAt),
       status: detailContainer.status || "PLANNED",
       exportMode: detailContainer.exportMode || "",
       serviceMode: detailContainer.serviceMode || "",
@@ -575,6 +589,8 @@ export default function ContainersPage() {
           eta: editForm.eta || null,
           actualDeparture: editForm.actualDeparture || null,
           actualArrival: editForm.actualArrival || null,
+          customsClearanceAt: editForm.customsClearanceAt || null,
+          warehouseInboundAt: editForm.warehouseInboundAt || null,
           status: editForm.status || null,
           exportMode: editForm.exportMode || null,
           serviceMode: editForm.serviceMode || null,
@@ -928,6 +944,24 @@ export default function ContainersPage() {
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
               />
             </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">清关时间</span>
+              <input
+                type="date"
+                value={createForm.customsClearanceAt}
+                onChange={(e) => setCreateForm((f) => ({ ...f, customsClearanceAt: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-slate-300">入仓时间</span>
+              <input
+                type="date"
+                value={createForm.warehouseInboundAt}
+                onChange={(e) => setCreateForm((f) => ({ ...f, warehouseInboundAt: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+              />
+            </label>
             
             {/* 主体 */}
             <label className="space-y-1">
@@ -999,108 +1033,11 @@ export default function ContainersPage() {
                 ))}
               </select>
             </label>
-            
-            {/* 申报 */}
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">申报金额</span>
-              <input
-                type="number"
-                value={createForm.declaredValue}
-                onChange={(e) => setCreateForm((f) => ({ ...f, declaredValue: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">申报币种</span>
-              <select
-                value={createForm.declaredCurrency}
-                onChange={(e) => setCreateForm((f) => ({ ...f, declaredCurrency: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              >
-                <option value="USD">USD</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-              </select>
-            </label>
-            
-            {/* 关税 */}
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">关税金额</span>
-              <input
-                type="number"
-                value={createForm.dutyAmount}
-                onChange={(e) => setCreateForm((f) => ({ ...f, dutyAmount: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">付款主体</span>
-              <select
-                value={createForm.dutyPayer}
-                onChange={(e) => setCreateForm((f) => ({ ...f, dutyPayer: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              >
-                <option value="">请选择</option>
-                <option value="国内">国内</option>
-                <option value="海外">海外</option>
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">关税币种</span>
-              <select
-                value={createForm.dutyCurrency}
-                onChange={(e) => setCreateForm((f) => ({ ...f, dutyCurrency: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              >
-                <option value="USD">USD</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">已付关税</span>
-              <input
-                type="number"
-                value={createForm.dutyPaidAmount}
-                onChange={(e) => setCreateForm((f) => ({ ...f, dutyPaidAmount: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              />
-            </label>
-            
-            {/* 回款 */}
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">回款金额</span>
-              <input
-                type="number"
-                value={createForm.returnAmount}
-                onChange={(e) => setCreateForm((f) => ({ ...f, returnAmount: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">回款日期</span>
-              <input
-                type="date"
-                value={createForm.returnDate}
-                onChange={(e) => setCreateForm((f) => ({ ...f, returnDate: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-slate-300">回款币种</span>
-              <select
-                value={createForm.returnCurrency}
-                onChange={(e) => setCreateForm((f) => ({ ...f, returnCurrency: e.target.value }))}
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
-              >
-                <option value="USD">USD</option>
-                <option value="CNY">CNY</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-              </select>
-            </label>
+
+            <p className="md:col-span-4 text-xs text-slate-500 leading-relaxed rounded-md border border-slate-800/80 bg-slate-950/40 px-3 py-2">
+              申报、关税、回款等与账单/付款单一致的信息<strong className="text-slate-400">不再在新建时填写</strong>。
+              保存柜子后，请打开「查看详情 → 编辑信息」，在编辑弹窗中补充；或使用导入/同步。
+            </p>
             
             {/* 汇总 */}
             <label className="space-y-1">
@@ -1152,6 +1089,7 @@ export default function ContainersPage() {
           getProgressBarColor={getProgressBarColor}
           getVoyageInfo={getVoyageInfo}
           formatDate={formatDate}
+          formatDateTime={formatDateTime}
           formatNumber={formatNumber}
           onOpenDetail={setDetailContainer}
           onChangeStatus={handleChangeStatus}
@@ -1167,6 +1105,7 @@ export default function ContainersPage() {
           getProgressBarColor={getProgressBarColor}
           getVoyageInfo={getVoyageInfo}
           formatDate={formatDate}
+          formatDateTime={formatDateTime}
           onOpenDetail={setDetailContainer}
         />
       )}
@@ -1214,13 +1153,46 @@ export default function ContainersPage() {
               />
               <InfoRow label="ETD" value={formatDateTime(detailContainer.etd)} />
               <InfoRow label="ETA" value={formatDateTime(detailContainer.eta)} />
-              <InfoRow label="实际开船/到港" value={`${formatDateTime(detailContainer.actualDeparture)} / ${formatDateTime(detailContainer.actualArrival)}`} />
+              <InfoRow label="实际开船" value={formatDateTime(detailContainer.actualDeparture)} />
+              <InfoRow label="到港时间" value={formatDateTime(detailContainer.actualArrival)} />
+              <InfoRow label="清关时间" value={formatDateTime(detailContainer.customsClearanceAt)} />
+              <InfoRow label="入仓时间" value={formatDateTime(detailContainer.warehouseInboundAt)} />
               <InfoRow label="出口公司" value={detailContainer.exporterName || "-"} />
               <InfoRow label="海外公司" value={detailContainer.overseasCompanyName || "-"} />
               <InfoRow label="目的仓库" value={detailContainer.warehouseName || "-"} />
               <InfoRow label="店铺" value={detailContainer.storeName || "-"} />
               <InfoRow label="总体积(CBM)" value={formatNumber(detailContainer.totalVolumeCBM)} />
               <InfoRow label="总重量(KG)" value={formatNumber(detailContainer.totalWeightKG)} />
+              <InfoRow
+                label="申报"
+                value={
+                  detailContainer.declaredValue
+                    ? `${formatNumber(detailContainer.declaredValue)} ${detailContainer.declaredCurrency || ""}`.trim()
+                    : "-"
+                }
+              />
+              <InfoRow
+                label="关税"
+                value={
+                  detailContainer.dutyAmount
+                    ? `${formatNumber(detailContainer.dutyAmount)} ${detailContainer.dutyCurrency || ""}${detailContainer.dutyPayer ? ` · ${detailContainer.dutyPayer}` : ""}`.trim()
+                    : "-"
+                }
+              />
+              <InfoRow
+                label="已付关税"
+                value={
+                  detailContainer.dutyPaidAmount ? formatNumber(detailContainer.dutyPaidAmount) : "-"
+                }
+              />
+              <InfoRow
+                label="回款"
+                value={
+                  detailContainer.returnAmount
+                    ? `${formatNumber(detailContainer.returnAmount)} ${detailContainer.returnCurrency || ""}${detailContainer.returnDate ? ` · ${formatDate(detailContainer.returnDate)}` : ""}`.trim()
+                    : "-"
+                }
+              />
               <InfoRow label="批次数" value={String(detailContainer.outboundBatchCount ?? 0)} />
               <InfoRow label="创建时间" value={formatDate(detailContainer.createdAt)} />
             </div>
@@ -1350,6 +1322,14 @@ export default function ContainersPage() {
                 <input type="date" value={editForm.actualArrival} onChange={(e) => setEditForm((f) => ({ ...f, actualArrival: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
               </label>
               <label className="space-y-1">
+                <span className="text-xs text-slate-300">清关时间</span>
+                <input type="date" value={editForm.customsClearanceAt} onChange={(e) => setEditForm((f) => ({ ...f, customsClearanceAt: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">入仓时间</span>
+                <input type="date" value={editForm.warehouseInboundAt} onChange={(e) => setEditForm((f) => ({ ...f, warehouseInboundAt: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+              <label className="space-y-1">
                 <span className="text-xs text-slate-300">目的仓库</span>
                 <select value={editForm.warehouseId} onChange={(e) => setEditForm((f) => ({ ...f, warehouseId: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
                   <option value="">请选择</option>
@@ -1369,6 +1349,125 @@ export default function ContainersPage() {
               <label className="space-y-1">
                 <span className="text-xs text-slate-300">船公司</span>
                 <input value={editForm.shipCompany} onChange={(e) => setEditForm((f) => ({ ...f, shipCompany: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+              </label>
+
+              <div className="md:col-span-3 text-xs font-medium text-slate-400 pt-2 border-t border-slate-800">
+                申报、关税与回款（与账单/付款单一致的信息）
+              </div>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">申报金额</span>
+                <input
+                  type="number"
+                  value={editForm.declaredValue}
+                  onChange={(e) => setEditForm((f) => ({ ...f, declaredValue: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">申报币种</span>
+                <select
+                  value={editForm.declaredCurrency}
+                  onChange={(e) => setEditForm((f) => ({ ...f, declaredCurrency: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="USD">USD</option>
+                  <option value="CNY">CNY</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">关税金额</span>
+                <input
+                  type="number"
+                  value={editForm.dutyAmount}
+                  onChange={(e) => setEditForm((f) => ({ ...f, dutyAmount: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">付款主体</span>
+                <select
+                  value={editForm.dutyPayer}
+                  onChange={(e) => setEditForm((f) => ({ ...f, dutyPayer: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="">请选择</option>
+                  <option value="国内">国内</option>
+                  <option value="海外">海外</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">关税币种</span>
+                <select
+                  value={editForm.dutyCurrency}
+                  onChange={(e) => setEditForm((f) => ({ ...f, dutyCurrency: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="USD">USD</option>
+                  <option value="CNY">CNY</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">已付关税</span>
+                <input
+                  type="number"
+                  value={editForm.dutyPaidAmount}
+                  onChange={(e) => setEditForm((f) => ({ ...f, dutyPaidAmount: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">回款金额</span>
+                <input
+                  type="number"
+                  value={editForm.returnAmount}
+                  onChange={(e) => setEditForm((f) => ({ ...f, returnAmount: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">回款日期</span>
+                <input
+                  type="date"
+                  value={editForm.returnDate}
+                  onChange={(e) => setEditForm((f) => ({ ...f, returnDate: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">回款币种</span>
+                <select
+                  value={editForm.returnCurrency}
+                  onChange={(e) => setEditForm((f) => ({ ...f, returnCurrency: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="USD">USD</option>
+                  <option value="CNY">CNY</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">总体积(CBM)</span>
+                <input
+                  type="number"
+                  value={editForm.totalVolumeCBM}
+                  onChange={(e) => setEditForm((f) => ({ ...f, totalVolumeCBM: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-slate-300">总重量(KG)</span>
+                <input
+                  type="number"
+                  value={editForm.totalWeightKG}
+                  onChange={(e) => setEditForm((f) => ({ ...f, totalWeightKG: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                />
               </label>
               <div className="md:col-span-3 flex justify-end gap-2 pt-2">
                 <ActionButton type="button" variant="secondary" onClick={() => setIsEditOpen(false)}>

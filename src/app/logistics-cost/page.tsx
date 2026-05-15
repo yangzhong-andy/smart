@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { DollarSign, Plus, X } from "lucide-react";
@@ -44,6 +44,20 @@ type ChannelOption = {
   id: string;
   name: string;
   channelCode: string;
+};
+
+type ContainerOption = {
+  id: string;
+  containerNo: string;
+  containerType?: string;
+};
+
+type ContainerDetailForBatches = {
+  outboundBatches?: Array<{
+    id: string;
+    batchNumber: string;
+    outboundOrder?: { outboundNumber: string };
+  }>;
 };
 
 const COST_TYPE_OPTIONS = [
@@ -98,6 +112,19 @@ const arrayFetcher = async (url: string) => {
 };
 const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true };
 
+const containersListFetcher = async (url: string): Promise<ContainerOption[]> => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j?.data) ? j.data : [];
+};
+
+const containerDetailFetcher = async (url: string): Promise<ContainerDetailForBatches> => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("加载柜子失败");
+  return r.json();
+};
+
 export default function LogisticsCostPage() {
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [modalOpen, setModalOpen] = useState(false);
@@ -115,9 +142,38 @@ export default function LogisticsCostPage() {
 
   const { data: batches = [] } = useSWR<BatchOption[]>("/api/outbound-batch?pageSize=200", arrayFetcher, SWR_OPT);
   const { data: channels = [] } = useSWR<ChannelOption[]>("/api/logistics-channels?pageSize=200", arrayFetcher, SWR_OPT);
+  const { data: containers = [] } = useSWR<ContainerOption[]>(
+    "/api/containers?pageSize=50",
+    containersListFetcher,
+    SWR_OPT
+  );
   const loading = isLoading;
 
   // 表单
+  const [modalContainerId, setModalContainerId] = useState("");
+  const { data: containerDetail, error: containerDetailError, isLoading: containerDetailLoading } = useSWR<ContainerDetailForBatches>(
+    modalOpen && modalContainerId ? `/api/containers/${modalContainerId}` : null,
+    containerDetailFetcher,
+    { ...SWR_OPT, shouldRetryOnError: false }
+  );
+
+  const batchOptions: BatchOption[] = useMemo(() => {
+    if (!modalContainerId) {
+      return batches;
+    }
+    if (!containerDetail) {
+      return [];
+    }
+    const list = containerDetail.outboundBatches ?? [];
+    return list.map((b) => ({
+      id: b.id,
+      batchNumber: b.batchNumber,
+      outboundOrder: b.outboundOrder
+        ? { outboundNumber: b.outboundOrder.outboundNumber }
+        : undefined,
+    }));
+  }, [modalContainerId, containerDetail, batches]);
+
   const [outboundBatchId, setOutboundBatchId] = useState("");
   const [logisticsChannelId, setLogisticsChannelId] = useState("");
   const [costType, setCostType] = useState("");
@@ -128,6 +184,7 @@ export default function LogisticsCostPage() {
   const [dueDate, setDueDate] = useState("");
 
   const openModal = () => {
+    setModalContainerId("");
     setOutboundBatchId("");
     setLogisticsChannelId("");
     setCostType("");
@@ -139,7 +196,14 @@ export default function LogisticsCostPage() {
     setModalOpen(true);
   };
 
-  const closeModal = () => setModalOpen(false);
+  const closeModal = () => {
+    setModalContainerId("");
+    setModalOpen(false);
+  };
+
+  useEffect(() => {
+    setOutboundBatchId("");
+  }, [modalContainerId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,20 +363,48 @@ export default function LogisticsCostPage() {
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">柜子（可选）</label>
+                <select
+                  value={modalContainerId}
+                  onChange={(e) => setModalContainerId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                >
+                  <option value="">不筛选 — 显示全部出库批次</option>
+                  {containers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.containerNo}
+                      {c.containerType ? ` · ${c.containerType}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  选择柜子后，下方仅列出已绑定到该柜的出库批次。
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">关联出库批次</label>
                 <select
                   value={outboundBatchId}
                   onChange={(e) => setOutboundBatchId(e.target.value)}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  disabled={!!modalContainerId && containerDetailLoading}
                 >
                   <option value="">请选择（可选）</option>
-                  {batches.map((b) => (
+                  {batchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.batchNumber}
                       {b.outboundOrder ? ` / ${b.outboundOrder.outboundNumber}` : ""}
                     </option>
                   ))}
                 </select>
+                {modalContainerId && containerDetailError && (
+                  <p className="mt-1 text-xs text-rose-400">柜子数据加载失败，请重试或取消筛选柜子。</p>
+                )}
+                {modalContainerId && containerDetail && (containerDetail.outboundBatches?.length ?? 0) === 0 && (
+                  <p className="mt-1 text-xs text-amber-400/90">
+                    该柜暂无绑定出库批次，请先在出库批次中绑定柜子，或改用「不筛选」选择批次。
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-400 mb-1">物流商</label>
