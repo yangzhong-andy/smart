@@ -149,9 +149,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rawIds = Array.isArray(body.outboundBatchIds) ? body.outboundBatchIds : [];
+    const rawIds: unknown[] = Array.isArray(body.outboundBatchIds)
+      ? (body.outboundBatchIds as unknown[])
+      : [];
     const fromArray = rawIds
-      .filter((x: unknown): x is string => typeof x === "string" && String(x).trim().length > 0)
+      .filter((x: unknown): x is string => typeof x === "string" && x.trim().length > 0)
       .map((x) => x.trim());
     const seen = new Set<string>();
     const outboundBatchIds = fromArray.filter((id) => {
