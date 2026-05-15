@@ -208,7 +208,7 @@ export default function LogisticsCostPage() {
     }));
   }, [modalContainerId, containerDetail, batches]);
 
-  const [outboundBatchId, setOutboundBatchId] = useState("");
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [logisticsChannelId, setLogisticsChannelId] = useState("");
   const [costType, setCostType] = useState("");
   const [amount, setAmount] = useState("");
@@ -219,7 +219,7 @@ export default function LogisticsCostPage() {
 
   const openModal = () => {
     setModalContainerId("");
-    setOutboundBatchId("");
+    setSelectedBatchIds([]);
     setLogisticsChannelId("");
     setCostType("");
     setAmount("");
@@ -236,7 +236,7 @@ export default function LogisticsCostPage() {
   };
 
   useEffect(() => {
-    setOutboundBatchId("");
+    setSelectedBatchIds([]);
   }, [modalContainerId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -252,8 +252,10 @@ export default function LogisticsCostPage() {
     }
     setSubmitting(true);
     try {
+      const batchIdsForSubmit = selectedBatchIds.filter((id) =>
+        batchOptions.some((b) => b.id === id)
+      );
       const body: Record<string, unknown> = {
-        outboundBatchId: outboundBatchId || undefined,
         logisticsChannelId: logisticsChannelId || undefined,
         costType,
         amount: amt,
@@ -263,16 +265,20 @@ export default function LogisticsCostPage() {
         creditDays: paymentType === "账期" && creditDays ? Number(creditDays) : undefined,
         dueDate: dueDate ? `${dueDate}T00:00:00.000Z` : undefined,
       };
+      if (batchIdsForSubmit.length > 0) {
+        body.outboundBatchIds = batchIdsForSubmit;
+      }
       const res = await fetch("/api/logistics-cost", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error ?? "创建失败");
+        throw new Error(typeof json?.error === "string" ? json.error : "创建失败");
       }
-      toast.success("创建成功");
+      const created = typeof json?.created === "number" ? json.created : 1;
+      toast.success(created > 1 ? `已创建 ${created} 条费用（多批次合计已分摊）` : "创建成功");
       closeModal();
       mutate();
     } catch (err) {
@@ -439,24 +445,64 @@ export default function LogisticsCostPage() {
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">关联出库批次</label>
-                <select
-                  value={outboundBatchId}
-                  onChange={(e) => setOutboundBatchId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
-                  disabled={!!modalContainerId && containerDetailLoading}
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block text-sm font-medium text-slate-400">关联出库批次（可多选）</label>
+                  {batchOptions.length > 0 && (
+                    <div className="flex gap-2 text-xs">
+                      <button
+                        type="button"
+                        className="text-cyan-400 hover:underline"
+                        onClick={() => setSelectedBatchIds(batchOptions.map((b) => b.id))}
+                      >
+                        全选
+                      </button>
+                      <button
+                        type="button"
+                        className="text-slate-500 hover:text-slate-300"
+                        onClick={() => setSelectedBatchIds([])}
+                      >
+                        清空
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div
+                  className={`max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-2 space-y-1.5 ${
+                    modalContainerId && containerDetailLoading ? "opacity-50 pointer-events-none" : ""
+                  }`}
                 >
-                  <option value="">请选择（可选）</option>
-                  {batchOptions.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.batchNumber}
-                      {b.outboundOrder ? ` / ${b.outboundOrder.outboundNumber}` : ""}
-                      {!modalContainerId && b.container?.containerNo
-                        ? ` · 柜 ${b.container.containerNo}`
-                        : ""}
-                    </option>
-                  ))}
-                </select>
+                  {batchOptions.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2 px-1">暂无可选批次</p>
+                  ) : (
+                    batchOptions.map((b) => {
+                      const checked = selectedBatchIds.includes(b.id);
+                      const label = `${b.batchNumber}${b.outboundOrder ? ` / ${b.outboundOrder.outboundNumber}` : ""}${
+                        !modalContainerId && b.container?.containerNo ? ` · 柜 ${b.container.containerNo}` : ""
+                      }`;
+                      return (
+                        <label
+                          key={b.id}
+                          className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-700/50"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 rounded border-slate-600"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedBatchIds((prev) =>
+                                prev.includes(b.id) ? prev.filter((x) => x !== b.id) : [...prev, b.id]
+                              )
+                            }
+                          />
+                          <span className="leading-snug">{label}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  多选时「金额」为<strong className="text-slate-400">合计</strong>，提交后按所选批次数<strong className="text-slate-400">平均分摊</strong>生成多条费用（备注中带分摊标记）。
+                </p>
                 {modalContainerId && containerDetailError && (
                   <p className="mt-1 text-xs text-rose-400">柜子数据加载失败，请重试或取消筛选柜子。</p>
                 )}

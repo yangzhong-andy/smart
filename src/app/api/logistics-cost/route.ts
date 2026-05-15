@@ -107,11 +107,28 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/** 将合计金额（元）按批次数拆成若干份，以「分」为整数避免浮点误差，余数摊到前几笔 */
+function splitAmountAcrossBatches(totalYuan: number, count: number): number[] {
+  if (count <= 0) return [];
+  const cents = Math.round(totalYuan * 100);
+  if (cents < 0) return [];
+  const base = Math.floor(cents / count);
+  const rem = cents % count;
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const c = base + (i < rem ? 1 : 0);
+    out.push(c / 100);
+  }
+  return out;
+}
+
 /**
  * POST /api/logistics-cost - 创建物流费用
- * Body: outboundBatchId?, logisticsChannelId?, costType, amount, currency,
+ * Body: outboundBatchId? | outboundBatchIds?（多选，与 outboundBatchId 二选一优先数组）,
+ *       logisticsChannelId?, costType, amount, currency,
  *       paymentType, creditDays?, dueDate?, paymentStatus, paidDate?,
  *       invoiceNumber?, invoiceStatus?, notes?
+ * 多批次时：amount 为合计，按批次数平均分摊写入多条记录；备注自动追加分摊说明。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -132,38 +149,102 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const cost = await prisma.logisticsCost.create({
-      data: {
-        outboundBatchId: body.outboundBatchId ?? null,
-        logisticsChannelId: body.logisticsChannelId ?? null,
-        costType,
-        amount,
-        currency,
-        paymentType,
-        creditDays: body.creditDays ?? null,
-        dueDate: body.dueDate ? new Date(body.dueDate) : null,
-        paymentStatus,
-        paidDate: body.paidDate ? new Date(body.paidDate) : null,
-        invoiceNumber: body.invoiceNumber ?? null,
-        invoiceStatus: body.invoiceStatus ?? null,
-        notes: body.notes ?? null,
-      },
-      include: {
-        outboundBatch: {
-          include: {
-            outboundOrder: true,
-            warehouse: true,
-          },
-        },
-        logisticsChannel: true,
-      },
+    const rawIds = Array.isArray(body.outboundBatchIds) ? body.outboundBatchIds : [];
+    const fromArray = rawIds
+      .filter((x: unknown) => typeof x === "string" && String(x).trim().length > 0)
+      .map((x: string) => String(x).trim());
+    const seen = new Set<string>();
+    const outboundBatchIds = fromArray.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
     });
 
+    const single =
+      typeof body.outboundBatchId === "string" && body.outboundBatchId.trim()
+        ? body.outboundBatchId.trim()
+        : null;
+    const resolvedBatchIds = outboundBatchIds.length > 0 ? outboundBatchIds : single ? [single] : [];
+
+    const logisticsChannelId =
+      typeof body.logisticsChannelId === "string" && body.logisticsChannelId.trim()
+        ? body.logisticsChannelId.trim()
+        : null;
+    const baseNotes = typeof body.notes === "string" ? body.notes.trim() : "";
+    const creditDays = body.creditDays != null && body.creditDays !== "" ? Number(body.creditDays) : null;
+    const dueDate = body.dueDate ? new Date(body.dueDate) : null;
+    const paidDate = body.paidDate ? new Date(body.paidDate) : null;
+
+    if (resolvedBatchIds.length <= 1) {
+      const cost = await prisma.logisticsCost.create({
+        data: {
+          outboundBatchId: resolvedBatchIds[0] ?? null,
+          logisticsChannelId,
+          costType,
+          amount,
+          currency,
+          paymentType,
+          creditDays: Number.isFinite(creditDays as number) ? creditDays : null,
+          dueDate,
+          paymentStatus,
+          paidDate,
+          invoiceNumber: body.invoiceNumber ?? null,
+          invoiceStatus: body.invoiceStatus ?? null,
+          notes: baseNotes || null,
+        },
+        include: {
+          outboundBatch: {
+            include: {
+              outboundOrder: true,
+              warehouse: true,
+            },
+          },
+          logisticsChannel: true,
+        },
+      });
+
+      return NextResponse.json({
+        id: cost.id,
+        created: 1,
+        ids: [cost.id],
+        createdAt: cost.createdAt.toISOString(),
+        outboundBatchId: cost.outboundBatchId ?? undefined,
+        logisticsChannelId: cost.logisticsChannelId ?? undefined,
+      });
+    }
+
+    const parts = splitAmountAcrossBatches(amount, resolvedBatchIds.length);
+    const shareNote = `[多批次分摊 合计${amount}${currency} → ${resolvedBatchIds.length}笔]`;
+
+    const rows = await prisma.$transaction(
+      resolvedBatchIds.map((batchId, i) =>
+        prisma.logisticsCost.create({
+          data: {
+            outboundBatchId: batchId,
+            logisticsChannelId,
+            costType,
+            amount: parts[i]!,
+            currency,
+            paymentType,
+            creditDays: Number.isFinite(creditDays as number) ? creditDays : null,
+            dueDate,
+            paymentStatus,
+            paidDate,
+            invoiceNumber: body.invoiceNumber ?? null,
+            invoiceStatus: body.invoiceStatus ?? null,
+            notes: [baseNotes, `${shareNote} 第${i + 1}/${resolvedBatchIds.length}笔`].filter(Boolean).join(" "),
+          },
+        })
+      )
+    );
+
     return NextResponse.json({
-      id: cost.id,
-      createdAt: cost.createdAt.toISOString(),
-      outboundBatchId: cost.outboundBatchId ?? undefined,
-      logisticsChannelId: cost.logisticsChannelId ?? undefined,
+      id: rows[0]!.id,
+      created: rows.length,
+      ids: rows.map((r) => r.id),
+      createdAt: rows[0]!.createdAt.toISOString(),
+      outboundBatchId: rows[0]!.outboundBatchId ?? undefined,
+      logisticsChannelId: rows[0]!.logisticsChannelId ?? undefined,
     });
   } catch (error: unknown) {
     return NextResponse.json(
