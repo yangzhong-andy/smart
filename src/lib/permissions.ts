@@ -131,10 +131,64 @@ export function getDefaultRouteForDepartment(
 ): string | null {
   if (opts?.bypass) return null;
   const db = opts?.dbConfig ?? null;
+  const dbWhitelistPrefs =
+    db?.pathMode === "whitelist" && Array.isArray(db.pathPrefixes)
+      ? db.pathPrefixes.filter((p) => typeof p === "string" && p.startsWith("/"))
+      : [];
+  if (dbWhitelistPrefs.length > 0) {
+    const dr = db?.defaultRoute;
+    if (dr && matchPathPrefixes(dr, dbWhitelistPrefs)) {
+      return dr;
+    }
+    const nonRoot = dbWhitelistPrefs.filter((p) => p !== "/").sort((a, b) => b.length - a.length);
+    if (nonRoot.length) return nonRoot[0];
+    return dbWhitelistPrefs[0];
+  }
   if (db?.defaultRoute && db.defaultRoute.startsWith("/")) return db.defaultRoute;
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective) return null;
   return DEFAULT_ROUTE_BY_DEPARTMENT[effective] ?? null;
+}
+
+/**
+ * 路由守卫用：在「默认落地页」不在白名单内时，选一个必定可访问的前缀，避免 replace('/') 死循环导致页面卡死。
+ */
+export function resolvePathGuardFallback(
+  pathname: string,
+  departmentCode: string | null,
+  departmentName: string | null | undefined,
+  opts?: DepartmentAccessRuntimeOptions
+): string {
+  const tryCandidate = (c: string | null | undefined): string | null => {
+    if (!c || !c.startsWith("/")) return null;
+    return isPathAllowedForDepartment(c, departmentCode, departmentName, opts) ? c : null;
+  };
+
+  const fromDefault = tryCandidate(getDefaultRouteForDepartment(departmentCode, departmentName, opts));
+  if (fromDefault) return fromDefault;
+
+  const db = opts?.dbConfig ?? null;
+  if (db?.pathMode === "whitelist" && Array.isArray(db.pathPrefixes)) {
+    const prefs = db.pathPrefixes.filter((p) => typeof p === "string" && p.startsWith("/"));
+    for (const p of prefs.sort((a, b) => b.length - a.length)) {
+      const ok = tryCandidate(p);
+      if (ok) return ok;
+    }
+  }
+
+  const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
+  const legacy = effective ? ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective] : undefined;
+  if (legacy?.length) {
+    for (const p of [...legacy].sort((a, b) => b.length - a.length)) {
+      const ok = tryCandidate(p);
+      if (ok) return ok;
+    }
+  }
+
+  const slash = tryCandidate("/");
+  if (slash) return slash;
+
+  return pathname || "/";
 }
 
 /** 获取该部门在侧栏可见的一级菜单 label 列表；返回 null 表示全部可见 */
@@ -146,6 +200,7 @@ export function getAllowedNavLabels(
   if (opts?.bypass) return null;
   const db = opts?.dbConfig ?? null;
   if (db?.menuMode === "whitelist" && Array.isArray(db.menuLabels)) {
+    if (db.menuLabels.length === 0) return null;
     return db.menuLabels;
   }
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);

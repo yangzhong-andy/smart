@@ -9,7 +9,7 @@ import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
 import {
   isPathAllowedForDepartment,
-  getDefaultRouteForDepartment,
+  resolvePathGuardFallback,
 } from "@/lib/permissions";
 import { DepartmentAccessProvider, useDepartmentAccess } from "@/components/DepartmentAccessContext";
 
@@ -154,14 +154,23 @@ function DepartmentPathGuard() {
 
     const departmentCode = (session.user as { departmentCode?: string | null }).departmentCode ?? null;
     const departmentName = (session.user as { departmentName?: string | null }).departmentName ?? null;
+    const departmentId = (session.user as { departmentId?: string | null }).departmentId ?? null;
     const opts = { bypass: access.bypass, dbConfig: access.config };
 
-    if (
-      (departmentCode || departmentName) &&
-      !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName, opts)
-    ) {
-      const fallback = getDefaultRouteForDepartment(departmentCode, departmentName, opts) || "/";
-      router.replace(fallback);
+    const hasDbPathWhitelist =
+      access.config?.pathMode === "whitelist" &&
+      Array.isArray(access.config.pathPrefixes) &&
+      access.config.pathPrefixes.some((p) => typeof p === "string" && p.trim().length > 0);
+
+    const shouldCheckPath =
+      !access.bypass &&
+      (Boolean(departmentCode || departmentName) || (Boolean(departmentId) && hasDbPathWhitelist));
+
+    if (shouldCheckPath && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName, opts)) {
+      const safe = resolvePathGuardFallback(pathname || "/", departmentCode, departmentName, opts);
+      if (safe !== (pathname || "/")) {
+        router.replace(safe);
+      }
     }
   }, [pathname, router, session, status, access?.loaded, access?.bypass, access?.config]);
 

@@ -222,7 +222,11 @@ export default function Sidebar() {
   const allowedLabels = getAllowedNavLabels(departmentCode, departmentName, departmentAccessOpts);
   const visibleNavItems = useMemo(() => {
     if (!allowedLabels) return navItems;
-    return navItems.filter((item) => allowedLabels.includes(item.label));
+    const filtered = navItems.filter((item) => allowedLabels.includes(item.label));
+    if (filtered.length === 0 && allowedLabels.length > 0) {
+      return navItems;
+    }
+    return filtered;
   }, [allowedLabels, departmentAccessOpts?.bypass, departmentAccessOpts?.dbConfig]);
   
   // 客户端初始化
