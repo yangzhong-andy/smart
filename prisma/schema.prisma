@@ -416,9 +416,23 @@ model Department {
   employees       Employee[] // 该部门的员工
   commissionRules CommissionRule[] // 该部门的提成规则
   purchaseOrders  PurchaseOrder[] // 流转到该部门的订单
+  accessRule      DepartmentAccessRule? // 侧栏/路由等访问规则（可选，缺省走代码内默认）
 
   @@index([code])
   @@index([name])
+}
+
+// 部门访问规则：在系统设置中配置，覆盖侧栏一级菜单与路径前缀白名单等
+model DepartmentAccessRule {
+  id           String   @id @default(uuid())
+  departmentId String   @unique
+  config       Json // DepartmentAccessRuleConfig（menuMode/pathMode 等）
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@index([departmentId])
 }
 
 // 用户模型

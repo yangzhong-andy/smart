@@ -3,6 +3,15 @@
  * 定义各部门对订单字段的访问和修改权限
  */
 
+import type { DepartmentAccessRuleConfig } from "./department-access-config";
+
+export type DepartmentAccessRuntimeOptions = {
+  /** 数据库中的部门规则（按 departmentId 存储） */
+  dbConfig?: DepartmentAccessRuleConfig | null;
+  /** 为 true 时不限制侧栏与路径（如 SUPER_ADMIN） */
+  bypass?: boolean;
+};
+
 // 部门代码常量（与 seed.ts 中的 code 字段对应）
 export const DEPARTMENT_CODES = {
   BRAND_GROWTH: 'BRAND_GROWTH',                    // 品牌增长中心
@@ -68,18 +77,31 @@ export const ALLOWED_PATH_PREFIXES_BY_DEPARTMENT: Record<string, string[]> = {
   ],
 };
 
+/** 路径是否命中任一前缀（与历史逻辑一致） */
+export function matchPathPrefixes(pathname: string, prefixes: string[]): boolean {
+  if (!prefixes.length) return true;
+  if (pathname === "/" || pathname === "") return prefixes.includes("/");
+  return prefixes.some((p) => p !== "/" && (pathname === p || pathname.startsWith(p + "/")));
+}
+
 /** 判断该部门是否允许访问该路径（支持用 departmentName 解析部门，避免 code 为空时失效） */
 export function isPathAllowedForDepartment(
   pathname: string,
   departmentCode: string | null,
-  departmentName?: string | null
+  departmentName?: string | null,
+  opts?: DepartmentAccessRuntimeOptions
 ): boolean {
+  if (opts?.bypass) return true;
+  const db = opts?.dbConfig ?? null;
+  if (db?.pathMode === "whitelist" && Array.isArray(db.pathPrefixes)) {
+    const prefs = db.pathPrefixes.filter(Boolean);
+    if (prefs.length > 0) return matchPathPrefixes(pathname, prefs);
+  }
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective || !ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective]) return true;
   const prefixes = ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective];
   if (prefixes.length === 0) return true;
-  if (pathname === '/' || pathname === '') return prefixes.includes('/');
-  return prefixes.some((p) => p !== '/' && (pathname === p || pathname.startsWith(p + '/')));
+  return matchPathPrefixes(pathname, prefixes);
 }
 
 /**
@@ -104,27 +126,48 @@ const DEFAULT_ROUTE_BY_DEPARTMENT: Record<string, string> = {
 
 export function getDefaultRouteForDepartment(
   departmentCode: string | null,
-  departmentName?: string | null
+  departmentName?: string | null,
+  opts?: DepartmentAccessRuntimeOptions
 ): string | null {
+  if (opts?.bypass) return null;
+  const db = opts?.dbConfig ?? null;
+  if (db?.defaultRoute && db.defaultRoute.startsWith("/")) return db.defaultRoute;
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective) return null;
   return DEFAULT_ROUTE_BY_DEPARTMENT[effective] ?? null;
 }
 
 /** 获取该部门在侧栏可见的一级菜单 label 列表；返回 null 表示全部可见 */
-export function getAllowedNavLabels(departmentCode: string | null, departmentName?: string | null): string[] | null {
+export function getAllowedNavLabels(
+  departmentCode: string | null,
+  departmentName?: string | null,
+  opts?: DepartmentAccessRuntimeOptions
+): string[] | null {
+  if (opts?.bypass) return null;
+  const db = opts?.dbConfig ?? null;
+  if (db?.menuMode === "whitelist" && Array.isArray(db.menuLabels)) {
+    return db.menuLabels;
+  }
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective || !SIDEBAR_NAV_BY_DEPARTMENT[effective]) return null;
   return SIDEBAR_NAV_BY_DEPARTMENT[effective];
 }
 
-/** 按部门裁剪侧栏子菜单（如履约物流中心仅见「广告代理管理」） */
+/** 按部门裁剪侧栏子菜单（如履约物流中心仅见「广告代理管理」）；支持数据库规则覆盖 */
 export function filterSidebarNavChildren<T extends { href?: string; label: string }>(
   parentLabel: string,
   children: T[],
   departmentCode: string | null,
-  departmentName: string | null | undefined
+  departmentName: string | null | undefined,
+  opts?: DepartmentAccessRuntimeOptions
 ): T[] {
+  if (opts?.bypass) return children;
+  const db = opts?.dbConfig ?? null;
+  const dbMap = db?.sidebarChildHrefs;
+  if (dbMap && dbMap[parentLabel]?.length) {
+    const allowed = new Set(dbMap[parentLabel]);
+    return children.filter((c) => Boolean(c.href) && allowed.has(c.href as string));
+  }
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective) return children;
   const map = SIDEBAR_CHILD_HREFS_BY_DEPARTMENT[effective];

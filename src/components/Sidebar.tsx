@@ -25,11 +25,13 @@ import {
   Upload,
   BarChart3,
   Building2,
-  GripVertical
+  GripVertical,
+  Shield,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
 import { getAllowedNavLabels, filterSidebarNavChildren } from "@/lib/permissions";
+import { useDepartmentAccess } from "@/components/DepartmentAccessContext";
 
 import { LucideIcon } from "lucide-react";
 
@@ -177,6 +179,7 @@ const navItems: NavItem[] = [
     icon: Settings,
     children: [
       { label: "系统账号管理", labelEn: "", icon: Users, href: "/settings/users" },
+      { label: "部门权限", labelEn: "", icon: Shield, href: "/settings/department-permissions" },
       { label: "本公司信息", labelEn: "", icon: Building2, href: "/settings/company" },
       { label: "出口公司管理", labelEn: "", icon: Building2, href: "/settings/exporters" },
       { label: "海外公司管理", labelEn: "", icon: Building2, href: "/settings/overseas-companies" },
@@ -186,6 +189,7 @@ const navItems: NavItem[] = [
   }
 ];
 
+/** 一级菜单中文 label 须与 `src/lib/sidebar-nav-meta.ts` 中 SIDEBAR_TOP_LEVEL_LABELS 保持一致（部门权限配置页） */
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -197,6 +201,11 @@ export default function Sidebar() {
     if (api) fetch(api, { credentials: "same-origin" }).catch(() => {});
   };
   const { data: session } = useSession();
+  const departmentAccess = useDepartmentAccess();
+  const departmentAccessOpts =
+    departmentAccess == null
+      ? undefined
+      : { bypass: departmentAccess.bypass, dbConfig: departmentAccess.config };
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -207,14 +216,14 @@ export default function Sidebar() {
   const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const SIDEBAR_CHILD_ORDER_KEY = "sidebarChildOrderV1";
 
-  // 按部门权限过滤一级菜单（如全球供应链部/全球供应链部门 仅显示 产品中心、供应链；支持按 code 或 name 匹配）
+  // 按部门权限过滤一级菜单（支持代码默认 + 系统设置中的数据库规则；SUPER_ADMIN 不限制）
   const departmentCode = session?.user?.departmentCode ?? null;
   const departmentName = session?.user?.departmentName ?? null;
-  const allowedLabels = getAllowedNavLabels(departmentCode, departmentName);
+  const allowedLabels = getAllowedNavLabels(departmentCode, departmentName, departmentAccessOpts);
   const visibleNavItems = useMemo(() => {
     if (!allowedLabels) return navItems;
     return navItems.filter((item) => allowedLabels.includes(item.label));
-  }, [allowedLabels]);
+  }, [allowedLabels, departmentAccessOpts?.bypass, departmentAccessOpts?.dbConfig]);
   
   // 客户端初始化
   useEffect(() => {
@@ -242,7 +251,8 @@ export default function Sidebar() {
             item.label,
             item.children,
             departmentCode,
-            departmentName
+            departmentName,
+            departmentAccessOpts
           );
           const hasActiveChild = filtered.some((child) => child.href === currentPath);
           if (hasActiveChild) {
@@ -254,7 +264,7 @@ export default function Sidebar() {
     } catch (e) {
       console.error("Failed to initialize sidebar:", e);
     }
-  }, [pathname, visibleNavItems]);
+  }, [pathname, visibleNavItems, departmentCode, departmentName, departmentAccessOpts]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -319,7 +329,8 @@ export default function Sidebar() {
       item.label,
       item.children,
       departmentCode,
-      departmentName
+      departmentName,
+      departmentAccessOpts
     );
     return filtered.some((child) => child.href === pathname);
   };
@@ -330,7 +341,8 @@ export default function Sidebar() {
       item.label,
       item.children,
       departmentCode,
-      departmentName
+      departmentName,
+      departmentAccessOpts
     );
     const order = customChildOrder[item.label];
     if (!order?.length) return filtered;
@@ -681,7 +693,8 @@ export default function Sidebar() {
                       item.label,
                       item.children,
                       departmentCode,
-                      departmentName
+                      departmentName,
+                      departmentAccessOpts
                     ).map((child) => {
                       const isApprovalLink = child.href === "/finance/approval";
                       const active = isActive(child.href);

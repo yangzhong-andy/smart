@@ -7,7 +7,11 @@ import { useSWRConfig } from "swr";
 import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
-import { isPathAllowedForDepartment, getDefaultRouteForDepartment } from "@/lib/permissions";
+import {
+  isPathAllowedForDepartment,
+  getDefaultRouteForDepartment,
+} from "@/lib/permissions";
+import { DepartmentAccessProvider, useDepartmentAccess } from "@/components/DepartmentAccessContext";
 
 /** 路由切换时顶部细进度条，点击子菜单后立即有反馈，减轻“卡住”体感 */
 function RouteChangeProgress() {
@@ -136,6 +140,34 @@ function RouteChangeRefresher() {
 
 const CHECKING_TIMEOUT_MS = 8000;
 
+function DepartmentPathGuard() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  const access = useDepartmentAccess();
+
+  useEffect(() => {
+    if (pathname === "/login") return;
+    if (status === "loading") return;
+    if (status === "unauthenticated" || !session?.user) return;
+    if (!access?.loaded) return;
+
+    const departmentCode = (session.user as { departmentCode?: string | null }).departmentCode ?? null;
+    const departmentName = (session.user as { departmentName?: string | null }).departmentName ?? null;
+    const opts = { bypass: access.bypass, dbConfig: access.config };
+
+    if (
+      (departmentCode || departmentName) &&
+      !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName, opts)
+    ) {
+      const fallback = getDefaultRouteForDepartment(departmentCode, departmentName, opts) || "/";
+      router.replace(fallback);
+    }
+  }, [pathname, router, session, status, access?.loaded, access?.bypass, access?.config]);
+
+  return null;
+}
+
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -196,16 +228,6 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
       return;
     }
 
-    const departmentCode = (session?.user as any)?.departmentCode ?? null;
-    const departmentName = (session?.user as any)?.departmentName ?? null;
-    if ((departmentCode || departmentName) && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName)) {
-      const fallback =
-        getDefaultRouteForDepartment(departmentCode, departmentName) ||
-        "/";
-      setIsChecking(false);
-      router.replace(fallback);
-      return;
-    }
     setIsChecking(false);
   }, [pathname, router, isLoginPage, session, status]);
 
@@ -246,9 +268,11 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   // 已登录：其他页面显示侧边栏
   return (
     <SWRProvider>
-      <RouteChangeRefresher />
-      <RouteChangeProgress />
-      <div className="flex h-full relative">
+      <DepartmentAccessProvider>
+        <DepartmentPathGuard />
+        <RouteChangeRefresher />
+        <RouteChangeProgress />
+        <div className="flex h-full relative">
         {/* 侧栏容器：position:relative + z-index:50，确保永远在 main(z-0) 之上，避免 dynamic 加载顺序导致被遮挡 */}
         <div className="relative z-50 flex-shrink-0">
           <Sidebar />
@@ -262,6 +286,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
         </main>
       </div>
       <GlobalRefresher />
+      </DepartmentAccessProvider>
     </SWRProvider>
   );
 }
