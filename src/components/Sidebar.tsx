@@ -35,6 +35,20 @@ import { useDepartmentAccess } from "@/components/DepartmentAccessContext";
 
 import { LucideIcon } from "lucide-react";
 
+/** 对账页离开前需关弹窗；其余菜单交给 Next.js Link 默认跳转（避免 preventDefault + router.push 失效导致点击无反应） */
+function sidebarLinkClick(
+  e: React.MouseEvent<HTMLAnchorElement>,
+  href: string | undefined,
+  pathname: string
+) {
+  if (!href || href === "#") return;
+  if (pathname === "/finance/reconciliation" && href !== pathname) {
+    e.preventDefault();
+    window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+    window.location.href = href;
+  }
+}
+
 /** 子菜单悬停时预取路由 + 可选预请求主 API（暖机），减轻点击后等待 */
 const ROUTE_PREFETCH_API: Record<string, string> = {
   "/procurement": "/api/suppliers",
@@ -202,10 +216,20 @@ export default function Sidebar() {
   };
   const { data: session } = useSession();
   const departmentAccess = useDepartmentAccess();
-  const departmentAccessOpts =
-    departmentAccess == null
-      ? undefined
-      : { bypass: departmentAccess.bypass, dbConfig: departmentAccess.config };
+  const isPrivilegedRole =
+    session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
+  const departmentAccessOpts = useMemo(
+    () =>
+      departmentAccess == null
+        ? isPrivilegedRole
+          ? { bypass: true, dbConfig: null as const }
+          : undefined
+        : {
+            bypass: departmentAccess.bypass || isPrivilegedRole,
+            dbConfig: departmentAccess.config,
+          },
+    [departmentAccess, isPrivilegedRole]
+  );
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -221,7 +245,7 @@ export default function Sidebar() {
   const departmentName = session?.user?.departmentName ?? null;
   const allowedLabels = getAllowedNavLabels(departmentCode, departmentName, departmentAccessOpts);
   const visibleNavItems = useMemo(() => {
-    if (!allowedLabels) return navItems;
+    if (!allowedLabels || !Array.isArray(allowedLabels)) return navItems;
     const filtered = navItems.filter((item) => allowedLabels.includes(item.label));
     if (filtered.length === 0 && allowedLabels.length > 0) {
       return navItems;
@@ -242,8 +266,16 @@ export default function Sidebar() {
       // 恢复子菜单自定义排序
       const savedOrder = localStorage.getItem(SIDEBAR_CHILD_ORDER_KEY);
       if (savedOrder) {
-        const parsed = JSON.parse(savedOrder) as Record<string, string[]>;
-        setCustomChildOrder(parsed);
+        const parsed = JSON.parse(savedOrder) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const safe: Record<string, string[]> = {};
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            if (Array.isArray(v)) {
+              safe[k] = v.filter((h): h is string => typeof h === "string");
+            }
+          }
+          setCustomChildOrder(safe);
+        }
       }
       
       // 默认展开当前路径所在的父级菜单
@@ -307,7 +339,10 @@ export default function Sidebar() {
 
   const toggleExpand = (label: string) => {
     if (isCollapsed) return; // 收起状态下不处理点击展开
-    setExpandedItems((prev) => (prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]));
+    setExpandedItems((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.includes(label) ? list.filter((l) => l !== label) : [...list, label];
+    });
   };
 
   const handleCollapse = () => {
@@ -340,7 +375,7 @@ export default function Sidebar() {
   };
 
   const getOrderedChildren = (item: NavItem): NavItem[] => {
-    if (!item.children) return [];
+    if (!item.children?.length) return [];
     const filtered = filterSidebarNavChildren(
       item.label,
       item.children,
@@ -348,9 +383,11 @@ export default function Sidebar() {
       departmentName,
       departmentAccessOpts
     );
+    const base =
+      filtered.length > 0 ? filtered : item.children;
     const order = customChildOrder[item.label];
-    if (!order?.length) return filtered;
-    const map = new Map(filtered.map((child) => [child.href || `__${child.label}`, child]));
+    if (!Array.isArray(order) || order.length === 0) return base;
+    const map = new Map(base.map((child) => [child.href || `__${child.label}`, child]));
     const ordered: NavItem[] = [];
     order.forEach((href) => {
       const child = map.get(href);
@@ -381,7 +418,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col border-r border-white/10 transition-all duration-300 relative z-[10000] ${
+      className={`flex flex-col h-full border-r border-white/10 transition-all duration-300 relative z-30 shrink-0 pointer-events-auto ${
         isCollapsed ? "w-20" : "w-72"
       }`}
       style={{ 
@@ -443,7 +480,7 @@ export default function Sidebar() {
       </div>
 
       {/* 导航菜单 */}
-      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 relative z-10">
+      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 relative z-10 pointer-events-auto">
         <style jsx>{`
           nav::-webkit-scrollbar {
             width: 6px;
@@ -612,18 +649,7 @@ export default function Sidebar() {
                                     setDraggingChildHref(null);
                                   }}
                                   onMouseEnter={() => prefetchRoute(child.href)}
-                                  onClick={(e) => {
-                                    if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                                      e.preventDefault();
-                                      console.log("[Sidebar] nav click →", child.href);
-                                      if (pathname === "/finance/reconciliation" && child.href !== pathname) {
-                                        window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
-                                        window.location.href = child.href;
-                                        return;
-                                      }
-                                      router.push(child.href);
-                                    }
-                                  }}
+                                  onClick={(e) => sidebarLinkClick(e, child.href, pathname || "")}
                                   className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
                                     active
                                       ? "text-blue-400 font-medium bg-blue-500/10"
@@ -634,7 +660,7 @@ export default function Sidebar() {
                                   <div
                                     className="text-slate-500/70 group-hover:text-slate-300"
                                     title="拖拽排序"
-                                    onMouseDown={(e) => e.preventDefault()}
+                                    onMouseDown={(e) => e.stopPropagation()}
                                   >
                                     <GripVertical size={14} />
                                   </div>
@@ -706,18 +732,7 @@ export default function Sidebar() {
                         <Link
                           key={child.href}
                           href={child.href || "#"}
-                          onClick={(e) => {
-                            if (child.href && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                              e.preventDefault();
-                              console.log("[Sidebar] nav click (collapsed) →", child.href);
-                              if (pathname === "/finance/reconciliation" && child.href !== pathname) {
-                                window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
-                                window.location.href = child.href;
-                                return;
-                              }
-                              router.push(child.href);
-                            }
-                          }}
+                          onClick={(e) => sidebarLinkClick(e, child.href, pathname || "")}
                           className={`block px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
                             active
                               ? "text-white font-semibold"
@@ -753,14 +768,7 @@ export default function Sidebar() {
               key={item.href}
               href={item.href || "#"}
               prefetch
-              onClick={(e) => {
-                if (item.href) console.log("[Sidebar] nav click (top-level) →", item.href);
-                if (pathname === "/finance/reconciliation" && item.href && item.href !== pathname) {
-                  e.preventDefault();
-                  window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
-                  window.location.href = item.href;
-                }
-              }}
+              onClick={(e) => sidebarLinkClick(e, item.href, pathname || "")}
               className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
                 active
                   ? "text-white font-bold"

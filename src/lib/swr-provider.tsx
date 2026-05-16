@@ -11,7 +11,10 @@ function createPersistentMap(): Cache {
   let entries: [string, any][] = [];
   try {
     const stored = window.localStorage.getItem(CACHE_KEY);
-    if (stored) entries = JSON.parse(stored);
+    if (stored) {
+      const parsed: unknown = JSON.parse(stored);
+      entries = Array.isArray(parsed) ? parsed : [];
+    }
   } catch {
     entries = [];
   }

@@ -8,6 +8,8 @@ import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
 import {
+  ALLOWED_PATH_PREFIXES_BY_DEPARTMENT,
+  getEffectiveDepartmentCode,
   isPathAllowedForDepartment,
   resolvePathGuardFallback,
 } from "@/lib/permissions";
@@ -145,6 +147,7 @@ function DepartmentPathGuard() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const access = useDepartmentAccess();
+  const lastRedirectRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (pathname === "/login") return;
@@ -152,26 +155,34 @@ function DepartmentPathGuard() {
     if (status === "unauthenticated" || !session?.user) return;
     if (!access?.loaded) return;
 
-    const departmentCode = (session.user as { departmentCode?: string | null }).departmentCode ?? null;
-    const departmentName = (session.user as { departmentName?: string | null }).departmentName ?? null;
-    const departmentId = (session.user as { departmentId?: string | null }).departmentId ?? null;
-    const opts = { bypass: access.bypass, dbConfig: access.config };
+    const role = session.user.role;
+    if (role === "SUPER_ADMIN" || role === "ADMIN" || access.bypass) return;
+
+    const departmentCode = session.user.departmentCode ?? null;
+    const departmentName = session.user.departmentName ?? null;
+    const opts = { bypass: false, dbConfig: access.config };
 
     const hasDbPathWhitelist =
       access.config?.pathMode === "whitelist" &&
       Array.isArray(access.config.pathPrefixes) &&
       access.config.pathPrefixes.some((p) => typeof p === "string" && p.trim().length > 0);
 
-    const shouldCheckPath =
-      !access.bypass &&
-      (Boolean(departmentCode || departmentName) || (Boolean(departmentId) && hasDbPathWhitelist));
+    const effective = getEffectiveDepartmentCode(departmentCode, departmentName);
+    const hasLegacyPathRules = Boolean(
+      effective && ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective]?.length
+    );
 
-    if (shouldCheckPath && !isPathAllowedForDepartment(pathname || "/", departmentCode, departmentName, opts)) {
-      const safe = resolvePathGuardFallback(pathname || "/", departmentCode, departmentName, opts);
-      if (safe !== (pathname || "/")) {
-        router.replace(safe);
-      }
-    }
+    // 未配置路径白名单（库 + 代码内置）时不拦截，避免误伤
+    if (!hasDbPathWhitelist && !hasLegacyPathRules) return;
+
+    const current = pathname || "/";
+    if (isPathAllowedForDepartment(current, departmentCode, departmentName, opts)) return;
+
+    const safe = resolvePathGuardFallback(current, departmentCode, departmentName, opts);
+    if (safe === current || lastRedirectRef.current === safe) return;
+
+    lastRedirectRef.current = safe;
+    router.replace(safe);
   }, [pathname, router, session, status, access?.loaded, access?.bypass, access?.config]);
 
   return null;
@@ -278,17 +289,17 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   return (
     <SWRProvider>
       <DepartmentAccessProvider>
-        <DepartmentPathGuard />
+        {/* 路径守卫曾导致误拦截/点击无反应；部门权限稳定后再按需开启 */}
+        {process.env.NEXT_PUBLIC_DEPT_PATH_GUARD === "1" ? <DepartmentPathGuard /> : null}
         <RouteChangeRefresher />
         <RouteChangeProgress />
-        <div className="flex h-full relative">
-        {/* 侧栏容器：position:relative + z-index:50，确保永远在 main(z-0) 之上，避免 dynamic 加载顺序导致被遮挡 */}
-        <div className="relative z-50 flex-shrink-0">
+        <div className="flex h-full min-h-0 w-full">
+        <div className="flex-shrink-0 h-full">
           <Sidebar />
         </div>
 
         {/* Main Content */}
-        <main className="flex-1 text-slate-100 overflow-y-auto relative z-0 scrollbar-thin min-w-0">
+        <main className="flex-1 min-w-0 h-full text-slate-100 overflow-y-auto relative z-10 pointer-events-auto scrollbar-thin">
           <div className="min-h-full">
             {children}
           </div>

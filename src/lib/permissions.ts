@@ -178,7 +178,7 @@ export function resolvePathGuardFallback(
 
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   const legacy = effective ? ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective] : undefined;
-  if (legacy?.length) {
+  if (Array.isArray(legacy) && legacy.length > 0) {
     for (const p of [...legacy].sort((a, b) => b.length - a.length)) {
       const ok = tryCandidate(p);
       if (ok) return ok;
@@ -200,8 +200,9 @@ export function getAllowedNavLabels(
   if (opts?.bypass) return null;
   const db = opts?.dbConfig ?? null;
   if (db?.menuMode === "whitelist" && Array.isArray(db.menuLabels)) {
-    if (db.menuLabels.length === 0) return null;
-    return db.menuLabels;
+    const labels = db.menuLabels.filter((l): l is string => typeof l === "string" && Boolean(l.trim()));
+    if (labels.length === 0) return null;
+    return labels;
   }
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective || !SIDEBAR_NAV_BY_DEPARTMENT[effective]) return null;
@@ -216,18 +217,24 @@ export function filterSidebarNavChildren<T extends { href?: string; label: strin
   departmentName: string | null | undefined,
   opts?: DepartmentAccessRuntimeOptions
 ): T[] {
+  if (!Array.isArray(children)) return [];
   if (opts?.bypass) return children;
   const db = opts?.dbConfig ?? null;
   const dbMap = db?.sidebarChildHrefs;
-  if (dbMap && dbMap[parentLabel]?.length) {
-    const allowed = new Set(dbMap[parentLabel]);
+  const dbHrefs =
+    dbMap && typeof dbMap === "object" && !Array.isArray(dbMap)
+      ? dbMap[parentLabel]
+      : undefined;
+  if (Array.isArray(dbHrefs) && dbHrefs.length > 0) {
+    const allowed = new Set(dbHrefs);
     return children.filter((c) => Boolean(c.href) && allowed.has(c.href as string));
   }
   const effective = getEffectiveDepartmentCode(departmentCode, departmentName ?? null);
   if (!effective) return children;
   const map = SIDEBAR_CHILD_HREFS_BY_DEPARTMENT[effective];
-  if (!map || !map[parentLabel]) return children;
-  const allowed = new Set(map[parentLabel]);
+  const legacyHrefs = map?.[parentLabel];
+  if (!Array.isArray(legacyHrefs) || legacyHrefs.length === 0) return children;
+  const allowed = new Set(legacyHrefs);
   return children.filter((c) => Boolean(c.href) && allowed.has(c.href as string));
 }
 

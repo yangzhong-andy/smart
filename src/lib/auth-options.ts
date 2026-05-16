@@ -90,14 +90,31 @@ export const authOptions: NextAuthOptions = {
       return token
     },
     async session({ session, token }) {
-      // 将 token 中的信息添加到 session
-      if (session.user) {
-        session.user.id = token.id as string
-        session.user.role = token.role as string | null
-        session.user.departmentId = token.departmentId as string | null
-        session.user.departmentName = token.departmentName as string | null
-        session.user.departmentCode = token.departmentCode as string | null
+      if (!session.user || !token.id) return session
+
+      // 每次读 session 时从库刷新角色/部门，避免改权限后 JWT 仍是旧值
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          include: { department: true },
+        })
+        if (user?.isActive) {
+          session.user.id = user.id
+          session.user.role = user.role
+          session.user.departmentId = user.departmentId
+          session.user.departmentName = user.department?.name ?? null
+          session.user.departmentCode = user.department?.code ?? null
+          return session
+        }
+      } catch (e) {
+        console.warn("[auth] session 刷新用户信息失败，使用 JWT 缓存", e)
       }
+
+      session.user.id = token.id as string
+      session.user.role = (token.role as string | null) ?? null
+      session.user.departmentId = (token.departmentId as string | null) ?? null
+      session.user.departmentName = (token.departmentName as string | null) ?? null
+      session.user.departmentCode = (token.departmentCode as string | null) ?? null
       return session
     }
   },

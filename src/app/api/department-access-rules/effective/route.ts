@@ -17,7 +17,7 @@ export async function GET() {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    if (session.user.role === "SUPER_ADMIN") {
+    if (session.user.role === "SUPER_ADMIN" || session.user.role === "ADMIN") {
       return NextResponse.json({ bypass: true, config: null });
     }
 
@@ -26,12 +26,23 @@ export async function GET() {
       return NextResponse.json({ bypass: false, config: null });
     }
 
-    const row = await prisma.departmentAccessRule.findUnique({
-      where: { departmentId },
-    });
-
-    const config = row ? parseDepartmentAccessRuleConfig(row.config) : null;
-    return NextResponse.json({ bypass: false, config });
+    try {
+      const row = await prisma.departmentAccessRule.findUnique({
+        where: { departmentId },
+      });
+      const config = row ? parseDepartmentAccessRuleConfig(row.config) : null;
+      return NextResponse.json({ bypass: false, config });
+    } catch (dbErr: unknown) {
+      const code =
+        dbErr && typeof dbErr === "object" && "code" in dbErr
+          ? String((dbErr as { code?: string }).code)
+          : "";
+      // 迁移未执行时勿 500，否则前端误以为需限制访问
+      if (code === "P2021") {
+        return NextResponse.json({ bypass: false, config: null });
+      }
+      throw dbErr;
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "查询失败";
     return NextResponse.json({ error: msg }, { status: 500 });

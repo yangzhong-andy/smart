@@ -10,7 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { useSession } from "next-auth/react";
-import type { DepartmentAccessRuleConfig } from "@/lib/department-access-config";
+import {
+  parseDepartmentAccessRuleConfig,
+  type DepartmentAccessRuleConfig,
+} from "@/lib/department-access-config";
 
 export type DepartmentAccessContextValue = {
   bypass: boolean;
@@ -34,7 +37,8 @@ export function DepartmentAccessProvider({ children }: { children: ReactNode }) 
 
   const load = useCallback(async () => {
     if (status !== "authenticated" || !session?.user) return;
-    if (session.user.role === "SUPER_ADMIN") {
+    const role = session.user.role;
+    if (role === "SUPER_ADMIN" || role === "ADMIN") {
       setBypass(true);
       setConfig(null);
       setLoaded(true);
@@ -54,7 +58,8 @@ export function DepartmentAccessProvider({ children }: { children: ReactNode }) 
         return;
       }
       setBypass(Boolean(data.bypass));
-      setConfig(data.config ?? null);
+      const rawConfig = data.config ?? null;
+      setConfig(rawConfig ? parseDepartmentAccessRuleConfig(rawConfig) : null);
       setLoaded(true);
     } catch {
       setBypass(false);
