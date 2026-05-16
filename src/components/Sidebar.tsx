@@ -30,7 +30,11 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
-import { getAllowedNavLabels, filterSidebarNavChildren } from "@/lib/permissions";
+import {
+  getAllowedNavLabels,
+  filterSidebarNavChildren,
+  type DepartmentAccessRuntimeOptions,
+} from "@/lib/permissions";
 import { useDepartmentAccess } from "@/components/DepartmentAccessContext";
 
 import { LucideIcon } from "lucide-react";
@@ -218,18 +222,15 @@ export default function Sidebar() {
   const departmentAccess = useDepartmentAccess();
   const isPrivilegedRole =
     session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
-  const departmentAccessOpts = useMemo(
-    () =>
-      departmentAccess == null
-        ? isPrivilegedRole
-          ? { bypass: true, dbConfig: null as const }
-          : undefined
-        : {
-            bypass: departmentAccess.bypass || isPrivilegedRole,
-            dbConfig: departmentAccess.config,
-          },
-    [departmentAccess, isPrivilegedRole]
-  );
+  const departmentAccessOpts = useMemo((): DepartmentAccessRuntimeOptions | undefined => {
+    if (departmentAccess == null) {
+      return isPrivilegedRole ? { bypass: true, dbConfig: null } : undefined;
+    }
+    return {
+      bypass: departmentAccess.bypass || isPrivilegedRole,
+      dbConfig: departmentAccess.config,
+    };
+  }, [departmentAccess, isPrivilegedRole]);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
