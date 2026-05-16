@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import type { Session } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import {
@@ -10,7 +11,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-function requireSuperAdmin(session: Awaited<ReturnType<typeof getServerSession>>) {
+function requireSuperAdmin(session: Session | null) {
   if (!session?.user || session.user.role !== "SUPER_ADMIN") {
     return NextResponse.json({ error: "权限不足" }, { status: 403 });
   }
