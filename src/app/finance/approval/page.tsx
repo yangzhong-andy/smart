@@ -159,47 +159,47 @@ export default function ApprovalCenterPage() {
   const { data: allBillsData } = useSWR("monthly-bills", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 浼樺寲锛氬鍔犲埌10鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌10鍒嗛挓鍐呭幓閲?
   });
   const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 浼樺寲锛氬鍔犲埌10鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌10鍒嗛挓鍐呭幓閲?
   });
   const { data: expenseRequestsData } = useSWR("expense-requests", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
   });
   const { data: pendingExpenseRequestsData } = useSWR("pending-expense-requests", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
   });
   const { data: incomeRequestsData } = useSWR("income-requests", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
   });
   const { data: pendingIncomeRequestsData } = useSWR("pending-income-requests", fetcher, { 
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 300000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
   });
   const { data: rechargesData } = useSWR("recharges", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 10鍒嗛挓鍐呭幓閲?
   });
   const { data: consumptionsData } = useSWR("consumptions", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 10鍒嗛挓鍐呭幓閲?
   });
   const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 600000 // 10鍒嗛挓鍐呭幓閲?
+    dedupingInterval: 30000 // 10鍒嗛挓鍐呭幓閲?
   });
 
   /**

@@ -40,7 +40,7 @@ import { useDepartmentAccess } from "@/components/DepartmentAccessContext";
 import { LucideIcon } from "lucide-react";
 
 /** 对账页离开前需关弹窗；其余菜单交给 Next.js Link 默认跳转（避免 preventDefault + router.push 失效导致点击无反应） */
-function sidebarLinkClick(
+function sidebarLinkClick(router: any, 
   e: React.MouseEvent<HTMLAnchorElement>,
   href: string | undefined,
   pathname: string
@@ -49,7 +49,7 @@ function sidebarLinkClick(
   if (pathname === "/finance/reconciliation" && href !== pathname) {
     e.preventDefault();
     window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
-    window.location.href = href;
+    router.push(href);
   }
 }
 
@@ -650,7 +650,7 @@ export default function Sidebar() {
                                     setDraggingChildHref(null);
                                   }}
                                   onMouseEnter={() => prefetchRoute(child.href)}
-                                  onClick={(e) => sidebarLinkClick(e, child.href, pathname || "")}
+                                  onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
                                   className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
                                     active
                                       ? "text-blue-400 font-medium bg-blue-500/10"
@@ -733,7 +733,7 @@ export default function Sidebar() {
                         <Link
                           key={child.href}
                           href={child.href || "#"}
-                          onClick={(e) => sidebarLinkClick(e, child.href, pathname || "")}
+                          onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
                           className={`block px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
                             active
                               ? "text-white font-semibold"
@@ -769,7 +769,7 @@ export default function Sidebar() {
               key={item.href}
               href={item.href || "#"}
               prefetch
-              onClick={(e) => sidebarLinkClick(e, item.href, pathname || "")}
+              onClick={(e) => sidebarLinkClick(router, e, item.href, pathname || "")}
               className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
                 active
                   ? "text-white font-bold"
