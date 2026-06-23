@@ -93,7 +93,7 @@ export function ProductsTable({
                   }}
                 >
                   <div className="relative h-48 bg-slate-800 rounded-lg overflow-hidden">
-                    {spu.mainImage ? (
+                    {spu.mainImage && spu.mainImage !== '[base64]' ? (
                       <a href={spu.mainImage} target="_blank" rel="noreferrer" className="block w-full h-full" onClick={(e) => e.stopPropagation()}>
                         <img src={spu.mainImage} alt={spu.name} className="w-full h-full object-cover" />
                       </a>
@@ -103,7 +103,7 @@ export function ProductsTable({
                       </div>
                     )}
                     <div className="absolute top-2 right-2 flex items-center gap-2">
-                      {spu.mainImage && (
+                      {(spu.mainImage || (spu as any).hasImage) && (
                         <button
                           type="button"
                           onClick={async (e) => {
@@ -112,8 +112,10 @@ export function ProductsTable({
                             const loaded = variants.length ? variants : await loadVariantsForSpu(spu.productId);
                             const first = loaded[0] as (Product & { gallery_images?: string[] }) | undefined;
                             const gallery = Array.isArray(first?.gallery_images) ? first.gallery_images : [];
-                            const list = [spu.mainImage!, ...gallery.filter((url) => url && url !== spu.mainImage)];
-                            onPreviewImages(list, 0);
+                            // base64图片从详情获取，URL图片直接用
+                            const mainImg = (spu.mainImage && spu.mainImage !== '[base64]') ? spu.mainImage! : (first?.main_image || '');
+                            const list = [mainImg, ...gallery.filter((url) => url && url !== mainImg)].filter(Boolean);
+                            if (list.length > 0) onPreviewImages(list, 0);
                           }}
                           className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium bg-black/40 text-white hover:bg-black/60 border border-white/20"
                           title="查看图片"

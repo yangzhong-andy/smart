@@ -204,15 +204,21 @@ export async function GET(request: NextRequest) {
           _count: { id: true }
         })
       ])
-      const list = products.map((p) => ({
-        productId: p.id,
-        spuCode: (p as any).spuCode ?? undefined,
-        name: p.name,
-        mainImage: p.mainImage ?? '',
-        status: p.status,
-        category: p.category ?? undefined,
-        variantCount: p._count.variants
-      }))
+      const list = products.map((p) => {
+        // base64 图片太大(1MB+)，SPU列表不需要传输，仅标记是否有图
+        const img = p.mainImage
+        const mainImage = img ? (img.startsWith('data:') ? '[base64]' : img) : ''
+        return {
+          productId: p.id,
+          spuCode: (p as any).spuCode ?? undefined,
+          name: p.name,
+          mainImage,
+          hasImage: !!img,
+          status: p.status,
+          category: p.category ?? undefined,
+          variantCount: p._count.variants
+        }
+      })
       const totalCount = products.length
       const onSaleCount = products.filter((p) => p.status === 'ACTIVE').length
       const offSaleCount = products.filter((p) => p.status === 'INACTIVE').length
