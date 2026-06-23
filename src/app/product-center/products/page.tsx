@@ -21,7 +21,7 @@ import { useSystemConfirm } from "@/hooks/use-system-confirm";
 async function loadSuppliers(): Promise<Array<{ id: string; name: string }>> {
   if (typeof window === "undefined") return [];
   try {
-    const res = await fetch("/api/suppliers?page=1&pageSize=500");
+    const res = await fetch("/api/suppliers?page=1&pageSize=50");
     if (res.ok) {
       const json = await res.json();
       const data = Array.isArray(json) ? json : (json?.data ?? []);

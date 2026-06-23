@@ -26,6 +26,9 @@ export function getRedisClient(): Redis | null {
 // 缓存键前缀
 const CACHE_PREFIX = 'smart:erp:';
 
+// 是否打印缓存日志（开发环境可开启）
+const CACHE_LOG = process.env.CACHE_LOG === 'true';
+
 // 生成缓存键
 export function generateCacheKey(prefix: string, ...args: string[]): string {
   return `${CACHE_PREFIX}${prefix}:${args.join(':')}`;
@@ -39,10 +42,10 @@ export async function getCache<T>(key: string): Promise<T | null> {
     
     const data = await client.get(key);
     if (data) {
-      console.log(`✅ Cache HIT: ${key}`);
+      if (CACHE_LOG) console.log(`✅ Cache HIT: ${key}`);
       return JSON.parse(data) as T;
     }
-    console.log(`❌ Cache MISS: ${key}`);
+    if (CACHE_LOG) console.log(`❌ Cache MISS: ${key}`);
     return null;
   } catch (error) {
     console.error('Redis get error:', error);
@@ -57,7 +60,7 @@ export async function setCache(key: string, value: any, ttlSeconds: number = 300
     if (!client) return false;
     
     await client.setex(key, ttlSeconds, JSON.stringify(value));
-    console.log(`✅ Cache SET: ${key} (TTL: ${ttlSeconds}s)`);
+    if (CACHE_LOG) console.log(`✅ Cache SET: ${key} (TTL: ${ttlSeconds}s)`);
     return true;
   } catch (error) {
     console.error('Redis set error:', error);
@@ -72,7 +75,7 @@ export async function deleteCache(key: string): Promise<boolean> {
     if (!client) return false;
     
     await client.del(key);
-    console.log(`✅ Cache DEL: ${key}`);
+    if (CACHE_LOG) console.log(`✅ Cache DEL: ${key}`);
     return true;
   } catch (error) {
     console.error('Redis del error:', error);
@@ -80,18 +83,34 @@ export async function deleteCache(key: string): Promise<boolean> {
   }
 }
 
-// 清除指定前缀的所有缓存
+// 清除指定前缀的所有缓存（使用 SCAN 代替 KEYS，避免阻塞 Redis）
 export async function clearCacheByPrefix(prefix: string): Promise<boolean> {
   try {
     const client = getRedisClient();
     if (!client) return false;
     
     const pattern = `${CACHE_PREFIX}${prefix}:*`;
-    const keys = await client.keys(pattern);
+    let cursor = '0';
+    let totalDeleted = 0;
     
-    if (keys.length > 0) {
-      await client.del(...keys);
-      console.log(`✅ Cache CLEARED: ${keys.length} keys matching ${pattern}`);
+    do {
+      const [nextCursor, keys] = await client.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100
+      );
+      cursor = nextCursor;
+      
+      if (keys.length > 0) {
+        await client.del(...keys);
+        totalDeleted += keys.length;
+      }
+    } while (cursor !== '0');
+    
+    if (totalDeleted > 0) {
+      console.log(`✅ Cache CLEARED: ${totalDeleted} keys matching ${pattern}`);
     }
     
     return true;

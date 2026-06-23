@@ -12,7 +12,14 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '20mb',
     },
+    optimizePackageImports: [
+      '@prisma/client',
+      'lucide-react',
+      '@radix-ui/react-icons',
+    ],
   },
+  compress: true,
+  poweredByHeader: false,
 };
 
 export default nextConfig;

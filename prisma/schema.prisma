@@ -261,6 +261,11 @@ model Supplier {
   contracts        PurchaseContract[] @relation("SupplierToContract")
   productSuppliers ProductSupplier[]
   defaultProducts  Product[]          @relation("DefaultSupplier") // 作为默认供应商的产品
+
+  @@index([name])
+  @@index([level])
+  @@index([category])
+  @@index([createdAt])
 }
 
 // Product (SPU) - 产品原型（父表）：通用材质、规格描述，一单多变体合同用
@@ -373,6 +378,10 @@ model Store {
   logistics       LogisticsTracking[]
   bankAccounts    BankAccount[] // 关联的银行账户
   purchaseOrders  PurchaseOrder[] // 关联的采购订单
+
+  @@index([platform])
+  @@index([country])
+  @@index([accountId])
 }
 
 model Influencer {
@@ -399,6 +408,9 @@ model Influencer {
   updatedAt                DateTime  @updatedAt
 
   videoTasks VideoTask[]
+
+  @@index([platform])
+  @@index([cooperationStatus])
 }
 
 // 部门模型
@@ -517,6 +529,10 @@ model CommissionRecord {
 
   employee Employee       @relation(fields: [employeeId], references: [id])
   rule     CommissionRule @relation(fields: [ruleId], references: [id])
+
+  @@index([employeeId])
+  @@index([ruleId])
+  @@index([periodLabel])
 }
 
 // 仓库表（Warehouse）
@@ -705,6 +721,10 @@ model LogisticsTracking {
   channel LogisticsChannel @relation(fields: [channelId], references: [id])
   store   Store?           @relation(fields: [storeId], references: [id])
   events  TrackingEvent[]
+
+  @@index([channelId])
+  @@index([storeId])
+  @@index([currentStatus])
 }
 
 model TrackingEvent {
@@ -716,6 +736,8 @@ model TrackingEvent {
   status      LogisticsStatus
 
   tracking LogisticsTracking @relation(fields: [trackingId], references: [id])
+
+  @@index([trackingId])
 }
 
 model PurchaseContract {
@@ -752,6 +774,10 @@ model PurchaseContract {
   orders              PurchaseOrder[] // 通过 contractId 关联的采购订单
   items               PurchaseContractItem[] // 合同明细（支持多 SKU）
   generatedContracts  GeneratedContract[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model DeliveryOrder {
@@ -774,6 +800,9 @@ model DeliveryOrder {
   contract       PurchaseContract @relation(fields: [contractId], references: [id])
   pendingInbound PendingInbound? // 关联的待入库单（反向关联）
   inventoryLogs  InventoryLog[] // 关联的库存流水（国内仓入库时关联）
+
+  @@index([contractId])
+  @@index([status])
 }
 
 // 待入库单
@@ -997,6 +1026,11 @@ model Container {
 
   // 关联关系
   outboundBatches OutboundBatch[]
+
+  @@index([status])
+  @@index([warehouseId])
+  @@index([destinationCountry])
+  @@index([shippingMethod])
 }
 
 // 出库批次
@@ -1131,6 +1165,10 @@ model VideoTask {
   product    Product?    @relation(fields: [productId], references: [id])
   influencer Influencer? @relation(fields: [influencerId], references: [id])
   assignee   Employee?   @relation("Assignee", fields: [assigneeId], references: [id])
+
+  @@index([status])
+  @@index([assigneeId])
+  @@index([productId])
 }
 
 model BankAccount {
@@ -1166,6 +1204,10 @@ model BankAccount {
 
   // 关联流水
   cashFlows CashFlow[]
+
+  @@index([storeId])
+  @@index([accountType])
+  @@index([currency])
 }
 
 model CashFlow {
@@ -1204,6 +1246,7 @@ model CashFlow {
   @@index([status])
   @@index([category])
   @@index([createdAt])
+  @@index([businessNumber])
 }
 
 // 店铺订单结算（与 docs/income_*.csv 表头一一对应，全部建字段）
@@ -1475,6 +1518,7 @@ model PurchaseOrder {
   @@index([approvalStatus])
   @@index([riskControlStatus])
   @@index([contractId])
+  @@index([status, createdAt])
 }
 
 // 生成的合同文档（下单即生成，用于预览/打印/PDF）
@@ -1843,9 +1887,11 @@ model AdConsumption {
   updatedAt        DateTime  @updatedAt
 
   account AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
-}
 
-// 广告充值记录
+  @@index([adAccountId])
+  @@index([month])
+  @@index([storeId])
+}
 model AdRecharge {
   id            String   @id @default(uuid())
   uid           String?  @unique
@@ -1866,6 +1912,10 @@ model AdRecharge {
   updatedAt     DateTime @updatedAt
 
   account AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@index([adAccountId])
+  @@index([agencyId])
+  @@index([month])
 }
 
 // 返点应收款

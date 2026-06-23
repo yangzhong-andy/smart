@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,8 @@ export async function DELETE(
     await prisma.product.delete({
       where: { id: productId }
     })
+
+    await clearCacheByPrefix('products')
 
     return NextResponse.json({
       message: '产品及全部变体已删除',

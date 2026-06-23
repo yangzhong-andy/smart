@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,6 +85,8 @@ export async function PATCH(
       where: { skuId },
       data: variantData as any
     })
+
+    await clearCacheByPrefix('products')
 
     return NextResponse.json({
       sku_id: v.skuId,
@@ -319,6 +322,9 @@ export async function PUT(
     
     const galleryImages = (updatedProduct as any).galleryImages
     const gallery_images = galleryImages == null ? [] : Array.isArray(galleryImages) ? [...galleryImages] : (typeof galleryImages === 'string' ? (() => { try { const a = JSON.parse(galleryImages); return Array.isArray(a) ? a : []; } catch { return []; } })() : [])
+
+    await clearCacheByPrefix('products')
+
     return NextResponse.json({
       sku_id: v.skuId,
       spu_code: (updatedProduct as any).spuCode ?? undefined,
@@ -421,6 +427,8 @@ export async function DELETE(
         where: { id: variant.productId }
       })
     }
+
+    await clearCacheByPrefix('products')
     
     return NextResponse.json({ message: 'Product deleted successfully' })
   } catch (error) {

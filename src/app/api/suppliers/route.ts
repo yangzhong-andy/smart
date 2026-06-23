@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const category = searchParams.get("category")
     const page = parseInt(searchParams.get("page") || "1")
-    const pageSize = parseInt(searchParams.get("pageSize") || "500")
+    const pageSize = parseInt(searchParams.get("pageSize") || "50")
     const noCache = searchParams.get("noCache") === "true"
 
     // 生成缓存键（带版本号）

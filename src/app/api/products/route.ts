@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import type { Product as PrismaProduct } from '@prisma/client'
 import { sumOverseasQtyByVariantIds } from '@/lib/overseas-stock'
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 
 async function attachOverseasQtyToFlatRows(rows: any[]): Promise<void> {
   const ids = rows.map((r) => r.variant_id).filter(Boolean) as string[]
@@ -185,6 +186,14 @@ export async function GET(request: NextRequest) {
 
     // 模式 1：仅拉取 SPU 列表（主图、状态、变体数）+ 统计摘要（供产品档案页统计卡片）
     if (listSpu) {
+      const noCache = searchParams.get('noCache') === 'true'
+      const cacheKey = generateCacheKey('products', 'spu-list')
+      
+      if (!noCache) {
+        const cached = await getCache<any>(cacheKey)
+        if (cached) return NextResponse.json(cached)
+      }
+      
       const [products, variantAgg] = await Promise.all([
         prisma.product.findMany({
           select: { id: true, spuCode: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
@@ -210,13 +219,17 @@ export async function GET(request: NextRequest) {
       const avgCost = variantAgg._count.id > 0 && variantAgg._avg.costPrice != null
         ? Number(variantAgg._avg.costPrice)
         : 0
-      return NextResponse.json({
+      const response = {
         list,
         summary: { totalCount, onSaleCount, offSaleCount, avgCost }
-      })
+      }
+      if (!noCache) {
+        await setCache(cacheKey, response, 300) // 5 min TTL
+      }
+      return NextResponse.json(response)
     }
 
-    // 模式 2：按需拉取单个 SPU 及其全部 SKU（include 一次性拿到，前端缓存）
+    // 模式 2：按需拉取单个 SPU（include 一次性拿到，前端缓存）
     if (spuId) {
       const product = await prisma.product.findUnique({
         where: { id: spuId },
@@ -556,7 +569,9 @@ export async function POST(request: NextRequest) {
     // 批量创建多变体：body.variants = [{ color, sku_id, cost_price, size?, barcode? }, ...]
     const variantsInput = Array.isArray(body.variants) && body.variants.length > 0 ? body.variants : null
     if (variantsInput) {
-      return await createProductWithVariants(body, variantsInput)
+      const result = await createProductWithVariants(body, variantsInput)
+      await clearCacheByPrefix('products')
+      return result
     }
     
     if (isMock()) {
@@ -732,6 +747,9 @@ export async function POST(request: NextRequest) {
     // 转换为前端格式
     const primarySupplier = (productWithVariant?.productSuppliers ?? []).find(ps => ps.isPrimary) ?? (productWithVariant?.productSuppliers ?? [])[0]
     const v = variant
+    
+    // 产品数据变更，清除列表缓存
+    await clearCacheByPrefix('products')
     
     return NextResponse.json({
       sku_id: v.skuId,

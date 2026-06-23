@@ -106,16 +106,19 @@ export async function GET(request: NextRequest) {
       prisma.purchaseContract.count({ where }),
     ]);
 
-    // 自动同步已支付的定金
-    const paidDeposits = await prisma.expenseRequest.findMany({
-      where: { status: 'Paid', summary: { contains: '采购合同定金' } }
-    });
-    const depositByContract: Record<string, number> = {};
-    for (const req of paidDeposits) {
-      const match = req.summary.match(/采购合同定金[：:\s]*([^\s]+)/);
-      const cn = match?.[1];
-      if (cn && Number.isFinite(Number(req.amount))) {
-        depositByContract[cn] = (depositByContract[cn] || 0) + Number(req.amount);
+    // 自动同步已支付的定金（仅在需要时查询，非每次列表请求都查）
+    let depositByContract: Record<string, number> = {};
+    if (page === 1 && !status && !supplierId) {
+      const paidDeposits = await prisma.expenseRequest.findMany({
+        where: { status: 'Paid', summary: { contains: '采购合同定金' } },
+        select: { summary: true, amount: true },
+      });
+      for (const req of paidDeposits) {
+        const match = req.summary.match(/采购合同定金[：:\s]*([^\s]+)/);
+        const cn = match?.[1];
+        if (cn && Number.isFinite(Number(req.amount))) {
+          depositByContract[cn] = (depositByContract[cn] || 0) + Number(req.amount);
+        }
       }
     }
 
