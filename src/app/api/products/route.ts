@@ -182,12 +182,13 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const listSpu = searchParams.get('list') === 'spu'
+    const includeImages = searchParams.get('includeImages') === 'true'
     const spuId = searchParams.get('spuId')
 
     // 模式 1：仅拉取 SPU 列表（主图、状态、变体数）+ 统计摘要（供产品档案页统计卡片）
     if (listSpu) {
       const noCache = searchParams.get('noCache') === 'true'
-      const cacheKey = generateCacheKey('products', 'spu-list')
+      const cacheKey = generateCacheKey('products', 'spu-list', includeImages ? 'with-images' : 'summary')
       
       if (!noCache) {
         const cached = await getCache<any>(cacheKey)
@@ -207,7 +208,7 @@ export async function GET(request: NextRequest) {
       const list = products.map((p) => {
         // base64 图片太大(1MB+)，SPU列表不需要传输，仅标记是否有图
         const img = p.mainImage
-        const mainImage = img ? (img.startsWith('data:') ? '[base64]' : img) : ''
+        const mainImage = img ? (includeImages ? img : (img.startsWith('data:') ? '[base64]' : img)) : ''
         return {
           productId: p.id,
           spuCode: (p as any).spuCode ?? undefined,
@@ -299,7 +300,22 @@ export async function GET(request: NextRequest) {
 
     // 模式 3：无参，全量（兼容原有 getProductsFromAPI 等调用）
     const products = await prisma.product.findMany({
-      include: {
+      select: {
+        id: true,
+        spuCode: true,
+        name: true,
+        mainImage: true,
+        category: true,
+        brand: true,
+        description: true,
+        material: true,
+        specDescription: true,
+        customsNameCN: true,
+        customsNameEN: true,
+        defaultSupplierId: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         variants: {
           select: {
             id: true,

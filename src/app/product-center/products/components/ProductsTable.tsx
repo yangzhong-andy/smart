@@ -62,6 +62,9 @@ export function ProductsTable({
                   : `${formatCurrencyString(Math.min(...prices), "CNY")} ~ ${formatCurrencyString(Math.max(...prices), "CNY")}`;
 
             const productId = spu.productId;
+            const detailMainImage = variants.find((variant) => (variant as Product).main_image)?.main_image ?? "";
+            const displayMainImage = spu.mainImage === "[base64]" ? detailMainImage : (spu.mainImage ?? "");
+            const hasDisplayMainImage = Boolean(displayMainImage && displayMainImage !== "[base64]");
             return (
               <div
                 key={productId}
@@ -93,9 +96,9 @@ export function ProductsTable({
                   }}
                 >
                   <div className="relative h-48 bg-slate-800 rounded-lg overflow-hidden">
-                    {spu.mainImage && spu.mainImage !== '[base64]' ? (
-                      <a href={spu.mainImage} target="_blank" rel="noreferrer" className="block w-full h-full" onClick={(e) => e.stopPropagation()}>
-                        <img src={spu.mainImage} alt={spu.name} className="w-full h-full object-cover" />
+                    {hasDisplayMainImage ? (
+                      <a href={displayMainImage} target="_blank" rel="noreferrer" className="block w-full h-full" onClick={(e) => e.stopPropagation()}>
+                        <img src={displayMainImage} alt={spu.name} className="w-full h-full object-cover" />
                       </a>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -113,7 +116,7 @@ export function ProductsTable({
                             const first = loaded[0] as (Product & { gallery_images?: string[] }) | undefined;
                             const gallery = Array.isArray(first?.gallery_images) ? first.gallery_images : [];
                             // base64图片从详情获取，URL图片直接用
-                            const mainImg = (spu.mainImage && spu.mainImage !== '[base64]') ? spu.mainImage! : (first?.main_image || '');
+                            const mainImg = hasDisplayMainImage ? displayMainImage : (first?.main_image || "");
                             const list = [mainImg, ...gallery.filter((url) => url && url !== mainImg)].filter(Boolean);
                             if (list.length > 0) onPreviewImages(list, 0);
                           }}

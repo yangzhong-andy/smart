@@ -92,7 +92,7 @@ export default function ProductsPage() {
     suppliers: []
   });
 
-  const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<any>('/api/products?list=spu&page=1&pageSize=500');
+  const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<any>('/api/products?list=spu&page=1&pageSize=500&includeImages=true');
 
   // 按供应商过滤�?productId 集合（来�?/api/product-suppliers?supplierId=...�?
   const [supplierFilterProductIds, setSupplierFilterProductIds] = useState<Set<string> | null>(null);

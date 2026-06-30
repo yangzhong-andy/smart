@@ -68,13 +68,14 @@ export default function SWRProvider({ children }: { children: ReactNode }) {
       value={{
         fetcher,
         provider,
-        revalidateOnFocus: false, // 切回页面时不自动刷新，减少无效请求
-        revalidateIfStale: true, // 数据过期时自动刷新
-        revalidateOnMount: true, // 打开页面时拉取最新数据
-        dedupingInterval: 60000, // 1分钟内去重，平衡同步与请求量
-        shouldRetryOnError: false, // 接口报错时不自动重试，避免死循环
+        revalidateOnFocus: true,       // 切回页面时自动刷新，确保数据最新
+        revalidateIfStale: true,        // 数据过期时自动刷新
+        revalidateOnMount: true,        // 打开页面时拉取最新数据
+        revalidateOnReconnect: true,    // 网络恢复时自动刷新
+        dedupingInterval: 2000,         // 2秒去重（从60秒大幅缩短），平衡实时性与请求量
+        shouldRetryOnError: false,      // 接口报错时不自动重试，避免死循环
         errorRetryCount: 0,
-        keepPreviousData: true, // 保持旧数据，避免闪烁
+        keepPreviousData: true,         // 保持旧数据，避免闪烁
       }}
     >
       {children}
