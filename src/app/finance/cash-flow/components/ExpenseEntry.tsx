@@ -35,7 +35,7 @@ type ExpenseEntryProps = {
   skipAccountSelection?: boolean;
 };
 
-const CURRENCY_OPTIONS = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD"];
+const CURRENCY_OPTIONS = ["CNY", "USD", "BRL", "JPY", "EUR", "GBP", "HKD", "SGD"];
 
 export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSelection = false }: ExpenseEntryProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);

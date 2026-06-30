@@ -13,7 +13,7 @@ import DateInput from "@/components/DateInput";
 import { createIncomeRequest, type IncomeRequest } from "@/lib/expense-income-request-store";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 
-const CURRENCY_OPTIONS = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD"];
+const CURRENCY_OPTIONS = ["CNY", "USD", "BRL", "JPY", "EUR", "GBP", "HKD", "SGD"];
 
 type IncomeEntryProps = {
   accounts: BankAccount[];
