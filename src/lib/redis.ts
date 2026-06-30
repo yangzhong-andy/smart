@@ -8,7 +8,7 @@ export function getRedisClient(): Redis | null {
     redis = new Redis(process.env.REDIS_URL, {
       maxRetriesPerRequest: 3,
       enableReadyCheck: true,
-      lazyConnect: true,
+      lazyConnect: false, // 立即连接，避免首次请求时缓存静默失效
     });
     
     redis.on('error', (err) => {

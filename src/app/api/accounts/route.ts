@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { AccountType } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
@@ -7,12 +9,23 @@ import { serverError } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
+// 辅助：权限检查
+async function requireAuth() {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: '未登录' }, { status: 401 })
+  }
+  return null
+}
+
 // 缓存配置
 const CACHE_TTL = 600; // 10分钟
 const CACHE_KEY_PREFIX = 'accounts';
 
-// GET - 获取所有账户
+// GET - 获取所有账户（需要登录）
 export async function GET(request: NextRequest) {
+  const authError = await requireAuth()
+  if (authError) return authError
   try {
     const { searchParams } = new URL(request.url)
     const accountType = searchParams.get('type')
@@ -117,8 +130,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - 创建账户（清除缓存）
+// POST - 创建账户（需要登录，清除缓存）
 export async function POST(request: NextRequest) {
+  const authError = await requireAuth()
+  if (authError) return authError
   try {
     const body = await request.json()
 

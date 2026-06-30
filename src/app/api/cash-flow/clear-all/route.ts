@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-// DELETE - 删除所有流水记录（用于测试）
+// DELETE - 删除所有流水记录（仅 SUPER_ADMIN 可用）
 export async function DELETE(request: NextRequest) {
   try {
-    // 确保数据库连接
-    await prisma.$connect().catch(() => {
-      // 连接失败时继续尝试，Prisma 会自动重连
-    })
+    // 🔐 权限检查
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json({ error: '未登录' }, { status: 401 })
+    }
+    if (session.user?.role !== 'SUPER_ADMIN') {
+      return NextResponse.json({ error: '仅超级管理员可执行此操作' }, { status: 403 })
+    }
 
     // 删除所有流水记录
     const result = await prisma.cashFlow.deleteMany({})
 
-    // 重置所有账户的余额为初始资金（originalBalance = initialCapital）
+    // 重置所有账户的余额为初始资金
     const accounts = await prisma.bankAccount.findMany()
     
     for (const account of accounts) {
@@ -36,26 +42,9 @@ export async function DELETE(request: NextRequest) {
       accountsReset: accounts.length
     })
   } catch (error: any) {
-    
-    // 检查是否是数据库连接错误
-    if (error.message?.includes('TLS connection') || 
-        error.message?.includes('connection') ||
-        error.message?.includes('ECONNREFUSED') ||
-        error.code === 'P1001' ||
-        !process.env.DATABASE_URL) {
-      return NextResponse.json(
-        { 
-          error: '数据库连接失败',
-          details: process.env.NODE_ENV === 'production' 
-            ? '请检查 Vercel 环境变量中的 DATABASE_URL 配置'
-            : '请检查 .env.local 中的 DATABASE_URL 配置'
-        },
-        { status: 503 }
-      )
-    }
-    
+    console.error('[cash-flow/clear-all]', error)
     return NextResponse.json(
-      { error: 'Failed to clear cash flows', details: error.message },
+      { error: '操作失败，请稍后重试' },
       { status: 500 }
     )
   }
