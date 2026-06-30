@@ -7,8 +7,8 @@ export function getRedisClient(): Redis | null {
   if (!redis && process.env.REDIS_URL) {
     redis = new Redis(process.env.REDIS_URL, {
       maxRetriesPerRequest: 3,
-      enableReadyCheck: false,
-      lazyConnect: false,
+      enableReadyCheck: true,
+      lazyConnect: true,
     });
     
     redis.on('error', (err) => {
@@ -23,8 +23,8 @@ export function getRedisClient(): Redis | null {
   return redis;
 }
 
-// 缓存键前缀
-const CACHE_PREFIX = 'smart:erp:';
+// 缓存键前缀（用 APP_NAME 区分不同业务系统，避免共用 Redis 时缓存冲突）
+const CACHE_PREFIX = `smart:erp:${process.env.APP_NAME || 'default'}:`;
 
 // 是否打印缓存日志（开发环境可开启）
 const CACHE_LOG = process.env.CACHE_LOG === 'true';
