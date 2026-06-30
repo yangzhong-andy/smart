@@ -1272,6 +1272,8 @@ export default function CashFlowPage() {
                 <th className="px-2 py-1.5 text-left font-medium text-slate-400 min-w-[200px]">摘要</th>
                 <th className="px-2 py-1.5 text-right font-medium text-slate-400 w-28">金额</th>
                 <th className="px-2 py-1.5 text-left font-medium text-slate-400 w-16">币种</th>
+                <th className="px-2 py-1.5 text-right font-medium text-slate-400 w-20">汇率</th>
+                <th className="px-2 py-1.5 text-right font-medium text-slate-400 w-28">折合人民币</th>
                 <th className="px-2 py-1.5 text-left font-medium text-slate-400 min-w-[120px]">账户</th>
                 <th className="px-2 py-1.5 text-left font-medium text-slate-400 w-20">状态</th>
                 <th className="px-2 py-1.5 text-center font-medium text-slate-400 w-28" title="发起付款时上传的凭证">发起付款凭证</th>
@@ -1282,7 +1284,7 @@ export default function CashFlowPage() {
             <tbody className="divide-y divide-slate-800 bg-slate-900/40">
               {sortedFlow.length === 0 && (
                 <tr>
-                  <td className="px-2 py-6 text-center text-slate-500" colSpan={11}>
+                  <td className="px-2 py-6 text-center text-slate-500" colSpan={13}>
                     暂无收支记录
                   </td>
                 </tr>
@@ -1387,6 +1389,18 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5 text-slate-500 text-xs">
                     {flow.currency === "RMB" ? "CNY" : flow.currency}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-slate-400 text-xs">
+                    {flow.currency === "CNY" || flow.currency === "RMB"
+                      ? "1.00"
+                      : (accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate ?? "—")}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-slate-300 text-xs">
+                    {(() => {
+                      const rate = accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate ?? (flow.currency === "RMB" ? 1 : 1);
+                      const rmb = Math.abs(flow.amount) * (flow.currency === "CNY" || flow.currency === "RMB" ? 1 : Number(rate) || 1);
+                      return currency(rmb, "CNY");
+                    })()}
                   </td>
                   <td className="px-2 py-1.5 text-slate-300">{flow.accountName}</td>
                   <td className="px-2 py-1.5">
