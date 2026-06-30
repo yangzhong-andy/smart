@@ -1170,6 +1170,7 @@ export default function CashFlowPage() {
               <option value="all">全部</option>
               <option value="CNY">CNY</option>
               <option value="USD">USD</option>
+              <option value="BRL">BRL</option>
               <option value="JPY">JPY</option>
               <option value="EUR">EUR</option>
             </select>
