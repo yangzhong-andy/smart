@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { clearCache } from '@/lib/api-cache'
+import { clearCacheByPrefix } from '@/lib/redis'
 import { AccountType, AccountCategory } from '@prisma/client'
 import { handlePrismaError } from '@/lib/api-response'
 
@@ -104,7 +105,7 @@ export async function PUT(
       createdAt: updated.createdAt.toISOString()
     }
     
-  await clearCacheByPrefix("accounts");
+  await clearCacheByPrefix('accounts');
     return NextResponse.json(transformed)
   } catch (error: any) {
     // 返回更详细的错误信息
@@ -145,7 +146,7 @@ export async function DELETE(
       where: { id }
     })
     
-  await clearCacheByPrefix("accounts");
+  await clearCacheByPrefix('accounts');
     return NextResponse.json({ message: 'Account deleted successfully' })
   } catch (error) {
     return handlePrismaError(error, { notFoundMessage: '未找到账户', serverMessage: `Failed to delete account ${params.id}` })
