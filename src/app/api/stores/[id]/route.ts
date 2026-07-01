@@ -4,8 +4,11 @@ import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { Platform } from '@prisma/client'
 import { notFound, handlePrismaError } from '@/lib/api-response'
+import { clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
+
+const CACHE_KEY_PREFIX = 'stores';
 
 // GET - 获取单个店铺
 export async function GET(
@@ -91,6 +94,9 @@ export async function PUT(
       data: updateData
     })
 
+    // 清除缓存，确保前端能读到最新数据
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
+
     // 转换平台格式：数据库枚举转前端字符串
     const platformToFrontend: Record<Platform, string> = {
       [Platform.TIKTOK]: 'TikTok',
@@ -137,6 +143,9 @@ export async function DELETE(
     await prisma.store.delete({
       where: { id: params.id }
     })
+
+    // 清除缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
 
     return NextResponse.json({ success: true })
   } catch (error) {
