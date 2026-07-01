@@ -1,10 +1,15 @@
 import { PrismaClient } from '@prisma/client'
+import path from 'path'
 
 /**
  * 创建 PrismaClient 实例（工厂函数）
  * 集中配置日志等选项
+ * 关键：显式指定引擎文件路径，解决 Next.js build 后找不到引擎的问题
  */
 function createPrismaClient(): PrismaClient {
+  // 显式指定引擎文件路径，避免 Next.js 打包后路径丢失
+  const enginePath = path.join(process.cwd(), 'node_modules', '.prisma', 'client')
+  
   return new PrismaClient({
     log:
       process.env.NODE_ENV === 'development'
@@ -12,6 +17,10 @@ function createPrismaClient(): PrismaClient {
         : process.env.ENABLE_QUERY_LOG === 'true'
           ? ['query', 'error']
           : ['error'],
+    ...(process.env.NODE_ENV === 'production' ? {
+      // 生产环境显式指定引擎目录
+      __internal: { engine: { binaryPaths: { queryEngine: enginePath } } } as any,
+    } : {}),
   })
 }
 
