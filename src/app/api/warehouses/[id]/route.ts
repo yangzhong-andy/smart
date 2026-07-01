@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { notFound, handlePrismaError } from '@/lib/api-response'
+import { clearCacheByPrefix } from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +41,7 @@ export async function PUT(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN' && userRole !== 'MANAGER') {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
@@ -63,10 +64,11 @@ export async function PUT(
       updateData.type = body.type === 'OVERSEAS' ? 'OVERSEAS' : 'DOMESTIC'
     }
     const warehouse = await prisma.warehouse.update({
-      where: { id },
-      data: updateData as any
+      where: { id: params.id },
+      data: updateData
     })
-    
+
+    await clearCacheByPrefix('warehouses')
     return NextResponse.json(warehouse)
   } catch (error: any) {
     return handlePrismaError(error, { notFoundMessage: 'Warehouse not found', serverMessage: 'Failed to update warehouse' })
@@ -85,16 +87,17 @@ export async function DELETE(
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN' && userRole !== 'MANAGER') {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
     const { id } = params
     
     await prisma.warehouse.delete({
-      where: { id }
+      where: { id: params.id }
     })
-    
+
+    await clearCacheByPrefix('warehouses')
     return NextResponse.json({ success: true })
   } catch (error: any) {
     return handlePrismaError(error, { notFoundMessage: 'Warehouse not found', serverMessage: 'Failed to delete warehouse' })

@@ -122,7 +122,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
+    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN' && userRole !== 'MANAGER') {
       return NextResponse.json({ error: '没有权限' }, { status: 403 })
     }
 
