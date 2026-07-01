@@ -30,6 +30,7 @@ export type CashFlow = {
   accountId: string;
   accountName: string;
   currency: string;
+  exchangeRate?: number; // 创建时的汇率快照
   remark: string;
   relatedId?: string; // 关联的采购单ID等
   businessNumber?: string; // 关联业务单号（如采购单号）
@@ -1391,15 +1392,30 @@ export default function CashFlowPage() {
                     {flow.currency === "RMB" ? "CNY" : flow.currency}
                   </td>
                   <td className="px-2 py-1.5 text-right text-slate-400 text-xs">
-                    {flow.currency === "CNY" || flow.currency === "RMB"
-                      ? "1.00"
-                      : (accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate ?? "—")}
-                  </td>
-                  <td className="px-2 py-1.5 text-right text-slate-300 text-xs">
                     {(() => {
-                      const rate = accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate ?? (flow.currency === "RMB" ? 1 : 1);
-                      const rmb = Math.abs(flow.amount) * (flow.currency === "CNY" || flow.currency === "RMB" ? 1 : Number(rate) || 1);
-                      return currency(rmb, "CNY");
+                      if (flow.currency === "CNY" || flow.currency === "RMB") return "1.00";
+                      // 优先用流水自带的汇率快照，没有则回退到账户当前汇率
+                      const rate = flow.exchangeRate ?? accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate;
+                      return rate != null ? Number(rate).toFixed(4) : "—";
+                    })()}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs">
+                    {(() => {
+                      const isCNY = flow.currency === "CNY" || flow.currency === "RMB";
+                      const rate = isCNY ? 1 : (flow.exchangeRate ?? accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate ?? 1);
+                      const rmb = Math.abs(flow.amount) * (Number(rate) || 1);
+                      const isIncome = flow.type === "income" && !flow.isReversal;
+                      const colorClass = flow.isReversal
+                        ? "text-rose-400"
+                        : isIncome
+                          ? "text-emerald-300"
+                          : "text-rose-300";
+                      const sign = isIncome ? "+" : "-";
+                      return (
+                        <span className={colorClass}>
+                          {sign}{currency(rmb, "CNY")}
+                        </span>
+                      );
                     })()}
                   </td>
                   <td className="px-2 py-1.5 text-slate-300">{flow.accountName}</td>

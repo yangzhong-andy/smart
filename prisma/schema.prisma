@@ -1221,6 +1221,7 @@ model CashFlow {
   accountId      String
   accountName    String // 冗余字段，便于查询
   currency       String         @default("CNY")
+  exchangeRate   Decimal?       @db.Decimal(10, 4) // 创建时的汇率快照（折算人民币用）
   remark         String         @default("")
   relatedId      String? // 关联的采购单ID等
   businessNumber String? // 关联业务单号（如采购单号）
