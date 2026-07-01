@@ -104,7 +104,7 @@ export async function PUT(
       createdAt: updated.createdAt.toISOString()
     }
     
-  clearCache();
+  await clearCacheByPrefix("accounts");
     return NextResponse.json(transformed)
   } catch (error: any) {
     // 返回更详细的错误信息
@@ -145,7 +145,7 @@ export async function DELETE(
       where: { id }
     })
     
-  clearCache();
+  await clearCacheByPrefix("accounts");
     return NextResponse.json({ message: 'Account deleted successfully' })
   } catch (error) {
     return handlePrismaError(error, { notFoundMessage: '未找到账户', serverMessage: `Failed to delete account ${params.id}` })

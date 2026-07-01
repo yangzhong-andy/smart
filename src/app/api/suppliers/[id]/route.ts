@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { handlePrismaError } from '@/lib/api-response'
+import { clearCacheByPrefix } from "@/lib/redis";
 import { SettleBase, InvoiceRequirement } from '@prisma/client'
 import {
   SETTLE_BASE_LABEL,
@@ -41,6 +42,7 @@ export async function PUT(
           (Object.values(InvoiceRequirement).includes(body.invoiceRequirement) ? (body.invoiceRequirement as InvoiceRequirement) : null)
         : null
 
+    await clearCacheByPrefix("suppliers");
     const supplier = await prisma.supplier.update({
       where: { id },
       data: {
@@ -111,6 +113,7 @@ export async function DELETE(
     }
 
     const { id } = params
+    await clearCacheByPrefix("suppliers");
     await prisma.supplier.delete({
       where: { id }
     })

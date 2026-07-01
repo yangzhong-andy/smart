@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
+import { clearCacheByPrefix } from "@/lib/redis";
 import { PurchaseOrderStatus, Platform } from '@prisma/client'
 import type { PurchaseOrderStatus as FrontendPurchaseOrderStatus } from '@/lib/purchase-orders-store'
 
@@ -139,6 +140,7 @@ export async function PUT(
       updateData.status = statusValueMap[body.status] || (body.status as PurchaseOrderStatus)
     }
 
+    await clearCacheByPrefix("purchase-orders");
     const updated = await prisma.purchaseOrder.update({
       where: { id },
       data: updateData,
@@ -209,6 +211,7 @@ export async function DELETE(
 
     const { id } = params
 
+    await clearCacheByPrefix("purchase-orders");
     await prisma.purchaseOrder.delete({
       where: { id }
     })

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { clearCacheByPrefix } from "@/lib/redis";
 import { prisma } from '@/lib/prisma'
 import { PurchaseContractStatus } from '@prisma/client'
 
@@ -40,6 +41,7 @@ export async function POST(
     const notes = typeof body.notes === 'string' ? body.notes.trim() : null
 
     if (!approvedBy) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json(
         { error: '请填写审批人姓名' },
         { status: 400 }
@@ -63,6 +65,7 @@ export async function POST(
     })
 
     if (!contract) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json(
         { error: '采购合同不存在' },
         { status: 404 }
@@ -70,6 +73,7 @@ export async function POST(
     }
 
     if (contract.status !== PurchaseContractStatus.PENDING_APPROVAL) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json(
         { error: '当前合同状态不可审批，仅待审批状态可操作' },
         { status: 400 }
@@ -107,6 +111,7 @@ export async function POST(
     const finishedQty = updated.items.reduce((s, i) => s + i.finishedQty, 0)
     const firstItem = updated.items[0]
 
+    await clearCacheByPrefix("purchase-contracts");
     return NextResponse.json({
       id: updated.id,
       contractNumber: updated.contractNumber,
@@ -153,6 +158,7 @@ export async function POST(
       }))
     })
   } catch (error: any) {
+    await clearCacheByPrefix("purchase-contracts");
     return NextResponse.json(
       { error: '审批失败', details: error?.message },
       { status: 500 }

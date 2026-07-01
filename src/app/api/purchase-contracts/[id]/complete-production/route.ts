@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clearCacheByPrefix } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { syncProductVariantInventory } from "@/lib/inventory-sync";
 
@@ -19,6 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
 
     if (!contract) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json({ error: "采购合同不存在" }, { status: 404 });
     }
 
@@ -44,9 +46,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       await syncProductVariantInventory(variantId);
     }
 
+    await clearCacheByPrefix("purchase-contracts");
     return NextResponse.json({ success: true, message: "生产已完成，库存已同步" });
   } catch (error: any) {
     console.error("完成生产失败:", error);
+    await clearCacheByPrefix("purchase-contracts");
     return NextResponse.json({ error: error.message || "操作失败" }, { status: 500 });
   }
 }

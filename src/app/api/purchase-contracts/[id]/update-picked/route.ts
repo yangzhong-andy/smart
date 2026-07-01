@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { clearCacheByPrefix } from "@/lib/redis";
 import { prisma } from '@/lib/prisma'
 import { PurchaseContractStatus } from '@prisma/client'
 import { syncProductVariantInventory } from '@/lib/inventory-sync'
@@ -28,6 +29,7 @@ export async function POST(
     const itemsInput = Array.isArray(body.items) ? body.items : []
 
     if (itemsInput.length === 0) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json(
         { error: '请至少填写一条变体的拿货数量' },
         { status: 400 }
@@ -39,6 +41,7 @@ export async function POST(
       include: { items: true }
     })
     if (!contract) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json({ error: '合同不存在' }, { status: 404 })
     }
 
@@ -49,6 +52,7 @@ export async function POST(
       const qty = Math.round(Number(row.qty) || 0)
       if (qty <= 0 || !itemId) continue
       if (!itemIds.has(itemId)) {
+    await clearCacheByPrefix("purchase-contracts");
         return NextResponse.json(
           { error: `合同明细不存在: ${itemId}` },
           { status: 400 }
@@ -58,6 +62,7 @@ export async function POST(
     }
 
     if (updates.length === 0) {
+    await clearCacheByPrefix("purchase-contracts");
       return NextResponse.json(
         { error: '本次拿货数量需大于 0' },
         { status: 400 }
@@ -69,6 +74,7 @@ export async function POST(
       if (!item) continue
       const newPicked = item.pickedQty + addQty
       if (newPicked > item.qty) {
+    await clearCacheByPrefix("purchase-contracts");
         return NextResponse.json(
           { error: `变体 ${item.sku} 本次拿货 ${addQty} 超过剩余数量 ${item.qty - item.pickedQty}` },
           { status: 400 }
@@ -108,6 +114,7 @@ export async function POST(
       await syncProductVariantInventory(vid)
     }
 
+    await clearCacheByPrefix("purchase-contracts");
     return NextResponse.json({
       success: true,
       pickedQty,
@@ -115,6 +122,7 @@ export async function POST(
       status: STATUS_MAP[status]
     })
   } catch (error: any) {
+    await clearCacheByPrefix("purchase-contracts");
     return NextResponse.json(
       { error: error?.message || '更新已取货数失败' },
       { status: 500 }

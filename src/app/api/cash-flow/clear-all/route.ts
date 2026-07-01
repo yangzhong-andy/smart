@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { clearCacheByPrefix } from "@/lib/redis";
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
@@ -11,9 +12,11 @@ export async function DELETE(request: NextRequest) {
     // 🔐 权限检查
     const session = await getServerSession(authOptions)
     if (!session) {
+    await clearCacheByPrefix("cash-flow");
       return NextResponse.json({ error: '未登录' }, { status: 401 })
     }
     if (session.user?.role !== 'SUPER_ADMIN') {
+    await clearCacheByPrefix("cash-flow");
       return NextResponse.json({ error: '仅超级管理员可执行此操作' }, { status: 403 })
     }
 
@@ -36,6 +39,7 @@ export async function DELETE(request: NextRequest) {
       })
     }
 
+    await clearCacheByPrefix("cash-flow");
     return NextResponse.json({ 
       message: '所有流水记录已删除，账户余额已重置为初始资金',
       deletedCount: result.count,
@@ -43,6 +47,7 @@ export async function DELETE(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('[cash-flow/clear-all]', error)
+    await clearCacheByPrefix("cash-flow");
     return NextResponse.json(
       { error: '操作失败，请稍后重试' },
       { status: 500 }
