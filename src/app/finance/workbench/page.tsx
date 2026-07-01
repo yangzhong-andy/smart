@@ -154,6 +154,7 @@ export default function FinanceWorkbenchPage() {
   }, [incomeDetailModal.open, incomeDetailModal.requestId, fetchIncomeDetail]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [paymentVoucher, setPaymentVoucher] = useState<string | string[]>(""); // 转账凭证
+  const [inputExchangeRate, setInputExchangeRate] = useState<string>(""); // 付款当天的汇率
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [isSavingFlow, setIsSavingFlow] = useState(false);
 
@@ -638,16 +639,24 @@ export default function FinanceWorkbenchPage() {
       toast.error("请选择出款账户");
       return;
     }
-    
+
     const request = approvedExpenseRequests.find((r) => r.id === requestId);
     if (!request) {
       toast.error("申请不存在");
       return;
     }
-    
+
     const account = accounts.find((a) => a.id === selectedAccountId);
     if (!account) {
       toast.error("账户不存在");
+      return;
+    }
+
+    // 外币付款时必须有汇率
+    const isForeignCurrency = request.currency && request.currency !== "CNY" && request.currency !== "RMB";
+    const flowRate = isForeignCurrency ? (parseFloat(inputExchangeRate) || 0) : 1;
+    if (isForeignCurrency && (!inputExchangeRate || flowRate <= 0)) {
+      toast.error("请输入付款当天的汇率");
       return;
     }
     
@@ -680,6 +689,7 @@ export default function FinanceWorkbenchPage() {
         accountId: selectedAccountId,
         accountName: account.name,
         currency: request.currency || "CNY",
+        exchangeRate: flowRate, // 付款当天输入的汇率
         remark: request.remark || "",
         businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
         relatedId: ('relatedId' in request ? request.relatedId : null) || null,
@@ -688,14 +698,14 @@ export default function FinanceWorkbenchPage() {
         transferVoucher: transferVoucherStr ?? undefined, // 财务打款后的转账凭证
         voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined, // 兼容旧逻辑
       };
-      
+
       // 调用 API 创建现金流
       const response = await fetch('/api/cash-flow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cashFlowData)
       });
-      
+
       if (!response.ok) {
         let errMsg = '创建现金流失败';
         try {
@@ -706,7 +716,7 @@ export default function FinanceWorkbenchPage() {
         }
         throw new Error(errMsg);
       }
-      
+
       // 获取创建的现金流ID
       const cashFlowResult = await response.json();
       
@@ -763,6 +773,7 @@ export default function FinanceWorkbenchPage() {
       setExpenseAccountModal({ open: false, requestId: null });
       setSelectedAccountId("");
       setPaymentVoucher(""); // 清空凭证
+      setInputExchangeRate(""); // 清空汇率
     } catch (error: any) {
       console.error("处理支出申请失败:", error);
       toast.error(error?.message || "处理失败，请重试");
@@ -776,16 +787,24 @@ export default function FinanceWorkbenchPage() {
       toast.error("请选择收款账户");
       return;
     }
-    
+
     const request = approvedIncomeRequests.find((r) => r.id === requestId);
     if (!request) {
       toast.error("申请不存在");
       return;
     }
-    
+
     const account = accounts.find((a) => a.id === selectedAccountId);
     if (!account) {
       toast.error("账户不存在");
+      return;
+    }
+
+    // 外币收款时必须有汇率
+    const isForeignCurrency = request.currency && request.currency !== "CNY" && request.currency !== "RMB";
+    const flowRate = isForeignCurrency ? (parseFloat(inputExchangeRate) || 0) : 1;
+    if (isForeignCurrency && (!inputExchangeRate || flowRate <= 0)) {
+      toast.error("请输入收款当天的汇率");
       return;
     }
     
@@ -811,6 +830,7 @@ export default function FinanceWorkbenchPage() {
         accountId: selectedAccountId,
         accountName: account.name,
         currency: request.currency || "CNY",
+        exchangeRate: flowRate, // 收款当天输入的汇率
         remark: request.remark || "",
         businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
         relatedId: ('relatedId' in request ? request.relatedId : null) || null,
@@ -819,7 +839,7 @@ export default function FinanceWorkbenchPage() {
         transferVoucher: transferVoucherStr ?? undefined,
         voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined,
       };
-      
+
       // 调用 API 创建现金流
       const response = await fetch('/api/cash-flow', {
         method: 'POST',
@@ -867,6 +887,7 @@ export default function FinanceWorkbenchPage() {
       setIncomeAccountModal({ open: false, requestId: null });
       setSelectedAccountId("");
       setPaymentVoucher(""); // 清空凭证
+      setInputExchangeRate(""); // 清空汇率
     } catch (error: any) {
       toast.error(error.message || "处理失败，请重试");
     }
@@ -1433,6 +1454,7 @@ export default function FinanceWorkbenchPage() {
                   setExpenseAccountModal({ open: false, requestId: null });
                   setSelectedAccountId("");
                   setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
                 }}
                 className="text-slate-400 hover:text-slate-200"
               >
@@ -1485,7 +1507,30 @@ export default function FinanceWorkbenchPage() {
                 </p>
               )}
             </label>
-            
+
+            {/* 汇率输入（外币时显示） */}
+            {request && request.currency && request.currency !== "CNY" && request.currency !== "RMB" && (
+              <label className="block mb-4">
+                <span className="block text-sm text-slate-300 mb-2">
+                  {request.type === "income" ? "收款" : "付款"}当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
+                </span>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={inputExchangeRate}
+                  onChange={(e) => setInputExchangeRate(e.target.value)}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder={`如：${request.currency === "USD" ? "7.2500" : "1.0000"}`}
+                  required
+                />
+                {inputExchangeRate && parseFloat(inputExchangeRate) > 0 && (
+                  <span className="block text-xs text-slate-500 mt-1">
+                    折合人民币：¥{(Math.abs(request.amount) * parseFloat(inputExchangeRate)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </label>
+            )}
+
             {/* 转账凭证上传 */}
             <div className="mb-4">
               <label className="block text-sm text-slate-300 mb-2">
@@ -1508,6 +1553,7 @@ export default function FinanceWorkbenchPage() {
                   setExpenseAccountModal({ open: false, requestId: null });
                   setSelectedAccountId("");
                   setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
                 }}
                 className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
               >
@@ -1575,6 +1621,7 @@ export default function FinanceWorkbenchPage() {
                   setIncomeAccountModal({ open: false, requestId: null });
                   setSelectedAccountId("");
                   setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
                 }}
                 className="text-slate-400 hover:text-slate-200"
               >
@@ -1633,7 +1680,30 @@ export default function FinanceWorkbenchPage() {
                 </p>
               )}
             </label>
-            
+
+            {/* 汇率输入（外币时显示） */}
+            {request && request.currency && request.currency !== "CNY" && request.currency !== "RMB" && (
+              <label className="block mb-4">
+                <span className="block text-sm text-slate-300 mb-2">
+                  {request.type === "income" ? "收款" : "付款"}当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
+                </span>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={inputExchangeRate}
+                  onChange={(e) => setInputExchangeRate(e.target.value)}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder={`如：${request.currency === "USD" ? "7.2500" : "1.0000"}`}
+                  required
+                />
+                {inputExchangeRate && parseFloat(inputExchangeRate) > 0 && (
+                  <span className="block text-xs text-slate-500 mt-1">
+                    折合人民币：¥{(Math.abs(request.amount) * parseFloat(inputExchangeRate)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </label>
+            )}
+
             {/* 转账凭证上传 */}
             <div className="mb-4">
               <label className="block text-sm text-slate-300 mb-2">
@@ -1656,6 +1726,7 @@ export default function FinanceWorkbenchPage() {
                   setIncomeAccountModal({ open: false, requestId: null });
                   setSelectedAccountId("");
                   setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
                 }}
                 className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
               >
