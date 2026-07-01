@@ -1512,7 +1512,7 @@ export default function FinanceWorkbenchPage() {
             {request && request.currency && request.currency !== "CNY" && request.currency !== "RMB" && (
               <label className="block mb-4">
                 <span className="block text-sm text-slate-300 mb-2">
-                  {request.type === "income" ? "收款" : "付款"}当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
+                  付款当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
                 </span>
                 <input
                   type="number"
@@ -1685,7 +1685,7 @@ export default function FinanceWorkbenchPage() {
             {request && request.currency && request.currency !== "CNY" && request.currency !== "RMB" && (
               <label className="block mb-4">
                 <span className="block text-sm text-slate-300 mb-2">
-                  {request.type === "income" ? "收款" : "付款"}当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
+                  收款当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
                 </span>
                 <input
                   type="number"
