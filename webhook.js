@@ -32,8 +32,9 @@ function deployProject(project) {
       'rm -rf .next',
       'DATABASE_URL="' + project.databaseUrl + '" NEXTAUTH_SECRET="' + NEXTAUTH_SECRET + '" NEXTAUTH_URL="' + project.nextauthUrl + '" APP_NAME="' + project.appName + '" npx prisma generate',
       'DATABASE_URL="' + project.databaseUrl + '" NEXTAUTH_SECRET="' + NEXTAUTH_SECRET + '" NEXTAUTH_URL="' + project.nextauthUrl + '" APP_NAME="' + project.appName + '" npm run build',
-      'cp ' + d + '/node_modules/.prisma/client/libquery_engine-*.so.node ' + d + '/.next/server/ 2>/dev/null || true',
-      'ln -sf ' + d + '/node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node ' + d + '/.next/server/libquery_engine-rhel-openssl-3.0.x.so.node 2>/dev/null || true',
+      'mkdir -p /var/task/.next/server /tmp/prisma-engines',
+      'cp ' + d + '/node_modules/.prisma/client/libquery_engine-*.so.node /var/task/.next/server/libquery_engine-rhel-openssl-3.0.x.so.node 2>/dev/null || true',
+      'cp ' + d + '/node_modules/.prisma/client/libquery_engine-*.so.node /tmp/prisma-engines/libquery_engine-rhel-openssl-3.0.x.so.node 2>/dev/null || true',
       'pm2 restart ' + project.pm2Name + ' --update-env'
     ];
     log('Deploying ' + name + '...');
