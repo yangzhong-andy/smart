@@ -8,6 +8,8 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: packageJson.version,
   },
+  // 关键：让 Prisma 不被 webpack 打包，运行时直接从 node_modules 加载引擎文件
+  serverExternalPackages: ['@prisma/client', '@prisma/client/runtime/library'],
   experimental: {
     serverActions: {
       bodySizeLimit: '20mb',
