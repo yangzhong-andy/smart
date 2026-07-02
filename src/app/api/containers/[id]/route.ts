@@ -44,6 +44,17 @@ export async function GET(
       },
     });
 
+    // 获取该柜子的物流费用
+    const logisticsCosts = await prisma.logisticsCost.findMany({
+      where: {
+        OR: [
+          { containerId: id },
+          { outboundBatch: { containerId: id } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
     if (!container) {
       return NextResponse.json({ error: "柜子不存在" }, { status: 404 });
     }
@@ -171,6 +182,18 @@ export async function GET(
             skuLinesNote: payload.skuLinesNote,
           };
         })(),
+      })),
+      logisticsCosts: logisticsCosts.map((c) => ({
+        id: c.id,
+        costType: c.costType,
+        amount: Number(c.amount),
+        currency: c.currency,
+        paymentStatus: c.paymentStatus,
+        paymentType: c.paymentType,
+        dueDate: c.dueDate?.toISOString() || null,
+        paidDate: c.paidDate?.toISOString() || null,
+        expenseRequestId: c.expenseRequestId || null,
+        notes: c.notes || null,
       })),
     });
   } catch (error) {

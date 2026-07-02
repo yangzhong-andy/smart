@@ -2191,10 +2191,12 @@ model BusinessUidMapping {
 
 model LogisticsCost {
   id              String   @id @default(uuid())
+  uid             String?  @unique
   
   // 关联
   outboundBatchId    String?  
-  logisticsChannelId String? 
+  logisticsChannelId String?
+  containerId        String?
   
   // 费用明细
   costType        String   
@@ -2210,6 +2212,11 @@ model LogisticsCost {
   invoiceNumber   String?   
   invoiceStatus   String?   
   notes           String?
+
+  // 审批付款关联
+  expenseRequestId String?  @unique
+  cashFlowId       String?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -2219,6 +2226,8 @@ model LogisticsCost {
 
   @@index([outboundBatchId])
   @@index([logisticsChannelId])
+  @@index([containerId])
+  @@index([expenseRequestId])
 }
 
 // 国内出口公司

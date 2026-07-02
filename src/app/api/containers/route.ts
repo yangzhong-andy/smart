@@ -104,6 +104,21 @@ export async function GET(request: NextRequest) {
       prisma.container.count({ where }),
     ]);
 
+    // 获取这些柜子的物流费用汇总（总额 + 已付）
+    const containerIds = rows.map(c => c.id);
+    const costAgg = await prisma.logisticsCost.groupBy({
+      by: ["containerId"],
+      where: { containerId: { in: containerIds } },
+      _sum: { amount: true },
+    });
+    const costPaidAgg = await prisma.logisticsCost.groupBy({
+      by: ["containerId"],
+      where: { containerId: { in: containerIds }, paymentStatus: "已付" },
+      _sum: { amount: true },
+    });
+    const costMap = new Map(costAgg.map(a => [a.containerId, Number(a._sum.amount) || 0]));
+    const costPaidMap = new Map(costPaidAgg.map(a => [a.containerId, Number(a._sum.amount) || 0]));
+
     const data = rows.map((c) => {
       const sanitized = sanitizeContainerDisplayFields({
         loadingDate: c.loadingDate,
@@ -162,6 +177,8 @@ export async function GET(request: NextRequest) {
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
         outboundBatchCount: c._count.outboundBatches,
+        logisticsCostTotal: costMap.get(c.id) || 0,
+        logisticsCostPaid: costPaidMap.get(c.id) || 0,
       };
     });
 

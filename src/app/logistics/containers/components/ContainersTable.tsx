@@ -58,6 +58,7 @@ export function ContainersTable({
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">业务主体</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">体积/重量</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">批次/进度</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">物流费用</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-slate-400">状态</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-slate-400">操作</th>
             </tr>
@@ -65,7 +66,7 @@ export function ContainersTable({
           <tbody className="divide-y divide-slate-800 bg-slate-900/40">
             {!isLoading && containers.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-center text-slate-500" colSpan={11}>
+                <td className="px-4 py-6 text-center text-slate-500" colSpan={12}>
                   暂无柜子记录，请点击右上角“新增柜子”
                 </td>
               </tr>
@@ -144,6 +145,40 @@ export function ContainersTable({
                           : ` 预计 ${voyageInfo.daysLeft} 天到港`}
                       </div>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const total = (c as any).logisticsCostTotal || 0;
+                      const paid = (c as any).logisticsCostPaid || 0;
+                      const owed = total - paid;
+                      if (total === 0) {
+                        return <span className="text-xs text-slate-600">—</span>;
+                      }
+                      const isSettled = paid >= total && total > 0;
+                      const isPartial = paid > 0 && paid < total;
+                      return (
+                        <div className="space-y-1">
+                          <div className="text-xs text-slate-300">
+                            总额：<span className="font-mono tabular-nums font-medium">{total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="text-xs text-emerald-300">
+                            已付：<span className="font-mono tabular-nums">{paid.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          {owed > 0 && (
+                            <div className="text-xs text-amber-300">
+                              待付：<span className="font-mono tabular-nums">{owed.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            isSettled ? "bg-emerald-500/10 text-emerald-300"
+                            : isPartial ? "bg-amber-500/10 text-amber-300"
+                            : "bg-rose-500/10 text-rose-300"
+                          }`}>
+                            {isSettled ? "已结清" : isPartial ? "部分付款" : "未付款"}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     <div className="text-slate-100">{statusLabels[c.status] ?? c.status}</div>

@@ -172,6 +172,10 @@ export async function POST(request: NextRequest) {
       typeof body.logisticsChannelId === "string" && body.logisticsChannelId.trim()
         ? body.logisticsChannelId.trim()
         : null;
+    const containerId =
+      typeof body.containerId === "string" && body.containerId.trim()
+        ? body.containerId.trim()
+        : null;
     const baseNotes = typeof body.notes === "string" ? body.notes.trim() : "";
     const creditDays = body.creditDays != null && body.creditDays !== "" ? Number(body.creditDays) : null;
     const dueDate = body.dueDate ? new Date(body.dueDate) : null;
@@ -182,6 +186,7 @@ export async function POST(request: NextRequest) {
         data: {
           outboundBatchId: resolvedBatchIds[0] ?? null,
           logisticsChannelId,
+          containerId,
           costType,
           amount,
           currency,
@@ -224,6 +229,7 @@ export async function POST(request: NextRequest) {
           data: {
             outboundBatchId: batchId,
             logisticsChannelId,
+            containerId,
             costType,
             amount: parts[i]!,
             currency,

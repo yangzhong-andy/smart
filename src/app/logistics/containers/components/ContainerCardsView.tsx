@@ -168,6 +168,18 @@ export function ContainerCardsView({
                       </div>
                     </div>
                   </div>
+
+                  {/* 财务信息 - 独立区块 */}
+                  <div className="mt-auto border-t border-white/10 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase tracking-[0.2em] text-white/40">物流费</span>
+                      <span className="font-mono tabular-nums text-sm font-bold text-white/95">
+                        {(c as any).logisticsCostTotal > 0
+                          ? (c as any).logisticsCostTotal.toLocaleString("zh-CN", { minimumFractionDigits: 2 })
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
                 </FlashyLogisticsCardShell>
               </div>
             );

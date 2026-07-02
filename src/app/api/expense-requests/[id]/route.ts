@@ -132,6 +132,27 @@ export async function PUT(
         } catch (err) {
         }
       }
+      }
+
+    // 当支出申请被标记为「已支付」时，同步更新关联的物流费状态
+    if (body.status === "Paid") {
+      try {
+        const linkedCost = await prisma.logisticsCost.findUnique({
+          where: { expenseRequestId: params.id }
+        });
+        if (linkedCost) {
+          await prisma.logisticsCost.update({
+            where: { id: linkedCost.id },
+            data: {
+              paymentStatus: "已付",
+              paidDate: new Date(),
+              cashFlowId: body.paymentFlowId || null,
+            }
+          });
+        }
+      } catch (err) {
+        // 静默失败，不影响支出申请更新
+      }
     }
 
     await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);

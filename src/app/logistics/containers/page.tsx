@@ -253,6 +253,11 @@ export default function ContainersPage() {
     container: Container;
     toStatus: string;
   } | null>(null);
+  const [toWarehouseId, setToWarehouseId] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [billModalOpen, setBillModalOpen] = useState(false);
+  const [billForm, setBillForm] = useState({ costType: "海运费", amount: "", currency: "CNY", paymentType: "现结", creditDays: "", logisticsChannelId: "", outboundBatchIds: [] as string[], notes: "" });
+  const [billSaving, setBillSaving] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
   const statusOptions = [
@@ -483,6 +488,44 @@ export default function ContainersPage() {
     toast.success(`已导出 ${filtered.length} 条柜子数据`);
   };
 
+  const submitBill = async () => {
+    if (!detailContainer) return;
+    const amount = parseFloat(billForm.amount);
+    if (!amount || amount <= 0) { toast.error("请输入有效金额"); return; }
+    if (billForm.outboundBatchIds.length === 0) { toast.error("请至少选择一个出库批次"); return; }
+    setBillSaving(true);
+    try {
+      const dueDate = billForm.paymentType === "账期" && billForm.creditDays && detailContainer.actualDeparture
+        ? new Date(new Date(detailContainer.actualDeparture).getTime() + parseInt(billForm.creditDays) * 86400000).toISOString().slice(0, 10)
+        : null;
+      const res = await fetch("/api/logistics-cost", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outboundBatchIds: billForm.outboundBatchIds,
+          containerId: detailContainer.id,
+          logisticsChannelId: billForm.logisticsChannelId || null,
+          costType: billForm.costType,
+          amount,
+          currency: billForm.currency,
+          paymentType: billForm.paymentType,
+          creditDays: billForm.paymentType === "账期" ? parseInt(billForm.creditDays) || null : null,
+          dueDate,
+          paymentStatus: "未付",
+          notes: billForm.notes || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "创建失败");
+      toast.success(`物流账单已生成${data.created > 1 ? `（${data.created}条）` : ""}，可在物流费用管理中查看`);
+      setBillModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "创建物流账单失败");
+    } finally {
+      setBillSaving(false);
+    }
+  };
+
   const handleChangeStatus = async (container: Container, status: string) => {
     if (status === container.status) return;
     setStatusConfirm({ container, toStatus: status });
@@ -492,25 +535,58 @@ export default function ContainersPage() {
     if (!statusConfirm) return;
     const { container, toStatus } = statusConfirm;
     try {
-      const res = await fetch(`/api/containers/${container.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: toStatus }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(json?.error || "状态更新失败");
-        return;
+      // 如果变为"已入仓"且选了仓库，同时确认到货
+      if (toStatus === "IN_WAREHOUSE" && toWarehouseId) {
+        // 先更新容器状态
+        const res1 = await fetch(`/api/containers/${container.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: toStatus }),
+        });
+        if (!res1.ok) {
+          const j = await res1.json().catch(() => ({}));
+          toast.error(j?.error || "状态更新失败");
+          return;
+        }
+        // 获取该容器的出库批次并确认到达
+        const resBatches = await fetch(`/api/outbound-batch?containerId=${container.id}&pageSize=200`);
+        const batchData = await resBatches.json().catch(() => ({ data: [] }));
+        const batches = batchData.data || [];
+        let failCount = 0;
+        for (const b of batches) {
+          if (!b.arrivalConfirmedAt) {
+            const r = await fetch(`/api/outbound-batch/${b.id}/confirm-arrival`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ toWarehouseId }),
+            });
+            if (!r.ok) failCount++;
+          }
+        }
+        if (failCount === 0) {
+          toast.success("已确认到货，海外仓库存已增加");
+        } else {
+          toast.warning(`${failCount}个批次确认失败，请重试`);
+        }
+      } else {
+        const res = await fetch(`/api/containers/${container.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: toStatus }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(json?.error || "状态更新失败");
+          return;
+        }
+        toast.success(`状态已更新为：${statusLabels[toStatus] ?? toStatus}`);
       }
-      toast.success(`状态已更新为：${statusLabels[toStatus] ?? toStatus}`);
       mutate();
-      if (detailContainer?.id === container.id) {
-        setDetailContainer({ ...detailContainer, status: toStatus as any });
-      }
       setStatusConfirm(null);
+      setToWarehouseId("");
     } catch (error) {
       console.error(error);
-      toast.error("状态更新失败，请稍后重试");
+      toast.error("操作失败");
     }
   };
 
@@ -1128,10 +1204,25 @@ export default function ContainersPage() {
                 ✕
               </button>
             </div>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap gap-2">
               <ActionButton type="button" variant="secondary" onClick={openEditModal}>
                 编辑信息
               </ActionButton>
+              {(() => {
+                const hasCost = Array.isArray(detailData?.logisticsCosts) && detailData.logisticsCosts.length > 0;
+                if (hasCost) {
+                  return (
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-500 cursor-not-allowed">
+                      已生成账单
+                    </span>
+                  );
+                }
+                return (
+                  <ActionButton type="button" variant="primary" onClick={() => { setBillModalOpen(true); setBillForm({ costType: detailContainer.shippingMethod === "AIR" ? "空运费" : "海运费", amount: "", currency: "CNY", paymentType: "现结", creditDays: "", logisticsChannelId: "", outboundBatchIds: (detailData?.outboundBatches || []).map((b: any) => b.id), notes: "" }); }}>
+                    生成物流账单
+                  </ActionButton>
+                );
+              })()}
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
@@ -1199,6 +1290,58 @@ export default function ContainersPage() {
 
             <LogisticsProgressAxis container={detailContainer} />
 
+            {/* 财务信息 */}
+            <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-500 mb-2">物流费用明细</div>
+              {Array.isArray(detailData?.logisticsCosts) && detailData.logisticsCosts.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-slate-500 border-b border-slate-800">
+                        <th className="py-1.5 text-left">费用类型</th>
+                        <th className="py-1.5 text-right">金额</th>
+                        <th className="py-1.5 text-left">币种</th>
+                        <th className="py-1.5 text-left">付款方式</th>
+                        <th className="py-1.5 text-left">状态</th>
+                        <th className="py-1.5 text-left">到期日</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailData.logisticsCosts.map((c: any) => (
+                        <tr key={c.id} className="border-b border-slate-800/50">
+                          <td className="py-1.5 text-slate-300">{c.costType}</td>
+                          <td className="py-1.5 text-right text-slate-200 tabular-nums">{Number(c.amount).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</td>
+                          <td className="py-1.5 text-slate-400">{c.currency}</td>
+                          <td className="py-1.5 text-slate-400">{c.paymentType}</td>
+                          <td className="py-1.5">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              c.paymentStatus === "已付" ? "bg-emerald-500/10 text-emerald-300"
+                              : c.paymentStatus === "审批中" ? "bg-blue-500/10 text-blue-300"
+                              : c.paymentStatus === "未付" ? "bg-amber-500/10 text-amber-300"
+                              : "bg-slate-500/10 text-slate-300"
+                            }`}>{c.paymentStatus}</span>
+                          </td>
+                          <td className="py-1.5 text-slate-500">{c.dueDate ? new Date(c.dueDate).toLocaleDateString("zh-CN") : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-700">
+                        <td className="py-2 text-slate-400 font-medium">合计</td>
+                        <td className="py-2 text-right text-slate-200 font-medium tabular-nums">
+                          {detailData.logisticsCosts.reduce((sum: number, c: any) => sum + Number(c.amount), 0).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td colSpan={4}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 py-2">暂无物流费用记录</div>
+              )}
+            </div>
+
+            {/* 关联出库批次 */}
             <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
               <div className="text-xs text-slate-500 mb-2">关联出库批次</div>
               {detailLoading ? (
@@ -1501,17 +1644,148 @@ export default function ContainersPage() {
               </span>
               吗？
             </p>
+            {statusConfirm.toStatus === "IN_WAREHOUSE" && (
+              <div className="mt-3">
+                <label className="text-sm text-slate-300">选择入库仓库 <span className="text-rose-400">*</span></label>
+                <select
+                  value={toWarehouseId}
+                  onChange={(e) => setToWarehouseId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouses.filter((w: any) => w.type === "OVERSEAS").map((w: any) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="mt-4 flex items-center justify-end gap-2">
               <ActionButton
                 type="button"
                 variant="secondary"
-                onClick={() => setStatusConfirm(null)}
+                onClick={() => { setStatusConfirm(null); setToWarehouseId(""); }}
               >
                 取消
               </ActionButton>
-              <ActionButton type="button" onClick={submitChangeStatus}>
-                确认
+              <ActionButton type="button" onClick={submitChangeStatus} disabled={statusConfirm.toStatus === "IN_WAREHOUSE" && !toWarehouseId}>
+                确认到货
               </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 生成物流账单弹窗 */}
+      {billModalOpen && detailContainer && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="text-base font-semibold text-slate-100">
+                生成物流账单 · {detailContainer.containerNo}
+              </div>
+              <button onClick={() => setBillModalOpen(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {/* 出库批次多选 */}
+              <div>
+                <span className="text-sm text-slate-300">关联出库批次</span>
+                <div className="mt-1 max-h-32 overflow-y-auto rounded-md border border-slate-700 bg-slate-950 p-2 space-y-1">
+                  {(detailData?.outboundBatches || []).map((b: any) => (
+                    <label key={b.id} className="flex items-center gap-2 text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={billForm.outboundBatchIds.includes(b.id)}
+                        onChange={(e) => {
+                          setBillForm(f => ({
+                            ...f,
+                            outboundBatchIds: e.target.checked
+                              ? [...f.outboundBatchIds, b.id]
+                              : f.outboundBatchIds.filter((id: string) => id !== b.id)
+                          }));
+                        }}
+                      />
+                      {b.batchNumber} ({b.qty}件)
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* 费用类型 */}
+              <label className="block">
+                <span className="text-sm text-slate-300">费用类型 <span className="text-rose-400">*</span></span>
+                <select value={billForm.costType} onChange={e => setBillForm(f => ({ ...f, costType: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                  {["海运费", "海运费（双清包税）", "空运费", "港杂费", "清关费", "送货费"].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+
+              {/* 物流商 */}
+              <label className="block">
+                <span className="text-sm text-slate-300">物流商</span>
+                <select value={billForm.logisticsChannelId} onChange={e => setBillForm(f => ({ ...f, logisticsChannelId: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                  <option value="">不选择</option>
+                  {logisticsChannels.map((ch: any) => <option key={ch.id} value={ch.id}>{ch.name}</option>)}
+                </select>
+              </label>
+
+              {/* 金额 + 币种 */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm text-slate-300">金额 <span className="text-rose-400">*</span></span>
+                  <input type="number" step="0.01" value={billForm.amount} onChange={e => setBillForm(f => ({ ...f, amount: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" placeholder="0.00" />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-slate-300">币种</span>
+                  <select value={billForm.currency} onChange={e => setBillForm(f => ({ ...f, currency: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                    <option value="CNY">CNY</option>
+                    <option value="USD">USD</option>
+                    <option value="BRL">BRL</option>
+                  </select>
+                </label>
+              </div>
+
+              {/* 付款方式 */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-sm text-slate-300">付款方式</span>
+                  <select value={billForm.paymentType} onChange={e => setBillForm(f => ({ ...f, paymentType: e.target.value, creditDays: e.target.value === "现结" ? "" : f.creditDays }))}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                    <option value="现结">现结</option>
+                    <option value="账期">账期</option>
+                  </select>
+                </label>
+                {billForm.paymentType === "账期" && (
+                  <label className="block">
+                    <span className="text-sm text-slate-300">账期天数</span>
+                    <input type="number" value={billForm.creditDays} onChange={e => setBillForm(f => ({ ...f, creditDays: e.target.value }))}
+                      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" placeholder="如：30" />
+                  </label>
+                )}
+              </div>
+
+              {/* 备注 */}
+              <label className="block">
+                <span className="text-sm text-slate-300">备注</span>
+                <input type="text" value={billForm.notes} onChange={e => setBillForm(f => ({ ...f, notes: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" placeholder="可选" />
+              </label>
+
+              {/* 到期日提示 */}
+              {billForm.paymentType === "账期" && billForm.creditDays && detailContainer.actualDeparture && (
+                <div className="rounded-md bg-slate-800/60 px-3 py-2 text-xs text-slate-400">
+                  到期日：{new Date(new Date(detailContainer.actualDeparture).getTime() + parseInt(billForm.creditDays) * 86400000).toLocaleDateString("zh-CN")}
+                  （柜子出发日 + {billForm.creditDays}天）
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <ActionButton type="button" variant="secondary" onClick={() => setBillModalOpen(false)}>取消</ActionButton>
+                <ActionButton type="button" onClick={submitBill} isLoading={billSaving}>生成账单</ActionButton>
+              </div>
             </div>
           </div>
         </div>

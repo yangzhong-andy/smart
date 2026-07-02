@@ -64,6 +64,7 @@ type ContainerDetailForBatches = {
 
 const COST_TYPE_OPTIONS = [
   { value: "海运费", label: "海运费" },
+  { value: "海运费（双清包税）", label: "海运费（双清包税）" },
   { value: "空运费", label: "空运费" },
   { value: "港杂费", label: "港杂费" },
   { value: "清关费", label: "清关费" },
