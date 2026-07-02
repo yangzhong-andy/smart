@@ -39,10 +39,10 @@ export default function HomePage() {
       .map((store) => {
         const storeIncomes = flowListNorm.filter(
           (flow) =>
-            flow.type === "income" &&
+            String(flow.type).toLowerCase() === "income" &&
             flow.accountId === store.accountId &&
             !(flow as any).isReversal &&
-            ((flow as any).status === "confirmed" || !(flow as any).status)
+            (String((flow as any).status ?? (flow as any).flowStatus ?? "").toLowerCase() === "confirmed" || !(flow as any).status)
         );
         const account = accountList.find((a) => a.id === store.accountId);
         const exchangeRate = account?.exchangeRate || 1;
@@ -91,8 +91,8 @@ export default function HomePage() {
     if (isNaN(d.getTime())) return false;
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !(f as any).isReversal;
   });
-  const thisMonthIncome = thisMonthFlow.filter((f: any) => f.type === "income").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
-  const thisMonthExpense = thisMonthFlow.filter((f: any) => f.type === "expense").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
+  const thisMonthIncome = thisMonthFlow.filter((f: any) => String(f.type).toLowerCase() === "income").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
+  const thisMonthExpense = thisMonthFlow.filter((f: any) => String(f.type).toLowerCase() === "expense").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
 
   return (
     <div className="space-y-6">

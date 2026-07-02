@@ -515,12 +515,15 @@ export default function CashFlowPage() {
       }
     }
     
-    // 按创建时间倒序排列，最新创建的数据显示在第1条
+    // 按业务日期倒序排列，最新的日期显示在第1条
     return filtered.sort((a, b) => {
-      // 优先使用 createdAt，如果没有则使用 date
-      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.date).getTime();
-      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.date).getTime();
-      return bTime - aTime; // 倒序：最新的在前
+      const aTime = new Date(a.date).getTime();
+      const bTime = new Date(b.date).getTime();
+      if (bTime !== aTime) return bTime - aTime; // 日期倒序
+      // 同一天的按创建时间倒序
+      const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bCreated - aCreated;
     });
   }, [cashFlowListRaw, filterCurrency, filterPaymentType, filterCategory, filterSubCategory, filterStatus, filterDateFrom, filterDateTo, filterYear, filterMonth, quickFilter]);
 
@@ -1418,7 +1421,7 @@ export default function CashFlowPage() {
                       );
                     })()}
                   </td>
-                  <td className="px-2 py-1.5 text-slate-300">{flow.accountName}</td>
+                  <td className="px-2 py-1.5 text-slate-300">{accountsListRaw.find((a: any) => a.id === flow.accountId)?.name || flow.accountName}</td>
                   <td className="px-2 py-1.5">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${

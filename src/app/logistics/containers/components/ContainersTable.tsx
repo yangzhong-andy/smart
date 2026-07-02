@@ -152,12 +152,23 @@ export function ContainersTable({
                       const paid = (c as any).logisticsCostPaid || 0;
                       const owed = total - paid;
                       if (total === 0) {
-                        return <span className="text-xs text-slate-600">—</span>;
+                        return (
+                          <div className="space-y-1">
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-slate-500/10 text-slate-400">账单未生成</span>
+                            <button
+                              onClick={() => onOpenDetail(c)}
+                              className="block text-[10px] text-primary-400 hover:text-primary-300"
+                            >
+                              去生成
+                            </button>
+                          </div>
+                        );
                       }
                       const isSettled = paid >= total && total > 0;
                       const isPartial = paid > 0 && paid < total;
                       return (
                         <div className="space-y-1">
+                          <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-300 mb-1">已生成</span>
                           <div className="text-xs text-slate-300">
                             总额：<span className="font-mono tabular-nums font-medium">{total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
                           </div>

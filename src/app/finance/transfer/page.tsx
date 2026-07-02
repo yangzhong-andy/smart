@@ -132,14 +132,14 @@ export default function TransferPage() {
   const transfers = useMemo(() => {
     if (!cashFlowListRaw.length) return [];
 
-    const status = (f: any) => f.status ?? f.flowStatus;
+    const status = (f: any) => String(f.status ?? f.flowStatus ?? "").toLowerCase();
     const transferFlows = cashFlowListRaw.filter(
-      (flow) => flow.category === "内部划拨" && flow.relatedId && status(flow) === "confirmed" && !flow.isReversal
+      (flow) => flow.category === "内部划拨" && (flow.relatedId || (flow as any).relatedOrderId) && status(flow) === "confirmed" && !flow.isReversal
     );
     
     // 按 relatedId 分组
     const grouped = transferFlows.reduce((acc, flow) => {
-      const relatedId = flow.relatedId!;
+      const relatedId = flow.relatedId! || (flow as any).relatedOrderId!;
       if (!acc[relatedId]) {
         acc[relatedId] = [];
       }
@@ -153,18 +153,19 @@ export default function TransferPage() {
     Object.entries(grouped).forEach(([relatedId, flows]) => {
       if (flows.length !== 2) return; // 必须是两条记录（转出和转入）
       
-      const outFlow = flows.find((f) => f.type === "expense");
-      const inFlow = flows.find((f) => f.type === "income");
+      const outFlow = flows.find((f) => String(f.type).toLowerCase() === "expense");
+      const inFlow = flows.find((f) => String(f.type).toLowerCase() === "income");
       
       if (!outFlow || !inFlow) return;
       
       // 从备注中提取汇率信息
-      const rateMatch = outFlow.remark.match(/汇率\s*([\d.]+)/);
+      const remarkText = outFlow.remark || (outFlow as any).notes || "";
+      const rateMatch = remarkText.match(/汇率\s*([\d.]+)/);
       const exchangeRate = rateMatch ? Number(rateMatch[1]) : 0;
-      const isManualRate = outFlow.remark.includes("手动汇率");
-      
+      const isManualRate = remarkText.includes("手动汇率");
+
       // 提取备注（去掉汇率信息）
-      const remarkMatch = outFlow.remark.match(/，(.+)$/);
+      const remarkMatch = remarkText.match(/，(.+)$/);
       const remark = remarkMatch ? remarkMatch[1].replace(/汇率\s*[\d.]+（手动汇率）?，?/g, "").trim() : "";
       
       transferRecords.push({

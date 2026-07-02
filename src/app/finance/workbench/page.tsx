@@ -774,6 +774,8 @@ export default function FinanceWorkbenchPage() {
       setSelectedAccountId("");
       setPaymentVoucher(""); // 清空凭证
       setInputExchangeRate(""); // 清空汇率
+      // 强制刷新页面确保列表更新
+      setTimeout(() => window.location.reload(), 500);
     } catch (error: any) {
       console.error("处理支出申请失败:", error);
       toast.error(error?.message || "处理失败，请重试");
@@ -888,6 +890,8 @@ export default function FinanceWorkbenchPage() {
       setSelectedAccountId("");
       setPaymentVoucher(""); // 清空凭证
       setInputExchangeRate(""); // 清空汇率
+      // 强制刷新页面确保列表更新
+      setTimeout(() => window.location.reload(), 500);
     } catch (error: any) {
       toast.error(error.message || "处理失败，请重试");
     }

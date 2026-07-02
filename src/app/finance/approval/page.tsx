@@ -130,11 +130,11 @@ export default function ApprovalCenterPage() {
       case "expense-requests":
         return await getExpenseRequests();
       case "pending-expense-requests":
-        return await getExpenseRequestsByStatus("Pending_Approval");
+        return await getExpenseRequestsByStatus("Pending_Approval", true);
       case "income-requests":
         return await getIncomeRequests();
       case "pending-income-requests":
-        return await getIncomeRequestsByStatus("Pending_Approval");
+        return await getIncomeRequestsByStatus("Pending_Approval", true);
       case "recharges": {
         const res = await fetch("/api/ad-recharges");
         if (!res.ok) throw new Error(`API 閿欒: ${res.status}`);
@@ -602,8 +602,6 @@ export default function ApprovalCenterPage() {
             approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
-          await refreshExpenseIncomeSwrAfterMutation();
-          mutate("approved-expense-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();
           toast.success("已批准，已推送给财务人员处理出账");
@@ -612,6 +610,8 @@ export default function ApprovalCenterPage() {
             setSelectedExpenseRequest(null);
             setIsRequestDetailOpen(false);
           }
+          // 强制刷新页面确保列表更新
+          setTimeout(() => window.location.reload(), 500);
         } catch (error: any) {
           toast.error(error.message || "审批失败");
           setConfirmDialog(null);
@@ -638,19 +638,16 @@ export default function ApprovalCenterPage() {
             approvedBy: getCurrentUserDisplayName(session),
             approvedAt: new Date().toISOString()
           });
-          mutate(
-            "pending-income-requests",
-            (current: unknown) => {
-              if (!Array.isArray(current)) return current;
-              return current.filter((r: { id?: string }) => r.id !== requestId);
-            },
-            { revalidate: false }
-          );
-          await refreshExpenseIncomeSwrAfterMutation({ stripIncomeId: requestId });
-          mutate("approved-income-requests", undefined, { revalidate: true });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();
           toast.success("已批准，已推送给财务人员处理入账");
+          setConfirmDialog(null);
+          if (selectedIncomeRequest?.id === requestId) {
+            setSelectedIncomeRequest(null);
+            setIsRequestDetailOpen(false);
+          }
+          // 强制刷新页面确保列表更新
+          setTimeout(() => window.location.reload(), 500);
           setConfirmDialog(null);
           if (selectedIncomeRequest?.id === requestId) {
             setSelectedIncomeRequest(null);
