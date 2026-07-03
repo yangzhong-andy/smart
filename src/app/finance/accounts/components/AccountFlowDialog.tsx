@@ -81,29 +81,23 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
                     {normal.map((flow) => (
                       <tr key={flow.id} className="hover:bg-slate-800/40">
                         <td className="px-3 py-2 text-slate-300">
-                          {new Date(flow.createdAt || flow.date).toLocaleString("zh-CN", {
-                            year: "numeric",
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: false,
-                          })}
+                          <div>{flow.date ? new Date(flow.date).toLocaleDateString("zh-CN") : "-"}</div>
+                          <div className="text-[10px] text-slate-500">{flow.createdAt ? new Date(flow.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}</div>
                         </td>
                         <td className="px-3 py-2">
                           <span
                             className={`rounded px-2 py-0.5 text-xs font-medium ${
-                              flow.type === "income" ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                              String(flow.type || "").toLowerCase() === "income" ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
                             }`}
                           >
-                            {flow.type === "income" ? "收入" : "支出"}
+                            {String(flow.type || "").toLowerCase() === "income" ? "收入" : "支出"}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-slate-300">{flow.summary}</td>
                         <td className="px-3 py-2 text-slate-400">{flow.category || "-"}</td>
                         <td
                           className={`px-3 py-2 text-right font-medium ${
-                            flow.type === "income" ? "text-emerald-300" : "text-rose-300"
+                            String(flow.type || "").toLowerCase() === "income" ? "text-emerald-300" : "text-rose-300"
                           }`}
                         >
                           {flow.currency === "RMB"
@@ -186,28 +180,22 @@ export function AccountFlowDialog({ open, account, flows, onClose }: AccountFlow
                     {transfers.map((flow) => (
                       <tr key={flow.id} className="hover:bg-slate-800/40">
                         <td className="px-3 py-2 text-slate-300">
-                          {new Date(flow.createdAt || flow.date).toLocaleString("zh-CN", {
-                            year: "numeric",
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: false,
-                          })}
+                          <div>{flow.date ? new Date(flow.date).toLocaleDateString("zh-CN") : "-"}</div>
+                          <div className="text-[10px] text-slate-500">{flow.createdAt ? new Date(flow.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : ""}</div>
                         </td>
                         <td className="px-3 py-2">
                           <span
                             className={`rounded px-2 py-0.5 text-xs font-medium ${
-                              flow.type === "income" ? "bg-blue-500/20 text-blue-300" : "bg-purple-500/20 text-purple-300"
+                              String(flow.type || "").toLowerCase() === "income" ? "bg-blue-500/20 text-blue-300" : "bg-purple-500/20 text-purple-300"
                             }`}
                           >
-                            {flow.type === "income" ? "划入" : "划出"}
+                            {String(flow.type || "").toLowerCase() === "income" ? "划入" : "划出"}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-slate-300">{flow.summary}</td>
                         <td
                           className={`px-3 py-2 text-right font-medium ${
-                            flow.type === "income" ? "text-blue-300" : "text-purple-300"
+                            String(flow.type || "").toLowerCase() === "income" ? "text-blue-300" : "text-purple-300"
                           }`}
                         >
                           {flow.currency === "RMB"

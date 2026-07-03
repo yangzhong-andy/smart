@@ -159,7 +159,23 @@ export default function BankAccountsPage() {
   const [selectedAccountForFlow, setSelectedAccountForFlow] = useState<BankAccount | null>(null);
   const [accountFlowModalOpen, setAccountFlowModalOpen] = useState(false);
   const [selectedDetailAccount, setSelectedDetailAccount] = useState<BankAccount | null>(null);
-  
+
+  // 从 URL 参数自动打开账户流水弹窗
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const accountId = params.get("accountId");
+    if (accountId && accounts.length > 0) {
+      const acc = accounts.find((a) => a.id === accountId);
+      if (acc) {
+        setSelectedAccountForFlow(acc);
+        setAccountFlowModalOpen(true);
+        // 清除URL参数，避免刷新时重复打开
+        window.history.replaceState({}, "", "/finance/accounts");
+      }
+    }
+  }, [accounts]);
+
   // 从 SWR 数据中筛选出选中账户的流水，并分类
   const accountFlows = useMemo(() => {
     if (!selectedAccountForFlow || !cashFlowList.length) return { normal: [], transfers: [] };

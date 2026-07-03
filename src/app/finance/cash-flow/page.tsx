@@ -1421,7 +1421,14 @@ export default function CashFlowPage() {
                       );
                     })()}
                   </td>
-                  <td className="px-2 py-1.5 text-slate-300">{accountsListRaw.find((a: any) => a.id === flow.accountId)?.name || flow.accountName}</td>
+                  <td className="px-2 py-1.5">
+                    <a
+                      href={`/finance/accounts?accountId=${flow.accountId}`}
+                      className="text-slate-300 hover:text-primary-400 hover:underline cursor-pointer"
+                    >
+                      {accountsListRaw.find((a: any) => a.id === flow.accountId)?.name || flow.accountName}
+                    </a>
+                  </td>
                   <td className="px-2 py-1.5">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${

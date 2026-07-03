@@ -569,11 +569,11 @@ export default function FinanceWorkbenchPage() {
     // 财务指标
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
     const thisMonthIncome = cashFlow
-      .filter((f) => f.type === "income" && f.date.startsWith(currentMonth))
-      .reduce((sum, f) => sum + (f.amount || 0), 0);
+      .filter((f) => String(f.type).toLowerCase() === "income" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal)
+      .reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
     const thisMonthExpense = cashFlow
-      .filter((f) => f.type === "expense" && f.date.startsWith(currentMonth))
-      .reduce((sum, f) => sum + (f.amount || 0), 0);
+      .filter((f) => String(f.type).toLowerCase() === "expense" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal)
+      .reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
 
     // 账户总余额：使用与账户中心相同的计算逻辑（使用实时汇率）
     const totalBalance = accounts.reduce((sum, acc) => {

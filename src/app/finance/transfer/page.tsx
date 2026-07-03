@@ -643,8 +643,8 @@ export default function TransferPage() {
       {activeModal === "transfer" && (
         <TransferEntry
           accounts={accountsWithBalance}
-          onClose={() => setActiveModal(null)}
-          onSave={async (flow: CashFlow) => {
+          onClose={() => { setActiveModal(null); setTimeout(() => window.location.reload(), 300); }}
+            onSave={async (flow: CashFlow) => {
             // TransferEntry 会调用两次 onSave（转出和转入）
             // 直接调用 API 保存
             try {
@@ -658,10 +658,6 @@ export default function TransferPage() {
                 const error = await response.json();
                 throw new Error(error.error || '创建失败');
               }
-              
-              // 使用 SWR 的 mutate 刷新数据
-              swrMutate('/api/cash-flow?page=1&pageSize=5000');
-              swrMutate('/api/accounts?page=1&pageSize=500');
               
               toast.success("划拨记录创建成功");
             } catch (error: any) {
