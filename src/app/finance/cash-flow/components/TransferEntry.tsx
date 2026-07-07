@@ -36,7 +36,8 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     exchangeRate: "",
     actualReceived: "",
     remark: "",
-    voucher: "" as string | string[] // 凭证，支持多张
+    voucher: "" as string | string[], // 凭证，支持多张
+    transferType: "划拨" as "划拨" | "换汇"
   });
 
   useEffect(() => {
@@ -142,17 +143,18 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     const paymentVoucherValue = form.voucher
       ? (Array.isArray(form.voucher) ? JSON.stringify(form.voucher) : form.voucher)
       : undefined;
+    const typeLabel = form.transferType;
     const outFlow: CashFlow = {
       id: crypto.randomUUID(),
       date: form.date,
-      summary: `内部划拨 - 转出至 ${toAccount.name}`,
+      summary: `${typeLabel} - 转出至 ${toAccount.name}`,
       type: "expense",
-      category: "内部划拨",
+      category: typeLabel === "换汇" ? "换汇" : "内部划拨",
       amount: -amount,
       accountId: form.fromAccountId,
       accountName: fromAccount.name,
       currency: fromAccount.currency,
-      remark: `划拨至 ${toAccount.name}，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
+      remark: `${typeLabel}至 ${toAccount.name}，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
       status: "confirmed",
       relatedId: transferId,
       voucher: paymentVoucherValue ?? undefined,
@@ -163,14 +165,14 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     const inFlow: CashFlow = {
       id: crypto.randomUUID(),
       date: form.date,
-      summary: `内部划拨 - 从 ${fromAccount.name} 转入`,
+      summary: `${typeLabel} - 从 ${fromAccount.name} 转入`,
       type: "income",
-      category: "内部划拨",
+      category: typeLabel === "换汇" ? "换汇" : "内部划拨",
       amount: receivedAmount,
       accountId: form.toAccountId,
       accountName: toAccount.name,
       currency: toAccount.currency,
-      remark: `从 ${fromAccount.name} 划拨，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
+      remark: `从 ${fromAccount.name} ${typeLabel}，汇率 ${formatNumber(finalRate)}${form.manualRate ? "（手动汇率）" : ""}，${form.remark || ""}`,
       status: "confirmed",
       relatedId: transferId,
       voucher: paymentVoucherValue ?? undefined,
@@ -205,8 +207,8 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
       <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">内部划拨</h2>
-            <p className="text-xs text-slate-400 mt-1">支持手动汇率和到账金额倒推</p>
+            <h2 className="text-lg font-semibold text-slate-100">{form.transferType === "换汇" ? "换汇" : "内部划拨"}</h2>
+            <p className="text-xs text-slate-400 mt-1">同币种选"划拨"，跨币种选"换汇"</p>
           </div>
           <button 
             onClick={() => {
@@ -221,6 +223,31 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3 text-sm">
+          {/* 类型选择 */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, transferType: "划拨" }))}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                form.transferType === "划拨"
+                  ? "border-primary-500 bg-primary-500/10 text-primary-200"
+                  : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
+              }`}
+            >
+              划拨（同币种）
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, transferType: "换汇" }))}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                form.transferType === "换汇"
+                  ? "border-amber-500 bg-amber-500/10 text-amber-200"
+                  : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
+              }`}
+            >
+              换汇（跨币种）
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1">
               <span className="text-slate-300">日期</span>
