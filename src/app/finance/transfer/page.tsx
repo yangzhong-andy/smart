@@ -42,6 +42,7 @@ type TransferRecord = {
   isManualRate: boolean;
   remark: string;
   voucher?: string;
+  category?: string;
   createdAt: string;
   outFlowId: string;
   inFlowId: string;
@@ -83,7 +84,7 @@ export default function TransferPage() {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     keepPreviousData: true,
-    dedupingInterval: 600000
+    dedupingInterval: 30000
   });
 
   const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
@@ -134,7 +135,7 @@ export default function TransferPage() {
 
     const status = (f: any) => String(f.status ?? f.flowStatus ?? "").toLowerCase();
     const transferFlows = cashFlowListRaw.filter(
-      (flow) => flow.category === "内部划拨" && (flow.relatedId || (flow as any).relatedOrderId) && status(flow) === "confirmed" && !flow.isReversal
+      (flow) => (flow.category === "内部划拨" || flow.category === "换汇") && (flow.relatedId || (flow as any).relatedOrderId) && status(flow) === "confirmed" && !flow.isReversal
     );
     
     // 按 relatedId 分组
@@ -172,18 +173,28 @@ export default function TransferPage() {
         id: relatedId,
         date: outFlow.date,
         fromAccountId: outFlow.accountId,
-        fromAccountName: outFlow.accountName,
+        fromAccountName: accounts.find((a: any) => a.id === outFlow.accountId)?.name || outFlow.accountName,
         fromCurrency: outFlow.currency,
         fromAmount: Math.abs(outFlow.amount),
         toAccountId: inFlow.accountId,
-        toAccountName: inFlow.accountName,
+        toAccountName: accounts.find((a: any) => a.id === inFlow.accountId)?.name || inFlow.accountName,
         toCurrency: inFlow.currency,
         toAmount: inFlow.amount,
         exchangeRate,
         isManualRate,
         remark,
-        voucher: outFlow.voucher || inFlow.voucher,
+        voucher: (() => {
+          const raw = outFlow.voucher || inFlow.voucher;
+          if (!raw) return "";
+          try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed[0] || "" : raw;
+          } catch {
+            return raw;
+          }
+        })(),
         createdAt: outFlow.createdAt,
+        category: outFlow.category,
         outFlowId: outFlow.id,
         inFlowId: inFlow.id
       });
@@ -317,12 +328,12 @@ export default function TransferPage() {
 
       {/* 统计卡片 */}
       <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400 mb-1">划拨总数</div>
-          <div className="text-2xl font-bold text-slate-100">{stats.totalCount}</div>
+        <div className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:border-white/20" style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
+          <div className="text-xs text-white/50 mb-1">划拨总数</div>
+          <div className="text-2xl font-bold text-white/95">{stats.totalCount}</div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400 mb-1">转出总额</div>
+        <div className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:border-white/20" style={{ background: "linear-gradient(135deg, #7f1d1d 0%, #0f172a 100%)", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
+          <div className="text-xs text-white/50 mb-1">转出总额</div>
           <div className="text-lg font-semibold text-rose-300">
             {Object.entries(stats.fromAmountByCurrency).map(([curr, amount]) => (
               <div key={curr}>
@@ -331,8 +342,8 @@ export default function TransferPage() {
             ))}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400 mb-1">转入总额</div>
+        <div className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:border-white/20" style={{ background: "linear-gradient(135deg, #14532d 0%, #0f172a 100%)", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
+          <div className="text-xs text-white/50 mb-1">转入总额</div>
           <div className="text-lg font-semibold text-emerald-300">
             {Object.entries(stats.toAmountByCurrency).length > 0 ? (
               Object.entries(stats.toAmountByCurrency).map(([curr, amount]) => (
@@ -341,13 +352,13 @@ export default function TransferPage() {
                 </div>
               ))
             ) : (
-              <div className="text-slate-500">-</div>
+              <div className="text-white/40">-</div>
             )}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400 mb-1">平均汇率</div>
-          <div className="text-lg font-semibold text-slate-300">
+        <div className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:border-white/20" style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
+          <div className="text-xs text-white/50 mb-1">平均汇率</div>
+          <div className="text-lg font-semibold text-white/80">
             {stats.totalCount > 0
               ? formatNumber(
                   filteredTransfers.reduce((sum, t) => sum + t.exchangeRate, 0) / stats.totalCount
@@ -365,17 +376,21 @@ export default function TransferPage() {
             {stats.accountStats.map((accountStat) => (
               <div
                 key={accountStat.accountId}
-                className="rounded-lg border border-slate-700 bg-slate-900/80 p-3 hover:bg-slate-800/60 transition-colors"
+                className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:border-white/20"
+                style={{
+                  background: "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                }}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-semibold text-slate-200">{accountStat.accountName}</div>
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
-                      {accountStat.accountCurrency}
-                    </span>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs font-bold text-white/70 backdrop-blur-sm">
+                    {accountStat.accountName}
                   </div>
+                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] font-medium text-white/60">
+                    {accountStat.accountCurrency}
+                  </span>
                 </div>
-                
+
                 <div className="space-y-1.5 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">划出次数：</span>
@@ -506,6 +521,7 @@ export default function TransferPage() {
             <thead className="bg-slate-900">
               <tr>
                 <th className="px-3 py-2 text-left font-medium text-slate-400 w-32">日期</th>
+                <th className="px-3 py-2 text-center font-medium text-slate-400 w-16">类型</th>
                 <th className="px-3 py-2 text-left font-medium text-slate-400 min-w-[150px]">转出账户</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-400 w-32">转出金额</th>
                 <th className="px-3 py-2 text-center font-medium text-slate-400 w-16"></th>
@@ -519,16 +535,25 @@ export default function TransferPage() {
             <tbody className="divide-y divide-slate-800 bg-slate-900/40">
               {filteredTransfers.length === 0 && (
                 <tr>
-                  <td className="px-3 py-8 text-center text-slate-500" colSpan={9}>
+                  <td className="px-3 py-8 text-center text-slate-500" colSpan={10}>
                     暂无划拨记录
                   </td>
                 </tr>
               )}
               {filteredTransfers.map((transfer) => (
                 <tr key={transfer.id} className="hover:bg-slate-800/40">
-                  <td className="px-3 py-2 text-slate-300">{formatDate(transfer.createdAt)}</td>
+                  <td className="px-3 py-2 text-slate-300">{formatDate(transfer.date)}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      (transfer as any).category === "换汇"
+                        ? "bg-amber-500/20 text-amber-300"
+                        : "bg-blue-500/20 text-blue-300"
+                    }`}>
+                      {(transfer as any).category === "换汇" ? "换汇" : "划拨"}
+                    </span>
+                  </td>
                   <td className="px-3 py-2">
-                    <div className="text-slate-200 font-medium">{transfer.fromAccountName}</div>
+                    <a href={`/finance/accounts?accountId=${transfer.fromAccountId}`} className="text-slate-200 font-medium hover:text-primary-400 hover:underline">{transfer.fromAccountName}</a>
                     <div className="text-xs text-slate-500">{transfer.fromCurrency}</div>
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -544,7 +569,7 @@ export default function TransferPage() {
                     <ArrowRight className="inline text-blue-400" size={18} />
                   </td>
                   <td className="px-3 py-2">
-                    <div className="text-slate-200 font-medium">{transfer.toAccountName}</div>
+                    <a href={`/finance/accounts?accountId=${transfer.toAccountId}`} className="text-slate-200 font-medium hover:text-primary-400 hover:underline">{transfer.toAccountName}</a>
                     <div className="text-xs text-slate-500">{transfer.toCurrency}</div>
                   </td>
                   <td className="px-3 py-2 text-right">

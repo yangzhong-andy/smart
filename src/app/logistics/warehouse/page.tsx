@@ -42,6 +42,8 @@ interface WarehouseFormData {
   locationType: "国内仓" | "海外仓" | "工厂仓" | "其他";
   warehouseType: "DOMESTIC" | "OVERSEAS";
   status: "启用" | "停用";
+  rechargeTotal?: string;
+  consumedAmount?: string;
   notes: string;
 }
 
@@ -465,6 +467,22 @@ function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProps) {
           {warehouse.capacity != null && warehouse.capacity > 0 && (
             <div className="mt-auto border-t border-white/5 pt-3 text-xs text-white/55">
               容量约 <span className="font-mono text-white/80">{warehouse.capacity}</span> m²
+            </div>
+          )}
+          {warehouse.type === "OVERSEAS" && (
+            <div className="border-t border-white/5 pt-3 space-y-1 text-xs text-white/55">
+              <div className="flex justify-between">
+                <span>充值总额</span>
+                <span className="font-mono text-emerald-300/90 font-medium">{Number(warehouse.rechargeTotal || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>已消费</span>
+                <span className="font-mono text-rose-300/80">{Number(warehouse.consumedAmount || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between border-t border-white/5 pt-1">
+                <span className="text-white/70">剩余余额</span>
+                <span className="font-mono text-white/90 font-bold">{(Number(warehouse.rechargeTotal || 0) - Number(warehouse.consumedAmount || 0)).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+              </div>
             </div>
           )}
         </div>

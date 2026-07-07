@@ -85,6 +85,8 @@ export interface Warehouse {
   // 统计数据（可选）
   totalSku?: number;       // SKU总数
   totalStock?: number;     // 总库存
+  rechargeTotal?: string;  // 累计充值总额（海外仓代发费）
+  consumedAmount?: string; // 已消费金额（导入订单扣减）
   
   createdAt: string;
   updatedAt: string;

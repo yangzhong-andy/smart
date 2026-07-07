@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
           id: true, code: true, name: true, address: true,
           contact: true, phone: true, manager: true,
           location: true, type: true, isActive: true,
+          capacity: true, notes: true, rechargeTotal: true, consumedAmount: true,
           createdAt: true, updatedAt: true,
         },
         orderBy: { name: 'asc' },

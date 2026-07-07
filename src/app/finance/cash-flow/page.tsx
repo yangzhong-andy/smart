@@ -1442,7 +1442,7 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     {(() => {
-                      const rawPay = flow.paymentVoucher ?? flow.voucher;
+                      const rawPay = flow.paymentVoucher;
                       const payV = typeof rawPay === "string" && rawPay.trim() && rawPay !== "null" ? rawPay.trim() : "";
                       let payData: string | string[] | null = null;
                       if (payV) {
@@ -1476,7 +1476,7 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     {(() => {
-                      const rawTr = flow.transferVoucher ?? flow.voucher;
+                      const rawTr = flow.transferVoucher;
                       const trV = typeof rawTr === "string" && rawTr.trim() && rawTr !== "null" ? rawTr.trim() : "";
                       let trData: string | string[] | null = null;
                       if (trV) {

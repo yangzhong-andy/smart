@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
           status: true, createdBy: true, createdAt: true, submittedAt: true,
           approvedBy: true, approvedAt: true, rejectionReason: true,
           paidBy: true, paidAt: true, financeAccountId: true, financeAccountName: true,
+          voucher: true, paymentVoucher: true,
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -82,6 +83,8 @@ export async function GET(request: NextRequest) {
         departmentId: r.departmentId || undefined,
         departmentName: r.departmentName || undefined,
         status: r.status,
+        voucher: r.voucher || undefined,
+        paymentVoucher: r.paymentVoucher || undefined,
         createdBy: r.createdBy,
         createdAt: r.createdAt.toISOString(),
         submittedAt: r.submittedAt?.toISOString(),
@@ -126,14 +129,22 @@ export async function POST(request: NextRequest) {
         country: body.country || null,
         businessNumber: body.businessNumber || null,
         relatedId: body.relatedId || null,
-        remark: body.remark || null,
+        remark: body.remark
+          ? (Array.isArray(body.containerIds) && body.containerIds.length > 0
+            ? `${body.remark} [关联柜子: ${body.containerIds.join(",")}]`
+            : body.remark)
+          : (Array.isArray(body.containerIds) && body.containerIds.length > 0
+            ? `[关联柜子: ${body.containerIds.join(",")}]`
+            : null),
         payeeName: body.payeeName ?? null,
         payeeAccount: body.payeeAccount ?? null,
+        voucher: body.voucher ? (typeof body.voucher === "string" ? body.voucher : JSON.stringify(body.voucher)) : null,
         status: body.status || "Pending_Approval",
         createdBy: body.createdBy || '系统',
         submittedAt: body.submittedAt ? new Date(body.submittedAt) : new Date(),
         departmentId: body.departmentId || null,
         departmentName: body.departmentName || null,
+        warehouseId: body.warehouseId || null,
       },
     });
 

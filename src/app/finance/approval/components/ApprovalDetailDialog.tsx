@@ -676,6 +676,23 @@ export function ApprovalDetailDialog({
                       </div>
                     </div>
                   )}
+                  {(selectedExpenseRequest as any).voucher && (
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">凭证</div>
+                      <div className="flex flex-wrap gap-2">
+                        {(() => {
+                          let imgs: string[] = [];
+                          const v = (selectedExpenseRequest as any).voucher;
+                          try { const p = JSON.parse(v); imgs = Array.isArray(p) ? p : [v]; } catch { imgs = [v]; }
+                          return imgs.map((img: string, i: number) => (
+                            <a key={i} href={img} target="_blank" rel="noreferrer">
+                              <img src={img} alt={`凭证${i+1}`} className="h-20 w-20 rounded-md border border-slate-700 object-cover" />
+                            </a>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : selectedIncomeRequest ? (
                 <>
@@ -710,6 +727,23 @@ export function ApprovalDetailDialog({
                       <div className="text-xs text-slate-400 mb-1">备注</div>
                       <div className="text-slate-300">
                         {(selectedIncomeRequest as IncomeRequest & { remark?: string }).remark}
+                      </div>
+                    </div>
+                  )}
+                  {(selectedIncomeRequest as any).voucher && (
+                    <div>
+                      <div className="text-xs text-slate-400 mb-1">凭证</div>
+                      <div className="flex flex-wrap gap-2">
+                        {(() => {
+                          let imgs: string[] = [];
+                          const v = (selectedIncomeRequest as any).voucher;
+                          try { const p = JSON.parse(v); imgs = Array.isArray(p) ? p : [v]; } catch { imgs = [v]; }
+                          return imgs.map((img: string, i: number) => (
+                            <a key={i} href={img} target="_blank" rel="noreferrer">
+                              <img src={img} alt={`凭证${i+1}`} className="h-20 w-20 rounded-md border border-slate-700 object-cover" />
+                            </a>
+                          ));
+                        })()}
                       </div>
                     </div>
                   )}

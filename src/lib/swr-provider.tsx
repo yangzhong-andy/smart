@@ -3,7 +3,7 @@
 import { ReactNode, useMemo } from "react";
 import { SWRConfig, Cache } from "swr";
 
-const CACHE_KEY = "swr-cache-v2";
+const CACHE_KEY = "swr-cache-v3";
 
 function createPersistentMap(): Cache {
   if (typeof window === "undefined") return new Map();

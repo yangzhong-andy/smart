@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
+import ImageUploader from "@/components/ImageUploader";
 import { Download, LayoutGrid, Plus, RefreshCw, Table2 } from "lucide-react";
 import { PageHeader, ActionButton } from "@/components/ui";
 import type { Container } from "@/logistics/types";
@@ -256,7 +257,7 @@ export default function ContainersPage() {
   const [toWarehouseId, setToWarehouseId] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [billModalOpen, setBillModalOpen] = useState(false);
-  const [billForm, setBillForm] = useState({ costType: "海运费", amount: "", currency: "CNY", paymentType: "现结", creditDays: "", logisticsChannelId: "", outboundBatchIds: [] as string[], notes: "" });
+  const [billForm, setBillForm] = useState<{ costType: string; amount: string; currency: string; paymentType: string; creditDays: string; logisticsChannelId: string; outboundBatchIds: string[]; notes: string; voucher: string | string[] }>({ costType: "海运费", amount: "", currency: "CNY", paymentType: "现结", creditDays: "", logisticsChannelId: "", outboundBatchIds: [], notes: "", voucher: "" });
   const [billSaving, setBillSaving] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
 
@@ -513,6 +514,7 @@ export default function ContainersPage() {
           dueDate,
           paymentStatus: "未付",
           notes: billForm.notes || null,
+          voucher: billForm.voucher ? (Array.isArray(billForm.voucher) ? JSON.stringify(billForm.voucher) : billForm.voucher) : null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1218,7 +1220,7 @@ export default function ContainersPage() {
                   );
                 }
                 return (
-                  <ActionButton type="button" variant="primary" onClick={() => { setBillModalOpen(true); setBillForm({ costType: detailContainer.shippingMethod === "AIR" ? "空运费" : "海运费", amount: "", currency: "CNY", paymentType: "现结", creditDays: "", logisticsChannelId: "", outboundBatchIds: (detailData?.outboundBatches || []).map((b: any) => b.id), notes: "" }); }}>
+                  <ActionButton type="button" variant="primary" onClick={() => { setBillModalOpen(true); setBillForm({ costType: detailContainer.shippingMethod === "AIR" ? "空运费" : "海运费", amount: "", currency: "CNY", paymentType: "现结", creditDays: "", logisticsChannelId: "", outboundBatchIds: (detailData?.outboundBatches || []).map((b: any) => b.id), notes: "", voucher: "" }); }}>
                     生成物流账单
                   </ActionButton>
                 );
@@ -1773,6 +1775,22 @@ export default function ContainersPage() {
                 <input type="text" value={billForm.notes} onChange={e => setBillForm(f => ({ ...f, notes: e.target.value }))}
                   className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100" placeholder="可选" />
               </label>
+
+              {/* 物流账单凭证 */}
+              <div>
+                <span className="text-sm text-slate-300">物流账单凭证 <span className="text-slate-500">(可选)</span></span>
+                <div className="mt-1">
+                  <ImageUploader
+                    value={billForm.voucher}
+                    onChange={(value) => setBillForm(f => ({ ...f, voucher: value }))}
+                    multiple={true}
+                    label="上传物流账单凭证"
+                    placeholder="点击上传或直接 Ctrl + V 粘贴账单凭证图片"
+                    maxImages={5}
+                    onError={(error) => toast.error(error)}
+                  />
+                </div>
+              </div>
 
               {/* 到期日提示 */}
               {billForm.paymentType === "账期" && billForm.creditDays && detailContainer.actualDeparture && (

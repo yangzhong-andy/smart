@@ -67,6 +67,7 @@ export async function POST(
         businessNumber: cost.outboundBatch?.batchNumber || null,
         containerId: cost.outboundBatch?.containerId || null,
         remark: cost.notes || "",
+        voucher: cost.voucher || null,
         status: "Pending_Approval",
         createdBy: session.user?.name || "当前用户",
         submittedAt: new Date(),

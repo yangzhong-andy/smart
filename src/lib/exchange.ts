@@ -13,6 +13,11 @@ export interface ExchangeRates {
     THB?: number; // 泰铢
     MYR?: number; // 马来西亚林吉特
     JPY?: number; // 日元
+    BRL?: number; // 巴西雷亚尔
+    EUR?: number; // 欧元
+    HKD?: number; // 港币
+    SGD?: number; // 新加坡元
+    AUD?: number; // 澳元
   };
   timestamp: number; // 时间戳
 }
@@ -21,6 +26,7 @@ export interface FinanceRates {
   USD: number; // 美元对人民币汇率（1 USD = X CNY）
   JPY: number; // 日元对人民币汇率（1 JPY = X CNY）
   THB: number; // 泰铢对人民币汇率（1 THB = X CNY）
+  BRL: number; // 巴西雷亚尔对人民币汇率（1 BRL = X CNY）
   lastUpdated: string; // 最后更新时间（ISO 字符串）
   [key: string]: number | string; // 支持其他币种和元数据
 }
@@ -68,6 +74,11 @@ export async function fetchExchangeRates(): Promise<ExchangeRates | null> {
     if (data.conversion_rates.THB) rates.THB = data.conversion_rates.THB;
     if (data.conversion_rates.MYR) rates.MYR = data.conversion_rates.MYR;
     if (data.conversion_rates.JPY) rates.JPY = data.conversion_rates.JPY;
+    if (data.conversion_rates.BRL) rates.BRL = data.conversion_rates.BRL;
+    if (data.conversion_rates.EUR) rates.EUR = data.conversion_rates.EUR;
+    if (data.conversion_rates.HKD) rates.HKD = data.conversion_rates.HKD;
+    if (data.conversion_rates.SGD) rates.SGD = data.conversion_rates.SGD;
+    if (data.conversion_rates.AUD) rates.AUD = data.conversion_rates.AUD;
   }
 
   return {
@@ -116,6 +127,7 @@ export async function getFinanceRates(): Promise<FinanceRates | null> {
       USD: 0,
       JPY: 0,
       THB: 0,
+      BRL: 0,
       lastUpdated: data.time_last_update_utc || new Date().toISOString()
     };
 
@@ -131,6 +143,9 @@ export async function getFinanceRates(): Promise<FinanceRates | null> {
       if (data.conversion_rates.THB) {
         financeRates.THB = 1 / data.conversion_rates.THB;
       }
+      if (data.conversion_rates.BRL) {
+        financeRates.BRL = 1 / data.conversion_rates.BRL;
+      }
     }
 
     // 控制台测试输出
@@ -138,6 +153,7 @@ export async function getFinanceRates(): Promise<FinanceRates | null> {
     console.log(`   USD/CNY: ${financeRates.USD > 0 ? financeRates.USD.toFixed(4) : 'N/A'}`);
     console.log(`   JPY/CNY: ${financeRates.JPY > 0 ? financeRates.JPY.toFixed(6) : 'N/A'}`);
     console.log(`   THB/CNY: ${financeRates.THB > 0 ? financeRates.THB.toFixed(4) : 'N/A'}`);
+    console.log(`   BRL/CNY: ${financeRates.BRL > 0 ? financeRates.BRL.toFixed(4) : 'N/A'}`);
     console.log(`   更新时间: ${financeRates.lastUpdated}`);
 
     return financeRates;

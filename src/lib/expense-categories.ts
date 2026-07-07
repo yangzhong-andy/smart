@@ -36,6 +36,8 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
       { label: "国内物流", value: "物流/国内物流" },
       { label: "仓储费用", value: "物流/仓储费用" },
       { label: "仓储管理费", value: "物流/仓储管理费" },
+      { label: "海外仓代发费", value: "物流/海外仓代发费" },
+      { label: "海外仓卸柜费", value: "物流/海外仓卸柜费" },
       { label: "其他物流费用", value: "物流/其他物流费用" }
     ]
   },

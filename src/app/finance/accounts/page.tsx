@@ -296,12 +296,10 @@ export default function BankAccountsPage() {
   const totalUSDRMB = useMemo(() => {
     // 优先使用实时汇率，如果没有则使用账户中存储的汇率
     const usdRate = exchangeRates?.USD || 1;
-    
+
     return accounts.reduce((sum, acc) => {
-      // 只统计USD账户
-      if (acc.currency === "USD") {
-        // originalBalance 已经包含了 initialCapital + 所有流水
-        // 使用实时汇率计算，如果没有实时汇率则回退到账户汇率
+      // 只统计USD账户（跳过VIRTUAL子账户，避免重复）
+      if (acc.currency === "USD" && acc.accountCategory !== "VIRTUAL") {
         const rate = exchangeRates?.USD || acc.exchangeRate || 1;
         const rmbValue = (acc.originalBalance || 0) * rate;
         return sum + rmbValue;
@@ -314,8 +312,8 @@ export default function BankAccountsPage() {
   // 注意：originalBalance 已经包含了 initialCapital，所以不需要再加
   const totalJPYRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
-      // 只统计JPY账户
-      if (acc.currency === "JPY") {
+      // 只统计JPY账户（跳过VIRTUAL子账户，避免重复）
+      if (acc.currency === "JPY" && acc.accountCategory !== "VIRTUAL") {
         // originalBalance 已经包含了 initialCapital + 所有流水
         // 使用实时汇率计算，如果没有实时汇率则回退到账户汇率
         const rate = exchangeRates?.JPY || acc.exchangeRate || 1;
@@ -327,9 +325,10 @@ export default function BankAccountsPage() {
   }, [accounts, exchangeRates]);
 
   // 计算BRL账户的预估CNY金额（优先实时汇率，其次账户上配置的汇率）
+  // 注意：跳过 VIRTUAL 子账户，因为它的余额已经被 PRIMARY 主账户汇总了
   const totalBRLRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
-      if (acc.currency === "BRL") {
+      if (acc.currency === "BRL" && acc.accountCategory !== "VIRTUAL") {
         const rate = exchangeRates?.BRL || acc.exchangeRate || 1;
         const rmbValue = (acc.originalBalance || 0) * rate;
         return sum + rmbValue;

@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
             include: {
               outboundOrder: true,
               warehouse: true,
+              container: { select: { id: true, containerNo: true } },
             },
           },
           logisticsChannel: true,
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
       id: c.id,
       outboundBatchId: c.outboundBatchId ?? undefined,
       logisticsChannelId: c.logisticsChannelId ?? undefined,
+      containerId: c.containerId ?? (c.outboundBatch?.container?.id ?? undefined),
       costType: c.costType,
       amount: c.amount.toString(),
       currency: c.currency,
@@ -53,10 +55,12 @@ export async function GET(request: NextRequest) {
       creditDays: c.creditDays ?? undefined,
       dueDate: c.dueDate?.toISOString() ?? undefined,
       paymentStatus: c.paymentStatus,
+      expenseRequestId: c.expenseRequestId ?? undefined,
       paidDate: c.paidDate?.toISOString() ?? undefined,
       invoiceNumber: c.invoiceNumber ?? undefined,
       invoiceStatus: c.invoiceStatus ?? undefined,
       notes: c.notes ?? undefined,
+      voucher: c.voucher ?? undefined,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
       outboundBatch: c.outboundBatch
@@ -77,6 +81,12 @@ export async function GET(request: NextRequest) {
               ? {
                   id: c.outboundBatch.warehouse.id,
                   name: c.outboundBatch.warehouse.name,
+                }
+              : undefined,
+            container: (c.outboundBatch as any)?.container
+              ? {
+                  id: (c.outboundBatch as any).container.id,
+                  containerNo: (c.outboundBatch as any).container.containerNo,
                 }
               : undefined,
           }
@@ -198,6 +208,7 @@ export async function POST(request: NextRequest) {
           invoiceNumber: body.invoiceNumber ?? null,
           invoiceStatus: body.invoiceStatus ?? null,
           notes: baseNotes || null,
+          voucher: typeof body.voucher === "string" && body.voucher ? body.voucher : null,
         },
         include: {
           outboundBatch: {
@@ -241,6 +252,7 @@ export async function POST(request: NextRequest) {
             invoiceNumber: body.invoiceNumber ?? null,
             invoiceStatus: body.invoiceStatus ?? null,
             notes: [baseNotes, `${shareNote} 第${i + 1}/${resolvedBatchIds.length}笔`].filter(Boolean).join(" "),
+            voucher: typeof body.voucher === "string" && body.voucher ? body.voucher : null,
           },
         })
       )

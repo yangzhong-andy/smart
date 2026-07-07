@@ -31,6 +31,7 @@ export async function PATCH(
     if (body.invoiceNumber !== undefined) data.invoiceNumber = body.invoiceNumber ?? null;
     if (body.invoiceStatus !== undefined) data.invoiceStatus = body.invoiceStatus ?? null;
     if (body.notes !== undefined) data.notes = body.notes ?? null;
+    if (body.voucher !== undefined) data.voucher = body.voucher || null;
 
     const updated = await prisma.logisticsCost.update({
       where: { id },

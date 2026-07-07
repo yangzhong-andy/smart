@@ -6,11 +6,13 @@ import { toast } from "sonner";
 import { DollarSign, Plus, X } from "lucide-react";
 import { PageHeader, EmptyState, ActionButton } from "@/components/ui";
 import DateInput from "@/components/DateInput";
+import ImageUploader from "@/components/ImageUploader";
 
 type CostItem = {
   id: string;
   outboundBatchId?: string;
   logisticsChannelId?: string;
+  containerId?: string;
   costType: string;
   amount: string;
   currency: string;
@@ -18,6 +20,8 @@ type CostItem = {
   creditDays?: number;
   dueDate?: string;
   paymentStatus: string;
+  expenseRequestId?: string | null;
+  voucher?: string | null;
   outboundBatch?: {
     id: string;
     batchNumber: string;
@@ -26,6 +30,7 @@ type CostItem = {
     status: string;
     outboundOrder?: { id: string; outboundNumber: string; sku: string };
     warehouse?: { id: string; name: string };
+    container?: { id: string; containerNo: string };
   };
   logisticsChannel?: {
     id: string;
@@ -85,12 +90,14 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   未付: "未付",
   已付: "已付",
   逾期: "逾期",
+  审批中: "审批中",
 };
 
 const PAYMENT_STATUS_CLASS: Record<string, string> = {
   未付: "bg-amber-500/20 text-amber-300",
   已付: "bg-emerald-500/20 text-emerald-300",
   逾期: "bg-rose-500/20 text-rose-300",
+  审批中: "bg-blue-500/20 text-blue-300",
 };
 
 function formatDate(iso: string | undefined) {
@@ -136,6 +143,10 @@ export default function LogisticsCostPage() {
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [voucherView, setVoucherView] = useState<string[] | null>(null);
+  const [voucherEditId, setVoucherEditId] = useState<string | null>(null);
+  const [voucherUpload, setVoucherUpload] = useState<string | string[]>("");
+  const [voucherSaving, setVoucherSaving] = useState(false);
 
   const { data: listResponse, isLoading, mutate } = useSWR(
     `/api/logistics-cost?page=${pagination.page}&pageSize=${pagination.pageSize}`,
@@ -320,47 +331,106 @@ export default function LogisticsCostPage() {
           description="点击「新建费用」添加一条记录"
         />
       ) : (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-800/50 text-slate-400 text-left">
-                  <th className="px-4 py-3 font-medium">出库批次</th>
-                  <th className="px-4 py-3 font-medium">物流商</th>
-                  <th className="px-4 py-3 font-medium">费用类型</th>
-                  <th className="px-4 py-3 font-medium">金额</th>
-                  <th className="px-4 py-3 font-medium">付款方式</th>
-                  <th className="px-4 py-3 font-medium">付款状态</th>
-                  <th className="px-4 py-3 font-medium">到期日</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((c: CostItem) => (
-                  <tr key={c.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
-                    <td className="px-4 py-3 text-slate-300">{batchLabel(c)}</td>
-                    <td className="px-4 py-3 text-slate-300">
-                      {c.logisticsChannel?.name ?? "-"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{c.costType}</td>
-                    <td className="px-4 py-3 text-slate-200">
-                      {c.currency} {c.amount}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{c.paymentType}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-xs ${
-                          PAYMENT_STATUS_CLASS[c.paymentStatus] ?? "bg-slate-500/20 text-slate-300"
-                        }`}
+        <div className="space-y-4">
+          {/* 按柜子分组 */}
+          {(() => {
+            // 按 containerId 分组
+            const groups: Record<string, { containerNo: string; items: CostItem[] }> = {};
+            list.forEach((c: CostItem) => {
+              const containerId = c.containerId || c.outboundBatch?.container?.id || "_no_container";
+              const containerNo = c.outboundBatch?.container?.containerNo || "无柜子";
+              if (!groups[containerId]) groups[containerId] = { containerNo, items: [] };
+              groups[containerId].items.push(c);
+            });
+
+            return Object.entries(groups).map(([containerId, group]) => {
+              const totalAmount = group.items.reduce((sum, c) => sum + Number(c.amount), 0);
+              const allUnpaid = group.items.every(c => c.paymentStatus === "未付" && !c.expenseRequestId);
+              const currency = group.items[0]?.currency || "CNY";
+
+              return (
+                <div key={containerId} className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
+                  {/* 柜子标题栏 */}
+                  <div className="flex items-center justify-between border-b border-slate-700 bg-slate-800/40 px-4 py-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-slate-200">{group.containerNo}</span>
+                      <span className="text-xs text-slate-400">{group.items.length}笔</span>
+                      <span className="text-sm font-medium text-amber-300">{currency} {totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    {allUnpaid && group.items.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            // 逐条发起，但合并成一笔
+                            for (const item of group.items) {
+                              await fetch(`/api/logistics-cost/${item.id}/request-payment`, { method: "POST" });
+                            }
+                            toast.success(`${group.containerNo} 的 ${group.items.length} 笔费用已发起付款，等待审批`);
+                            setTimeout(() => window.location.reload(), 500);
+                          } catch (err: any) {
+                            toast.error(err?.message || "发起付款失败");
+                          }
+                        }}
+                        className="rounded-md bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-700"
                       >
-                        {PAYMENT_STATUS_LABELS[c.paymentStatus] ?? c.paymentStatus}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{formatDate(c.dueDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        发起付款（{group.items.length}笔）
+                      </button>
+                    )}
+                  </div>
+                  {/* 明细表格 */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 text-left">
+                          <th className="px-3 py-2 font-medium">出库批次</th>
+                          <th className="px-3 py-2 font-medium">物流商</th>
+                          <th className="px-3 py-2 font-medium">费用类型</th>
+                          <th className="px-3 py-2 font-medium text-right">金额</th>
+                          <th className="px-3 py-2 font-medium">付款方式</th>
+                          <th className="px-3 py-2 font-medium">状态</th>
+                          <th className="px-3 py-2 font-medium">到期日</th>
+                          <th className="px-3 py-2 font-medium text-center">凭证</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.items.map((c: CostItem) => (
+                          <tr key={c.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                            <td className="px-3 py-2 text-slate-300">{batchLabel(c)}</td>
+                            <td className="px-3 py-2 text-slate-300">{c.logisticsChannel?.name ?? "-"}</td>
+                            <td className="px-3 py-2 text-slate-300">{c.costType}</td>
+                            <td className="px-3 py-2 text-right text-slate-200">{c.currency} {c.amount}</td>
+                            <td className="px-3 py-2 text-slate-300">{c.paymentType}</td>
+                            <td className="px-3 py-2">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] ${PAYMENT_STATUS_CLASS[c.paymentStatus] ?? "bg-slate-500/20 text-slate-300"}`}>
+                                {PAYMENT_STATUS_LABELS[c.paymentStatus] ?? c.paymentStatus}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-400">{formatDate(c.dueDate)}</td>
+                            <td className="px-3 py-2 text-center">
+                              {(() => {
+                                if (c.voucher) {
+                                  let imgs: string[] = [];
+                                  try { const p = JSON.parse(c.voucher); imgs = Array.isArray(p) ? p : [c.voucher]; } catch { imgs = [c.voucher]; }
+                                  return (
+                                    <div className="flex flex-col gap-1">
+                                      <button type="button" onClick={() => setVoucherView(imgs)} className="text-xs text-primary-400 hover:text-primary-300">查看({imgs.length})</button>
+                                      <button type="button" onClick={() => setVoucherEditId(c.id)} className="text-xs text-slate-500 hover:text-slate-300">补传</button>
+                                    </div>
+                                  );
+                                }
+                                return <button type="button" onClick={() => setVoucherEditId(c.id)} className="text-xs text-primary-400 hover:text-primary-300">上传</button>;
+                              })()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
 
@@ -618,6 +688,77 @@ export default function LogisticsCostPage() {
                 </ActionButton>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 凭证查看弹窗 */}
+      {voucherView && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur" onClick={() => setVoucherView(null)}>
+          <div className="max-h-[95vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">物流账单凭证（{voucherView.length}张）</h2>
+              <button onClick={() => setVoucherView(null)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+            <div className="space-y-4">
+              {voucherView.map((img, i) => (
+                <div key={i}>
+                  <img src={img} alt={`凭证${i + 1}`} className="w-full rounded-lg border border-slate-700" />
+                  <div className="mt-1 text-center text-xs text-slate-500">凭证 {i + 1}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 补传/上传凭证弹窗 */}
+      {voucherEditId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">上传物流账单凭证</h2>
+              <button onClick={() => { setVoucherEditId(null); setVoucherUpload(""); }} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+            <ImageUploader
+              value={voucherUpload}
+              onChange={(value) => setVoucherUpload(value)}
+              multiple={true}
+              label="上传凭证"
+              placeholder="点击上传或直接 Ctrl + V 粘贴图片"
+              maxImages={5}
+              onError={(error) => toast.error(error)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <ActionButton type="button" variant="secondary" onClick={() => { setVoucherEditId(null); setVoucherUpload(""); }}>取消</ActionButton>
+              <ActionButton
+                type="button"
+                isLoading={voucherSaving}
+                onClick={async () => {
+                  if (!voucherUpload) { toast.error("请先上传凭证"); return; }
+                  setVoucherSaving(true);
+                  try {
+                    const voucherStr = typeof voucherUpload === "string" ? voucherUpload : JSON.stringify(voucherUpload);
+                    const res = await fetch(`/api/logistics-cost/${voucherEditId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ voucher: voucherStr }),
+                    });
+                    if (!res.ok) throw new Error("保存失败");
+                    toast.success("凭证已保存");
+                    setVoucherEditId(null);
+                    setVoucherUpload("");
+                    mutate();
+                  } catch (err: any) {
+                    toast.error(err?.message || "保存凭证失败");
+                  } finally {
+                    setVoucherSaving(false);
+                  }
+                }}
+              >
+                保存
+              </ActionButton>
+            </div>
           </div>
         </div>
       )}

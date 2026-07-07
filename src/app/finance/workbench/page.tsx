@@ -157,6 +157,9 @@ export default function FinanceWorkbenchPage() {
   const [inputExchangeRate, setInputExchangeRate] = useState<string>(""); // 付款当天的汇率
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [isSavingFlow, setIsSavingFlow] = useState(false);
+  const [batchPaymentModal, setBatchPaymentModal] = useState(false);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
+  const [batchPaying, setBatchPaying] = useState(false);
 
   // SWR fetcher 函数：API 报错时抛出异常，由 SWR 捕获并触发 error 状态（不重试，显示系统维护中）
   const fetcher = useCallback(async (key: string) => {
@@ -205,8 +208,9 @@ export default function FinanceWorkbenchPage() {
   const swrOptions = {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    shouldRetryOnError: false as const,
-    errorRetryCount: 0,
+    shouldRetryOnError: true,
+    errorRetryCount: 2,
+    errorRetryInterval: 3000,
   };
   /** 审批/入账相关列表：切回浏览器标签时自动拉取，避免必须手动刷新 */
   const swrOptionsRefreshOnFocus = {
@@ -265,16 +269,13 @@ export default function FinanceWorkbenchPage() {
     dedupingInterval: 300000,
   });
 
-  // 任一核心 API 报错时显示「系统维护中」（汇率接口失败不计入，不影响工作台主流程）
+  // 只有核心 API（流水+账户）都失败时才显示「系统维护中」
+  // 单个 API 偶尔失败不影响整个页面
   const apiErrorSources: string[] = [];
-  if (pendingEntriesError) apiErrorSources.push("待办/待入账");
-  if (monthlyBillsError) apiErrorSources.push("月账单");
-  if (accountsError) apiErrorSources.push("银行账户");
   if (cashFlowError) apiErrorSources.push("流水");
-  if (pendingBillsError) apiErrorSources.push("待审批账单");
-  if (approvedExpenseError) apiErrorSources.push("已审批支出");
-  if (approvedIncomeError) apiErrorSources.push("已审批收入");
-  const hasApiError = apiErrorSources.length > 0;
+  if (accountsError) apiErrorSources.push("银行账户");
+  // 只有流水和账户同时失败才认为是系统问题
+  const hasApiError = cashFlowError && accountsError;
   const failedSourceText = apiErrorSources.length > 0 ? apiErrorSources.join("、") : undefined;
 
   useEffect(() => {
@@ -568,12 +569,18 @@ export default function FinanceWorkbenchPage() {
 
     // 财务指标
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    // 获取汇率
+    const getRate = (curr: string): number => {
+      if (curr === "CNY" || curr === "RMB") return 1;
+      const rates = exchangeRates as any;
+      return Number(rates?.[curr]) || 1;
+    };
     const thisMonthIncome = cashFlow
-      .filter((f) => String(f.type).toLowerCase() === "income" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal)
-      .reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
+      .filter((f) => String(f.type).toLowerCase() === "income" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal && f.category !== "内部划拨" && f.category !== "换汇")
+      .reduce((sum, f) => sum + Math.abs(f.amount || 0) * getRate(f.currency || "CNY"), 0);
     const thisMonthExpense = cashFlow
-      .filter((f) => String(f.type).toLowerCase() === "expense" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal)
-      .reduce((sum, f) => sum + Math.abs(f.amount || 0), 0);
+      .filter((f) => String(f.type).toLowerCase() === "expense" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal && f.category !== "内部划拨" && f.category !== "换汇")
+      .reduce((sum, f) => sum + Math.abs(f.amount || 0) * getRate(f.currency || "CNY"), 0);
 
     // 账户总余额：使用与账户中心相同的计算逻辑（使用实时汇率）
     const totalBalance = accounts.reduce((sum, acc) => {
@@ -736,6 +743,19 @@ export default function FinanceWorkbenchPage() {
         (request.category === "采购/采购尾款" ||
           (request.summary || "").includes("采购尾款"));
 
+      // 海外仓代发费：累加仓库充值总额
+      if ((request as any).warehouseId) {
+        try {
+          await fetch(`/api/warehouses/${(request as any).warehouseId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rechargeAdd: request.amount }),
+          });
+        } catch (e) {
+          console.error("更新仓库充值总额失败", e);
+        }
+      }
+
       if (isPurchaseTail) {
         try {
           const payTailRes = await fetch(`/api/delivery-orders/${request.relatedId}/pay-tail`, {
@@ -780,6 +800,81 @@ export default function FinanceWorkbenchPage() {
       console.error("处理支出申请失败:", error);
       toast.error(error?.message || "处理失败，请重试");
       throw error; // 重新抛出错误，让按钮的 onClick 也能捕获
+    }
+  };
+
+  // 合并付款 - 多笔审批通过的支出申请合并成一笔银行流水
+  const handleBatchPayment = async () => {
+    if (!selectedAccountId) { toast.error("请选择出款账户"); return; }
+    if (batchSelectedIds.length < 2) { toast.error("请至少选择2笔申请进行合并"); return; }
+
+    const selectedRequests = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id));
+    if (selectedRequests.length !== batchSelectedIds.length) { toast.error("部分申请数据异常"); return; }
+
+    const account = accounts.find(a => a.id === selectedAccountId);
+    if (!account) { toast.error("账户不存在"); return; }
+
+    // 检查币种是否一致
+    const currencies = [...new Set(selectedRequests.map(r => r.currency || "CNY"))];
+    if (currencies.length > 1) { toast.error("所选申请币种不一致，无法合并"); return; }
+
+    const currency = currencies[0];
+    const isForeignCurrency = currency !== "CNY" && currency !== "RMB";
+    const flowRate = isForeignCurrency ? (parseFloat(inputExchangeRate) || 0) : 1;
+    if (isForeignCurrency && (!inputExchangeRate || flowRate <= 0)) { toast.error("请输入付款当天汇率"); return; }
+
+    const totalAmount = selectedRequests.reduce((sum, r) => sum + r.amount, 0);
+
+    setBatchPaying(true);
+    try {
+      // 1. 创建一笔合并的 CashFlow
+      const cashFlowData = {
+        date: new Date().toISOString().slice(0, 10),
+        summary: `合并付款 - ${selectedRequests.length}笔 (${selectedRequests.map(r => r.summary?.slice(0, 15)).join(" / ")})`,
+        category: selectedRequests[0]?.category || "其他",
+        type: "expense" as const,
+        amount: -totalAmount,
+        accountId: selectedAccountId,
+        accountName: account.name,
+        currency,
+        exchangeRate: flowRate,
+        remark: `合并付款${selectedRequests.length}笔：${selectedRequests.map(r => r.summary).join("；")}`,
+        status: "confirmed" as const,
+        paymentVoucher: undefined,
+        transferVoucher: undefined,
+      };
+
+      const response = await fetch('/api/cash-flow', {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cashFlowData)
+      });
+      if (!response.ok) throw new Error("创建流水失败");
+      const cashFlowResult = await response.json();
+
+      // 2. 更新所有选中的 ExpenseRequest 为 Paid
+      for (const req of selectedRequests) {
+        await updateExpenseRequest(req.id, {
+          status: "Paid",
+          financeAccountId: selectedAccountId,
+          financeAccountName: account.name,
+          paidBy: getCurrentUserDisplayName(session),
+          paidAt: new Date().toISOString(),
+          paymentFlowId: cashFlowResult.id,
+        });
+      }
+
+      toast.success(`已合并付款 ${selectedRequests.length} 笔，合计 ${currency} ${totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`);
+      setBatchPaymentModal(false);
+      setBatchSelectedIds([]);
+      setSelectedAccountId("");
+      setPaymentVoucher("");
+      setInputExchangeRate("");
+      setTimeout(() => window.location.reload(), 500);
+    } catch (error: any) {
+      toast.error(error?.message || "合并付款失败");
+    } finally {
+      setBatchPaying(false);
     }
   };
 
@@ -1053,6 +1148,18 @@ export default function FinanceWorkbenchPage() {
                 查看全部
               </ActionButton>
             </Link>
+            {approvedExpenseRequests.length >= 2 && (
+              <ActionButton
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setBatchSelectedIds([]);
+                  setBatchPaymentModal(true);
+                }}
+              >
+                合并付款
+              </ActionButton>
+            )}
           </div>
 
           {approvedExpenseRequests.length === 0 ? (
@@ -1596,6 +1703,123 @@ export default function FinanceWorkbenchPage() {
         </div>
         );
       })()}
+
+      {/* 合并付款弹窗 */}
+      {batchPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur" onClick={() => setBatchPaymentModal(false)}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">合并付款</h2>
+              <button onClick={() => setBatchPaymentModal(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+
+            {/* 选择申请 */}
+            <div className="mb-4">
+              <div className="text-sm text-slate-300 mb-2">选择要合并的支出申请（同币种）</div>
+              <div className="max-h-60 overflow-y-auto rounded-md border border-slate-700 bg-slate-950 p-2 space-y-1">
+                {approvedExpenseRequests.length === 0 ? (
+                  <div className="text-center text-slate-500 py-4">暂无可合并的支出申请</div>
+                ) : (
+                  approvedExpenseRequests.map((r) => {
+                    const sameCurrency = batchSelectedIds.length === 0 || (r.currency || "CNY") === (approvedExpenseRequests.find(x => x.id === batchSelectedIds[0])?.currency || "CNY");
+                    return (
+                      <label key={r.id} className={`flex items-center gap-2 text-xs p-1.5 rounded ${sameCurrency ? "text-slate-300 hover:bg-slate-800/50" : "text-slate-600 cursor-not-allowed"}`}>
+                        <input
+                          type="checkbox"
+                          checked={batchSelectedIds.includes(r.id)}
+                          disabled={!sameCurrency}
+                          onChange={(e) => {
+                            setBatchSelectedIds(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id));
+                          }}
+                        />
+                        <span className="flex-1 truncate">{r.summary}</span>
+                        <span className="text-slate-400">{r.currency} {r.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {batchSelectedIds.length > 0 && (
+                <div className="mt-2 text-xs text-slate-400">
+                  已选 {batchSelectedIds.length} 笔，合计：<span className="text-amber-300 font-medium">{(() => {
+                    const total = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id)).reduce((sum, r) => sum + r.amount, 0);
+                    const curr = approvedExpenseRequests.find(r => batchSelectedIds.includes(r.id))?.currency || "CNY";
+                    return `${curr} ${total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+                  })()}</span>
+                </div>
+              )}
+            </div>
+
+            {/* 选择账户 */}
+            <label className="block mb-3">
+              <span className="text-sm text-slate-300">出款账户 <span className="text-rose-400">*</span></span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="">请选择账户</option>
+                {accounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+                ))}
+              </select>
+            </label>
+
+            {/* 汇率 */}
+            {selectedAccountId && (() => {
+              const acc = accounts.find(a => a.id === selectedAccountId);
+              const curr = approvedExpenseRequests.find(r => batchSelectedIds.includes(r.id))?.currency || "CNY";
+              const isForeign = curr !== "CNY" && curr !== "RMB";
+              if (!isForeign) return null;
+              return (
+                <label className="block mb-3">
+                  <span className="text-sm text-slate-300">付款当天汇率（{curr} → CNY）<span className="text-rose-400">*</span></span>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={inputExchangeRate}
+                    onChange={(e) => setInputExchangeRate(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                    placeholder="如：7.2500"
+                  />
+                  {inputExchangeRate && parseFloat(inputExchangeRate) > 0 && (() => {
+                    const total = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id)).reduce((sum, r) => sum + r.amount, 0);
+                    return <span className="block text-xs text-slate-500 mt-1">折合人民币：¥{(total * parseFloat(inputExchangeRate)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+                  })()}
+                </label>
+              );
+            })()}
+
+            {/* 凭证 */}
+            <label className="block mb-4">
+              <span className="text-sm text-slate-300">转账凭证 <span className="text-slate-500">(可选)</span></span>
+              <div className="mt-1">
+                <ImageUploader
+                  value={paymentVoucher}
+                  onChange={(value) => setPaymentVoucher(value)}
+                  multiple={true}
+                  label="上传转账凭证"
+                  placeholder="点击上传或 Ctrl+V 粘贴"
+                  maxImages={5}
+                  onError={(error) => toast.error(error)}
+                />
+              </div>
+            </label>
+
+            <div className="flex justify-end gap-2">
+              <ActionButton type="button" variant="secondary" onClick={() => setBatchPaymentModal(false)}>取消</ActionButton>
+              <ActionButton
+                type="button"
+                onClick={handleBatchPayment}
+                isLoading={batchPaying}
+                disabled={batchSelectedIds.length < 2 || !selectedAccountId}
+              >
+                确认合并付款
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 选择账户入账弹窗（收入申请） */}
       {incomeAccountModal.open && incomeAccountModal.requestId && (() => {

@@ -549,6 +549,8 @@ model Warehouse {
   isActive  Boolean           @default(true) // 是否启用
   capacity  Int? // 仓库容量（可选）
   notes     String? // 备注
+  rechargeTotal Decimal @default(0) @db.Decimal(18, 2) // 累计充值总额（海外仓代发费）
+  consumedAmount Decimal @default(0) @db.Decimal(18, 2) // 已消费金额（导入订单扣减）
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
@@ -1650,6 +1652,7 @@ model ExpenseRequest {
   // 特殊字段（广告充值等）
   adAccountId  String? // 广告账户ID
   rebateAmount Decimal? @db.Decimal(18, 2) // 返点金额
+  warehouseId  String? // 关联仓库ID（海外仓代发费等）
 
   updatedAt DateTime @updatedAt
 
@@ -2210,8 +2213,9 @@ model LogisticsCost {
   paymentStatus   String   
   paidDate        DateTime? 
   invoiceNumber   String?   
-  invoiceStatus   String?   
+  invoiceStatus   String?
   notes           String?
+  voucher         String? // 物流账单凭证（JSON，多图）
 
   // 审批付款关联
   expenseRequestId String?  @unique
@@ -2228,6 +2232,101 @@ model LogisticsCost {
   @@index([logisticsChannelId])
   @@index([containerId])
   @@index([expenseRequestId])
+}
+
+// 每日运营报表
+model DailyOperationReport {
+  id              String   @id @default(uuid())
+  date            DateTime @unique
+  month           String?  // 月份
+  storeId         String?  // 关联店铺
+  operations      String?  // 运营动作
+
+  // 当日销量
+  gmv             Decimal? @db.Decimal(18, 2)
+  totalQty        Int?     // 总件数
+  orderCount      Int?     // 订单量
+  avgOrderQty     Decimal? @db.Decimal(10, 2) // 单均件数
+  set3Qty         Int?     // 三件套件数
+  set3Ratio       Decimal? @db.Decimal(10, 4) // 三件套占比
+  set1Qty         Int?     // 一件套件数
+  set1Ratio       Decimal? @db.Decimal(10, 4) // 一件套占比
+  rechargeQty     Int?     // 补能装件数
+  rechargeRatio   Decimal? @db.Decimal(10, 4) // 补能装占比
+
+  // 价格
+  avgPriceRange   String?  // 平均客单价
+  price           String?  // 客单价
+
+  // 每日新增视频数
+  selfVideoCount  Int?     // 自制
+  influVideoCount Int?     // 达人
+
+  // 广告数据
+  targetRoi       Decimal? @db.Decimal(10, 2) // ROI设置
+  adCost          Decimal? @db.Decimal(18, 2) // 广告花费
+  costPerOrder    Decimal? @db.Decimal(10, 2) // 单转
+  actualRoi       Decimal? @db.Decimal(10, 2) // 实际ROI
+  tr              String?  // TR
+
+  // 利润数据
+  totalCost       Decimal? @db.Decimal(18, 2) // 商品总成本
+  grossProfit     Decimal? @db.Decimal(18, 2) // 毛利
+  profitMargin    Decimal? @db.Decimal(10, 4) // 毛利率
+  refundAmount    Decimal? @db.Decimal(18, 2) // 退款+取消
+  extraCost       String?  // 额外费用
+  totalPromoCost  Decimal? @db.Decimal(18, 2) // 总推广成本
+  estProfitRate   Decimal? @db.Decimal(10, 4) // 预估实际利润率
+  estProfit       Decimal? @db.Decimal(18, 2) // 预估实际利润
+
+  // 达人佣金数据/视频情况
+  influGmv        Decimal? @db.Decimal(18, 2) // 达人GMV
+  influOrders     Int?     // 订单数
+  videoExposure   Int?     // 视频曝光
+  videoClicks     Int?     // 视频点击数
+  videoClickRate  Decimal? @db.Decimal(10, 4) // 视频点击率
+  videoConvRate   Decimal? @db.Decimal(10, 4) // 视频转化率
+  influCommission Decimal? @db.Decimal(18, 2) // 达人佣金
+  influAdCommission Decimal? @db.Decimal(18, 2) // 达人广告佣金
+  agencyCommission Decimal? @db.Decimal(18, 2) // 机构佣金
+  agencyAdCommission Decimal? @db.Decimal(18, 2) // 机构广告佣金
+  influCommissionRate Decimal? @db.Decimal(10, 4) // 达人佣金率
+  influRatio      Decimal? @db.Decimal(10, 4) // 达人占比
+  agencyCommissionRate Decimal? @db.Decimal(10, 4) // 机构佣金率
+  totalCommissionRate Decimal? @db.Decimal(10, 4) // 总佣金率
+
+  // 自制视频数据
+  selfVideoGmv    Decimal? @db.Decimal(18, 2)
+  selfVideoOrders Int?
+  selfVideoExposure Int?
+  selfVideoClicks Int?
+  selfVideoClickRate Decimal? @db.Decimal(10, 4)
+  selfVideoConvRate Decimal? @db.Decimal(10, 4)
+  selfVideoRatio  Decimal? @db.Decimal(10, 4) // 视频占比
+
+  // 商品卡数据
+  productCardGmv  Decimal? @db.Decimal(18, 2)
+  productCardExposure Int?
+  productCardConvRate Decimal? @db.Decimal(10, 4)
+  productCardRatio Decimal? @db.Decimal(10, 4)
+
+  // 剩余库存
+  warehouseStock  Int?     // 在仓库存
+  transitStock    Int?     // 在途库存
+  saleableDays    Int?     // 可售天数
+
+  // 直播数据
+  liveGmv         Decimal? @db.Decimal(18, 2)
+  liveExposure    Int?
+  liveConvRate    Decimal? @db.Decimal(10, 4)
+  liveRatio       Decimal? @db.Decimal(10, 4)
+
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([date])
+  @@index([storeId])
 }
 
 // 国内出口公司

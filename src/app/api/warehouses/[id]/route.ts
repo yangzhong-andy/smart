@@ -63,6 +63,12 @@ export async function PUT(
     if (body.type !== undefined) {
       updateData.type = body.type === 'OVERSEAS' ? 'OVERSEAS' : 'DOMESTIC'
     }
+    // 累加充值总额（海外仓代发费付款后调用）
+    if (body.rechargeAdd !== undefined) {
+      const current = await prisma.warehouse.findUnique({ where: { id: params.id }, select: { rechargeTotal: true } })
+      const newTotal = Number(current?.rechargeTotal ?? 0) + Number(body.rechargeAdd)
+      updateData.rechargeTotal = newTotal
+    }
     const warehouse = await prisma.warehouse.update({
       where: { id: params.id },
       data: updateData

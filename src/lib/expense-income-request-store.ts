@@ -60,6 +60,8 @@ export type ExpenseRequest = {
   // 特殊字段（广告充值等）
   adAccountId?: string; // 广告账户ID
   rebateAmount?: number; // 返点金额
+  warehouseId?: string; // 关联仓库ID（海外仓代发费）
+  containerIds?: string[]; // 关联柜子ID列表（海外仓卸柜费）
 };
 
 export type IncomeRequest = {

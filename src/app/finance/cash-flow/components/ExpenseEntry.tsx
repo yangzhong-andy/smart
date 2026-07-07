@@ -52,12 +52,59 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
     payeeAccount: "",
     remark: "",
     adAccountId: "", // 广告账户ID（仅当分类为"广告费"时显示）
-    voucher: "" as string | string[] // 凭证，支持多张
+    voucher: "" as string | string[], // 凭证，支持多张
+    warehouseId: "" // 关联仓库ID（仅当分类为"物流/海外仓代发费"时显示）
   });
-  
+
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
   const [isRecharge, setIsRecharge] = useState(false); // 是否为广告充值
   const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState(""); // 选中的采购单ID
+  const [overseasWarehouses, setOverseasWarehouses] = useState<any[]>([]);
+  const [containers, setContainers] = useState<any[]>([]);
+  const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([]);
+  const isWarehouseFee = form.subCategory === "物流/海外仓代发费";
+  const isUnloadFee = form.subCategory === "物流/海外仓卸柜费";
+
+  // 获取海外仓列表
+  useEffect(() => {
+    if (!isWarehouseFee) return;
+    fetch("/api/warehouses?pageSize=100")
+      .then(res => res.json())
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.data ?? []);
+        setOverseasWarehouses(list.filter((w: any) => w.type === "OVERSEAS"));
+      })
+      .catch(() => {});
+  }, [isWarehouseFee]);
+
+  const [usedContainerIds, setUsedContainerIds] = useState<Set<string>>(new Set());
+
+  // 获取柜子列表（海外仓卸柜费时）
+  useEffect(() => {
+    if (!isUnloadFee) return;
+    fetch("/api/containers?page=1&pageSize=200")
+      .then(res => res.json())
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.data ?? []);
+        setContainers(list);
+      })
+      .catch(() => {});
+    // 获取已关联柜子的支出申请
+    fetch("/api/expense-requests?status=Pending_Approval&page=1&pageSize=500&noCache=true")
+      .then(res => res.json())
+      .then(data => {
+        const items = Array.isArray(data?.data) ? data.data : [];
+        const used = new Set<string>();
+        items.forEach((r: any) => {
+          const match = (r.remark || "").match(/\[关联柜子: ([^\]]+)\]/);
+          if (match) {
+            match[1].split(",").forEach((id: string) => used.add(id.trim()));
+          }
+        });
+        setUsedContainerIds(used);
+      })
+      .catch(() => {});
+  }, [isUnloadFee]);
 
   // 判断是否为采购相关分类
   const isPurchaseCategory = form.primaryCategory === "采购";
@@ -119,6 +166,14 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
     // 关联单号改为可选，因为有些支出可能没有明确的业务单号
     if (!form.summary.trim()) {
       toast.error("请填写摘要");
+      return;
+    }
+    if (isWarehouseFee && !form.warehouseId) {
+      toast.error("请选择关联的海外仓仓库");
+      return;
+    }
+    if (isUnloadFee && selectedContainerIds.length === 0) {
+      toast.error("请选择关联的柜子");
       return;
     }
     const amount = Number(form.amount);
@@ -210,7 +265,9 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
       createdAt: new Date().toISOString(),
       submittedAt: new Date().toISOString(),
       adAccountId: adAccountId,
-      rebateAmount: rebateAmount
+      rebateAmount: rebateAmount,
+      warehouseId: isWarehouseFee ? (form.warehouseId || undefined) : undefined,
+      containerIds: isUnloadFee ? selectedContainerIds : undefined,
     };
 
     // 自动生成唯一业务ID（如果还没有）
@@ -559,6 +616,53 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
                 placeholder="可选"
               />
             </label>
+            {isWarehouseFee && (
+              <label className="space-y-1">
+                <span className="text-slate-300">关联海外仓 <span className="text-rose-400">*</span></span>
+                <select
+                  value={form.warehouseId}
+                  onChange={(e) => setForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                >
+                  <option value="">请选择海外仓</option>
+                  {overseasWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {isUnloadFee && (
+              <div className="space-y-1 col-span-2">
+                <span className="text-slate-300">关联柜子 <span className="text-rose-400">*</span>（可多选）</span>
+                <div className="max-h-40 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 p-2 space-y-1">
+                  {containers.length === 0 ? (
+                    <span className="text-xs text-slate-500">暂无柜子</span>
+                  ) : (
+                    containers.map((c) => {
+                      const used = usedContainerIds.has(c.id);
+                      return (
+                        <label key={c.id} className={`flex items-center gap-2 text-sm ${used ? "text-slate-600 line-through" : "text-slate-300"}`}>
+                          <input
+                            type="checkbox"
+                            checked={selectedContainerIds.includes(c.id)}
+                            disabled={used}
+                            onChange={(e) => {
+                              setSelectedContainerIds(prev =>
+                                e.target.checked ? [...prev, c.id] : prev.filter(id => id !== c.id)
+                              );
+                            }}
+                          />
+                          {c.containerNo} ({c.status}){used && " 已关联"}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {selectedContainerIds.length > 0 && (
+                  <div className="text-xs text-slate-500">已选 {selectedContainerIds.length} 个柜子</div>
+                )}
+              </div>
+            )}
             <label className="space-y-1 col-span-2">
               <span className="text-slate-300">凭证</span>
               <ImageUploader
