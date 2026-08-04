@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>清空系统数据</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+    h1 {
+      color: #f1f5f9;
+      margin-bottom: 20px;
+      font-size: 24px;
+    }
+    .status {
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .status.info {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+    }
+    .status.success {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+    .status.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 10px;
+    }
+    button:hover {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .stats {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 13px;
+      color: #94a3b8;
+    }
+    .stats-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🗑️ 清空系统数据</h1>
+    
+    <div id="status" class="status info">
+      准备就绪，点击下方按钮清空所有数据
+    </div>
+
+    <button id="clearBtn" onclick="clearAllData()">
+      清空所有数据
+    </button>
+
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <script>
+    // 所有 localStorage key 列表
+    const ALL_STORAGE_KEYS = [
+      // 广告代理相关
+      "adAgencies",
+      "adAccounts",
+      "adConsumptions",
+      "adRecharges",
+      "adAgencyMockDataInitialized",
+      
+      // 财务相关
+      "bankAccounts",
+      "monthlyBills",
+      "paymentRequests",
+      "cashFlow",
+      "rebateReceivables",
+      
+      // 采购相关
+      "purchaseContracts",
+      "purchaseOrders",
+      "deliveryOrders",
+      
+      // 产品相关
+      "products",
+      
+      // 达人BD相关
+      "influencerBD",
+      
+      // 人力资源相关
+      "hr_employees",
+      "hr_commission_rules",
+      "hr_commission_records",
+      
+      // 物流相关
+      "logisticsChannels",
+      "logisticsTracking",
+      "pendingInbound",
+      "outboundOrders", // 出库单
+      "outboundBatches", // 出库批次
+      "warehouses", // 仓库信息
+      
+      // 供应商相关
+      "suppliers", // 供应商库（主要数据）
+      "supplierProfiles",
+      "supplierMonthlyBills",
+      "supplierPayments",
+      
+      // 供应链相关
+      "orderTracking",
+      "batchReceipts",
+      "documents",
+      "salesVelocity",
+      
+      // 店铺相关
+      "stores",
+      
+      // 业务关系
+      "businessRelations",
+      
+      // 通知相关
+      "notifications",
+      
+      // 待处理相关
+      "pendingEntries",
+      
+      // 物流相关（新增）
+      "outboundOrders", // 出库单
+      "outboundBatches", // 出库批次
+      "warehouses", // 仓库信息
+      
+      // 临时清理标记
+      "CLEAR_FINANCE_DATA",
+      "CLEAR_STORES_DATA",
+      "CLEAR_ALL_TEST_DATA",
+      
+      // 初始化标记
+      "cashFlowInitialized",
+      "storesInitialized",
+    ];
+
+    function updateStats() {
+      const statsDiv = document.getElementById('stats');
+      let totalSize = 0;
+      let totalKeys = 0;
+
+      ALL_STORAGE_KEYS.forEach(key => {
+        const value = localStorage.getItem(key);
+        if (value) {
+          totalSize += new Blob([value]).size;
+          totalKeys++;
+        }
+      });
+
+      const formatSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+      };
+
+      statsDiv.innerHTML = `
+        <div class="stats-item">
+          <span>数据项数量：</span>
+          <span>${totalKeys} 项</span>
+        </div>
+        <div class="stats-item">
+          <span>总存储大小：</span>
+          <span>${formatSize(totalSize)}</span>
+        </div>
+      `;
+    }
+
+    function clearAllData() {
+      const statusDiv = document.getElementById('status');
+      const clearBtn = document.getElementById('clearBtn');
+
+      if (!confirm('⚠️ 确定要清空系统所有数据吗？此操作不可恢复！')) {
+        return;
+      }
+
+      if (!confirm('⚠️ 再次确认：这将删除所有业务数据，包括订单、账单、产品、财务记录等。\n\n确定继续吗？')) {
+        return;
+      }
+
+      clearBtn.disabled = true;
+      statusDiv.className = 'status info';
+      statusDiv.textContent = '正在清空数据...';
+
+      let clearedCount = 0;
+      let errorCount = 0;
+
+      ALL_STORAGE_KEYS.forEach(key => {
+        try {
+          if (localStorage.getItem(key) !== null) {
+            localStorage.removeItem(key);
+            clearedCount++;
+          }
+        } catch (e) {
+          console.error(`Failed to remove key: ${key}`, e);
+          errorCount++;
+        }
+      });
+
+      // 兜底清理：清理所有包含业务关键词的 key
+      const keywordsToClean = [
+        "supplier", "order", "contract", "delivery", "inbound", "outbound",
+        "warehouse", "logistics", "product", "store", "account", "bill",
+        "payment", "cash", "rebate", "commission", "employee", "notification",
+        "adAgency", "adAccount", "adConsumption", "adRecharge", "influencer",
+        "initialized", "Initialized", "mock", "Mock", "test", "Test", "clear", "Clear"
+      ];
+      
+      const keysToKeep = ["sidebarCollapsed", "auth_token", "user_info"];
+      
+      try {
+        const allKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key) allKeys.push(key);
+        }
+        
+        allKeys.forEach(key => {
+          if (keysToKeep.includes(key)) return;
+          if (ALL_STORAGE_KEYS.includes(key)) return; // 已经清理过了
+          
+          const shouldClean = keywordsToClean.some(keyword => 
+            key.toLowerCase().includes(keyword.toLowerCase())
+          );
+          
+          if (shouldClean) {
+            try {
+              localStorage.removeItem(key);
+              clearedCount++;
+            } catch (e) {
+              console.error(`Failed to remove additional key: ${key}`, e);
+              errorCount++;
+            }
+          }
+        });
+      } catch (e) {
+        console.error("Failed to clean additional keys", e);
+      }
+
+      setTimeout(() => {
+        if (errorCount > 0) {
+          statusDiv.className = 'status error';
+          statusDiv.textContent = `清空完成，但有 ${errorCount} 个错误`;
+        } else {
+          statusDiv.className = 'status success';
+          statusDiv.textContent = `✅ 已成功清空 ${clearedCount} 条数据！`;
+        }
+        
+        clearBtn.disabled = false;
+        updateStats();
+
+        // 3秒后跳转到首页
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 3000);
+      }, 500);
+    }
+
+    // 页面加载时更新统计
+    updateStats();
+  </script>
+</body>
+</html>

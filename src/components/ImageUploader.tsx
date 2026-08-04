@@ -1,0 +1,447 @@
+"use client";
+
+import React, { useState, useRef, useEffect } from "react";
+import { compressImage, getImagesFromClipboard, isSupportedImageType, SUPPORTED_IMAGE_TYPES } from "@/lib/image-utils";
+import { X, Upload, FileText } from "lucide-react";
+
+export interface ImageUploaderProps {
+  value: string | string[]; // 单个图片Base64或图片数组，或 data:application/pdf;base64,...
+  onChange: (value: string | string[]) => void;
+  multiple?: boolean; // 是否支持多图
+  label?: string;
+  required?: boolean;
+  placeholder?: string;
+  maxImages?: number; // 最大图片数量
+  maxSizeKB?: number; // 单张图片压缩后最大 KB，默认 500，产品表单建议 200 以减小请求体
+  onError?: (error: string) => void;
+  /** 是否支持 PDF（如合同凭证），与图片一起上传 */
+  acceptPdf?: boolean;
+}
+
+function isPdfDataUrl(s: string): boolean {
+  return typeof s === "string" && (s.startsWith("data:application/pdf") || s.startsWith("data:application/pdf;"));
+}
+
+export default function ImageUploader({
+  value,
+  onChange,
+  multiple = false,
+  label = "上传图片",
+  required = false,
+  placeholder = "点击上传或直接 Ctrl + V 粘贴图片",
+  maxImages = 5,
+  maxSizeKB = 500,
+  onError,
+  acceptPdf = false,
+}: ImageUploaderProps) {
+  const [images, setImages] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [imageViewModal, setImageViewModal] = useState<{ images: string[]; currentIndex: number } | null>(null);
+  const [imageRotation, setImageRotation] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadAreaRef = useRef<HTMLDivElement>(null);
+
+  // 初始化图片数组
+  useEffect(() => {
+    if (Array.isArray(value)) {
+      setImages(value);
+    } else if (value) {
+      setImages([value]);
+    } else {
+      setImages([]);
+    }
+  }, [value]);
+
+  // 使用 ref 存储最新的 images，避免闭包问题
+  const imagesRef = useRef<string[]>([]);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
+  // 处理图片上传
+  const handleImageUpload = React.useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+
+    // 检查数量限制（使用 ref 获取最新值）
+    const currentImages = imagesRef.current;
+    const remainingSlots = multiple ? maxImages - currentImages.length : 1 - currentImages.length;
+    if (remainingSlots <= 0) {
+      onError?.(`最多只能上传${multiple ? maxImages : 1}张图片`);
+      return;
+    }
+
+    const filesToProcess = files.slice(0, remainingSlots);
+    setIsUploading(true);
+
+    try {
+      const compressedImages: string[] = [];
+
+      for (const file of filesToProcess) {
+        if (acceptPdf && file.type === "application/pdf") {
+          const pdfMaxKB = 1024; // PDF 不压缩，限制单文件约 1MB，避免请求体过大导致保存失败
+          if (file.size > pdfMaxKB * 1024) {
+            onError?.(`PDF「${file.name}」超过 ${pdfMaxKB}KB，请压缩后上传或改用图片`);
+            continue;
+          }
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error("PDF 读取失败"));
+              reader.readAsDataURL(file);
+            });
+            compressedImages.push(dataUrl);
+          } catch (err) {
+            onError?.("PDF 读取失败，请重试");
+          }
+          continue;
+        }
+
+        if (!file.type.startsWith("image/")) {
+          onError?.(`文件 "${file.name}" 不是图片或 PDF`);
+          continue;
+        }
+
+        if (!isSupportedImageType(file)) {
+          const supportedFormats = SUPPORTED_IMAGE_TYPES.map(t => t.replace("image/", "").toUpperCase()).join(", ");
+          onError?.(`不支持的图片格式: ${file.type}。支持的格式: ${supportedFormats}${acceptPdf ? ", PDF" : ""}`);
+          continue;
+        }
+
+        try {
+          const compressed = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.85,
+            maxSizeKB,
+            outputFormat: "auto" // 自动选择最佳输出格式
+          });
+          compressedImages.push(compressed);
+        } catch (error) {
+          console.error("图片压缩失败:", error);
+          const errorMessage = error instanceof Error ? error.message : "图片压缩失败，请重试";
+          onError?.(errorMessage);
+        }
+      }
+
+      if (compressedImages.length > 0) {
+        setImages((prevImages) => {
+          const newImages = multiple ? [...prevImages, ...compressedImages] : compressedImages;
+          const result = multiple ? newImages : (newImages[0] || "");
+          // 调试：检查返回的数据
+          if (!multiple && result) {
+            console.log("ImageUploader 返回数据长度:", typeof result === "string" ? result.length : "非字符串");
+            console.log("ImageUploader 返回数据前缀:", typeof result === "string" ? result.substring(0, 50) : "非字符串");
+          }
+          onChange(result);
+          return newImages;
+        });
+      }
+    } catch (error) {
+      console.error("图片上传失败:", error);
+      onError?.("图片上传失败，请重试");
+    } finally {
+      setIsUploading(false);
+    }
+  }, [multiple, maxImages, onChange, onError]);
+
+  // 全局粘贴：焦点在本上传区内、或粘贴事件 target 在本区内时处理（先点一下虚线框再 Ctrl+V 最可靠）
+  useEffect(() => {
+    const handleGlobalPaste = async (e: ClipboardEvent) => {
+      if (!uploadAreaRef.current) return;
+      const activeElement = document.activeElement as Node | null;
+      const eventTarget = (e.target as Node | null) ?? null;
+      const focusInArea = activeElement && uploadAreaRef.current.contains(activeElement);
+      const targetInArea = eventTarget && uploadAreaRef.current.contains(eventTarget);
+      if (!focusInArea && !targetInArea) return;
+      if (
+        activeElement &&
+        (activeElement as HTMLElement).tagName &&
+        ["INPUT", "TEXTAREA"].includes((activeElement as HTMLElement).tagName) &&
+        (activeElement as HTMLInputElement).type !== "file"
+      ) {
+        return;
+      }
+
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      const imageFiles = getImagesFromClipboard(clipboardData);
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        await handleImageUpload(imageFiles);
+      }
+    };
+
+    document.addEventListener("paste", handleGlobalPaste, true);
+    return () => document.removeEventListener("paste", handleGlobalPaste, true);
+  }, [handleImageUpload]);
+
+  // 处理文件选择
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    handleImageUpload(files);
+    // 重置input，允许重复选择同一文件
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // 处理剪贴板粘贴
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const clipboardData = e.clipboardData;
+    const imageFiles = getImagesFromClipboard(clipboardData);
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      await handleImageUpload(imageFiles);
+    }
+  };
+
+  // 删除图片
+  const handleRemoveImage = (index: number) => {
+    const newImages = images.filter((_, i) => i !== index);
+    setImages(newImages);
+    const result = multiple ? newImages : (newImages[0] || "");
+    onChange(result);
+  };
+
+  // 点击上传区域
+  const handleUploadAreaClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // 拖拽上传
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer.files);
+    handleImageUpload(files);
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-slate-300 mb-1">
+        {label}
+        {required && <span className="text-rose-400 ml-1">*</span>}
+      </label>
+
+      {/* 上传区域 */}
+      <div
+        ref={uploadAreaRef}
+        onMouseDown={() => uploadAreaRef.current?.focus()}
+        onPaste={handlePaste}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={`
+          relative border-2 border-dashed rounded-lg p-4 cursor-default
+          transition-all duration-300
+          ${isUploading 
+            ? "border-[#00E5FF] bg-[#00E5FF]/10 shadow-glow-blue" 
+            : "border-white/20 bg-slate-900/30 hover:border-[#00E5FF]/50 hover:bg-slate-800/30 upload-area-dash"
+          }
+        `}
+        tabIndex={0}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={acceptPdf ? SUPPORTED_IMAGE_TYPES.join(",") + ",application/pdf" : SUPPORTED_IMAGE_TYPES.join(",")}
+          multiple={multiple}
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+
+        <div className="flex flex-col items-center justify-center text-center space-y-2">
+          {isUploading ? (
+            <>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400"></div>
+              <p className="text-sm text-slate-400">正在处理图片...</p>
+            </>
+          ) : (
+            <>
+              <Upload className="w-8 h-8 text-[#00E5FF]" />
+              <p className="text-sm text-slate-300">{placeholder}</p>
+              <p className="text-xs text-slate-400">点击本框后按 Ctrl+V 粘贴，或点击下方按钮选择文件</p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUploadAreaClick();
+                }}
+                className="mt-1 px-3 py-1.5 rounded-md bg-primary-500/20 border border-primary-500/50 text-primary-200 text-xs font-medium hover:bg-primary-500/30 transition"
+              >
+                选择文件
+              </button>
+              <p className="text-xs text-slate-500">
+                支持格式: JPG, PNG, GIF, WebP, BMP, HEIC, HEIF, TIFF, SVG{acceptPdf ? ", PDF" : ""}
+              </p>
+              {multiple && images.length > 0 && (
+                <p className="text-xs text-slate-500">
+                  已上传 {images.length}/{maxImages} 张
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 图片/PDF 预览列表 */}
+      {images.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {images.map((img, index) => (
+            <div
+              key={index}
+              className="relative group rounded-lg border border-slate-700 overflow-hidden bg-slate-900 cursor-pointer"
+              onClick={() => { setImageRotation(0); setImageViewModal({ images, currentIndex: index }); }}
+            >
+              {isPdfDataUrl(img) ? (
+                <div className="w-full h-32 flex flex-col items-center justify-center bg-slate-800 text-slate-300">
+                  <FileText className="w-10 h-10 text-rose-400 mb-1" />
+                  <span className="text-xs font-medium">PDF</span>
+                </div>
+              ) : (
+                <img
+                  src={img}
+                  alt={`预览 ${index + 1}`}
+                  className="w-full h-32 object-cover"
+                />
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRemoveImage(index);
+                }}
+                className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                title="删除"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center">
+                {isPdfDataUrl(img) ? "PDF" : "图片"} {index + 1} - 点击查看
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 图片查看弹窗 */}
+      {imageViewModal && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
+          style={{ zIndex: 9999 }}
+          onClick={() => setImageViewModal(null)}
+        >
+          <div 
+            className="relative max-w-6xl max-h-[95vh] p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+              <button
+                onClick={() => setImageRotation((r) => (r - 90) % 360)}
+                className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
+                title="向左旋转"
+              >↺</button>
+              <button
+                onClick={() => setImageRotation((r) => (r + 90) % 360)}
+                className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
+                title="向右旋转"
+              >↻</button>
+              <button
+                onClick={() => { setImageViewModal(null); setImageRotation(0); }}
+                className="text-white text-2xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
+              >✕</button>
+            </div>
+            
+            {/* 图片导航 */}
+            {imageViewModal.images.length > 1 && (
+              <div className="absolute top-4 left-4 right-16 flex items-center justify-center gap-2 z-10">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImageRotation(0);
+                    setImageViewModal({
+                      images: imageViewModal.images,
+                      currentIndex: imageViewModal.currentIndex > 0 
+                        ? imageViewModal.currentIndex - 1 
+                        : imageViewModal.images.length - 1
+                    });
+                  }}
+                  className="bg-black/70 hover:bg-black/90 text-white rounded-full w-8 h-8 flex items-center justify-center transition"
+                >
+                  ←
+                </button>
+                <span className="text-white text-sm bg-black/70 px-3 py-1 rounded">
+                  {imageViewModal.currentIndex + 1} / {imageViewModal.images.length}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImageRotation(0);
+                    setImageViewModal({
+                      images: imageViewModal.images,
+                      currentIndex: imageViewModal.currentIndex < imageViewModal.images.length - 1
+                        ? imageViewModal.currentIndex + 1
+                        : 0
+                    });
+                  }}
+                  className="bg-black/70 hover:bg-black/90 text-white rounded-full w-8 h-8 flex items-center justify-center transition"
+                >
+                  →
+                </button>
+              </div>
+            )}
+
+            {/* 当前图片或 PDF */}
+            {(() => {
+              const currentImage = imageViewModal.images[imageViewModal.currentIndex];
+              if (isPdfDataUrl(currentImage)) {
+                return (
+                  <iframe
+                    src={currentImage}
+                    title={`PDF ${imageViewModal.currentIndex + 1}`}
+                    className="w-[80vw] h-[85vh] rounded-lg shadow-2xl bg-white"
+                  />
+                );
+              }
+              let imageSrc = currentImage;
+              if (currentImage && /^[A-Za-z0-9+/=]+$/.test(currentImage) && currentImage.length > 100 && !currentImage.startsWith("data:")) {
+                imageSrc = `data:image/jpeg;base64,${currentImage}`;
+              }
+              return (
+                <img
+                  src={imageSrc || currentImage}
+                  alt={`图片 ${imageViewModal.currentIndex + 1}`}
+                  className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain bg-white/5 transition-transform duration-300"
+                  style={{ transform: `rotate(${imageRotation}deg)` }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = "none";
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector(".error-message")) {
+                      const errorDiv = document.createElement("div");
+                      errorDiv.className = "error-message text-white text-center p-8 bg-rose-500/20 rounded-lg border border-rose-500/40";
+                      errorDiv.innerHTML = `<div class="text-rose-300 text-lg mb-2">❌ 图片加载失败</div><div class="text-slate-300 text-sm">请检查图片格式或数据是否正确</div>`;
+                      parent.appendChild(errorDiv);
+                    }
+                  }}
+                />
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* 提示信息 */}
+      {multiple && images.length >= maxImages && (
+        <p className="text-xs text-amber-400">已达到最大上传数量（{maxImages}张）</p>
+      )}
+    </div>
+  );
+}

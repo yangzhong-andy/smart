@@ -1,0 +1,30 @@
+---
+description: 发布与版本号规范（每次发版必须 bump）
+globs: 
+alwaysApply: true
+---
+
+# 发布必须带版本号（硬性规则）
+
+- **每次**用户说「发布」「发版」「发布 git」「release」「push 到 git」「提交 git」等，指**代码发布到远程仓库**时：**必须先 bump 版本号，再 commit + push**。禁止只推功能代码而不改版本。
+- **必须同时修改**：
+  - `package.json` 的 `version`
+  - `package-lock.json` 里两处 `version`（与 `package.json` 保持一致）
+- 侧栏/前端展示版本来自 `next.config.mjs` 读取的 `package.json.version`，漏改版本会导致线上显示旧版本号。
+
+## 版本线（本项目约定）
+
+- 在 **1.5.x** 上递增：**1.5.1 → 1.5.2 → 1.5.3 …**（第三位 patch +1）。
+- 若用户另有口头约定，以用户最新说明为准。
+
+## 操作顺序（发布 git 时）
+
+1. 将 `package.json` / `package-lock.json` 中的 `version` 改为新版本。
+2. `git add package.json package-lock.json`（及当次其它改动）。
+3. `git commit -m "chore: release v1.5.x"`（**提交信息里必须含 `v` + 完整版本号**）。
+4. `git push`（或用户指定的分支）。
+
+## 其它
+
+- **发布需用户同意**：若规则与「用户明确同意」冲突，以用户当次指令为准；但用户要求发布时，**仍须包含版本 bump**，除非用户明确说「不要改版本号」。
+- 若存在 `CHANGELOG`，可在同一次提交里更新（本仓库 `.gitignore` 可能忽略 `*.md`，以实际为准）。

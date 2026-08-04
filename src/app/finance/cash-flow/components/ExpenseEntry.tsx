@@ -1,0 +1,739 @@
+"use client";
+
+/**
+ * 支出申请录入组件
+ * 
+ * 使用场景：
+ * - 广告同事：发起广告费、广告充值等支出申请
+ * - 物流同事：发起物流费、运费等支出申请
+ * - 采购同事：发起采购费、供应商付款等支出申请
+ * 
+ * 审批流程：
+ * 1. 发起人填写申请 → 提交审批
+ * 2. 主管审批（通过/退回）
+ * 3. 财务选择账户 → 出账 → 生成财务流水
+ */
+
+import { useState, useEffect, useMemo } from "react";
+import { type BankAccount } from "@/lib/finance-store";
+import { getAdAccounts, type AdAccount } from "@/lib/ad-agency-store";
+import type { CashFlow } from "../page";
+import { toast } from "sonner";
+import { enrichWithUID } from "@/lib/business-utils";
+import { EXPENSE_CATEGORIES, getSubCategories, type ExpenseSubCategory } from "@/lib/expense-categories";
+import useSWR from "swr";
+import ImageUploader from "@/components/ImageUploader";
+import DateInput from "@/components/DateInput";
+import { createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
+import InteractiveButton from "@/components/ui/InteractiveButton";
+
+type ExpenseEntryProps = {
+  accounts: BankAccount[];
+  onClose: () => void;
+  onSave: (flow: CashFlow, adAccountId?: string, rebateAmount?: number, warehouseId?: string) => void;
+  /** 发起审核时不选账户，由财务入账时再选（隐藏关联账户，必填改为选币种） */
+  skipAccountSelection?: boolean;
+};
+
+const CURRENCY_OPTIONS = ["CNY", "USD", "BRL", "JPY", "EUR", "GBP", "HKD", "SGD"];
+
+export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSelection = false }: ExpenseEntryProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    summary: "",
+    primaryCategory: "", // 一级分类
+    subCategory: "", // 二级分类
+    amount: "",
+    exchangeRate: "",
+    accountId: "",
+    currency: "CNY", // 发起审核未选账户时使用
+    businessNumber: "",
+    payeeName: "",
+    payeeAccount: "",
+    remark: "",
+    adAccountId: "", // 广告账户ID（仅当分类为"广告费"时显示）
+    voucher: "" as string | string[], // 凭证，支持多张
+    warehouseId: "" // 关联仓库ID（仅当分类为"物流/海外仓一件代发费"时显示）
+  });
+
+  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
+  const [isRecharge, setIsRecharge] = useState(false); // 是否为广告充值
+  const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState(""); // 选中的采购单ID
+  const [overseasWarehouses, setOverseasWarehouses] = useState<any[]>([]);
+  const [containers, setContainers] = useState<any[]>([]);
+  const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([]);
+  const isWarehouseFee = form.subCategory === "物流/海外仓一件代发费";
+  const isUnloadFee = form.subCategory === "物流/海外仓卸柜费";
+  // 所有物流分类都可以关联柜号
+  const isLogistics = form.primaryCategory === "物流";
+
+  // 获取海外仓列表
+  useEffect(() => {
+    if (!isWarehouseFee) return;
+    fetch("/api/warehouses?pageSize=100")
+      .then(res => res.json())
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.data ?? []);
+        setOverseasWarehouses(list.filter((w: any) => w.type === "OVERSEAS"));
+      })
+      .catch(() => {});
+  }, [isWarehouseFee]);
+
+  const [usedContainerIds, setUsedContainerIds] = useState<Set<string>>(new Set());
+
+  // 获取柜子列表（物流分类时）
+  useEffect(() => {
+    if (!isLogistics) {
+      setSelectedContainerIds([]);
+      return;
+    }
+    fetch("/api/containers?page=1&pageSize=200")
+      .then(res => res.json())
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.data ?? []);
+        setContainers(list);
+      })
+      .catch(() => {});
+    // 获取已关联柜子的支出申请
+    fetch("/api/expense-requests?status=Pending_Approval&page=1&pageSize=500&noCache=true")
+      .then(res => res.json())
+      .then(data => {
+        const items = Array.isArray(data?.data) ? data.data : [];
+        const used = new Set<string>();
+        items.forEach((r: any) => {
+          const match = (r.remark || "").match(/\[关联柜子: ([^\]]+)\]/);
+          if (match) {
+            match[1].split(",").forEach((id: string) => used.add(id.trim()));
+          }
+        });
+        setUsedContainerIds(used);
+      })
+      .catch(() => {});
+  }, [isLogistics]);
+
+  // 判断是否为采购相关分类
+  const isPurchaseCategory = form.primaryCategory === "采购";
+
+  // 使用 SWR 获取采购单列表（仅当分类为采购时）
+  const fetcher = (url: string) => fetch(url).then(res => res.json());
+  const { data: purchaseOrdersDataRaw } = useSWR(
+    isPurchaseCategory ? '/api/purchase-orders?page=1&pageSize=500' : null,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      dedupingInterval: 600000,
+    }
+  );
+  const purchaseOrders = Array.isArray(purchaseOrdersDataRaw) ? purchaseOrdersDataRaw : (purchaseOrdersDataRaw?.data ?? []);
+
+  // 获取当前一级分类下的二级分类选项
+  const availableSubCategories = useMemo(() => {
+    if (!form.primaryCategory) return [];
+    return getSubCategories(form.primaryCategory);
+  }, [form.primaryCategory]);
+
+  // 计算最终分类值（用于保存）
+  const finalCategory = useMemo(() => {
+    if (form.subCategory) {
+      return form.subCategory; // 格式：一级分类/二级分类
+    }
+    return form.primaryCategory; // 只有一级分类
+  }, [form.primaryCategory, form.subCategory]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const loaded = getAdAccounts();
+      setAdAccounts(loaded);
+    }
+  }, []);
+
+  const selectedAccount = accounts.find((a) => a.id === form.accountId);
+  const isForeignCurrency = selectedAccount && selectedAccount.currency !== "CNY" && selectedAccount.currency !== "RMB";
+  // 选了外币账户时自动带入账户汇率
+  useEffect(() => {
+    if (isForeignCurrency && selectedAccount && !form.exchangeRate) {
+      setForm((f) => ({ ...f, exchangeRate: String(selectedAccount.exchangeRate || 7) }));
+    }
+    if (!isForeignCurrency) {
+      setForm((f) => ({ ...f, exchangeRate: "" }));
+    }
+  }, [selectedAccount?.id, isForeignCurrency]);
+  const selectedAdAccount = adAccounts.find((a) => a.id === form.adAccountId);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    // 防止重复提交
+    if (isSubmitting) {
+      toast.loading("正在提交，请勿重复点击");
+      return;
+    }
+
+    if (!form.primaryCategory) {
+      toast.error("请选择费用分类");
+      return;
+    }
+    if (!skipAccountSelection && !form.accountId) {
+      toast.error("请选择账户和费用分类");
+      return;
+    }
+    // 关联单号改为可选，因为有些支出可能没有明确的业务单号
+    if (!form.summary.trim()) {
+      toast.error("请填写摘要");
+      return;
+    }
+    if (isWarehouseFee && !form.warehouseId) {
+      toast.error("请选择关联的海外仓仓库");
+      return;
+    }
+    if (isUnloadFee && selectedContainerIds.length === 0) {
+      toast.error("请选择关联的柜子");
+      return;
+    }
+    const amount = Number(form.amount);
+    if (Number.isNaN(amount) || amount <= 0) {
+      toast.error("金额需为大于 0 的数字");
+      return;
+    }
+    const account = skipAccountSelection ? null : accounts.find((a) => a.id === form.accountId);
+    if (!skipAccountSelection && !account) {
+      toast.error("账户不存在");
+      return;
+    }
+    // 账户总余额校验（仅在选择账户时）
+    if (!skipAccountSelection && account) {
+      const totalBalance = account.originalBalance || 0;
+      if (totalBalance < amount) {
+        toast.error("账户余额不足");
+        return;
+      }
+    }
+
+    // 如果是广告充值，需要选择广告账户并计算返点
+    let adAccountId: string | undefined;
+    let rebateAmount: number | undefined;
+    
+    if (form.primaryCategory === "广告费" && isRecharge) {
+      if (!form.adAccountId) {
+        toast.error("广告充值时，请选择广告账户");
+        return;
+      }
+      
+      const adAccount = adAccounts.find((a) => a.id === form.adAccountId);
+      if (!adAccount) {
+        toast.error("请选择有效的广告账户");
+        return;
+      }
+      
+      // 查找关联的代理商
+      let agencies: any[] = [];
+      if (typeof window !== "undefined") {
+        try {
+          const { getAgencies } = require("@/lib/ad-agency-store");
+          agencies = getAgencies();
+        } catch (e) {
+          console.error("Failed to load agencies", e);
+        }
+      }
+      const agency = agencies.find((a: any) => a.id === adAccount.agencyId);
+      
+      if (agency) {
+        // 计算返点金额
+        rebateAmount = (amount * agency.rebateRate) / 100;
+      }
+      
+      adAccountId = form.adAccountId;
+    }
+
+    // 如果是采购分类且选择了采购单，使用采购单号作为关联单号
+    let finalBusinessNumber: string | undefined = form.businessNumber.trim() || undefined;
+    let relatedId: string | undefined = undefined;
+    
+    if (isPurchaseCategory && selectedPurchaseOrderId) {
+      const selectedPO = purchaseOrders.find((po: any) => po.id === selectedPurchaseOrderId);
+      if (selectedPO) {
+        finalBusinessNumber = selectedPO.orderNumber;
+        relatedId = selectedPO.id;
+      }
+    } else if (finalBusinessNumber) {
+      // 如果手动输入了关联单号，保留它
+      finalBusinessNumber = finalBusinessNumber;
+    }
+
+    // 创建支出申请（需要审批）
+    const expenseRequest: ExpenseRequest = {
+      id: crypto.randomUUID(),
+      date: form.date,
+      summary: form.summary.trim(),
+      category: finalCategory,
+      amount: amount,
+      currency: skipAccountSelection ? form.currency : (account!.currency),
+      exchangeRate: isForeignCurrency ? Number(form.exchangeRate) || undefined : undefined,
+      businessNumber: finalBusinessNumber,
+      relatedId: relatedId,
+      payeeName: form.payeeName.trim() || undefined,
+      payeeAccount: form.payeeAccount.trim() || undefined,
+      remark: form.remark.trim() + (rebateAmount ? ` 广告充值返点：${rebateAmount.toFixed(2)}` : ""),
+      voucher: form.voucher ? (Array.isArray(form.voucher) ? form.voucher : [form.voucher]) : undefined,
+      status: "Pending_Approval", // 待审批
+      createdBy: "当前用户", // TODO: 从用户系统获取
+      createdAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      adAccountId: adAccountId,
+      rebateAmount: rebateAmount,
+      warehouseId: isWarehouseFee ? (form.warehouseId || undefined) : undefined,
+      containerIds: isLogistics && selectedContainerIds.length > 0 ? selectedContainerIds : undefined,
+    };
+
+    // 自动生成唯一业务ID（如果还没有）
+    if (!expenseRequest.uid) {
+      expenseRequest.uid = `EXP-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+    const requestWithUID = expenseRequest;
+    
+    // 防止重复提交
+    setIsSubmitting(true);
+    try {
+      // 创建支出申请
+      await createExpenseRequest(requestWithUID);
+      toast.success("支出申请已提交，等待审批");
+      // 关闭弹窗
+      setTimeout(() => {
+        setIsSubmitting(false);
+        onClose();
+      }, 1000);
+    } catch (error: any) {
+      setIsSubmitting(false);
+      toast.error(error.message || "提交失败，请重试");
+      throw error; // 重新抛出错误，让 InteractiveButton 也能捕获
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">提交支出申请</h2>
+            <p className="text-xs text-slate-400 mt-1">提交后需等待审批，审批通过后才能出账</p>
+          </div>
+          <button 
+            onClick={() => {
+              setIsSubmitting(false);
+              onClose();
+            }} 
+            className="text-slate-400 hover:text-slate-200"
+            disabled={isSubmitting}
+          >
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="space-y-1">
+              <span className="text-slate-300">日期</span>
+              <DateInput
+                value={form.date}
+                onChange={(v) => setForm((f) => ({ ...f, date: v }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="选择日期"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-slate-300">一级分类 <span className="text-rose-400">*</span></span>
+              <select
+                value={form.primaryCategory}
+                  onChange={(e) => {
+                    setForm((f) => ({ 
+                      ...f, 
+                      primaryCategory: e.target.value, 
+                      subCategory: "", // 清空二级分类
+                      adAccountId: "",
+                      businessNumber: "" // 清空关联单号
+                    }));
+                    setIsRecharge(false);
+                    setSelectedPurchaseOrderId(""); // 清空采购单选择
+                  }}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                required
+              >
+                <option value="">请选择一级分类</option>
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {form.primaryCategory && availableSubCategories.length > 0 && (
+              <label className="space-y-1">
+                <span className="text-slate-300">二级分类</span>
+                <select
+                  value={form.subCategory}
+                  onChange={(e) => setForm((f) => ({ ...f, subCategory: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                >
+                  <option value="">不选择二级分类（使用一级分类）</option>
+                  {availableSubCategories.map((sub) => (
+                    <option key={sub.value} value={sub.value}>
+                      {sub.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {form.primaryCategory === "广告费" && (
+              <label className="space-y-1 col-span-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <input
+                    type="checkbox"
+                    checked={isRecharge}
+                    onChange={(e) => {
+                      setIsRecharge(e.target.checked);
+                      if (!e.target.checked) {
+                        setForm((f) => ({ ...f, adAccountId: "" }));
+                      }
+                    }}
+                    className="rounded border-slate-600 bg-slate-800"
+                  />
+                  <span className="text-slate-300 text-sm">这是广告充值</span>
+                </div>
+                {isRecharge && (
+                  <select
+                    value={form.adAccountId}
+                    onChange={(e) => setForm((f) => ({ ...f, adAccountId: e.target.value }))}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                    required={isRecharge}
+                  >
+                    <option value="">请选择广告账户</option>
+                    {adAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.accountName} ({acc.agencyName}) - {acc.currency}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isRecharge && selectedAdAccount && (
+                  <div className="text-xs text-slate-500 mt-1">
+                    当前余额：{selectedAdAccount.currentBalance.toLocaleString()} {selectedAdAccount.currency}
+                  </div>
+                )}
+              </label>
+            )}
+            <label className="space-y-1 col-span-2">
+              <span className="text-slate-300">摘要 <span className="text-rose-400">*</span></span>
+              <input
+                value={form.summary}
+                onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="简要描述本次支出"
+                required
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-slate-300">金额 <span className="text-rose-400">*</span></span>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                required
+              />
+            </label>
+            {isForeignCurrency && (
+              <label className="space-y-1">
+                <span className="text-slate-300">汇率 <span className="text-rose-400">*</span></span>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={form.exchangeRate}
+                  onChange={(e) => setForm((f) => ({ ...f, exchangeRate: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder="如：7.150000"
+                  required
+                />
+                <div className="text-xs text-slate-500 mt-1">
+                  折合人民币：¥{(Number(form.amount || 0) * Number(form.exchangeRate || 0)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </label>
+            )}
+            {/* 采购分类：显示采购单选择器 */}
+            {isPurchaseCategory ? (
+              <label className="space-y-1 col-span-2">
+                <span className="text-slate-300">关联采购单</span>
+                <select
+                  value={selectedPurchaseOrderId}
+                  onChange={(e) => {
+                    const poId = e.target.value;
+                    setSelectedPurchaseOrderId(poId);
+                    if (poId) {
+                      const selectedPO = purchaseOrders.find((po: any) => po.id === poId);
+                      if (selectedPO) {
+                        setForm((f) => ({ ...f, businessNumber: selectedPO.orderNumber }));
+                      }
+                    } else {
+                      setForm((f) => ({ ...f, businessNumber: "" }));
+                    }
+                  }}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                >
+                  <option value="">请选择采购单（可选）</option>
+                  {purchaseOrders.map((po: any) => (
+                    <option key={po.id} value={po.id}>
+                      {po.orderNumber} - {po.sku} {po.productName ? `(${po.productName})` : ""} - {po.status}
+                    </option>
+                  ))}
+                </select>
+                <div className="text-xs text-slate-500 mt-1">
+                  选择采购单后，将自动关联采购单号
+                </div>
+                {/* 如果选择了采购单，显示手动输入选项 */}
+                {selectedPurchaseOrderId && (
+                  <div className="mt-2">
+                    <label className="space-y-1">
+                      <span className="text-slate-300 text-xs">或手动输入关联单号</span>
+                      <input
+                        value={form.businessNumber}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, businessNumber: e.target.value }));
+                          if (e.target.value) {
+                            setSelectedPurchaseOrderId(""); // 清空选择
+                          }
+                        }}
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                        placeholder="手动输入单号"
+                      />
+                    </label>
+                  </div>
+                )}
+              </label>
+            ) : (
+              <label className="space-y-1">
+                <span className="text-slate-300">关联单号</span>
+                <input
+                  value={form.businessNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, businessNumber: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder="如：PO-123456（可选）"
+                />
+                <div className="text-xs text-slate-500 mt-1">
+                  用于关联采购单号、合同号等业务单据（可选）
+                </div>
+              </label>
+            )}
+            <label className="space-y-1">
+              <span className="text-slate-300">收款人</span>
+              <input
+                value={form.payeeName}
+                onChange={(e) => setForm((f) => ({ ...f, payeeName: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="收款方姓名/单位名称"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-slate-300">收款账号</span>
+              <input
+                value={form.payeeAccount}
+                onChange={(e) => setForm((f) => ({ ...f, payeeAccount: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="银行卡号/支付宝账号等"
+              />
+              <div className="text-xs text-slate-500 mt-1">便于财务打款时核对</div>
+            </label>
+            {skipAccountSelection ? (
+              <label className="space-y-1">
+                <span className="text-slate-300">币种</span>
+                <select
+                  value={form.currency}
+                  onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                >
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <div className="text-xs text-slate-500 mt-1">入账时由财务选择付款账户</div>
+              </label>
+            ) : (
+              <label className="space-y-1 col-span-2">
+                <span className="text-slate-300">关联账户 <span className="text-rose-400">*</span></span>
+                <select
+                  value={form.accountId}
+                  onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                  required
+                >
+                  <option value="">请选择账户</option>
+                  {(() => {
+                    const groupedAccounts = accounts.reduce((acc, account) => {
+                      const currency = account.currency || "OTHER";
+                      if (!acc[currency]) acc[currency] = [];
+                      acc[currency].push(account);
+                      return acc;
+                    }, {} as Record<string, typeof accounts>);
+                    const currencyOrder = ["CNY", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
+                    const sortedCurrencies = Object.keys(groupedAccounts).sort((a, b) => {
+                      const aIndex = currencyOrder.indexOf(a);
+                      const bIndex = currencyOrder.indexOf(b);
+                      if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+                      if (aIndex === -1) return 1;
+                      if (bIndex === -1) return -1;
+                      return aIndex - bIndex;
+                    });
+                    return sortedCurrencies.flatMap((currency) => {
+                      const currencyAccounts = groupedAccounts[currency];
+                      const currencyLabel = currency === "CNY" || currency === "RMB" ? "人民币" : currency === "USD" ? "美元" : currency === "JPY" ? "日元" : currency;
+                      return [
+                        <optgroup key={`group-${currency}`} label={`━━━ ${currencyLabel} (${currency}) ━━━`}>
+                          {currencyAccounts.map((acc) => {
+                            const displayBalance = acc.originalBalance || 0;
+                            const accountTypeLabel = acc.accountCategory === "PRIMARY" ? "主账户" : acc.accountCategory === "VIRTUAL" ? "虚拟子账号" : "独立账户";
+                            let balanceText = "";
+                            if (acc.currency === "CNY" || acc.currency === "RMB") {
+                              balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(displayBalance);
+                            } else if (acc.currency === "USD") {
+                              balanceText = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(displayBalance);
+                            } else {
+                              balanceText = `${acc.currency} ${displayBalance.toLocaleString("zh-CN")}`;
+                            }
+                            return (
+                              <option key={acc.id} value={acc.id}>
+                                {acc.name} | {accountTypeLabel} | 余额: {balanceText}
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      ];
+                    });
+                  })()}
+                </select>
+                {selectedAccount && (() => {
+                  const currentBalance = selectedAccount.originalBalance || 0;
+                  const amount = Number(form.amount) || 0;
+                  const afterBalance = currentBalance - amount;
+                  const formatBalance = (balance: number) => {
+                    if (selectedAccount.currency === "CNY" || selectedAccount.currency === "RMB") {
+                      return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(balance);
+                    } else if (selectedAccount.currency === "USD") {
+                      return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD" }).format(balance);
+                    }
+                    return `${selectedAccount.currency} ${balance.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  };
+                  return (
+                    <div className="text-xs text-slate-500 mt-1 space-y-1">
+                      <div>当前余额：<span className="text-slate-300 font-medium">{formatBalance(currentBalance)}</span></div>
+                      {amount > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span>变动后余额：</span>
+                          <span className={`font-medium ${afterBalance < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                            {formatBalance(afterBalance)}
+                          </span>
+                          {afterBalance < 0 && <span className="text-rose-400 text-xs">（余额不足）</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </label>
+            )}
+            <label className="space-y-1 col-span-2">
+              <span className="text-slate-300">备注</span>
+              <input
+                value={form.remark}
+                onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                placeholder="可选"
+              />
+            </label>
+            {isWarehouseFee && (
+              <label className="space-y-1">
+                <span className="text-slate-300">关联海外仓 <span className="text-rose-400">*</span></span>
+                <select
+                  value={form.warehouseId}
+                  onChange={(e) => setForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400"
+                >
+                  <option value="">请选择海外仓</option>
+                  {overseasWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {isLogistics && (
+              <div className="space-y-1 col-span-2">
+                <span className="text-slate-300">关联柜子 {isUnloadFee && <span className="text-rose-400">*</span>}（可多选{isUnloadFee ? "" : "，选填"}）</span>
+                <div className="max-h-40 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 p-2 space-y-1">
+                  {containers.length === 0 ? (
+                    <span className="text-xs text-slate-500">暂无柜子</span>
+                  ) : (
+                    containers.map((c) => {
+                      const used = usedContainerIds.has(c.id);
+                      return (
+                        <label key={c.id} className={`flex items-center gap-2 text-sm ${used ? "text-slate-600 line-through" : "text-slate-300"}`}>
+                          <input
+                            type="checkbox"
+                            checked={selectedContainerIds.includes(c.id)}
+                            disabled={used}
+                            onChange={(e) => {
+                              setSelectedContainerIds(prev =>
+                                e.target.checked ? [...prev, c.id] : prev.filter(id => id !== c.id)
+                              );
+                            }}
+                          />
+                          {c.containerNo} ({c.status}){used && " 已关联"}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                {selectedContainerIds.length > 0 && (
+                  <div className="text-xs text-slate-500">已选 {selectedContainerIds.length} 个柜子</div>
+                )}
+              </div>
+            )}
+            <label className="space-y-1 col-span-2">
+              <span className="text-slate-300">凭证</span>
+              <ImageUploader
+                value={form.voucher}
+                onChange={(value) => setForm((f) => ({ ...f, voucher: value }))}
+                multiple
+                maxImages={10}
+                label="上传支出凭证"
+                placeholder="点击上传或 Ctrl+V 粘贴，可多次粘贴追加多张"
+              />
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSubmitting(false);
+                onClose();
+              }}
+              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              disabled={isSubmitting}
+            >
+              取消
+            </button>
+            <InteractiveButton
+              type="submit"
+              variant="danger"
+              size="md"
+              className="rounded-md bg-rose-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-rose-600"
+              disabled={(!skipAccountSelection && !accounts.length) || isSubmitting}
+            >
+              提交申请
+            </InteractiveButton>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

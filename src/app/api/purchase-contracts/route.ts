@@ -1,0 +1,315 @@
+import { NextRequest, NextResponse } from "next/server";
+import { PurchaseContractStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
+
+export const dynamic = 'force-dynamic';
+
+const STATUS_MAP_FRONT_TO_DB: Record<string, PurchaseContractStatus> = {
+  '待审批': PurchaseContractStatus.PENDING_APPROVAL,
+  '待发货': PurchaseContractStatus.PENDING_SHIPMENT,
+  '部分发货': PurchaseContractStatus.PARTIAL_SHIPMENT,
+  '发货完成': PurchaseContractStatus.SHIPPED,
+  '已结清': PurchaseContractStatus.SETTLED,
+  '已取消': PurchaseContractStatus.CANCELLED,
+};
+
+const STATUS_MAP_DB_TO_FRONT: Record<PurchaseContractStatus, string> = {
+  [PurchaseContractStatus.PENDING_APPROVAL]: '待审批',
+  [PurchaseContractStatus.PENDING_SHIPMENT]: '待发货',
+  [PurchaseContractStatus.PARTIAL_SHIPMENT]: '部分发货',
+  [PurchaseContractStatus.SHIPPED]: '发货完成',
+  [PurchaseContractStatus.SETTLED]: '已结清',
+  [PurchaseContractStatus.CANCELLED]: '已取消',
+};
+
+function parseContractVoucher(v: string | null | undefined): string | string[] | undefined {
+  if (v == null || v === '') return undefined;
+  const s = String(v).trim();
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s);
+      return Array.isArray(arr) ? arr : s;
+    } catch {
+      return s;
+    }
+  }
+  return s;
+}
+
+// 缓存配置
+const CACHE_TTL = 300; // 5分钟
+const CACHE_KEY_PREFIX = 'purchase-contracts';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get("status");
+    const supplierId = searchParams.get("supplierId");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const noCache = searchParams.get("noCache") === "true";
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      status || 'all',
+      supplierId || 'all',
+      String(page),
+      String(pageSize)
+    );
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1 && !status && !supplierId) {
+      const cached = await getCache<any>(cacheKey);
+      if (cached) {
+        return NextResponse.json(cached);
+      }
+    }
+
+    const where: any = {};
+    if (status) where.status = status;
+    if (supplierId) where.supplierId = supplierId;
+
+    const [contracts, total] = await prisma.$transaction([
+      prisma.purchaseContract.findMany({
+        where,
+        select: {
+          id: true, contractNumber: true, supplierId: true, supplierName: true,
+          sku: true, skuId: true, unitPrice: true, totalQty: true,
+          pickedQty: true, finishedQty: true, totalAmount: true,
+          depositRate: true, depositAmount: true, depositPaid: true,
+          tailPeriodDays: true, deliveryDate: true, status: true,
+          contractVoucher: true,
+          totalPaid: true, totalOwed: true, approvedBy: true, approvedAt: true,
+          createdAt: true, updatedAt: true,
+          _count: { select: { items: true, deliveryOrders: true } },
+          items: {
+            select: {
+              id: true,
+              sku: true,
+              skuName: true,
+              spec: true,
+              unitPrice: true,
+              qty: true,
+              pickedQty: true,
+              finishedQty: true,
+              totalAmount: true,
+            },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.purchaseContract.count({ where }),
+    ]);
+
+    // 自动同步已支付的定金（仅在需要时查询，非每次列表请求都查）
+    let depositByContract: Record<string, number> = {};
+    if (page === 1 && !status && !supplierId) {
+      const paidDeposits = await prisma.expenseRequest.findMany({
+        where: { status: 'Paid', summary: { contains: '采购合同定金' } },
+        select: { summary: true, amount: true },
+      });
+      for (const req of paidDeposits) {
+        const match = req.summary.match(/采购合同定金[：:\s]*([^\s]+)/);
+        const cn = match?.[1];
+        if (cn && Number.isFinite(Number(req.amount))) {
+          depositByContract[cn] = (depositByContract[cn] || 0) + Number(req.amount);
+        }
+      }
+    }
+
+    const response = {
+      data: contracts.map(c => {
+        const items = (c as any).items ?? [];
+        const itemFinishedQty = items.reduce(
+          (sum: number, it: { finishedQty?: number | null }) => sum + (it.finishedQty ?? 0),
+          0
+        );
+        const itemTotalQty = items.reduce(
+          (sum: number, it: { qty?: number | null }) => sum + (it.qty ?? 0),
+          0
+        );
+        const finishedQty = items.length > 0 ? itemFinishedQty : c.finishedQty;
+        const totalQty = items.length > 0 ? itemTotalQty : c.totalQty;
+        return ({
+        id: c.id,
+        contractNumber: c.contractNumber,
+        supplierId: c.supplierId || undefined,
+        supplierName: c.supplierName,
+        sku: c.sku,
+        skuId: c.skuId || undefined,
+        unitPrice: Number(c.unitPrice),
+        totalQty,
+        pickedQty: c.pickedQty,
+        finishedQty,
+        totalAmount: Number(c.totalAmount),
+        depositRate: Number(c.depositRate),
+        depositAmount: Number(c.depositAmount),
+        depositPaid: Number(c.depositPaid),
+        tailPeriodDays: c.tailPeriodDays,
+        deliveryDate: c.deliveryDate?.toISOString(),
+        status: STATUS_MAP_DB_TO_FRONT[c.status] ?? c.status,
+        contractVoucher: parseContractVoucher((c as any).contractVoucher),
+        totalPaid: Number(c.totalPaid),
+        totalOwed: Number(c.totalOwed),
+        approvedBy: c.approvedBy || undefined,
+        approvedAt: c.approvedAt?.toISOString(),
+        createdAt: c.createdAt.toISOString(),
+        updatedAt: c.updatedAt.toISOString(),
+        itemCount: c._count.items,
+        deliveryOrderCount: c._count.deliveryOrders,
+        syncedDeposit: depositByContract[c.contractNumber] || 0,
+        items: (c as any).items?.map((it: { id: string; sku: string; skuName: string | null; spec: string | null; unitPrice: unknown; qty: number; pickedQty: number; finishedQty?: number | null; totalAmount: unknown }) => ({
+          id: it.id,
+          sku: it.sku,
+          skuName: it.skuName ?? undefined,
+          spec: it.spec ?? undefined,
+          unitPrice: Number(it.unitPrice),
+          qty: it.qty,
+          pickedQty: it.pickedQty,
+          finishedQty: it.finishedQty ?? 0,
+          totalAmount: Number(it.totalAmount),
+        })) ?? [],
+      })}),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    };
+
+    // 设置缓存（仅第一页且无筛选时）
+    if (!noCache && page === 1 && !status && !supplierId) {
+      await setCache(cacheKey, response, CACHE_TTL);
+    }
+
+    return NextResponse.json(response);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || "获取失败" }, { status: 500 });
+  }
+}
+
+// POST - 创建（清除缓存）。支持两种入参：1）body.items 多行物料；2）body.sku/unitPrice/totalQty/totalAmount 单行
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const v = body.contractVoucher;
+    const contractVoucher =
+      v == null || v === '' ? null : Array.isArray(v) ? JSON.stringify(v) : String(v).trim() || null;
+    const statusEnum = STATUS_MAP_FRONT_TO_DB[body.status] ?? PurchaseContractStatus.PENDING_APPROVAL;
+    const relatedOrderIds = Array.isArray(body.relatedOrderIds) ? body.relatedOrderIds : [];
+    const relatedOrderNumbers = Array.isArray(body.relatedOrderNumbers) ? body.relatedOrderNumbers : [];
+
+    let sku: string;
+    let skuId: string | null;
+    let unitPrice: number;
+    let totalQty: number;
+    let totalAmount: number;
+    const depositRate = Number(body.depositRate) || 0;
+    let depositAmount = Number(body.depositAmount) || 0;
+    const itemsInput = Array.isArray(body.items) ? body.items : [];
+
+    if (itemsInput.length > 0) {
+      // 兜底：按 sku 反查 ProductVariant.id，防止前端传错 variantId 导致“多行统计到同一SKU”
+      const skuList = itemsInput
+        .map((it: any) => (it?.sku != null ? String(it.sku).trim() : ""))
+        .filter((s: string) => s.length > 0 && s !== "未填" && s !== "多款");
+      const variantBySku = new Map<string, string>();
+      if (skuList.length > 0) {
+        const variants = await prisma.productVariant.findMany({
+          where: { skuId: { in: Array.from(new Set(skuList)) } },
+          select: { id: true, skuId: true },
+        });
+        for (const v of variants) variantBySku.set(v.skuId, v.id);
+      }
+
+      totalQty = itemsInput.reduce((sum: number, i: { quantity?: number }) => sum + (Number(i.quantity) || 0), 0);
+      totalAmount = itemsInput.reduce(
+        (sum: number, i: { quantity?: number; unitPrice?: number }) =>
+          sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
+        0
+      );
+      const first = itemsInput[0];
+      sku = itemsInput.length > 1 ? "多款" : (first.sku || first.skuName || "未填").toString().trim() || "未填";
+      skuId = first.skuId != null ? String(first.skuId) : null;
+      unitPrice = Number(first.unitPrice) || 0;
+      if (depositAmount <= 0 && totalAmount > 0) depositAmount = totalAmount * (depositRate / 100);
+
+      // 把校正映射挂到 body，后续 create items 时使用
+      (body as any).__variantBySku = variantBySku;
+    } else {
+      sku = body.sku != null ? String(body.sku).trim() : "";
+      skuId = body.skuId != null ? String(body.skuId) : null;
+      unitPrice = Number(body.unitPrice);
+      totalQty = Number(body.totalQty);
+      totalAmount = Number(body.totalAmount);
+      if (!sku) return NextResponse.json({ error: "缺少 sku，或请提供 items 数组" }, { status: 400 });
+      if (!Number.isFinite(totalQty) || !Number.isFinite(totalAmount) || !Number.isFinite(unitPrice)) {
+        return NextResponse.json({ error: "缺少 unitPrice / totalQty / totalAmount，或请提供 items 数组" }, { status: 400 });
+      }
+      if (depositAmount <= 0 && totalAmount > 0) depositAmount = totalAmount * (depositRate / 100);
+    }
+
+    const totalOwed = totalAmount;
+
+    const contract = await prisma.purchaseContract.create({
+      data: {
+        contractNumber: body.contractNumber,
+        supplierId: body.supplierId || null,
+        supplierName: body.supplierName,
+        sku,
+        skuId,
+        unitPrice,
+        totalQty,
+        totalAmount,
+        depositRate,
+        depositAmount,
+        depositPaid: Number(body.depositPaid) || 0,
+        tailPeriodDays: Number(body.tailPeriodDays) || 0,
+        deliveryDate: body.deliveryDate ? new Date(body.deliveryDate) : null,
+        status: statusEnum,
+        contractVoucher,
+        relatedOrderIds,
+        relatedOrderNumbers,
+        totalPaid: 0,
+        totalOwed,
+        ...(itemsInput.length > 0
+          ? {
+              items: {
+                create: itemsInput.map((item: { sku?: string; skuId?: string; variantId?: string; skuName?: string; spec?: string; quantity?: number; unitPrice?: number }, i: number) => {
+                  const qty = Number(item.quantity) || 0;
+                  const up = Number(item.unitPrice) || 0;
+                  const skuCode = (item.sku || item.skuName || "").toString().trim();
+                  const variantBySku = (body as any).__variantBySku as Map<string, string> | undefined;
+                  const resolvedVariantId = skuCode && variantBySku ? (variantBySku.get(skuCode) || null) : null;
+                  return {
+                    sku: (item.sku || item.skuName || "未填").toString().trim() || "未填",
+                    // 优先使用按 sku 解析出的 ProductVariant.id，避免错误落到同一 SKU
+                    variantId: resolvedVariantId || item.variantId || null,
+                    skuName: item.skuName != null ? String(item.skuName).trim() : null,
+                    spec: item.spec != null ? String(item.spec).trim() : null,
+                    unitPrice: up,
+                    qty,
+                    totalAmount: qty * up,
+                    sortOrder: i,
+                  };
+                }),
+              },
+            }
+          : {}),
+      },
+    });
+
+    // 清除采购合同缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX);
+
+    return NextResponse.json({
+      id: contract.id,
+      contractNumber: contract.contractNumber,
+      supplierName: contract.supplierName,
+      createdAt: contract.createdAt.toISOString(),
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
+  }
+}

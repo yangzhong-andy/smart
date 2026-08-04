@@ -1,0 +1,875 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import useSWR from "swr";
+import { toast } from "sonner";
+import { DollarSign, Plus, X } from "lucide-react";
+import { PageHeader, EmptyState, ActionButton } from "@/components/ui";
+import DateInput from "@/components/DateInput";
+import ImageUploader from "@/components/ImageUploader";
+import { VoucherViewerModal } from "@/components/VoucherImage";
+
+type CostItem = {
+  id: string;
+  outboundBatchId?: string;
+  logisticsChannelId?: string;
+  containerId?: string;
+  costType: string;
+  amount: string;
+  currency: string;
+  paymentType: string;
+  creditDays?: number;
+  dueDate?: string;
+  paymentStatus: string;
+  expenseRequestId?: string | null;
+  voucher?: string | null;
+  outboundBatch?: {
+    id: string;
+    batchNumber: string;
+    qty: number;
+    shippedDate: string;
+    status: string;
+    outboundOrder?: { id: string; outboundNumber: string; sku: string };
+    warehouse?: { id: string; name: string };
+    container?: { id: string; containerNo: string };
+  };
+  logisticsChannel?: {
+    id: string;
+    name: string;
+    channelCode: string;
+  };
+};
+
+type BatchOption = {
+  id: string;
+  batchNumber: string;
+  outboundOrder?: { outboundNumber: string };
+  /** 出库批次绑定的柜子（与 /api/outbound-batch 列表一致） */
+  container?: { id: string; containerNo: string };
+};
+
+type ChannelOption = {
+  id: string;
+  name: string;
+  channelCode: string;
+};
+
+type ContainerOption = {
+  id: string;
+  containerNo: string;
+  containerType?: string;
+};
+
+type ContainerDetailForBatches = {
+  outboundBatches?: Array<{
+    id: string;
+    batchNumber: string;
+    outboundOrder?: { outboundNumber: string };
+  }>;
+};
+
+const COST_TYPE_OPTIONS = [
+  { value: "海运费", label: "海运费" },
+  { value: "海运费（双清包税）", label: "海运费（双清包税）" },
+  { value: "空运费", label: "空运费" },
+  { value: "港杂费", label: "港杂费" },
+  { value: "清关费", label: "清关费" },
+  { value: "送货费", label: "送货费" },
+];
+
+const CURRENCY_OPTIONS = [
+  { value: "CNY", label: "CNY" },
+  { value: "USD", label: "USD" },
+];
+
+const PAYMENT_TYPE_OPTIONS = [
+  { value: "现结", label: "现结" },
+  { value: "账期", label: "账期" },
+];
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  未付: "未付",
+  已付: "已付",
+  逾期: "逾期",
+  审批中: "审批中",
+};
+
+const PAYMENT_STATUS_CLASS: Record<string, string> = {
+  未付: "bg-amber-500/20 text-amber-300",
+  已付: "bg-emerald-500/20 text-emerald-300",
+  逾期: "bg-rose-500/20 text-rose-300",
+  审批中: "bg-blue-500/20 text-blue-300",
+};
+
+function formatDate(iso: string | undefined) {
+  if (!iso) return "-";
+  try {
+    return new Date(iso).toLocaleDateString("zh-CN");
+  } catch {
+    return iso;
+  }
+}
+
+const listFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("获取失败");
+  return r.json();
+};
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return Array.isArray(j?.data) ? j.data : (Array.isArray(j) ? j : []);
+};
+const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true };
+
+const containersListFetcher = async (url: string): Promise<ContainerOption[]> => {
+  const r = await fetch(url);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const base = typeof j?.error === "string" ? j.error : "获取柜子列表失败";
+    const details = typeof j?.details === "string" ? j.details : "";
+    throw new Error(details ? `${base}（${details}）` : base);
+  }
+  return Array.isArray(j?.data) ? j.data : [];
+};
+
+const containerDetailFetcher = async (url: string): Promise<ContainerDetailForBatches> => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("加载柜子失败");
+  return r.json();
+};
+
+export default function LogisticsCostPage() {
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [voucherView, setVoucherView] = useState<string[] | null>(null);
+  const [voucherEditId, setVoucherEditId] = useState<string | null>(null);
+  const [voucherUpload, setVoucherUpload] = useState<string | string[]>("");
+  const [voucherSaving, setVoucherSaving] = useState(false);
+  const [payConfirm, setPayConfirm] = useState<{ containerNo: string; items: CostItem[]; totalAmount: number; currency: string } | null>(null);
+  const [paySubmitting, setPaySubmitting] = useState(false);
+
+  const { data: listResponse, isLoading, mutate } = useSWR(
+    `/api/logistics-cost?page=${pagination.page}&pageSize=${pagination.pageSize}`,
+    listFetcher,
+    SWR_OPT
+  );
+  const list = Array.isArray(listResponse?.data) ? listResponse.data : [];
+  useEffect(() => {
+    if (listResponse?.pagination) setPagination((p) => ({ ...p, ...listResponse.pagination }));
+  }, [listResponse?.pagination]);
+
+  const { data: batches = [] } = useSWR<BatchOption[]>("/api/outbound-batch?pageSize=200", arrayFetcher, SWR_OPT);
+  const { data: channels = [] } = useSWR<ChannelOption[]>("/api/logistics-channels?pageSize=200", arrayFetcher, SWR_OPT);
+  const {
+    data: containersFromApi,
+    error: containersListError,
+    isLoading: containersListLoading,
+  } = useSWR<ContainerOption[]>(
+    modalOpen ? "/api/containers?pageSize=50&page=1" : null,
+    containersListFetcher,
+    SWR_OPT
+  );
+
+  /** 从已加载的出库批次里提取柜子（API 失败或未返回时的兜底，与业务「批次绑柜」一致） */
+  const containersFromBatches = useMemo(() => {
+    const m = new Map<string, ContainerOption>();
+    for (const b of batches) {
+      const c = b.container;
+      if (c?.id && c.containerNo) {
+        m.set(c.id, { id: c.id, containerNo: c.containerNo });
+      }
+    }
+    return [...m.values()].sort((a, b) => a.containerNo.localeCompare(b.containerNo));
+  }, [batches]);
+
+  const containerSelectOptions = useMemo(() => {
+    const m = new Map<string, ContainerOption>();
+    for (const c of containersFromApi ?? []) {
+      m.set(c.id, { id: c.id, containerNo: c.containerNo, containerType: c.containerType });
+    }
+    for (const c of containersFromBatches) {
+      if (!m.has(c.id)) m.set(c.id, c);
+    }
+    return [...m.values()].sort((a, b) => a.containerNo.localeCompare(b.containerNo));
+  }, [containersFromApi, containersFromBatches]);
+
+  const loading = isLoading;
+
+  // 表单
+  const [modalContainerId, setModalContainerId] = useState("");
+  const { data: containerDetail, error: containerDetailError, isLoading: containerDetailLoading } = useSWR<ContainerDetailForBatches>(
+    modalOpen && modalContainerId ? `/api/containers/${modalContainerId}` : null,
+    containerDetailFetcher,
+    { ...SWR_OPT, shouldRetryOnError: false }
+  );
+
+  const batchOptions: BatchOption[] = useMemo(() => {
+    if (!modalContainerId) {
+      return batches;
+    }
+    if (!containerDetail) {
+      return [];
+    }
+    const list = containerDetail.outboundBatches ?? [];
+    return list.map((b) => ({
+      id: b.id,
+      batchNumber: b.batchNumber,
+      outboundOrder: b.outboundOrder
+        ? { outboundNumber: b.outboundOrder.outboundNumber }
+        : undefined,
+    }));
+  }, [modalContainerId, containerDetail, batches]);
+
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
+  const [logisticsChannelId, setLogisticsChannelId] = useState("");
+  const [costType, setCostType] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("CNY");
+  const [paymentType, setPaymentType] = useState("现结");
+  const [creditDays, setCreditDays] = useState("");
+  const [dueDate, setDueDate] = useState("");
+
+  const openModal = () => {
+    setModalContainerId("");
+    setSelectedBatchIds([]);
+    setLogisticsChannelId("");
+    setCostType("");
+    setAmount("");
+    setCurrency("CNY");
+    setPaymentType("现结");
+    setCreditDays("");
+    setDueDate("");
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalContainerId("");
+    setModalOpen(false);
+  };
+
+  useEffect(() => {
+    setSelectedBatchIds([]);
+  }, [modalContainerId]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = Number(amount);
+    if (!costType || !currency || !paymentType || !Number.isFinite(amt) || amt < 0) {
+      toast.error("请填写费用类型、金额、货币、付款方式");
+      return;
+    }
+    if (paymentType === "账期" && (!creditDays.trim() || Number(creditDays) < 0)) {
+      toast.error("账期时请填写有效的账期天数");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const batchIdsForSubmit = selectedBatchIds.filter((id) =>
+        batchOptions.some((b) => b.id === id)
+      );
+      const body: Record<string, unknown> = {
+        logisticsChannelId: logisticsChannelId || undefined,
+        costType,
+        amount: amt,
+        currency,
+        paymentType,
+        paymentStatus: "未付",
+        creditDays: paymentType === "账期" && creditDays ? Number(creditDays) : undefined,
+        dueDate: dueDate ? `${dueDate}T00:00:00.000Z` : undefined,
+      };
+      if (batchIdsForSubmit.length > 0) {
+        body.outboundBatchIds = batchIdsForSubmit;
+      }
+      const res = await fetch("/api/logistics-cost", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof json?.error === "string" ? json.error : "创建失败");
+      }
+      const created = typeof json?.created === "number" ? json.created : 1;
+      toast.success(created > 1 ? `已创建 ${created} 条费用（多批次合计已分摊）` : "创建成功");
+      closeModal();
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "创建失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const batchLabel = (c: CostItem) => {
+    if (!c.outboundBatch) return "-";
+    const ob = c.outboundBatch.outboundOrder;
+    return `${c.outboundBatch.batchNumber}${ob ? ` / ${ob.outboundNumber}` : ""}`;
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <PageHeader
+          title="物流费用管理"
+          description="物流费用列表，支持按批次、物流商、费用类型查看"
+        />
+        <ActionButton icon={Plus} onClick={openModal}>
+          新建费用
+        </ActionButton>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-16 rounded-xl bg-slate-800/50 animate-pulse" />
+          ))}
+        </div>
+      ) : list.length === 0 ? (
+        <EmptyState
+          icon={DollarSign}
+          title="暂无物流费用"
+          description="点击「新建费用」添加一条记录"
+        />
+      ) : (
+        <div className="space-y-4">
+          {/* 按柜子分组 */}
+          {(() => {
+            // 按 containerId 分组
+            const groups: Record<string, { containerNo: string; items: CostItem[] }> = {};
+            list.forEach((c: CostItem) => {
+              const containerId = c.containerId || c.outboundBatch?.container?.id || "_no_container";
+              const containerNo = c.outboundBatch?.container?.containerNo || "无柜子";
+              if (!groups[containerId]) groups[containerId] = { containerNo, items: [] };
+              groups[containerId].items.push(c);
+            });
+
+            return Object.entries(groups).map(([containerId, group]) => {
+              const totalAmount = group.items.reduce((sum, c) => sum + Number(c.amount), 0);
+              const allUnpaid = group.items.every(c => c.paymentStatus === "未付" && !c.expenseRequestId);
+              const currency = group.items[0]?.currency || "CNY";
+
+              return (
+                <div key={containerId} className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden">
+                  {/* 柜子标题栏 */}
+                  <div className="flex items-center justify-between border-b border-slate-700 bg-slate-800/40 px-4 py-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold text-slate-200">{group.containerNo}</span>
+                      <span className="text-xs text-slate-400">{group.items.length}笔</span>
+                      <span className="text-sm font-medium text-amber-300">{currency} {totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    {allUnpaid && group.items.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPayConfirm({ containerNo: group.containerNo, items: group.items, totalAmount, currency })}
+                        className="rounded-md bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-700"
+                      >
+                        发起付款（{group.items.length}笔）
+                      </button>
+                    )}
+                  </div>
+                  {/* 明细表格 */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 text-left">
+                          <th className="px-3 py-2 font-medium">出库批次</th>
+                          <th className="px-3 py-2 font-medium">物流商</th>
+                          <th className="px-3 py-2 font-medium">费用类型</th>
+                          <th className="px-3 py-2 font-medium text-right">金额</th>
+                          <th className="px-3 py-2 font-medium">付款方式</th>
+                          <th className="px-3 py-2 font-medium">状态</th>
+                          <th className="px-3 py-2 font-medium">到期日</th>
+                          <th className="px-3 py-2 font-medium text-center">凭证</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.items.map((c: CostItem) => (
+                          <tr key={c.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                            <td className="px-3 py-2 text-slate-300">{batchLabel(c)}</td>
+                            <td className="px-3 py-2 text-slate-300">{c.logisticsChannel?.name ?? "-"}</td>
+                            <td className="px-3 py-2 text-slate-300">{c.costType}</td>
+                            <td className="px-3 py-2 text-right text-slate-200">{c.currency} {c.amount}</td>
+                            <td className="px-3 py-2 text-slate-300">{c.paymentType}</td>
+                            <td className="px-3 py-2">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] ${PAYMENT_STATUS_CLASS[c.paymentStatus] ?? "bg-slate-500/20 text-slate-300"}`}>
+                                {PAYMENT_STATUS_LABELS[c.paymentStatus] ?? c.paymentStatus}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-400">{formatDate(c.dueDate)}</td>
+                            <td className="px-3 py-2 text-center">
+                              {(() => {
+                                if (c.voucher) {
+                                  let imgs: string[] = [];
+                                  try { const p = JSON.parse(c.voucher); imgs = Array.isArray(p) ? p : [c.voucher]; } catch { imgs = [c.voucher]; }
+                                  return (
+                                    <div className="flex flex-col gap-1">
+                                      <button type="button" onClick={() => setVoucherView(imgs)} className="text-xs text-primary-400 hover:text-primary-300">查看({imgs.length})</button>
+                                      <button type="button" onClick={() => setVoucherEditId(c.id)} className="text-xs text-slate-500 hover:text-slate-300">补传</button>
+                                    </div>
+                                  );
+                                }
+                                return <button type="button" onClick={() => setVoucherEditId(c.id)} className="text-xs text-primary-400 hover:text-primary-300">上传</button>;
+                              })()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {pagination.totalPages > 1 && (
+        <div className="flex justify-center gap-2">
+          <button
+            type="button"
+            disabled={pagination.page <= 1}
+            onClick={() => setPagination((p) => ({ ...p, page: p.page - 1 }))}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm disabled:opacity-50"
+          >
+            上一页
+          </button>
+          <span className="py-1.5 text-sm text-slate-400">
+            {pagination.page} / {pagination.totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={pagination.page >= pagination.totalPages}
+            onClick={() => setPagination((p) => ({ ...p, page: p.page + 1 }))}
+            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm disabled:opacity-50"
+          >
+            下一页
+          </button>
+        </div>
+      )}
+
+      {/* 新建费用弹窗 */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">新建物流费用</h2>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">柜子（可选）</label>
+                <select
+                  value={modalContainerId}
+                  onChange={(e) => setModalContainerId(e.target.value)}
+                  disabled={containersListLoading}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 disabled:opacity-60"
+                >
+                  <option value="">
+                    {containersListLoading ? "正在加载柜子列表…" : "不筛选 — 显示全部出库批次"}
+                  </option>
+                  {containerSelectOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.containerNo}
+                      {c.containerType ? ` · ${c.containerType}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {containersListError && (
+                  <p
+                    className={`mt-1 text-xs leading-relaxed ${
+                      containersFromBatches.length > 0 ? "text-amber-300/95" : "text-rose-400"
+                    }`}
+                  >
+                    {containersFromBatches.length > 0
+                      ? "柜子列表接口暂不可用，已自动使用当前出库批次里绑定的柜号作为备选。"
+                      : "柜子列表加载失败："}
+                    {containersListError instanceof Error ? containersListError.message : "请刷新重试"}
+                  </p>
+                )}
+                {!containersListLoading &&
+                  !containersListError &&
+                  containerSelectOptions.length === 0 &&
+                  batches.length > 0 && (
+                    <p className="mt-1 text-xs text-amber-400/90">
+                      当前出库批次均未绑定柜子；请先在批次或柜子管理中完成绑定，或确认数据库中已有柜子数据。
+                    </p>
+                  )}
+                <p className="mt-1 text-xs text-slate-500">
+                  选择柜子后，下方仅列出已绑定到该柜的出库批次。列表合并「柜子接口」与「当前页已加载批次上的柜子」。
+                </p>
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block text-sm font-medium text-slate-400">关联出库批次（可多选）</label>
+                  {batchOptions.length > 0 && (
+                    <div className="flex gap-2 text-xs">
+                      <button
+                        type="button"
+                        className="text-cyan-400 hover:underline"
+                        onClick={() => setSelectedBatchIds(batchOptions.map((b) => b.id))}
+                      >
+                        全选
+                      </button>
+                      <button
+                        type="button"
+                        className="text-slate-500 hover:text-slate-300"
+                        onClick={() => setSelectedBatchIds([])}
+                      >
+                        清空
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div
+                  className={`max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-2 space-y-1.5 ${
+                    modalContainerId && containerDetailLoading ? "opacity-50 pointer-events-none" : ""
+                  }`}
+                >
+                  {batchOptions.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2 px-1">暂无可选批次</p>
+                  ) : (
+                    batchOptions.map((b) => {
+                      const checked = selectedBatchIds.includes(b.id);
+                      const label = `${b.batchNumber}${b.outboundOrder ? ` / ${b.outboundOrder.outboundNumber}` : ""}${
+                        !modalContainerId && b.container?.containerNo ? ` · 柜 ${b.container.containerNo}` : ""
+                      }`;
+                      return (
+                        <label
+                          key={b.id}
+                          className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-700/50"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 rounded border-slate-600"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedBatchIds((prev) =>
+                                prev.includes(b.id) ? prev.filter((x) => x !== b.id) : [...prev, b.id]
+                              )
+                            }
+                          />
+                          <span className="leading-snug">{label}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  多选时「金额」为<strong className="text-slate-400">合计</strong>，提交后按所选批次数<strong className="text-slate-400">平均分摊</strong>生成多条费用（备注中带分摊标记）。
+                </p>
+                {modalContainerId && containerDetailError && (
+                  <p className="mt-1 text-xs text-rose-400">柜子数据加载失败，请重试或取消筛选柜子。</p>
+                )}
+                {modalContainerId && containerDetail && (containerDetail.outboundBatches?.length ?? 0) === 0 && (
+                  <p className="mt-1 text-xs text-amber-400/90">
+                    该柜暂无绑定出库批次，请先在出库批次中绑定柜子，或改用「不筛选」选择批次。
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">物流商</label>
+                <select
+                  value={logisticsChannelId}
+                  onChange={(e) => setLogisticsChannelId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                >
+                  <option value="">请选择（可选）</option>
+                  {channels.map((ch) => (
+                    <option key={ch.id} value={ch.id}>
+                      {ch.name} {ch.channelCode ? `(${ch.channelCode})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">费用类型</label>
+                <select
+                  value={costType}
+                  onChange={(e) => setCostType(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  required
+                >
+                  <option value="">请选择</option>
+                  {COST_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">金额</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                    placeholder="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">货币</label>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  >
+                    {CURRENCY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">付款方式</label>
+                <div className="flex gap-4">
+                  {PAYMENT_TYPE_OPTIONS.map((o) => (
+                    <label key={o.value} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value={o.value}
+                        checked={paymentType === o.value}
+                        onChange={() => setPaymentType(o.value)}
+                        className="rounded border-slate-600 text-primary-500"
+                      />
+                      <span className="text-slate-300">{o.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {paymentType === "账期" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">账期天数</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={creditDays}
+                    onChange={(e) => setCreditDays(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                    placeholder="例如 30"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">到期日</label>
+                <DateInput
+                  value={dueDate}
+                  onChange={setDueDate}
+                  placeholder="选择日期"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <ActionButton type="submit" isLoading={submitting}>
+                  提交
+                </ActionButton>
+                <ActionButton type="button" variant="secondary" onClick={closeModal}>
+                  取消
+                </ActionButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 凭证查看弹窗 */}
+      {voucherView && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur" onClick={() => setVoucherView(null)}>
+          <div className="max-h-[95vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">物流账单凭证（{voucherView.length}张）</h2>
+              <button onClick={() => setVoucherView(null)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+            <div className="space-y-4">
+              {voucherView.map((img, i) => (
+                <BlobImage key={i} src={img} alt={`凭证${i + 1}`} index={i} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 补传/上传凭证弹窗 */}
+      {voucherEditId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">上传物流账单凭证</h2>
+              <button onClick={() => { setVoucherEditId(null); setVoucherUpload(""); }} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+            <ImageUploader
+              value={voucherUpload}
+              onChange={(value) => setVoucherUpload(value)}
+              multiple={true}
+              label="上传凭证"
+              placeholder="点击上传或直接 Ctrl + V 粘贴图片"
+              maxImages={5}
+              onError={(error) => toast.error(error)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <ActionButton type="button" variant="secondary" onClick={() => { setVoucherEditId(null); setVoucherUpload(""); }}>取消</ActionButton>
+              <ActionButton
+                type="button"
+                isLoading={voucherSaving}
+                onClick={async () => {
+                  if (!voucherUpload) { toast.error("请先上传凭证"); return; }
+                  setVoucherSaving(true);
+                  try {
+                    const voucherStr = typeof voucherUpload === "string" ? voucherUpload : JSON.stringify(voucherUpload);
+                    const res = await fetch(`/api/logistics-cost/${voucherEditId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ voucher: voucherStr }),
+                    });
+                    if (!res.ok) throw new Error("保存失败");
+                    toast.success("凭证已保存");
+                    setVoucherEditId(null);
+                    setVoucherUpload("");
+                    mutate();
+                  } catch (err: any) {
+                    toast.error(err?.message || "保存凭证失败");
+                  } finally {
+                    setVoucherSaving(false);
+                  }
+                }}
+              >
+                保存
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 发起付款确认弹窗 */}
+      {payConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !paySubmitting && setPayConfirm(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-4 text-lg font-semibold text-slate-100">确认发起付款</h3>
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">柜子</span>
+                <span className="text-slate-200 font-medium">{payConfirm.containerNo}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">费用笔数</span>
+                <span className="text-slate-200 font-medium">{payConfirm.items.length} 笔</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">付款总额</span>
+                <span className="text-amber-300 font-bold text-base">{payConfirm.currency} {payConfirm.totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+                {payConfirm.items.map((item, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="text-slate-400">{item.costType}</span>
+                    <span className="text-slate-300">{payConfirm.currency} {Number(item.amount).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500">发起后将进入审批中心等待审批，审批通过后由财务付款。</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setPayConfirm(null)}
+                disabled={paySubmitting}
+                className="flex-1 rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setPaySubmitting(true);
+                  try {
+                    const res = await fetch(`/api/logistics-cost/request-payment-batch`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ costIds: payConfirm.items.map((i: CostItem) => i.id), containerNo: payConfirm.containerNo }),
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(err.error || "发起付款失败");
+                    }
+                    toast.success(`${payConfirm.containerNo} 的 ${payConfirm.items.length} 笔费用已合并发起付款，等待审批`);
+                    setPayConfirm(null);
+                    setTimeout(() => window.location.reload(), 500);
+                  } catch (err: any) {
+                    toast.error(err?.message || "发起付款失败");
+                  } finally {
+                    setPaySubmitting(false);
+                  }
+                }}
+                disabled={paySubmitting}
+                className="flex-1 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {paySubmitting ? "提交中..." : "确认发起付款"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Blob URL 图片组件：将 data URL 转为 Blob 渲染，避免超长 base64 字符串渲染问题 */
+function BlobImage({ src, alt, index }: { src: string; alt: string; index: number }) {
+  const [renderSrc, setRenderSrc] = useState<string>(src);
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+
+  useEffect(() => {
+    let revoked = false;
+    let blobUrl: string | null = null;
+    if (src.startsWith("data:")) {
+      try {
+        const match = src.match(/^data:([^;]+);base64,(.*)$/);
+        if (match) {
+          const byteChars = atob(match[2]);
+          const ba = new Uint8Array(byteChars.length);
+          for (let j = 0; j < byteChars.length; j++) ba[j] = byteChars.charCodeAt(j);
+          const blob = new Blob([ba], { type: match[1] });
+          blobUrl = URL.createObjectURL(blob);
+          if (!revoked) setRenderSrc(blobUrl);
+        }
+      } catch {
+        /* fallback to original */
+      }
+    }
+    return () => {
+      revoked = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [src]);
+
+  return (
+    <div>
+      {status === "loading" && (
+        <div className="flex items-center justify-center h-40 text-slate-500 text-sm">加载中...</div>
+      )}
+      {status === "error" && (
+        <div className="flex items-center justify-center h-40 text-rose-400 text-sm">❌ 图片加载失败</div>
+      )}
+      <img
+        src={renderSrc}
+        alt={alt}
+        className={`w-full rounded-lg border border-slate-700 ${status === "loaded" ? "" : "hidden"}`}
+        onLoad={() => setStatus("loaded")}
+        onError={() => setStatus("error")}
+      />
+      <div className="mt-1 text-center text-xs text-slate-500">凭证 {index + 1}</div>
+    </div>
+  );
+}

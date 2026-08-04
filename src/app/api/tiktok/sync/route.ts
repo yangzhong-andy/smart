@@ -1,0 +1,306 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  refreshAccessToken,
+  searchOrders,
+  getStatements,
+  getPayments,
+  searchProducts,
+} from "@/lib/tiktok-shop-api";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+/**
+ * POST /api/tiktok/sync
+ * 同步数据，每个店铺使用对应的 App Key/Secret
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { dataType = "all", days = 7 } = body;
+
+    const shops = await prisma.tikTokShopSetting.findMany({
+      where: { status: "active", accessToken: { not: null } },
+    });
+
+    if (shops.length === 0) {
+      return NextResponse.json({ error: "没有已授权的店铺" }, { status: 400 });
+    }
+
+    // 获取所有 App 配置
+    const appConfigs = await prisma.tikTokAppConfig.findMany();
+    const appMap = new Map(appConfigs.map(c => [c.appKey, c]));
+
+    const results: any[] = [];
+
+    for (const shop of shops) {
+      console.log(`[TikTok Sync] 开始同步: ${shop.shopName} (${shop.shopId})`);
+      const result: any = { shopName: shop.shopName, shopId: shop.shopId };
+
+      try {
+        // 获取这个店铺对应的 App 配置
+        const appConfig = shop.appKey ? appMap.get(shop.appKey) : null;
+        const appKey = appConfig?.appKey || process.env.TIKTOK_APP_KEY || "";
+        const appSecret = appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+
+        // 刷新 token
+        let accessToken = shop.accessToken!;
+        if (shop.tokenExpireAt && shop.tokenExpireAt < new Date(Date.now() + 60000)) {
+          console.log("[TikTok Sync] Token 即将过期，刷新中...");
+          const refreshed = await refreshAccessToken(shop.refreshToken!, appKey, appSecret);
+          accessToken = refreshed.accessToken;
+          await prisma.tikTokShopSetting.update({
+            where: { shopId: shop.shopId },
+            data: {
+              accessToken: refreshed.accessToken,
+              refreshToken: refreshed.refreshToken,
+              tokenExpireAt: new Date(Date.now() + refreshed.accessTokenExpireIn * 1000),
+            },
+          });
+        }
+
+        const cipher = shop.shopCipher;
+        if (!cipher) throw new Error("缺少 shopCipher，请重新授权");
+
+        const now = Math.floor(Date.now() / 1000);
+        const past = now - days * 86400;
+
+        // 同步订单（分段拉取，每段7天，避免单次订单太多超过翻页上限）
+        if (dataType === "all" || dataType === "orders") {
+          try {
+            let count = 0;
+            const segmentDays = 7;
+            const totalSegments = Math.ceil(days / segmentDays);
+            for (let seg = 0; seg < totalSegments; seg++) {
+              const segEnd = now - seg * segmentDays * 86400;
+              const segStart = segEnd - segmentDays * 86400;
+              let pageToken: string | undefined = undefined;
+              let pageCount = 0;
+              while (pageCount < 500) {
+                pageCount++;
+                const ordersData = await searchOrders(accessToken, cipher, appKey, appSecret, {
+                  page_size: 50, page_token: pageToken,
+                  update_time_ge: segStart, update_time_lt: segEnd,
+                });
+                const orders = ordersData?.orders || [];
+                if (orders.length === 0) break;
+                for (const o of orders) {
+                  await prisma.tikTokOrder.upsert({
+                    where: { orderId: o.id },
+                    create: {
+                      shopId: shop.shopId, orderId: o.id, status: o.status, orderStatus: o.status,
+                      totalAmount: o.payment?.total_amount || o.total_amount || null,
+                      currency: o.payment?.currency || o.currency || null,
+                      itemCount: o.line_items?.length || null,
+                      createTime: o.create_time ? new Date(o.create_time * 1000) : null,
+                      updateTime: o.update_time ? new Date(o.update_time * 1000) : null,
+                      rawData: o,
+                    },
+                    update: {
+                      status: o.status, orderStatus: o.status,
+                      totalAmount: o.payment?.total_amount || o.total_amount || null,
+                      updateTime: o.update_time ? new Date(o.update_time * 1000) : null,
+                      rawData: o,
+                    },
+                  });
+                  count++;
+                }
+                pageToken = ordersData?.next_page_token;
+                if (!pageToken) break;
+              }
+              console.log(`[TikTok Sync] ${shop.shopName} 第${seg+1}/${totalSegments}段(${pageCount}页) 累计${count}条`);
+            }
+            result.orders = count;
+            console.log(`[TikTok Sync] ${shop.shopName} 订单同步完成: ${count}条`);
+          } catch (e: any) {
+            result.ordersError = e.message;
+            console.error(`[TikTok Sync] ${shop.shopName} 订单同步失败:`, e.message);
+          }
+        }
+
+        // 同步结算报表
+        if (dataType === "all" || dataType === "statements") {
+          try {
+            let count = 0;
+            let pageToken: string | undefined = undefined;
+            let pageCount = 0;
+            while (pageCount < 10) {
+              pageCount++;
+              const stmtsData = await getStatements(accessToken, cipher, appKey, appSecret, {
+                start_time: past, end_time: now, page_size: 50, page_token: pageToken,
+              });
+              const stmts = stmtsData?.statements || [];
+              if (stmts.length === 0) break;
+              for (const s of stmts) {
+                await prisma.tikTokStatement.upsert({
+                  where: { statementId: s.id },
+                  create: {
+                    shopId: shop.shopId, statementId: s.id,
+                    statementTime: s.statement_time ? new Date(s.statement_time * 1000) : null,
+                    paymentId: s.payment_id || null, paymentStatus: s.payment_status || null,
+                    paymentTime: s.payment_time ? new Date(s.payment_time * 1000) : null,
+                    netSalesAmount: s.net_sales_amount || null, feeAmount: s.fee_amount || null,
+                    adjustmentAmount: s.adjustment_amount || null, shippingCost: s.shipping_cost_amount || null,
+                    settlementAmount: s.settlement_amount || null, revenueAmount: s.revenue_amount || null,
+                    currency: s.currency || null, rawData: s,
+                  },
+                  update: {
+                    paymentStatus: s.payment_status || null,
+                    paymentTime: s.payment_time ? new Date(s.payment_time * 1000) : null,
+                    settlementAmount: s.settlement_amount || null, rawData: s,
+                  },
+                });
+                count++;
+              }
+              pageToken = stmtsData?.next_page_token;
+              if (!pageToken) break;
+            }
+            result.statements = count;
+          } catch (e: any) { result.statementsError = e.message; }
+        }
+
+        // 同步回款
+        if (dataType === "all" || dataType === "payments") {
+          try {
+            let count = 0;
+            let cashFlowCount = 0;
+            let pageToken: string | undefined = undefined;
+            let pageCount = 0;
+            while (pageCount < 10) {
+              pageCount++;
+              const paysData = await getPayments(accessToken, cipher, appKey, appSecret, {
+                start_time: past, end_time: now, page_size: 50, page_token: pageToken,
+              });
+              const pays = paysData?.payments || [];
+              if (pays.length === 0) break;
+              for (const p of pays) {
+                // 记录更新前的状态
+                const existing = await prisma.tikTokPayment.findUnique({ where: { paymentId: p.id } });
+                const wasNotPaid = !existing || existing.status !== "PAID";
+                const isNowPaid = p.status === "PAID";
+
+                await prisma.tikTokPayment.upsert({
+                  where: { paymentId: p.id },
+                  create: {
+                    shopId: shop.shopId, paymentId: p.id,
+                    amount: p.amount?.value || null, currency: p.amount?.currency || null,
+                    settlementAmount: p.settlement_amount?.value || null,
+                    reserveAmount: p.reserve_amount?.value || null,
+                    exchangeRate: p.exchange_rate || null, status: p.status || null,
+                    bankAccount: p.bank_account || null,
+                    createTime: p.create_time ? new Date(p.create_time * 1000) : null,
+                    paidTime: p.paid_time ? new Date(p.paid_time * 1000) : null,
+                    rawData: p,
+                  },
+                  update: {
+                    status: p.status || null,
+                    paidTime: p.paid_time ? new Date(p.paid_time * 1000) : null,
+                    rawData: p,
+                  },
+                });
+                count++;
+
+                // 状态变为PAID时自动生成CashFlow（防重复）
+                if (isNowPaid && wasNotPaid && shop.bankAccountId) {
+                  const cashFlowUid = `TIKTOK_PAY_${p.id}`;
+                  const existingCF = await prisma.cashFlow.findFirst({ where: { uid: cashFlowUid } });
+                  if (!existingCF) {
+                    const bankAccount = await prisma.bankAccount.findUnique({ where: { id: shop.bankAccountId } });
+                    if (bankAccount) {
+                      await prisma.cashFlow.create({
+                        data: {
+                          uid: cashFlowUid,
+                          date: p.paid_time ? new Date(p.paid_time * 1000) : new Date(p.create_time * 1000),
+                          summary: `TikTok回款 - ${shop.shopName}`,
+                          category: "回款/店铺回款",
+                          type: "INCOME",
+                          amount: parseFloat(p.amount?.value || "0"),
+                          accountId: shop.bankAccountId,
+                          accountName: bankAccount.name,
+                          currency: p.amount?.currency || "BRL",
+                          status: "CONFIRMED",
+                          relatedId: p.id,
+                          remark: `付款单ID: ${p.id}`,
+                          exchangeRate: 1.3,
+                          platform: "TikTok",
+                          storeId: bankAccount.storeId || null,
+                          storeName: shop.shopName,
+                          accountName: bankAccount.name,
+                          currency: p.amount?.currency || "BRL",
+                          status: "CONFIRMED",
+                          relatedId: p.id,
+                          remark: `付款单ID: ${p.id}`,
+                        },
+                      });
+                      cashFlowCount++;
+                      console.log(`[TikTok CashFlow] ✅ 生成流水: ${shop.shopName} +${p.amount?.value} ${p.amount?.currency}`);
+                    }
+                  }
+                }
+              }
+              pageToken = paysData?.next_page_token;
+              if (!pageToken) break;
+            }
+            result.payments = count;
+            result.cashFlows = cashFlowCount;
+            console.log(`[TikTok Sync] ${shop.shopName} 回款: ${count}条, 流水: ${cashFlowCount}条`);
+          } catch (e: any) { result.paymentsError = e.message; }
+        }
+
+        // 同步产品
+        if (dataType === "all" || dataType === "products") {
+          try {
+            let count = 0;
+            let pageToken: string | undefined = undefined;
+            let pageCount = 0;
+            while (pageCount < 10) {
+              pageCount++;
+              const prodsData = await searchProducts(accessToken, cipher, appKey, appSecret, {
+                page_size: 50, page_token: pageToken,
+              });
+              const prods = prodsData?.products || [];
+              if (prods.length === 0) break;
+              for (const p of prods) {
+                await prisma.tikTokProduct.upsert({
+                  where: { productId: p.id },
+                  create: {
+                    shopId: shop.shopId, productId: p.id, title: p.title || null,
+                    description: p.description || null, status: p.status || null,
+                    categoryId: p.category_id || null,
+                    mainImage: p.main_images?.[0]?.url || null,
+                    images: p.main_images?.map((img: any) => img.url).filter(Boolean) || [],
+                    url: p.url || null,
+                    createTime: p.create_time ? new Date(p.create_time * 1000) : null,
+                    rawData: p,
+                  },
+                  update: { title: p.title || null, status: p.status || null, rawData: p },
+                });
+                count++;
+              }
+              pageToken = prodsData?.next_page_token;
+              if (!pageToken) break;
+            }
+            result.products = count;
+          } catch (e: any) { result.productsError = e.message; }
+        }
+
+        await prisma.tikTokShopSetting.update({
+          where: { shopId: shop.shopId },
+          data: { lastSyncAt: new Date() },
+        });
+        result.success = true;
+      } catch (e: any) {
+        result.success = false;
+        result.error = e.message;
+        console.error(`[TikTok Sync] ${shop.shopName} 同步失败:`, e.message);
+      }
+      results.push(result);
+    }
+
+    return NextResponse.json({ success: true, results });
+  } catch (error: any) {
+    console.error("[TikTok Sync] 全局错误:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

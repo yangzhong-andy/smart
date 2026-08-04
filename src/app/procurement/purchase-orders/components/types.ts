@@ -1,0 +1,150 @@
+import type { PurchaseContract } from "@/lib/purchase-contracts-store";
+
+export type { PurchaseContract };
+
+export type Supplier = {
+  id: string;
+  name: string;
+  contact: string;
+  phone: string;
+  depositRate: number;
+  tailPeriodDays: number;
+  settleBase: "发货" | "入库";
+  bankAccount?: string;
+  bankName?: string;
+};
+
+export type FormItemRow = {
+  tempId: string;
+  productId: string;
+  sku: string;
+  skuName: string;
+  spec: string;
+  quantity: string;
+  unitPrice: string;
+};
+
+export type ContractSummary = {
+  totalCount: number;
+  totalAmount: number;
+  totalPaid: number;
+  totalOwed: number;
+  totalDepositPaid: number;
+  totalQty: number;
+  totalPickedQty: number;
+  avgProgress: number;
+  /** 已拿货但仍未支付的尾款总额（所有拿货单 tailAmount - tailPaid 之和） */
+  unpaidTailAmount: number;
+};
+
+/** 详情弹窗用的拿货单（仅展示与支付尾款） */
+export type DeliveryOrderForDetail = {
+  id: string;
+  deliveryNumber: string;
+  qty: number;
+  domesticTrackingNumber?: string;
+  tailAmount: number;
+  tailPaid: number;
+  tailDueDate?: string;
+};
+
+export type ContractDetail = {
+  contract: PurchaseContract;
+  deliveryOrders: DeliveryOrderForDetail[];
+};
+
+export const STATUS_OPTIONS = [
+  { value: "all", label: "全部" },
+  { value: "待审批", label: "待审批" },
+  { value: "待发货", label: "待发货" },
+  { value: "部分发货", label: "部分发货" },
+  { value: "已发货", label: "已发货" },
+  { value: "发货完成", label: "发货完成" },
+  /** 拿货数量已全部满足（与财务「已结清」区分） */
+  { value: "完结", label: "完结" },
+  { value: "已结清", label: "已结清" },
+  { value: "已取消", label: "已取消" },
+] as const;
+
+/** 合同维度：各明细行已拿货 ≥ 下单量（或汇总 picked ≥ total）；已取消不算完结 */
+export function isContractPickupComplete(contract: PurchaseContract): boolean {
+  if (contract.status === "已取消") return false;
+  if (contract.items && contract.items.length > 0) {
+    const lines = contract.items.filter((it) => (Number(it.qty) || 0) > 0);
+    if (lines.length === 0) {
+      const tq = Number(contract.totalQty) || 0;
+      if (tq <= 0) return false;
+      return (Number(contract.pickedQty) || 0) >= tq;
+    }
+    return lines.every(
+      (it) => (Number(it.pickedQty) || 0) >= (Number(it.qty) || 0)
+    );
+  }
+  const tq = Number(contract.totalQty) || 0;
+  if (tq <= 0) return false;
+  return (Number(contract.pickedQty) || 0) >= tq;
+}
+
+/**
+ * 合同在财务上已付清（已结清 或 已付总额 ≥ 合同总额）。
+ * 用于汇总「拿货未付款」：定金记在合同 totalPaid，未必分摊进某张拿货单 tailPaid，避免重复虚增未付尾款。
+ */
+export function isContractFinanciallySettled(contract: PurchaseContract): boolean {
+  if (contract.status === "已结清") return true;
+  const ta = Number(contract.totalAmount) || 0;
+  if (ta <= 0) return false;
+  return (Number(contract.totalPaid) || 0) >= ta - 1e-6;
+}
+
+export const currency = (n: number, curr: string = "CNY") =>
+  new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: curr,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(n) ? n : 0);
+
+export const formatDate = (d: string) => new Date(d).toISOString().slice(0, 10);
+
+export function toLocalDateMidnight(isoOrDateStr: string): Date {
+  const d = new Date(isoOrDateStr);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+export function getProductionProgress(
+  createdAt: string,
+  deliveryDate?: string,
+  today: Date = new Date()
+): { percent: number; label: string; elapsedDays: number; totalDays: number } | null {
+  if (!deliveryDate) return null;
+  const start = toLocalDateMidnight(createdAt);
+  const end = toLocalDateMidnight(deliveryDate);
+  const t = toLocalDateMidnight(today.toISOString());
+  const totalMs = end.getTime() - start.getTime();
+  const totalDays = Math.max(0, totalMs / (24 * 60 * 60 * 1000));
+  if (totalDays <= 0)
+    return { percent: 100, label: "已到期", elapsedDays: 0, totalDays: 0 };
+  const elapsedMs = t.getTime() - start.getTime();
+  const elapsedDays = elapsedMs / (24 * 60 * 60 * 1000);
+  if (elapsedDays <= 0)
+    return {
+      percent: 0,
+      label: "未开始",
+      elapsedDays: 0,
+      totalDays: Math.round(totalDays),
+    };
+  if (elapsedDays >= totalDays)
+    return {
+      percent: 100,
+      label: "已到期",
+      elapsedDays: Math.round(totalDays),
+      totalDays: Math.round(totalDays),
+    };
+  const percent = Math.round((elapsedDays / totalDays) * 100);
+  const remaining = Math.ceil(totalDays - elapsedDays);
+  return {
+    percent,
+    label: `剩 ${remaining} 天`,
+    elapsedDays: Math.round(elapsedDays),
+    totalDays: Math.round(totalDays),
+  };
+}

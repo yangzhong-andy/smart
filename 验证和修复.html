@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>系统更新验证工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .danger {
+            background: #f44336;
+        }
+        .danger:hover {
+            background: #da190b;
+        }
+        .result {
+            background: #333;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <h1>🔍 系统更新验证工具</h1>
+    
+    <div class="section">
+        <h2>1. 检查用户信息</h2>
+        <button onclick="checkUserInfo()">检查用户信息</button>
+        <div id="userInfo" class="result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>2. 测试 API</h2>
+        <button onclick="testAPI('check-updates')">检查更新状态</button>
+        <button onclick="testAPI('test-permissions')">测试权限系统</button>
+        <div id="apiResult" class="result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>3. 清理和修复</h2>
+        <button class="danger" onclick="clearAll()">清除所有缓存和存储</button>
+        <button onclick="redirectToLogin()">跳转到登录页</button>
+        <div id="clearResult" class="result"></div>
+    </div>
+    
+    <script>
+        function checkUserInfo() {
+            const token = localStorage.getItem('auth_token');
+            const userInfoStr = localStorage.getItem('user_info');
+            
+            let result = '=== 用户信息检查 ===\n';
+            result += `Token: ${token ? '✅ 存在' : '❌ 不存在'}\n`;
+            
+            if (userInfoStr) {
+                try {
+                    const userInfo = JSON.parse(userInfoStr);
+                    result += `\n用户ID: ${userInfo.id || '无'}\n`;
+                    result += `用户名: ${userInfo.name || '无'}\n`;
+                    result += `邮箱: ${userInfo.email || '无'}\n`;
+                    result += `部门ID: ${userInfo.departmentId || '❌ 无'}\n`;
+                    result += `部门名称: ${userInfo.departmentName || '❌ 无'}\n`;
+                    result += `部门代码: ${userInfo.departmentCode || '❌ 无'}\n`;
+                    
+                    if (!userInfo.departmentName) {
+                        result += '\n⚠️ 警告：用户信息中没有部门信息！\n';
+                        result += '需要重新登录以获取最新的用户信息。\n';
+                    } else {
+                        result += '\n✅ 用户信息完整\n';
+                    }
+                } catch (e) {
+                    result += `\n❌ 解析用户信息失败: ${e.message}\n`;
+                }
+            } else {
+                result += '\n❌ 没有用户信息，需要登录\n';
+            }
+            
+            document.getElementById('userInfo').textContent = result;
+        }
+        
+        async function testAPI(endpoint) {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.textContent = '正在测试...';
+            
+            try {
+                const token = localStorage.getItem('auth_token');
+                const headers = {};
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                
+                const response = await fetch(`/api/${endpoint}`, { headers });
+                const data = await response.json();
+                
+                let result = `=== ${endpoint} API 测试 ===\n`;
+                result += `状态码: ${response.status}\n`;
+                result += `响应:\n${JSON.stringify(data, null, 2)}\n`;
+                
+                resultDiv.textContent = result;
+            } catch (error) {
+                resultDiv.textContent = `❌ 错误: ${error.message}`;
+            }
+        }
+        
+        function clearAll() {
+            if (confirm('确定要清除所有缓存和存储吗？这将需要重新登录。')) {
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                // 清除 Service Worker 缓存
+                if ('caches' in window) {
+                    caches.keys().then(names => {
+                        names.forEach(name => caches.delete(name));
+                    });
+                }
+                
+                document.getElementById('clearResult').textContent = 
+                    '✅ 已清除所有缓存和存储\n请刷新页面并重新登录';
+            }
+        }
+        
+        function redirectToLogin() {
+            window.location.href = '/login';
+        }
+        
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkUserInfo();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+"use client";
+
+import { useMemo } from "react";
+import useSWR from "swr";
+import { LayoutDashboard, Wallet, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
+import type { Store } from "@/lib/store-store";
+import type { BankAccount } from "@/lib/finance-store";
+import type { CashFlow } from "@/lib/cash-flow-store";
+import { getPendingApprovalCount } from "@/lib/reconciliation-store";
+import Link from "next/link";
+
+const currency = (n: number, curr: string = "CNY") =>
+  new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
+    Number.isFinite(n) ? n : 0
+  );
+
+const arrayFetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j?.data ?? []);
+};
+
+const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
+
+export default function HomePage() {
+  const { data: stores = [] } = useSWR<Store[]>("/api/stores", arrayFetcher, SWR_OPT);
+  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
+  const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
+  const { data: pendingApprovalCount = 0 } = useSWR("home-pending-approval-count", () => getPendingApprovalCount(), SWR_OPT);
+
+  const storeList = Array.isArray(stores) ? stores : [];
+  const accountList = Array.isArray(accounts) ? accounts : [];
+  const flowListNorm = Array.isArray(cashFlow) ? cashFlow : [];
+
+  // 计算店铺贡献排行
+  const storeRanking = useMemo(() => {
+    return storeList
+      .map((store) => {
+        const storeIncomes = flowListNorm.filter(
+          (flow) =>
+            String(flow.type).toLowerCase() === "income" &&
+            flow.accountId === store.accountId &&
+            !(flow as any).isReversal &&
+            (String((flow as any).status ?? (flow as any).flowStatus ?? "").toLowerCase() === "confirmed" || !(flow as any).status)
+        );
+        const account = accountList.find((a) => a.id === store.accountId);
+        const exchangeRate = account?.exchangeRate || 1;
+        const totalIncome = storeIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount || 0), 0);
+        const totalIncomeRMB = store.currency === "RMB" ? totalIncome : totalIncome * exchangeRate;
+
+        // 本月回款
+        const thisMonth = new Date().getMonth();
+        const thisYear = new Date().getFullYear();
+        const thisMonthIncomes = storeIncomes.filter((flow) => {
+          if (!flow.date) return false;
+          const d = new Date(flow.date);
+          if (isNaN(d.getTime())) return false;
+          return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+        });
+        const thisMonthIncome = thisMonthIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount || 0), 0);
+        const thisMonthIncomeRMB = store.currency === "RMB" ? thisMonthIncome : thisMonthIncome * exchangeRate;
+
+        return {
+          store,
+          totalIncome,
+          totalIncomeRMB,
+          thisMonthIncome,
+          thisMonthIncomeRMB
+        };
+      })
+      .sort((a, b) => b.totalIncomeRMB - a.totalIncomeRMB)
+      .slice(0, 5); // 取前5名
+  }, [storeList, flowListNorm, accountList]);
+
+  const totalAssets = useMemo(() => {
+    return accountList.reduce((sum, acc) => {
+      // 计算账户总余额 = 初始资金 + 当前余额
+      const accountTotal = (acc.initialCapital || 0) + (acc.originalBalance || 0);
+      // 转换为RMB
+      const rmbValue = acc.currency === "RMB" 
+        ? accountTotal 
+        : accountTotal * (acc.exchangeRate || 1);
+      return sum + rmbValue;
+    }, 0);
+  }, [accountList]);
+
+  const thisMonth = new Date().getMonth();
+  const thisYear = new Date().getFullYear();
+  const thisMonthFlow = flowListNorm.filter((f) => {
+    if (!f.date) return false;
+    const d = new Date(f.date);
+    if (isNaN(d.getTime())) return false;
+    return d.getMonth() === thisMonth && d.getFullYear() === thisYear && !(f as any).isReversal;
+  });
+  const thisMonthIncome = thisMonthFlow.filter((f: any) => String(f.type).toLowerCase() === "income").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
+  const thisMonthExpense = thisMonthFlow.filter((f: any) => String(f.type).toLowerCase() === "expense").reduce((sum: number, f: any) => sum + Math.abs(f.amount || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="relative">
+          {/* 微弱的 backdrop-blur 容器底色 */}
+          <div className="absolute -inset-4 rounded-xl bg-gradient-to-br from-cyan-400/6 via-transparent to-blue-500/6 backdrop-blur-xl -z-10"></div>
+          <div className="absolute -inset-4 rounded-xl border border-cyan-500/10 -z-10"></div>
+          
+          {/* SMART ERP - 极细体 */}
+          <div className="text-xs uppercase tracking-[0.25em] text-slate-500/80 mb-2.5 font-extralight relative">
+            <span className="relative z-10">SMART ERP</span>
+            <div className="absolute -bottom-1 left-0 w-10 h-px bg-gradient-to-r from-cyan-400/30 to-transparent"></div>
+          </div>
+          
+          {/* 主标题 */}
+          <h1 className="text-3xl font-bold tracking-tight mb-2.5">
+            <span className="text-slate-100">欢迎使用 </span>
+            <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
+              AI 智能调度中枢
+            </span>
+          </h1>
+          
+          {/* 渐变装饰线 */}
+          <div className="relative h-[2px] w-24 overflow-hidden rounded-full mb-3">
+            <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 opacity-70"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-pulse"></div>
+          </div>
+          
+          <p className="text-sm text-slate-400 relative z-10">
+            左侧导航已为你准备好国内端的核心模块，点击任意菜单进入对应的业务子模块。
+          </p>
+        </div>
+      </div>
+
+      {/* 财务概览统计面板 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          style={{
+            background: "linear-gradient(135deg, #065f46 0%, #0f172a 100%)",
+            border: "1px solid rgba(255, 255, 255, 0.1)"
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">总资产</p>
+              <p className="text-2xl font-bold text-emerald-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {currency(totalAssets, "CNY")}
+              </p>
+              <Link
+                href="/finance/accounts"
+                className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 mt-3 transition-colors"
+              >
+                查看账户列表 <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <Wallet className="h-8 w-8 text-emerald-300 opacity-50" />
+          </div>
+        </div>
+        <div
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          style={{
+            background: "linear-gradient(135deg, #065f46 0%, #0f172a 100%)",
+            border: "1px solid rgba(255, 255, 255, 0.1)"
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">本月收入</p>
+              <p className="text-2xl font-bold text-emerald-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {currency(thisMonthIncome, "CNY")}
+              </p>
+              <Link
+                href="/finance/cash-flow"
+                className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 mt-3 transition-colors"
+              >
+                查看流水明细 <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <TrendingUp className="h-8 w-8 text-emerald-300 opacity-50" />
+          </div>
+        </div>
+        <div
+          className="relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02]"
+          style={{
+            background: "linear-gradient(135deg, #7f1d1d 0%, #0f172a 100%)",
+            border: "1px solid rgba(255, 255, 255, 0.1)"
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">本月支出</p>
+              <p className="text-2xl font-bold text-rose-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {currency(thisMonthExpense, "CNY")}
+              </p>
+              <Link
+                href="/finance/cash-flow"
+                className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 mt-3 transition-colors"
+              >
+                查看流水明细 <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <TrendingDown className="h-8 w-8 text-rose-300 opacity-50" />
+          </div>
+        </div>
+      </div>
+
+      {/* 店铺贡献排行 */}
+      <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">店铺贡献排行</h2>
+            <p className="text-xs text-slate-400 mt-1">按累计回款额排序，一眼看出哪个店是"现金奶牛"</p>
+          </div>
+          <Link
+            href="/finance/store-report"
+            className="flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 transition-colors"
+          >
+            查看详细统计 <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {storeRanking.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            <LayoutDashboard className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p className="text-sm">暂无店铺数据</p>
+            <p className="text-xs mt-2">
+              请先前往 <Link href="/settings/stores" className="text-primary-400 hover:text-primary-300">店铺管理中心</Link> 创建店铺
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {storeRanking.map((item, index) => (
+              <div
+                key={item.store.id}
+                className="relative overflow-hidden rounded-2xl border p-4 transition-all hover:scale-[1.02]"
+                style={{
+                  background: index === 0
+                    ? "linear-gradient(135deg, #fbbf24 0%, #0f172a 100%)"
+                    : index === 1
+                      ? "linear-gradient(135deg, #64748b 0%, #0f172a 100%)"
+                      : index === 2
+                        ? "linear-gradient(135deg, #d97706 0%, #0f172a 100%)"
+                        : "linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)"
+                }}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                          index === 0
+                            ? "bg-yellow-500/30 text-yellow-200"
+                            : index === 1
+                              ? "bg-slate-500/30 text-slate-200"
+                              : index === 2
+                                ? "bg-amber-600/30 text-amber-200"
+                                : "bg-slate-700/30 text-slate-300"
+                        }`}
+                      >
+                        {index + 1}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-100">{item.store.name}</div>
+                        <div className="text-xs text-slate-400">
+                          {item.store.platform} · {item.store.currency}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <div className="text-xs text-slate-400 mb-1">累计回款</div>
+                      <div className="text-xl font-bold text-emerald-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                        {currency(item.totalIncome, item.store.currency)}
+                      </div>
+                      <div className="text-xs text-emerald-400/60 mt-0.5">
+                        ≈ {currency(item.totalIncomeRMB, "CNY")}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        本月：{currency(item.thisMonthIncome, item.store.currency)} ≈ {currency(item.thisMonthIncomeRMB, "CNY")}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+

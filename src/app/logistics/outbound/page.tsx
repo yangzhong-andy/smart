@@ -1,0 +1,804 @@
+"use client";
+
+import { useState, useMemo, useCallback } from "react";
+import Link from "next/link";
+import { toast } from "sonner";
+import { 
+  Package, Download, Eye, CheckCircle2, 
+  Clock, Truck, X, ArrowRight, Plus, Trash2 
+} from "lucide-react";
+import { 
+  PageHeader, StatCard, ActionButton, 
+  SearchBar, EmptyState 
+} from "@/components/ui";
+import {
+  useOutboundOrders,
+  useWarehouses,
+  formatDate
+} from "@/logistics/hooks";
+import type { OutboundOrder, Warehouse as WarehouseType } from "@/logistics/types";
+import ConfirmOutboundDialog from "@/components/outbound/ConfirmOutboundDialog";
+
+type SkuOption = { variant_id: string; sku_id: string; name?: string };
+
+// 多SKU明细类型
+interface OutboundItemSKU {
+  id: string;
+  variantId?: string;
+  sku: string;
+  skuName?: string;
+  spec?: string;
+  qty: number;
+  shippedQty: number;
+  unitPrice?: number;
+}
+
+// 扩展出库单类型（含展示用字段）
+interface OutboundItem extends OutboundOrder {
+  outboundNumber: string;      // 出库单号
+  skuId?: string;             // SKU ID
+  destination?: string;       // 目的地
+  items?: OutboundItemSKU[]; // 多SKU明细
+  isMultiSku?: boolean;       // 是否多SKU
+}
+
+// 状态颜色配置
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  "待出库": { bg: "bg-slate-500/20", text: "text-slate-300" },
+  "部分出库": { bg: "bg-amber-500/20", text: "text-amber-300" },
+  "已出库": { bg: "bg-emerald-500/20", text: "text-emerald-300" },
+  "已取消": { bg: "bg-rose-500/20", text: "text-rose-300" }
+};
+
+// 状态标签
+const STATUS_LABELS: Record<string, string> = {
+  "待出库": "待出库",
+  "部分出库": "部分出库",
+  "已出库": "已出库",
+  "已取消": "已取消"
+};
+
+export default function OutboundPage() {
+  // 使用统一 Hooks（防御：确保为数组）
+  const { outboundOrders: outboundOrdersRaw, isLoading, mutate } = useOutboundOrders();
+  const outboundOrders = Array.isArray(outboundOrdersRaw) ? outboundOrdersRaw : [];
+  const { warehouses } = useWarehouses();
+
+  // 筛选状态
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  
+  // 详情 Modal 状态
+  const [detailModal, setDetailModal] = useState<OutboundItem | null>(null);
+  /** 确认出库弹窗（含物流渠道、国家、店铺） */
+  const [shipConfirmOrder, setShipConfirmOrder] = useState<OutboundItem | null>(null);
+  const [shipSubmitting, setShipSubmitting] = useState(false);
+
+  // 新建出库单
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [skus, setSkus] = useState<SkuOption[]>([]);
+  const [createItems, setCreateItems] = useState<Array<{
+    variantId: string;
+    sku: string;
+    skuName?: string;
+    qty: number;
+  }>>([]);
+  const [createForm, setCreateForm] = useState({
+    warehouseId: "",
+    destination: "",
+  });
+  const [creating, setCreating] = useState(false);
+  const warehouseList = Array.isArray(warehouses) ? warehouses : [];
+
+  // 统计信息
+  const stats = useMemo(() => ({
+    total: outboundOrders.length,
+    pending: outboundOrders.filter((o: OutboundOrder) => o.status === "待出库").length,
+    partial: outboundOrders.filter((o: OutboundOrder) => o.status === "部分出库").length,
+    shipped: outboundOrders.filter((o: OutboundOrder) => o.status === "已出库").length,
+    pendingQty: outboundOrders.reduce((sum: number, o: OutboundOrder) => sum + (o.qty - o.shippedQty), 0)
+  }), [outboundOrders]);
+
+  // 筛选订单
+  const filteredOrders = useMemo(() => {
+    let result = [...outboundOrders];
+
+    // 状态筛选
+    if (filterStatus !== "all") {
+      result = result.filter((o: OutboundOrder) => o.status === filterStatus);
+    }
+
+    // 关键词搜索
+    if (searchKeyword.trim()) {
+      const keyword = searchKeyword.toLowerCase();
+      result = result.filter((o: OutboundOrder) =>
+        o.outboundNumber?.toLowerCase().includes(keyword) ||
+        o.contractNumber?.toLowerCase().includes(keyword) ||
+        o.sku?.toLowerCase().includes(keyword) ||
+        o.warehouseName?.toLowerCase().includes(keyword) ||
+        o.productName?.toLowerCase().includes(keyword)
+      );
+    }
+
+    return result.sort((a: OutboundOrder, b: OutboundOrder) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [outboundOrders, filterStatus, searchKeyword]);
+
+  // 查看详情
+  const handleViewDetail = (order: OutboundOrder) => {
+    setDetailModal(order as OutboundItem);
+  };
+
+  // 关闭详情
+  const handleCloseDetail = () => {
+    setDetailModal(null);
+  };
+
+  const fetchSkus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/products?pageSize=500");
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data) ? data : (data?.data ?? []);
+      setSkus(
+        list
+          .filter((p: any) => p.variant_id && (p.sku_id || p.skuId))
+          .map((p: any) => ({
+            variant_id: p.variant_id,
+            sku_id: p.sku_id ?? p.skuId ?? "",
+            name: p.name,
+          }))
+      );
+    } catch {
+      setSkus([]);
+    }
+  }, []);
+
+  const openCreateModal = () => {
+    setCreateModalOpen(true);
+    setCreateItems([{ variantId: "", sku: "", skuName: "", qty: 0 }]);
+    setCreateForm({ warehouseId: "", destination: "" });
+    fetchSkus();
+  };
+
+  const closeCreateModal = () => {
+    setCreateModalOpen(false);
+    setCreateItems([]);
+    setCreateForm({ warehouseId: "", destination: "" });
+  };
+
+  const addSkuItem = () => {
+    setCreateItems([...createItems, { variantId: "", sku: "", skuName: "", qty: 0 }]);
+  };
+
+  const removeSkuItem = (index: number) => {
+    if (createItems.length > 1) {
+      setCreateItems(createItems.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateSkuItem = (index: number, field: string, value: any) => {
+    const newItems = [...createItems];
+    (newItems[index] as any)[field] = value;
+    setCreateItems(newItems);
+  };
+
+  const handleCreateOutbound = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // 过滤有效的SKU项
+    const validItems = createItems.filter(item => item.variantId && item.qty > 0);
+    if (validItems.length === 0) {
+      toast.error("请至少添加一个有效的SKU");
+      return;
+    }
+    if (!createForm.warehouseId) {
+      toast.error("请选择仓库");
+      return;
+    }
+    const warehouse = warehouseList.find((w: WarehouseType) => w.id === createForm.warehouseId);
+    if (!warehouse) {
+      toast.error("所选仓库无效");
+      return;
+    }
+    setCreating(true);
+    try {
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const r = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const outboundNumber = `OB-${date}-${r}`;
+      
+      // 准备items数据
+      const items = validItems.map(item => {
+        const skuInfo = skus.find(s => s.variant_id === item.variantId);
+        return {
+          variantId: item.variantId,
+          sku: item.sku,
+          skuName: skuInfo?.name || "",
+          qty: item.qty,
+        };
+      });
+
+      const res = await fetch("/api/outbound-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outboundNumber,
+          items,
+          warehouseId: createForm.warehouseId,
+          warehouseName: warehouse.name,
+          destination: createForm.destination.trim() || null,
+          status: "待出库",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? "创建失败");
+      }
+      toast.success(`出库单已创建：${data.outboundNumber ?? outboundNumber}`);
+      closeCreateModal();
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "创建出库单失败");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const openShipConfirm = (order: OutboundOrder) => {
+    setShipConfirmOrder(order as OutboundItem);
+  };
+
+  const handleShipConfirm = async (payload: {
+    shippedQty?: number;
+    itemShipments?: { itemId: string; qty: number }[];
+    logisticsChannelId: string | null;
+    logisticsChannelName: string | null;
+    destinationCountry: string;
+    destinationPlatform: string;
+    storeId: string;
+    storeName: string;
+    ownershipType: string;
+    ownershipSubjectId: string;
+    ownershipSubjectName: string;
+  }) => {
+    if (!shipConfirmOrder) return;
+    setShipSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        logisticsChannelId: payload.logisticsChannelId,
+        logisticsChannelName: payload.logisticsChannelName,
+        destinationCountry: payload.destinationCountry || undefined,
+        destinationPlatform: payload.destinationPlatform || undefined,
+        storeId: payload.storeId || undefined,
+        storeName: payload.storeName || undefined,
+        ownershipType: payload.ownershipType || undefined,
+        ownershipSubjectId: payload.ownershipSubjectId || undefined,
+        ownershipSubjectName: payload.ownershipSubjectName || undefined,
+      };
+      if (payload.itemShipments && payload.itemShipments.length > 0) {
+        body.itemShipments = payload.itemShipments;
+      } else if (payload.shippedQty != null) {
+        body.shippedQty = payload.shippedQty;
+      }
+
+      const response = await fetch(`/api/outbound-orders/${shipConfirmOrder.id}/ship`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((data as { error?: string })?.error || "出库失败");
+      }
+      toast.success("出库成功");
+      setShipConfirmOrder(null);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "出库失败，请重试");
+    } finally {
+      setShipSubmitting(false);
+    }
+  };
+
+  // 导出数据
+  const handleExport = () => {
+    const headers = ["出库单号", "合同号", "产品名称", "SKU", "计划数量", "已出库", "待出库", "仓库", "目的地", "状态", "创建时间"];
+    const rows = filteredOrders.map(o => [
+      o.outboundNumber || "",
+      o.contractNumber ?? "",
+      o.productName ?? "",
+      o.sku,
+      o.qty.toString(),
+      o.shippedQty.toString(),
+      (o.qty - o.shippedQty).toString(),
+      o.warehouseName || "",
+      o.destination || "",
+      o.status,
+      formatDate(o.createdAt)
+    ]);
+
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `出库单列表_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    toast.success("数据已导出");
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="rounded-lg border border-slate-600 bg-slate-900/80 px-4 py-3 text-sm text-slate-300">
+        本页为<strong className="text-slate-100">出库单</strong>维度。若需按<strong className="text-cyan-300">批次</strong>查看
+        SKU 明细、做<strong className="text-cyan-300">柜子预录单 / 一键转柜</strong>，请打开侧栏「
+        <Link href="/outbound" className="text-cyan-400 hover:underline font-medium">
+          出库批次（SKU/柜预录）
+        </Link>
+        」或直达 <code className="text-xs text-slate-500">/outbound</code>。
+      </div>
+
+      <PageHeader
+        title="出库单（物流）"
+        description="管理出库单与发货进度；批次级操作请使用「出库批次」页"
+        actions={
+          <div className="flex gap-2">
+            <ActionButton onClick={openCreateModal} icon={Plus}>
+              新建出库单
+            </ActionButton>
+            <ActionButton onClick={handleExport} variant="secondary" icon={Download}>
+              导出数据
+            </ActionButton>
+          </div>
+        }
+      />
+
+      {/* 统计面板 */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <StatCard title="待出库" value={stats.pending} icon={Clock} />
+        <StatCard title="部分出库" value={stats.partial} icon={Package} />
+        <StatCard title="已出库" value={stats.shipped} icon={CheckCircle2} />
+        <StatCard title="待出库数量" value={stats.pendingQty} icon={Truck} />
+        <StatCard title="总单数" value={stats.total} icon={Package} />
+      </div>
+
+      {/* 搜索和筛选 */}
+      <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl border border-slate-800 bg-slate-900/60">
+        <SearchBar
+          value={searchKeyword}
+          onChange={setSearchKeyword}
+          placeholder="搜索出库单号、合同号、产品名称、SKU、仓库..."
+        />
+
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-300 outline-none focus:border-primary-400"
+        >
+          <option value="all">全部状态</option>
+          <option value="待出库">待出库</option>
+          <option value="部分出库">部分出库</option>
+          <option value="已出库">已出库</option>
+          <option value="已取消">已取消</option>
+        </select>
+      </div>
+
+      {/* 出库单列表 */}
+      {isLoading ? (
+        <div className="space-y-3">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-24 rounded-xl bg-slate-800/50 animate-pulse" />
+          ))}
+        </div>
+      ) : filteredOrders.length === 0 ? (
+        <EmptyState
+          icon={Package}
+          title="暂无出库单"
+          description="暂无符合条件的出库单"
+        />
+      ) : (
+        <div className="space-y-3">
+          {filteredOrders.map((order) => (
+            <OutboundCard
+              key={order.id}
+              order={order as OutboundItem}
+              onView={() => handleViewDetail(order)}
+              onShip={() => openShipConfirm(order)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* 新建出库单弹窗 */}
+      {createModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-200">新建出库单</h2>
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateOutbound} className="p-4 space-y-4">
+              {/* SKU明细 */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-slate-400">SKU明细</label>
+                  <button
+                    type="button"
+                    onClick={addSkuItem}
+                    className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" /> 添加SKU
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {createItems.map((item, index) => (
+                    <div key={index} className="flex items-center gap-2 p-2 rounded-lg border border-slate-700 bg-slate-800/50">
+                      <select
+                        value={item.variantId}
+                        onChange={(e) => {
+                          const opt = skus.find((s) => s.variant_id === e.target.value);
+                          updateSkuItem(index, 'variantId', e.target.value);
+                          updateSkuItem(index, 'sku', opt?.sku_id || '');
+                          updateSkuItem(index, 'skuName', opt?.name || '');
+                        }}
+                        className="flex-1 rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+                        required
+                      >
+                        <option value="">选择SKU</option>
+                        {skus.map((s) => (
+                          <option key={s.variant_id} value={s.variant_id}>
+                            {s.sku_id} {s.name ? `·${s.name}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.qty || ''}
+                        onChange={(e) => updateSkuItem(index, 'qty', Number(e.target.value) || 0)}
+                        className="w-20 rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-200 text-right"
+                        placeholder="数量"
+                      />
+                      {createItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeSkuItem(index)}
+                          className="p-1 text-slate-400 hover:text-red-400"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 text-sm text-slate-400">
+                  合计: {createItems.reduce((sum, item) => sum + (item.qty || 0), 0)} 件
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">仓库</label>
+                <select
+                  value={createForm.warehouseId}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200"
+                  required
+                >
+                  <option value="">请选择仓库</option>
+                  {warehouseList.map((w: WarehouseType) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                      {w.type === "DOMESTIC" ? " (国内仓)" : w.type === "OVERSEAS" ? " (海外仓)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">目的地</label>
+                <input
+                  type="text"
+                  value={createForm.destination}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, destination: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 placeholder-slate-500"
+                  placeholder="如：巴西圣保罗、某仓库（选填）"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <ActionButton type="submit" isLoading={creating}>
+                  创建出库单
+                </ActionButton>
+                <ActionButton type="button" variant="secondary" onClick={closeCreateModal}>
+                  取消
+                </ActionButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 详情 Modal */}
+      {detailModal && (
+        <OutboundDetailModal
+          order={detailModal}
+          warehouses={warehouseList}
+          onClose={handleCloseDetail}
+          onShip={() => {
+            openShipConfirm(detailModal);
+            handleCloseDetail();
+          }}
+        />
+      )}
+
+      <ConfirmOutboundDialog
+        open={!!shipConfirmOrder}
+        order={
+          shipConfirmOrder
+            ? {
+                id: shipConfirmOrder.id,
+                outboundNumber: shipConfirmOrder.outboundNumber,
+                qty: shipConfirmOrder.qty,
+                shippedQty: shipConfirmOrder.shippedQty,
+                variantId: (shipConfirmOrder as OutboundItem & { variantId?: string }).variantId,
+                items: shipConfirmOrder.items,
+              }
+            : null
+        }
+        onClose={() => !shipSubmitting && setShipConfirmOrder(null)}
+        onConfirm={handleShipConfirm}
+        submitting={shipSubmitting}
+      />
+    </div>
+  );
+}
+
+// ==================== 出库单卡片组件 ====================
+
+interface OutboundCardProps {
+  order: OutboundItem;
+  onView: () => void;
+  onShip: () => void;
+}
+
+function OutboundCard({ order, onView, onShip }: OutboundCardProps) {
+  const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待出库"];
+  const remaining = order.qty - order.shippedQty;
+  const progress = order.qty > 0 ? Math.round((order.shippedQty / order.qty) * 100) : 0;
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/40 transition-all">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          {/* 头部信息 */}
+          <div className="flex items-center gap-3 mb-3">
+            <span className={`px-2 py-1 rounded text-xs ${colors.bg} ${colors.text}`}>
+              {STATUS_LABELS[order.status]}
+            </span>
+            <span className="text-sm text-slate-400">出库单号：</span>
+            <span className="text-sm font-medium text-slate-200">{order.outboundNumber || "-"}</span>
+          </div>
+
+          {/* 商品信息（与国内入库信息布局一致） */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-3">
+            <div>
+              <span className="text-xs text-slate-500 block">合同号</span>
+              <span className="text-sm text-slate-300">{order.contractNumber || "-"}</span>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">产品名称</span>
+              <span className="text-sm text-slate-300">{order.productName || "-"}</span>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">SKU</span>
+              {(order as any).items && (order as any).items.length > 0 ? (
+                <div className="text-xs text-slate-300 space-y-0.5">
+                  {(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).slice(0, 3).map((item: OutboundItemSKU) => (
+                    <div key={item.id} className="font-mono">
+                      {item.sku} × {item.qty}
+                      <span className="text-slate-500">（已出 {item.shippedQty || 0}）</span>
+                      {item.spec && <span className="text-slate-500">({item.spec})</span>}
+                    </div>
+                  ))}
+                  {(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).length > 3 && (
+                    <div className="text-slate-500">+{(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).length - 3} more</div>
+                  )}
+                </div>
+              ) : (
+                <span className="text-sm text-slate-300">{order.sku || "-"}</span>
+              )}
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">仓库</span>
+              <span className="text-sm text-slate-300">{order.warehouseName || "-"}</span>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">目的地</span>
+              <span className="text-sm text-slate-300">{order.destination || "-"}</span>
+            </div>
+            <div>
+              <span className="text-xs text-slate-500 block">创建时间</span>
+              <span className="text-sm text-slate-300">{formatDate(order.createdAt)}</span>
+            </div>
+          </div>
+
+          {/* 数量进度 */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-400">出库进度</span>
+              <span className="text-slate-300">
+                {order.shippedQty} / {order.qty} ({progress}%)
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+              <div 
+                className="h-full bg-emerald-500 rounded-full transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-2 ml-4">
+          <button
+            onClick={onView}
+            className="p-2 rounded-lg text-slate-400 hover:text-primary-300 hover:bg-primary-500/10 transition-colors"
+            title="查看详情"
+          >
+            <Eye className="h-5 w-5" />
+          </button>
+          {remaining > 0 && order.status !== "已取消" && order.status !== "已出库" && (
+            <button
+              onClick={onShip}
+              className="p-2 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+              title="出库"
+            >
+              <CheckCircle2 className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== 详情 Modal ====================
+
+interface OutboundDetailModalProps {
+  order: OutboundItem;
+  warehouses: WarehouseType[];
+  onClose: () => void;
+  onShip: () => void;
+}
+
+function OutboundDetailModal({ order, warehouses, onClose, onShip }: OutboundDetailModalProps) {
+  const colors = STATUS_COLORS[order.status] || STATUS_COLORS["待出库"];
+  const remaining = order.qty - order.shippedQty;
+  const progress = order.qty > 0 ? Math.round((order.shippedQty / order.qty) * 100) : 0;
+  const warehouse = warehouses.find(w => w.id === order.warehouseId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        {/* 头部 */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-semibold text-slate-100">出库单详情</h2>
+            <span className={`px-2 py-1 rounded text-xs ${colors.bg} ${colors.text}`}>
+              {STATUS_LABELS[order.status]}
+            </span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* 基本信息（与国内入库详情布局一致） */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <span className="text-xs text-slate-500 block">出库单号</span>
+            <span className="text-sm text-slate-200">{order.outboundNumber || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">合同号</span>
+            <span className="text-sm text-slate-200">{order.contractNumber || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">产品名称</span>
+            <span className="text-sm text-slate-200">{order.productName || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">SKU</span>
+            {(order as any).items && (order as any).items.length > 0 ? (
+              <div className="text-xs text-slate-200 space-y-0.5">
+                {(order as any).items.filter((item: OutboundItemSKU) => (item.qty || 0) > 0).map((item: OutboundItemSKU) => (
+                  <div key={item.id} className="font-mono">
+                    {item.sku} × {item.qty}
+                    {item.spec && <span className="text-slate-500">({item.spec})</span>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span className="text-sm text-slate-200">{order.sku || "-"}</span>
+            )}
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">仓库</span>
+            <span className="text-sm text-slate-200">{warehouse?.name || order.warehouseName || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">目的地</span>
+            <span className="text-sm text-slate-200">{order.destination || "-"}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">计划数量</span>
+            <span className="text-sm text-slate-200">{order.qty}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">已出库</span>
+            <span className="text-sm text-slate-200">{order.shippedQty}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">待出库</span>
+            <span className="text-sm text-slate-200">{remaining}</span>
+          </div>
+          <div>
+            <span className="text-xs text-slate-500 block">创建时间</span>
+            <span className="text-sm text-slate-200">{formatDate(order.createdAt)}</span>
+          </div>
+        </div>
+
+        {/* 进度条 */}
+        <div className="mb-6">
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-slate-400">出库进度</span>
+            <span className="text-slate-300">{progress}%</span>
+          </div>
+          <div className="h-3 rounded-full bg-slate-800 overflow-hidden">
+            <div 
+              className="h-full bg-emerald-500 rounded-full transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+
+        {/* 批次信息 */}
+        {order.batches && order.batches.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-slate-300 mb-2">出库批次</h3>
+            <div className="space-y-2">
+              {order.batches.map((batch) => (
+                <div key={batch.id} className="p-3 rounded-lg bg-slate-800/50">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-400">批次号: {batch.batchNumber}</span>
+                    <span className="text-slate-300">{batch.qty} 件</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    出库日期: {formatDate(batch.shippedDate)}
+                    {batch.trackingNumber && ` · 物流单号: ${batch.trackingNumber}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 操作按钮 */}
+        <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
+          <ActionButton onClick={onClose} variant="secondary">
+            关闭
+          </ActionButton>
+          {remaining > 0 && order.status !== "已取消" && order.status !== "已出库" && (
+            <ActionButton onClick={onShip} variant="primary" icon={CheckCircle2}>
+              立即出库 ({remaining})
+            </ActionButton>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

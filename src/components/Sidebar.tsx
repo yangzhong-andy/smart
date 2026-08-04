@@ -1,0 +1,1043 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { signOut, useSession } from "next-auth/react";
+import { getPendingApprovalCount } from "@/lib/reconciliation-store";
+
+// 版本号（从 package.json 读取，构建时注入）
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "2.23.0";
+const CHANGELOG = [
+  { version: 'v2.25.0', date: '2026-07-26', items: [
+    "TikTok拆分：订单管理 + 财务回款 两个独立版块",
+    "订单详情：商品/物流/买家/支付 全部字段",
+    "Webhook实时推送已接入",
+    "TikTok数据接入：签名修复 + 订单/结算/回款/产品同步",
+    "新增TIKTOK数据看板页面",
+    '全局防重复点击保护(ConfirmDialog+付款按钮)',
+    '内部划拨:单号可编辑+补充凭证+凭证显示修复',
+    '流水明细:单号可编辑(关联入口)',
+    '对账中心:汇率输入框+返点消耗显示+返点多选',
+    '月账单管理:Tab分类切换+采购月账单',
+    '广告消耗:月份筛选+账户筛选+统计卡片+分页',
+    '供应链联动:付款自动同步+采购月账单+合同对账',
+  ]},
+  { version: 'v2.22.0', date: '2026-07-24', items: [
+    '合并打款:结汇填金额+汇率自动生成流水',
+    '账户流水明细:凭证分两列+旋转+分类筛选+分页+对方账户跳转',
+    '关联流水:区分合同关联/合并打款+实际转账总额',
+    '广告消耗记录加分页',
+    '广告账户ID更新+SWR强制刷新',
+  ]},
+  { version: 'v2.21.0', date: '2026-07-23', items: [
+    '对账中心合并打款(关联结汇+返点抵扣+自动生成流水)',
+    '广告返点纳入收入分类(其他收入/广告返点)',
+    '关联流水弹窗:实际转账总额=支出-抵扣收入',
+    '全系统列表分页(通用组件20/30/50条/页)',
+    '流水明细:关键词搜索+分类筛选+日期范围',
+    '员工档案:薪资档案+离职日期+自动工号+部门改String',
+    '工资管理:按入离职日期自动折算出勤',
+    '汇率体系:外币收支录入汇率+统计卡片优先用流水汇率',
+  ]},
+  { version: 'v2.20.0', date: '2026-07-22', items: [
+    '新增工资管理系统(月度工资单生成+审批+批量付款)',
+    'Employee扩展薪资档案字段(底薪/社保/银行卡)',
+    '工资单自动关联提成系统+考勤折算',
+    '批量付款生成多条EXPENSE流水(共享SAL-BATCH单号)',
+    '工资统计卡片(渐变玻璃风)',
+  ]},
+  { version: 'v2.19.0', date: '2026-07-22', items: [
+    '全系统账户下拉按币种分组(店铺/广告/采购/应收款/工作台/划拨筛选)',
+    '广告看板已结算/未结算金额关联财务流水(广告费/广告代理费)',
+    '广告页拉取流水pageSize=5000(修复漏统计旧付款)',
+    '本期返点金额改为所有未结算消耗的预估返点',
+    '应收款:出款时间列+可手动编辑+按类型分组卡片+渐变玻璃风UI',
+  ]},
+  { version: 'v2.18.0', date: '2026-07-21', items: [
+    '账户划拨统计卡片:净额按币种分别显示(不再混合USD/CNY求和)',
+    '内部划拨账户余额:使用API计算的originalBalance(修复重复计算)',
+    '应收款管理:账户下拉显示余额',
+    '换汇:TransferEntry传入真实汇率(不再存为1)',
+  ]},
+  { version: 'v2.16.0', date: '2026-07-20', items: [
+    '新增应收款管理(借款/投资/预支/其他应收)',
+    '应收款审批流程+自动出款+回收',
+    '流水明细平台下拉(从店铺读取)+备注列',
+    '部门权限系统重写(一级+二级菜单)',
+    'protect-next v4(只告警不修复)',
+  ]},
+  { version: 'v2.13.0', date: '2026-07-16', items: [
+    '修复账户余额计算(expense金额重复计算问题)',
+    '付款账户下拉按币种分组优化',
+    '柜子管理恢复物流费用列+生成账单功能',
+    '审批中心：金额修正+凭证显示+操作人',
+    '对账中心：角色切换+审批操作记录登录用户',
+    '内部划拨：日期改用业务日期',
+    '全局图片查看器加旋转功能',
+  ]},
+  { version: 'v2.12.0', date: '2026-07-15', items: [
+    '全局图片查看器加旋转功能(VoucherImage/ImageUploader/流水/划拨/广告/产品)',
+  ]},
+  { version: 'v2.11.0', date: '2026-07-15', items: [
+    '对账中心查看：消耗记录列表修复(API分页.data提取, pageSize=5000)',
+    '对账中心查看：凭证图片修复(API加voucher字段, JSON安全解析)',
+    '对账中心：月份排序按最新优先',
+    '月账单详情：广告账单增加日期/凭证/备注列',
+    '审批操作：乐观更新，状态秒变(提交/财务审批/主管批准/退回)',
+    '财务工作台：已审批月账单卡片，点击跳转付款',
+    '导入消耗记录：已有账单自动更新金额+consumptionIds',
+    '内部划拨页面：日期改用业务日期(非创建日期)',
+    '构建保护：protect-next.sh v3构建锁检测',
+  ]},
+
+  { version: 'v2.9.0', date: '2026-07-13', items: [
+    '广告返点按信用消耗自动计算，生成返点应收月账单',
+    '广告消耗/返点月账单导入时自动生成',
+    '返点率在账单中显示，应收款绿色标识',
+    '物流渠道管理加费用/出货/均价/SKU明细统计',
+    '流水明细新增加平台、店铺字段',
+    '柜子管理日期可表格内直接修改',
+    '数据看板月度趋势扩展到12个月',
+    '供应商卡片统一账户列表风格',
+    '月账单到期日+逾期提醒',
+  ]},
+];
+
+import {
+  LayoutDashboard,
+  Package,
+  Factory,
+  Truck,
+  Megaphone,
+  MessageSquare,
+  ShoppingBag,
+  Wallet,
+  Users,
+  ChevronRight,
+  ChevronLeft,
+  Trash2,
+  Database,
+  Settings,
+  LogOut,
+  Upload,
+  BarChart3,
+  Building2,
+  GripVertical,
+  Shield,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import ExchangeRateBar from "./ExchangeRateBar";
+import {
+  getAllowedNavLabels,
+  filterSidebarNavChildren,
+  type DepartmentAccessRuntimeOptions,
+} from "@/lib/permissions";
+import { useDepartmentAccess } from "@/components/DepartmentAccessContext";
+
+import { LucideIcon } from "lucide-react";
+
+/** 对账页离开前需关弹窗；其余菜单交给 Next.js Link 默认跳转（避免 preventDefault + router.push 失效导致点击无反应） */
+function sidebarLinkClick(router: any, 
+  e: React.MouseEvent<HTMLAnchorElement>,
+  href: string | undefined,
+  pathname: string
+) {
+  if (!href || href === "#") return;
+  if (pathname === "/finance/reconciliation" && href !== pathname) {
+    e.preventDefault();
+    window.dispatchEvent(new CustomEvent("reconciliation-close-modals"));
+    router.push(href);
+  }
+}
+
+/** 子菜单悬停时预取路由 + 可选预请求主 API（暖机），减轻点击后等待 */
+const ROUTE_PREFETCH_API: Record<string, string> = {
+  "/procurement": "/api/suppliers",
+  "/finance/accounts": "/api/accounts",
+  "/finance/cash-flow": "/api/cash-flow",
+  "/finance/monthly-bills": "/api/monthly-bills",
+  "/procurement/suppliers": "/api/suppliers",
+  "/procurement/purchase-orders": "/api/purchase-contracts",
+  "/procurement/delivery-orders": "/api/delivery-orders",
+  "/product-center/products": "/api/products",
+  "/settings/stores": "/api/stores",
+  "/settings/company": "/api/company",
+  "/hr/employees": "/api/employees",
+  "/inventory": "/api/stock",
+  "/inventory/reconciliation": "/api/inventory/reconciliation",
+  "/logistics/channels": "/api/logistics-channels",
+  "/logistics/containers": "/api/containers",
+  "/logistics/duty-stats": "/api/containers",
+  "/logistics/pre-records": "/api/container-pre-records",
+  "/settings/exporters": "/api/exporters",
+  "/settings/overseas-companies": "/api/overseas-companies",
+  "/advertising/agencies": "/api/ad-agencies",
+};
+
+type NavItem = {
+  label: string;
+  labelEn: string; // 英文副标题
+  icon: LucideIcon;
+  href?: string;
+  children?: NavItem[];
+};
+
+const navItems: NavItem[] = [
+  {
+    label: "控制台",
+    labelEn: "Dashboard",
+    icon: LayoutDashboard,
+    children: [
+      { label: "首页待办", labelEn: "", icon: LayoutDashboard, href: "/" },
+      { label: "财务看板", labelEn: "", icon: LayoutDashboard, href: "/finance" },
+      { label: "运营工作台", labelEn: "Operations", icon: LayoutDashboard, href: "/operations/purchase-orders" },
+      { label: "风控工作台", labelEn: "Risk Control", icon: LayoutDashboard, href: "/risk-control" },
+      { label: "审批工作台", labelEn: "Approval", icon: LayoutDashboard, href: "/approval" },
+      { label: "财务工作台", labelEn: "Finance", icon: LayoutDashboard, href: "/finance/workbench" },
+      { label: "广告代理工作台", labelEn: "Ad Agency", icon: LayoutDashboard, href: "/advertising/workbench" }
+    ]
+  },
+  {
+    label: "产品中心",
+    labelEn: "Product Master",
+    icon: Package,
+    children: [
+      { label: "产品档案", labelEn: "", icon: Package, href: "/product-center/products" },
+      { label: "SKU映射", labelEn: "", icon: Package, href: "/product-center/sku-mapping" }
+    ]
+  },
+  {
+    label: "供应链",
+    labelEn: "SCM",
+    icon: Factory,
+    children: [
+      { label: "供应链看板", labelEn: "", icon: Factory, href: "/procurement" },
+      { label: "供应商库", labelEn: "", icon: Factory, href: "/procurement/suppliers" },
+      { label: "采购合同（分批拿货）", labelEn: "", icon: Factory, href: "/procurement/purchase-orders" },
+      { label: "采购订单", labelEn: "", icon: Factory, href: "/procurement/procurement-orders" },
+      { label: "生产进度", labelEn: "", icon: Factory, href: "/procurement/production-progress" },
+      { label: "拿货单管理", labelEn: "", icon: Factory, href: "/procurement/delivery-orders" },
+      { label: "工厂端管理", labelEn: "", icon: Factory, href: "/supply-chain/factories" },
+      { label: "库存查询", labelEn: "", icon: Factory, href: "/inventory" },
+      { label: "仓库库存", labelEn: "", icon: Package, href: "/inventory/warehouse" },
+      { label: "库存看板", labelEn: "", icon: Package, href: "/inventory/dashboard" },
+      { label: "库存对账", labelEn: "", icon: Package, href: "/inventory/reconciliation" }
+    ]
+  },
+  {
+    label: "物流中心",
+    labelEn: "Logistics",
+    icon: Truck,
+    children: [
+      { label: "物流工作台", labelEn: "", icon: Truck, href: "/logistics/workbench" },
+      { label: "渠道管理", labelEn: "", icon: Truck, href: "/logistics/channels" },
+      { label: "国内入库", labelEn: "", icon: Truck, href: "/logistics/inbound" },
+      { label: "入库批次列表", labelEn: "", icon: Truck, href: "/inbound" },
+      { label: "物流跟踪", labelEn: "", icon: Truck, href: "/logistics/tracking" },
+      { label: "出库单（物流）", labelEn: "", icon: Truck, href: "/logistics/outbound" },
+      { label: "出库批次（SKU/柜预录）", labelEn: "", icon: Truck, href: "/outbound" },
+      { label: "物流费用管理", labelEn: "", icon: Truck, href: "/logistics-cost" },
+      { label: "柜子管理", labelEn: "", icon: Truck, href: "/logistics/containers" },
+      { label: "柜子预录单", labelEn: "", icon: Truck, href: "/logistics/pre-records" },
+      { label: "仓储管理", labelEn: "", icon: Truck, href: "/logistics/warehouse" },
+      { label: "关税统计", labelEn: "", icon: Truck, href: "/logistics/duty-stats" }
+    ]
+  },
+  {
+    label: "营销与店铺",
+    labelEn: "Marketing & Store",
+    icon: Megaphone,
+    children: [
+      { label: "店铺管理", labelEn: "", icon: Megaphone, href: "/settings/stores" },
+      { label: "数据导入", labelEn: "", icon: Upload, href: "/finance/import" },
+      { label: "店铺订单看板", labelEn: "", icon: BarChart3, href: "/finance/settlement-dashboard" },
+      { label: "店铺回款统计", labelEn: "", icon: BarChart3, href: "/finance/store-report" },
+      { label: "物流费用分摊", labelEn: "", icon: BarChart3, href: "/finance/logistics-cost-allocation" },
+      { label: "达人 BD 管理", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
+      { label: "广告代理管理", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
+      { label: "TikTok订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
+      { label: "TikTok订单分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
+      { label: "TikTok商店分析", labelEn: "", icon: BarChart3, href: "/tiktok/shop-analytics" },
+      { label: "TikTok联盟营销", labelEn: "", icon: MessageSquare, href: "/tiktok/affiliate" },
+      { label: "TikTok财务回款", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
+    ]
+  },
+  {
+    label: "财务中心",
+    labelEn: "Finance",
+    icon: Wallet,
+    children: [
+      { label: "月账单管理", labelEn: "", icon: Wallet, href: "/finance/monthly-bills" },
+      { label: "对账中心", labelEn: "", icon: Wallet, href: "/finance/reconciliation" },
+      { label: "流水明细", labelEn: "", icon: Wallet, href: "/finance/cash-flow" },
+      { label: "利润看板", labelEn: "", icon: Wallet, href: "/finance/profit" },
+      { label: "账户列表", labelEn: "", icon: Wallet, href: "/finance/accounts" },
+      { label: "内部划拨", labelEn: "", icon: Wallet, href: "/finance/transfer" },
+      { label: "审批中心", labelEn: "", icon: Wallet, href: "/finance/approval" },
+      { label: "应收款管理", labelEn: "", icon: Wallet, href: "/finance/receivables" }
+    ]
+  },
+  {
+    label: "运营工具",
+    labelEn: "Ops Tools",
+    icon: BarChart3,
+    children: [
+      { label: "每日运营报表", labelEn: "", icon: BarChart3, href: "/operations/daily-report" },
+      { label: "巴西利润测算", labelEn: "", icon: BarChart3, href: "/finance/profit-calculation" },
+      { label: "代理IP管理", labelEn: "", icon: BarChart3, href: "/operations/proxy-ip" }
+    ]
+  },
+  {
+    label: "人力资源中心",
+    labelEn: "HR Center",
+    icon: Users,
+    children: [
+      { label: "员工档案", labelEn: "", icon: Users, href: "/hr/employees" },
+      { label: "工资管理", labelEn: "", icon: Wallet, href: "/hr/payroll" },
+      { label: "提成规则", labelEn: "", icon: Users, href: "/hr/commission-rules" },
+      { label: "提成管理", labelEn: "", icon: Users, href: "/hr/commissions" }
+    ]
+  },
+  {
+    label: "系统设置",
+    labelEn: "Settings",
+    icon: Settings,
+    children: [
+      { label: "系统账号管理", labelEn: "", icon: Users, href: "/settings/users" },
+      { label: "部门权限", labelEn: "", icon: Shield, href: "/settings/department-permissions" },
+      { label: "本公司信息", labelEn: "", icon: Building2, href: "/settings/company" },
+      { label: "出口公司管理", labelEn: "", icon: Building2, href: "/settings/exporters" },
+      { label: "海外公司管理", labelEn: "", icon: Building2, href: "/settings/overseas-companies" },
+      { label: "TIKTOK店铺授权", labelEn: "", icon: Building2, href: "/settings/tiktok" },
+      { label: "生成测试数据", labelEn: "", icon: Database, href: "/settings/generate-test-data" },
+      { label: "清空系统数据", labelEn: "", icon: Trash2, href: "/settings/clear-data" }
+    ]
+  }
+];
+
+/** 一级菜单中文 label 须与 `src/lib/sidebar-nav-meta.ts` 中 SIDEBAR_TOP_LEVEL_LABELS 保持一致（部门权限配置页） */
+export default function Sidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const prefetchRoute = (href: string | undefined) => {
+    if (!href || href === "#") return;
+    router.prefetch(href);
+    const api = ROUTE_PREFETCH_API[href];
+    if (api) fetch(api, { credentials: "same-origin" }).catch(() => {});
+  };
+  const { data: session } = useSession();
+  const departmentAccess = useDepartmentAccess();
+  const isPrivilegedRole =
+    session?.user?.role === "SUPER_ADMIN" || session?.user?.role === "ADMIN";
+  const departmentAccessOpts = useMemo((): DepartmentAccessRuntimeOptions | undefined => {
+    if (departmentAccess == null) {
+      return isPrivilegedRole ? { bypass: true, dbConfig: null } : undefined;
+    }
+    return {
+      bypass: departmentAccess.bypass || isPrivilegedRole,
+      dbConfig: departmentAccess.config,
+    };
+  }, [departmentAccess, isPrivilegedRole]);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [customChildOrder, setCustomChildOrder] = useState<Record<string, string[]>>({});
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [draggingChildHref, setDraggingChildHref] = useState<string | null>(null);
+  const [dragOverChildHref, setDragOverChildHref] = useState<string | null>(null);
+  const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SIDEBAR_CHILD_ORDER_KEY = "sidebarChildOrderV1";
+
+  // 部门权限过滤：根据 DB 配置过滤一级菜单
+  const departmentCode = session?.user?.departmentCode ?? null;
+  const departmentName = session?.user?.departmentName ?? null;
+  const allowedLabels = getAllowedNavLabels(departmentCode, departmentName, departmentAccessOpts);
+  const visibleNavItems = useMemo(() => {
+    if (!allowedLabels || !Array.isArray(allowedLabels)) return navItems;
+    const filtered = navItems.filter((item) => allowedLabels.includes(item.label));
+    if (filtered.length === 0 && allowedLabels.length > 0) return navItems;
+    return filtered;
+  }, [allowedLabels, departmentAccessOpts?.bypass, departmentAccessOpts?.dbConfig]);
+  
+  // 客户端初始化
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    try {
+      // 恢复侧边栏折叠状态
+      const saved = localStorage.getItem("sidebarCollapsed");
+      if (saved === "true") {
+        setIsCollapsed(true);
+      }
+      // 恢复子菜单自定义排序
+      const savedOrder = localStorage.getItem(SIDEBAR_CHILD_ORDER_KEY);
+      if (savedOrder) {
+        const parsed = JSON.parse(savedOrder) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const safe: Record<string, string[]> = {};
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            if (Array.isArray(v)) {
+              safe[k] = v.filter((h): h is string => typeof h === "string");
+            }
+          }
+          setCustomChildOrder(safe);
+        }
+      }
+      
+      // 默认展开当前路径所在的父级菜单
+      const currentPath = pathname || "";
+      const expanded: string[] = [];
+      visibleNavItems.forEach((item) => {
+        if (item.children) {
+          const filtered = filterSidebarNavChildren(
+            item.label,
+            item.children,
+            departmentCode,
+            departmentName,
+            departmentAccessOpts
+          );
+          const hasActiveChild = filtered.some((child) => child.href === currentPath);
+          if (hasActiveChild) {
+            expanded.push(item.label);
+          }
+        }
+      });
+      setExpandedItems(expanded);
+    } catch (e) {
+      console.error("Failed to initialize sidebar:", e);
+    }
+  }, [pathname, visibleNavItems, departmentCode, departmentName, departmentAccessOpts]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(SIDEBAR_CHILD_ORDER_KEY, JSON.stringify(customChildOrder));
+  }, [customChildOrder]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // 已禁用路由切换时的重复请求：仅首次挂载时拉取一次，后续通过 approval-updated 事件更新
+    let cancelled = false;
+    (async () => {
+      try {
+        const count = await getPendingApprovalCount();
+        if (!cancelled) setPendingApprovalCount(count);
+      } catch (e) {
+        console.error("Failed to get pending approval count", e);
+      }
+    })();
+    
+    const handleApprovalUpdate = async () => {
+      try {
+        const newCount = await getPendingApprovalCount();
+        if (!cancelled) setPendingApprovalCount(newCount);
+      } catch (e) {
+        console.error("Failed to get pending approval count", e);
+      }
+    };
+    
+    window.addEventListener("approval-updated", handleApprovalUpdate);
+    
+    return () => {
+      cancelled = true;
+      window.removeEventListener("approval-updated", handleApprovalUpdate);
+    };
+  }, []); // 空依赖：仅挂载时请求一次，不再随 pathname 发起请求
+
+  const toggleExpand = (label: string) => {
+    if (isCollapsed) { setIsCollapsed(false); if (typeof window !== "undefined") window.localStorage.setItem("sidebarCollapsed", "false"); return; }
+    setExpandedItems((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return list.includes(label) ? list.filter((l) => l !== label) : [...list, label];
+    });
+  };
+
+  const handleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("sidebarCollapsed", String(newState));
+    }
+    // 收起时折叠所有菜单
+    if (newState) {
+      setExpandedItems([]);
+    }
+  };
+
+  const isActive = (href?: string) => {
+    if (!href) return false;
+    return pathname === href;
+  };
+
+  const isParentActive = (item: NavItem) => {
+    if (!item.children) return false;
+    const filtered = filterSidebarNavChildren(
+      item.label,
+      item.children,
+      departmentCode,
+      departmentName,
+      departmentAccessOpts
+    );
+    return filtered.some((child) => child.href === pathname);
+  };
+
+  const getOrderedChildren = (item: NavItem): NavItem[] => {
+    if (!item.children?.length) return [];
+    const filtered = filterSidebarNavChildren(
+      item.label,
+      item.children,
+      departmentCode,
+      departmentName,
+      departmentAccessOpts
+    );
+    const base =
+      filtered.length > 0 ? filtered : item.children;
+    const order = customChildOrder[item.label];
+    if (!Array.isArray(order) || order.length === 0) return base;
+    const map = new Map(base.map((child) => [child.href || `__${child.label}`, child]));
+    const ordered: NavItem[] = [];
+    order.forEach((href) => {
+      const child = map.get(href);
+      if (child) {
+        ordered.push(child);
+        map.delete(href);
+      }
+    });
+    map.forEach((child) => ordered.push(child));
+    return ordered;
+  };
+
+  const reorderChildren = (parentLabel: string, fromHref: string, toHref: string) => {
+    const parent = visibleNavItems.find((i) => i.label === parentLabel);
+    if (!parent?.children) return;
+    const current = getOrderedChildren(parent); // 已含部门子菜单过滤
+    const fromIndex = current.findIndex((c) => (c.href || `__${c.label}`) === fromHref);
+    const toIndex = current.findIndex((c) => (c.href || `__${c.label}`) === toHref);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    const next = [...current];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setCustomChildOrder((prev) => ({
+      ...prev,
+      [parentLabel]: next.map((c) => c.href || `__${c.label}`),
+    }));
+  };
+
+  return (
+    <aside
+      className={`flex flex-col h-full border-r border-white/10 transition-all duration-300 relative z-30 shrink-0 pointer-events-auto ${
+        isCollapsed ? "w-20" : "w-72"
+      }`}
+      style={{ 
+        backgroundColor: "rgba(11, 14, 20, 0.95)",
+        backdropFilter: "blur(20px)",
+        boxShadow: "inset -1px 0 0 rgba(255, 255, 255, 0.05)"
+      }}
+    >
+      {/* 渐变装饰 */}
+      <div 
+        className="absolute top-0 left-0 right-0 h-32 opacity-30 pointer-events-none"
+        style={{
+          background: "linear-gradient(180deg, rgba(0, 149, 255, 0.1) 0%, transparent 100%)"
+        }}
+      />
+      
+      {/* 头部 */}
+      <div className={`px-6 py-6 border-b border-white/10 transition-all duration-300 relative z-10 ${isCollapsed ? "px-4" : ""}`}>
+        {!isCollapsed && (
+          <div className="relative">
+            {/* 微弱的 backdrop-blur 容器底色 - 更精致的渐变 */}
+            <div className="absolute -inset-3 rounded-lg bg-gradient-to-br from-cyan-400/6 via-transparent to-blue-500/6 backdrop-blur-xl -z-10"></div>
+            <div className="absolute -inset-3 rounded-lg border border-cyan-500/10 -z-10"></div>
+            
+            {/* SMART ERP - 极细体，更大 */}
+            <div className="text-xs uppercase tracking-[0.25em] text-slate-500/80 mb-3.5 font-extralight relative">
+              <span className="relative z-10">SMART ERP</span>
+              <div className="absolute -bottom-1 left-0 w-10 h-px bg-gradient-to-r from-cyan-400/30 to-transparent"></div>
+            </div>
+            
+            {/* AI 智能调度中枢 - 冷色渐变，更大更醒目 */}
+            <div className="relative">
+              <h2 className="text-2xl font-bold leading-tight mb-3">
+                <span className="relative inline-block">
+                  <span className="bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent">
+                    AI 智能调度中枢
+                  </span>
+                  {/* 微弱的文字发光效果 */}
+                  <span className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500 bg-clip-text text-transparent blur-sm opacity-30 -z-10">
+                    AI 智能调度中枢
+                  </span>
+                </span>
+              </h2>
+              {/* 渐变装饰线 - 更精致，更长 */}
+              <div className="relative h-[2px] w-20 overflow-hidden rounded-full">
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 opacity-70"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+        )}
+        {isCollapsed && (
+          <div className="text-center">
+            <div className="text-xl font-bold">
+              <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">S</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 导航菜单 */}
+      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 relative z-10 pointer-events-auto">
+        <style jsx>{`
+          nav::-webkit-scrollbar {
+            width: 6px;
+          }
+          nav::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+          }
+          nav::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+          }
+          @keyframes pulse {
+            0%, 100% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.5;
+            }
+          }
+        `}</style>
+        {visibleNavItems.map((item) => {
+          if (item.children) {
+            const isExpanded = expandedItems.includes(item.label);
+            const hasActiveChild = isParentActive(item);
+            const Icon = item.icon;
+
+            return (
+              <div key={item.label}>
+                <div
+                  className="relative"
+                  onMouseEnter={() => {
+                    if (isCollapsed) {
+                      if (hoverLeaveTimerRef.current) {
+                        clearTimeout(hoverLeaveTimerRef.current);
+                        hoverLeaveTimerRef.current = null;
+                      }
+                      setHoveredItem(item.label);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (isCollapsed) {
+                      hoverLeaveTimerRef.current = setTimeout(() => setHoveredItem(null), 180);
+                    }
+                  }}
+                >
+                  <button
+                    onClick={() => toggleExpand(item.label)}
+                    className={`w-full group flex items-center justify-between rounded-xl px-4 py-4 text-base transition-all duration-300 relative overflow-hidden ${
+                      hasActiveChild
+                        ? "text-white font-bold"
+                        : "text-slate-300 hover:text-white font-semibold"
+                    } ${isCollapsed ? "justify-center px-3" : ""}`}
+                  style={
+                    hasActiveChild
+                      ? {
+                          background: "linear-gradient(135deg, rgba(0, 149, 255, 0.2) 0%, rgba(0, 149, 255, 0.08) 100%)",
+                          borderLeft: "4px solid #0095FF",
+                          paddingLeft: "calc(1rem - 4px)",
+                          boxShadow: "0 4px 20px rgba(0, 149, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
+                        }
+                      : {}
+                  }
+                  title={isCollapsed ? item.label : undefined}
+                  onMouseEnter={(e) => {
+                    if (!hasActiveChild) {
+                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                      e.currentTarget.style.transform = "translateX(2px)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!hasActiveChild) {
+                      e.currentTarget.style.background = "";
+                      e.currentTarget.style.transform = "";
+                    }
+                  }}
+                >
+                  {/* 悬停时的背景光效 */}
+                  {!hasActiveChild && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-primary-500/0 via-primary-500/5 to-primary-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl" />
+                  )}
+                  <div className={`flex items-center gap-4 relative z-10 ${isCollapsed ? "justify-center" : ""}`}>
+                    <div className={`p-2 rounded-lg transition-all duration-300 ${
+                      hasActiveChild 
+                        ? "bg-primary-500/20 shadow-lg shadow-primary-500/20" 
+                        : "bg-white/5 group-hover:bg-white/10"
+                    }`}>
+                      <Icon 
+                        size={22} 
+                        strokeWidth={hasActiveChild ? 2.5 : 2} 
+                        className={`transition-all duration-300 ${
+                          hasActiveChild ? "text-primary-300" : "text-slate-400 group-hover:text-primary-300"
+                        }`}
+                      />
+                    </div>
+                    {!isCollapsed && (
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="relative z-10 text-[15px] leading-snug">{item.label}</span>
+                        {item.labelEn && (
+                          <span className="text-[11px] text-slate-500 leading-tight mt-0.5 font-medium tracking-wide">
+                            {item.labelEn}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {!isCollapsed && (
+                    <ChevronRight
+                      size={18}
+                      strokeWidth={2}
+                      className={`text-slate-400 opacity-60 group-hover:opacity-100 transition-all duration-300 ${
+                        isExpanded ? "rotate-90 opacity-100 text-primary-400" : ""
+                      }`}
+                    />
+                  )}
+                </button>
+                {!isCollapsed && (
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: "easeInOut" }}
+                        className="overflow-hidden relative"
+                      >
+                        <div className="ml-6 mt-2 pl-4 relative">
+                          {/* 幽灵引导线：极细的半透明竖线，不连到底，作为视觉参考 */}
+                          <div className="absolute left-0 top-0 bottom-0 w-px bg-white/10" />
+                          
+                          <div className="space-y-0.5 pl-5">
+                            {getOrderedChildren(item).map((child) => {
+                              const isApprovalLink = child.href === "/finance/approval";
+                              const active = isActive(child.href);
+                              const childKey = child.href || `__${child.label}`;
+                              return (
+                                <Link
+                                  key={childKey}
+                                  href={child.href || "#"}
+                                  prefetch
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.effectAllowed = "move";
+                                    e.dataTransfer.setData("text/plain", childKey);
+                                    setDraggingChildHref(childKey);
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = "move";
+                                    setDragOverChildHref(childKey);
+                                  }}
+                                  onDragLeave={() => {
+                                    setDragOverChildHref((prev) => (prev === childKey ? null : prev));
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const from = e.dataTransfer.getData("text/plain") || draggingChildHref;
+                                    if (from) reorderChildren(item.label, from, childKey);
+                                    setDragOverChildHref(null);
+                                    setDraggingChildHref(null);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDragOverChildHref(null);
+                                    setDraggingChildHref(null);
+                                  }}
+                                  onMouseEnter={() => prefetchRoute(child.href)}
+                                  onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
+                                  className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
+                                    active
+                                      ? "text-blue-400 font-medium bg-blue-500/10"
+                                      : "text-gray-400 hover:text-white hover:bg-white/5"
+                                  }`}
+                                  style={dragOverChildHref === childKey ? { outline: "1px dashed rgba(56, 189, 248, 0.7)" } : undefined}
+                                >
+                                  <div
+                                    className="text-slate-500/70 group-hover:text-slate-300"
+                                    title="拖拽排序"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                  >
+                                    <GripVertical size={14} />
+                                  </div>
+                                  {/* 左侧占位/指示器区域：选中时显示圆点，未选中时透明占位保持对齐 */}
+                                  <div className="w-1.5 h-1.5 flex-shrink-0 flex items-center justify-center">
+                                    {active && (
+                                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                    )}
+                                  </div>
+                                  
+                                  {/* 文本内容 */}
+                                  <span className="flex-1">
+                                    {child.label}
+                                  </span>
+                                  
+                                  {/* 英文标签（如果有且不是控制台的子菜单） */}
+                                  {child.labelEn && item.label !== "控制台" && (
+                                    <span className={`text-[10px] font-medium transition-all duration-200 ${
+                                      active ? "text-blue-400/70" : "text-gray-500 group-hover:text-gray-400"
+                                    }`}>
+                                      {child.labelEn}
+                                    </span>
+                                  )}
+                                  
+                                  {/* 待审批数量角标 */}
+                                  {isApprovalLink && pendingApprovalCount > 0 && (
+                                    <span 
+                                      className="bg-gradient-to-br from-rose-500 to-rose-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-lg shadow-rose-500/40 animate-pulse"
+                                      style={{
+                                        boxShadow: "0 0 12px rgba(239, 68, 68, 0.6)"
+                                      }}
+                                    >
+                                      {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
+                                    </span>
+                                  )}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                )}
+                {/* 窄版模式的悬停弹出菜单：移入时取消关闭定时器，避免移过去时菜单消失点不到 */}
+                {isCollapsed && hoveredItem === item.label && (
+                  <div
+                    className="absolute left-16 ml-2 top-0 w-48 rounded-lg border border-slate-800/80 bg-[#0B0E14] shadow-2xl z-50 py-2 backdrop-blur-sm"
+                    onMouseEnter={() => {
+                      if (hoverLeaveTimerRef.current) {
+                        clearTimeout(hoverLeaveTimerRef.current);
+                        hoverLeaveTimerRef.current = null;
+                      }
+                    }}
+                  >
+                    <div className="text-xs text-slate-400 px-3 py-1.5 mb-1 border-b border-slate-800/50">
+                      {item.label}
+                    </div>
+                    {filterSidebarNavChildren(
+                      item.label,
+                      item.children,
+                      departmentCode,
+                      departmentName,
+                      departmentAccessOpts
+                    ).map((child) => {
+                      const isApprovalLink = child.href === "/finance/approval";
+                      const active = isActive(child.href);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href || "#"}
+                          onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
+                          className={`block px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
+                            active
+                              ? "text-white font-semibold"
+                              : "text-slate-400 hover:text-white"
+                          }`}
+                          style={
+                            active
+                              ? {
+                                  background: "linear-gradient(90deg, rgba(0,149,255,0.1) 0%, rgba(0,149,255,0) 100%)"
+                                }
+                              : {}
+                          }
+                        >
+                          {child.label}
+                          {isApprovalLink && pendingApprovalCount > 0 && (
+                            <span className="ml-2 bg-rose-500 text-white text-xs font-bold rounded-full w-5 h-5 inline-flex items-center justify-center">
+                              {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+                </div>
+              </div>
+            );
+          }
+          const active = isActive(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href || "#"}
+              prefetch
+              onClick={(e) => sidebarLinkClick(router, e, item.href, pathname || "")}
+              className={`group flex items-center gap-4 rounded-xl px-4 py-4 text-base transition-all duration-300 relative ${
+                active
+                  ? "text-white font-bold"
+                  : "text-slate-300 hover:text-white font-semibold"
+              } ${isCollapsed ? "justify-center px-3" : ""}`}
+              style={
+                active
+                  ? {
+                      background: "linear-gradient(135deg, rgba(0, 149, 255, 0.2) 0%, rgba(0, 149, 255, 0.08) 100%)",
+                      borderLeft: "4px solid #0095FF",
+                      paddingLeft: "calc(1rem - 4px)",
+                      boxShadow: "0 4px 20px rgba(0, 149, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
+                    }
+                  : {}
+              }
+              title={isCollapsed ? item.label : undefined}
+              onMouseEnter={(e) => {
+                prefetchRoute(item.href);
+                if (!active) {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                  e.currentTarget.style.transform = "translateX(2px)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "";
+                  e.currentTarget.style.transform = "";
+                }
+              }}
+            >
+              <div className={`p-2 rounded-lg transition-all duration-300 ${
+                active 
+                  ? "bg-primary-500/20 shadow-lg shadow-primary-500/20" 
+                  : "bg-white/5 group-hover:bg-white/10"
+              }`}>
+                <Icon 
+                  size={22} 
+                  strokeWidth={active ? 2.5 : 2} 
+                  className={`transition-all duration-300 ${
+                    active ? "text-primary-300" : "text-slate-400 group-hover:text-primary-300"
+                  }`}
+                />
+              </div>
+              {!isCollapsed && (
+                <div className="flex flex-col flex-1 min-w-0">
+                  <span className="text-[15px] leading-snug">{item.label}</span>
+                  {item.labelEn && (
+                    <span className="text-[11px] text-slate-500 leading-tight mt-0.5 font-medium tracking-wide">
+                      {item.labelEn}
+                    </span>
+                  )}
+                </div>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* 底部 */}
+      <div className={`px-5 py-5 border-t border-white/10 relative z-10 space-y-2 ${isCollapsed ? "px-3" : ""}`}>
+        {/* 用户信息 */}
+        {!isCollapsed && session?.user && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+            <div className="text-xs text-slate-400 mb-1">当前用户</div>
+            <div className="text-sm font-medium text-white">{session.user.name || "用户"}</div>
+            <div className="text-xs text-slate-500 truncate">{session.user.email || ""}</div>
+          </div>
+        )}
+        
+        {/* 登出按钮 */}
+        <button
+          onClick={async () => {
+            // 使用 NextAuth 的 signOut 清除 session
+            await signOut({ 
+              redirect: true, 
+              callbackUrl: "/login" 
+            });
+          }}
+          className={`w-full flex items-center justify-center gap-3 rounded-xl px-4 py-3 text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all duration-300 relative overflow-hidden group ${
+            isCollapsed ? "justify-center px-3" : ""
+          }`}
+          title={isCollapsed ? "登出" : "登出系统"}
+        >
+          <LogOut size={18} strokeWidth={2} className="transition-transform duration-300 group-hover:translate-x-1" />
+          {!isCollapsed && <span className="font-semibold">登出</span>}
+        </button>
+        
+        {/* 收起按钮 */}
+        <button
+          onClick={handleCollapse}
+          className={`w-full flex items-center justify-center gap-3 rounded-xl px-4 py-3 text-sm text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-300 relative overflow-hidden group ${
+            isCollapsed ? "justify-center px-3" : ""
+          }`}
+          title={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+        >
+          {/* 悬停光效 */}
+          <div className="absolute inset-0 bg-gradient-to-r from-primary-500/0 via-primary-500/10 to-primary-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl" />
+          <span className="relative z-10 flex items-center gap-2">
+            {isCollapsed ? (
+              <ChevronRight size={18} strokeWidth={2} className="transition-transform duration-300 group-hover:translate-x-1" />
+            ) : (
+              <>
+                <ChevronLeft size={18} strokeWidth={2} className="transition-transform duration-300 group-hover:-translate-x-1" />
+                <span className="font-semibold">收起侧边栏</span>
+              </>
+            )}
+          </span>
+        </button>
+        
+        {/* 汇率显示栏 */}
+        {!isCollapsed && (
+          <div className="-mx-5">
+            <ExchangeRateBar />
+          </div>
+        )}
+        
+        {/* 版本号 */}
+        <div className={`mt-3 pt-3 border-t border-white/5 ${isCollapsed ? "px-3" : "px-5"}`}>
+          {isCollapsed ? (
+            <div className="text-center">
+              <button onClick={() => setShowChangelog(true)} className="text-[10px] text-slate-500 hover:text-slate-300 font-mono transition-colors" title="查看更新日志">v{APP_VERSION}</button>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-600 font-mono text-center">
+              <button onClick={() => setShowChangelog(true)} className="hover:text-slate-300 transition-colors" title="查看更新日志">Version {APP_VERSION}</button>
+              <div className="text-[10px] text-slate-700 mt-0.5">Smart ERP</div>
+            </div>
+          )}
+        </div>
+      </div>
+    
+        {showChangelog && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowChangelog(false)}>
+            <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-slate-100">更新日志</h2>
+                <button onClick={() => setShowChangelog(false)} className="text-slate-400 hover:text-slate-200 text-xl">&times;</button>
+              </div>
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                {CHANGELOG.map((log, i) => (
+                  <div key={i}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-bold text-primary-300">{log.version}</span>
+                      <span className="text-xs text-slate-500">{log.date}</span>
+                    </div>
+                    <ul className="space-y-1">
+                      {log.items.map((item, j) => (
+                        <li key={j} className="text-xs text-slate-400 flex gap-2">
+                          <span className="text-slate-600">-</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+    </aside>
+  );
+}

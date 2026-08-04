@@ -1,0 +1,873 @@
+"use client";
+
+import { toast } from "sonner";
+import { useSession } from "next-auth/react";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useState, useCallback, useMemo } from "react";
+import useSWR, { mutate } from "swr";
+import {
+  getMonthlyBills,
+  saveMonthlyBills,
+  getBillsByStatus,
+  type MonthlyBill,
+  type BillStatus,
+  type BillType,
+  type BillCategory,
+} from "@/lib/reconciliation-store";
+import type { Agency } from "@/lib/ad-agency-store";
+import { formatCurrencyString } from "@/lib/currency-utils";
+import { createPendingEntry, getPendingEntryByRelatedId } from "@/lib/pending-entry-store";
+import type { RebateReceivable } from "@/lib/rebate-receivable-store";
+import {
+  getExpenseRequests,
+  getExpenseRequestsByStatus,
+  updateExpenseRequest,
+  type ExpenseRequest,
+} from "@/lib/expense-income-request-store";
+import {
+  getIncomeRequests,
+  getIncomeRequestsByStatus,
+  updateIncomeRequest,
+  type IncomeRequest,
+} from "@/lib/expense-income-request-store";
+import { ApprovalStats } from "./components/ApprovalStats";
+import { ApprovalFilters, type ActiveTab, type RequestKindFilter } from "./components/ApprovalFilters";
+import { ApprovalList } from "./components/ApprovalList";
+import { ApprovalDetailDialog } from "./components/ApprovalDetailDialog";
+import { broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
+
+function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
+  if (!session?.user) return "当前用户";
+  const u = session.user;
+  return (u.name && String(u.name).trim()) || (u.email && String(u.email).trim()) || "当前用户";
+}
+
+/** 支出/收入单的 category/summary 与月账单 billType 命名不一致，用关键词做近似匹配 */
+function expenseIncomeRequestMatchesBillType(
+  r: ExpenseRequest | IncomeRequest,
+  filter: BillType | "all"
+): boolean {
+  if (filter === "all") return true;
+  const cat = `${r.category || ""}/${r.summary || ""}`;
+  const hasAdAccount = "adAccountId" in r && !!(r as ExpenseRequest).adAccountId;
+
+  const isAd = /广告|投放|充值|推广|巨量|Meta|Google|Facebook/i.test(cat) || hasAdAccount;
+  const isLogistics = /物流|运费|海运|空运|快递|货代|报关|清关/i.test(cat);
+  const isFactory = /工厂|采购|生产|合同|订单|尾款|定金|拿货/i.test(cat);
+  const isStore = /店铺|回款|平台/i.test(cat);
+  const isRebate = /返点|回扣|佣金/i.test(cat);
+
+  switch (filter) {
+    case "广告":
+      return isAd;
+    case "物流":
+      return isLogistics;
+    case "工厂订单":
+      return isFactory;
+    case "店铺回款":
+      return isStore;
+    case "广告返点":
+      return isRebate;
+    case "其他":
+      return !isAd && !isLogistics && !isFactory && !isStore && !isRebate;
+    default:
+      return true;
+  }
+}
+
+/** 历史记录：筛选「已支付」时包含支出已付款 + 收入已收款 */
+function historyRequestMatchesStatusFilter(
+  r: ExpenseRequest | IncomeRequest,
+  historyFilter: BillStatus | "all"
+): boolean {
+  if (historyFilter === "all") return true;
+  if (historyFilter === "Draft" && r.rejectionReason) return true;
+  if (historyFilter === "Paid") {
+    return r.status === "Paid" || r.status === "Received";
+  }
+  return r.status === historyFilter;
+}
+
+export default function ApprovalCenterPage() {
+  const { data: session } = useSession();
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending"); // 褰撳墠鏍囩锛氬緟瀹℃壒/鍘嗗彶璁板綍
+  const [historyFilter, setHistoryFilter] = useState<BillStatus | "all">("all"); // 鍘嗗彶璁板綍鐘舵€佺瓫閫?
+  const [billTypeFilter, setBillTypeFilter] = useState<BillType | "all">("all"); // 璐﹀崟绫诲瀷绛涢€夛紙寰呭鎵瑰拰鍘嗗彶璁板綍鍏辩敤锛?
+  const [requestKindFilter, setRequestKindFilter] = useState<RequestKindFilter>("all");
+  
+  const [selectedBill, setSelectedBill] = useState<MonthlyBill | null>(null);
+  const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
+  const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isRequestDetailOpen, setIsRequestDetailOpen] = useState(false);
+  const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
+  const [rejectModal, setRejectModal] = useState<{ open: boolean; type: "bill" | "expense" | "income" | null; id: string | null }>({
+    open: false,
+    type: null,
+    id: null
+  });
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title?: string;
+    message: string;
+    type?: "danger" | "warning" | "info";
+    onConfirm: () => void;
+  } | null>(null);
+  
+  // 妯℃嫙鐢ㄦ埛瑙掕壊锛堝疄闄呭簲璇ヤ粠鐢ㄦ埛绯荤粺鑾峰彇锛?
+  const [userRole] = useState<"finance" | "boss" | "cashier">("boss");
+
+  // SWR fetcher 鍑芥暟
+  const fetcher = useCallback(async (key: string) => {
+    if (typeof window === "undefined") return null;
+    switch (key) {
+      case "monthly-bills":
+        return await getMonthlyBills();
+      case "pending-bills":
+        return await getBillsByStatus("Pending_Approval");
+      case "expense-requests":
+        return await getExpenseRequests();
+      case "pending-expense-requests":
+        return await getExpenseRequestsByStatus("Pending_Approval", true);
+      case "income-requests":
+        return await getIncomeRequests();
+      case "pending-income-requests":
+        return await getIncomeRequestsByStatus("Pending_Approval", true);
+      case "recharges": {
+        const res = await fetch("/api/ad-recharges");
+        if (!res.ok) throw new Error(`API 閿欒: ${res.status}`);
+        return res.json();
+      }
+      case "consumptions": {
+        const res = await fetch("/api/ad-consumptions?page=1&pageSize=5000");
+        if (!res.ok) throw new Error(`API 閿欒: ${res.status}`);
+        const data = await res.json();
+        if (data && typeof data === "object" && !Array.isArray(data) && Array.isArray(data.data)) {
+          return data.data;
+        }
+        return data;
+      }
+      case "rebate-receivables": {
+        const res = await fetch("/api/rebate-receivables");
+        if (!res.ok) throw new Error(`API 閿欒: ${res.status}`);
+        return res.json();
+      }
+      default:
+        return null;
+    }
+  }, []);
+
+  // 浣跨敤 SWR 鑾峰彇鏁版嵁锛堜紭鍖栵細鍏抽棴鐒︾偣鍒锋柊锛屽鍔犲幓閲嶉棿闅斾互鍑忓皯鏁版嵁搴撹闂級
+  const { data: allBillsData } = useSWR("monthly-bills", fetcher, { 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌10鍒嗛挓鍐呭幓閲?
+  });
+  const { data: pendingBillsData } = useSWR("pending-bills", fetcher, { 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌10鍒嗛挓鍐呭幓閲?
+  });
+  const { data: expenseRequestsData } = useSWR("expense-requests", fetcher, { 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+  });
+  const { data: pendingExpenseRequestsData } = useSWR("pending-expense-requests", fetcher, { 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+  });
+  const { data: incomeRequestsData } = useSWR("income-requests", fetcher, { 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+  });
+  const { data: pendingIncomeRequestsData } = useSWR("pending-income-requests", fetcher, { 
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 浼樺寲锛氬鍔犲埌5鍒嗛挓鍐呭幓閲?
+  });
+  const { data: rechargesData } = useSWR("recharges", fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 10鍒嗛挓鍐呭幓閲?
+  });
+  const { data: consumptionsData } = useSWR("consumptions", fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 10鍒嗛挓鍐呭幓閲?
+  });
+  const { data: rebateReceivablesData } = useSWR("rebate-receivables", fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000 // 10鍒嗛挓鍐呭幓閲?
+  });
+
+  /**
+   * 审批/退回支出·收入申请后：强制拉取并写入 SWR。
+   * stripExpenseId / stripIncomeId：若接口仍滞后，从待审批列表中再剔除对应 id（避免「批完仍占位」）。
+   */
+  const refreshExpenseIncomeSwrAfterMutation = useCallback(
+    async (opts?: { stripExpenseId?: string; stripIncomeId?: string }) => {
+      const [pendingExp, pendingInc, allExp, allInc] = await Promise.all([
+        getExpenseRequestsByStatus("Pending_Approval", true),
+        getIncomeRequestsByStatus("Pending_Approval", true),
+        getExpenseRequests(true),
+        getIncomeRequests(true),
+      ]);
+      const pe =
+        opts?.stripExpenseId != null
+          ? pendingExp.filter((r) => r.id !== opts.stripExpenseId)
+          : pendingExp;
+      const pi =
+        opts?.stripIncomeId != null
+          ? pendingInc.filter((r) => r.id !== opts.stripIncomeId)
+          : pendingInc;
+      mutate("pending-expense-requests", pe, { revalidate: false });
+      mutate("pending-income-requests", pi, { revalidate: false });
+      mutate("expense-requests", allExp, { revalidate: false });
+      mutate("income-requests", allInc, { revalidate: false });
+    },
+    [mutate]
+  );
+
+  // 纭繚鏁版嵁鏄暟缁勫苟鎸囧畾绫诲瀷
+  const allBills: MonthlyBill[] = Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [];
+  const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
+  const allExpenseRequests: ExpenseRequest[] = Array.isArray(expenseRequestsData) ? (expenseRequestsData as ExpenseRequest[]) : [];
+  const pendingExpenseRequests: ExpenseRequest[] = Array.isArray(pendingExpenseRequestsData) ? (pendingExpenseRequestsData as ExpenseRequest[]) : [];
+  const allIncomeRequests: IncomeRequest[] = Array.isArray(incomeRequestsData) ? (incomeRequestsData as IncomeRequest[]) : [];
+  const pendingIncomeRequests: IncomeRequest[] = Array.isArray(pendingIncomeRequestsData) ? (pendingIncomeRequestsData as IncomeRequest[]) : [];
+  const recharges: any[] = Array.isArray(rechargesData) ? rechargesData : [];
+  const consumptions: any[] = Array.isArray(consumptionsData) ? consumptionsData : [];
+  const rebateReceivables: RebateReceivable[] = Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [];
+
+  // 璁＄畻鍘嗗彶璁板綍锛堜娇鐢?useMemo 浼樺寲锛?
+  const historyBills = useMemo(() => {
+    return allBills.filter((b) => {
+      if (b.status === "Draft" || b.status === "Pending_Approval") {
+        return false;
+      }
+      return b.status === "Approved" || b.status === "Paid" || !!b.rejectionReason;
+    });
+  }, [allBills]);
+
+  const historyExpenseRequests = useMemo(() => {
+    return allExpenseRequests.filter((r) => {
+      if (r.status === "Draft" || r.status === "Pending_Approval") {
+        return false;
+      }
+      return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
+    });
+  }, [allExpenseRequests]);
+
+  const historyIncomeRequests = useMemo(() => {
+    return allIncomeRequests.filter((r) => {
+      if (r.status === "Draft" || r.status === "Pending_Approval") {
+        return false;
+      }
+      return r.status === "Approved" || r.status === "Paid" || r.status === "Received" || !!r.rejectionReason;
+    });
+  }, [allIncomeRequests]);
+
+
+  const handleViewDetail = (bill: MonthlyBill) => {
+    setSelectedBill(bill);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleApprove = async (billId: string) => {
+    // 浠庢渶鏂扮殑鏁版嵁婧愯幏鍙栬处鍗曚俊鎭紝纭繚鏁版嵁鍚屾
+    const allBills = await getMonthlyBills();
+    const bill = allBills.find((b) => b.id === billId);
+    if (!bill) return;
+    
+    // 鑾峰彇璐﹀崟淇℃伅鐢ㄤ簬寮圭獥鏄剧ず
+    const billType = bill.billType || "璐﹀崟";
+    const serviceProvider = bill.billCategory === "Payable" 
+      ? (bill.agencyName || bill.supplierName || bill.factoryName || "-")
+      : (bill.agencyName || "-");
+    const billAmount = formatCurrencyString(
+      bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, 
+      bill.currency
+    );
+    
+    setConfirmDialog({
+      open: true,
+      title: "批准账单",
+      message: `确定要批准这笔账单吗？批准后系统将自动推送给财务人员处理入账。\n\n账单信息：\n- 类型：${billType}\n- 金额：${billAmount}\n- 服务方：${serviceProvider}`,
+      type: "info",
+      onConfirm: async () => {
+        const approvedAt = new Date().toISOString();
+        const approver = getCurrentUserDisplayName(session);
+        const updatedBills = allBills.map((b) =>
+          b.id === billId
+            ? {
+                ...b,
+                status: "Approved" as BillStatus,
+                approvedBy: approver, // 瀹為檯搴旇浠庣敤鎴风郴缁熻幏鍙?
+                approvedAt
+              }
+            : b
+        );
+        // 乐观更新：立即从待审批列表移除，避免必须手动刷新
+        mutate("pending-bills", (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          return current.filter((b: { id?: string }) => b.id !== billId);
+        }, false);
+        mutate("monthly-bills", (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          return current.map((b: any) =>
+            b?.id === billId ? { ...b, status: "Approved", approvedBy: approver, approvedAt } : b
+          );
+        }, false);
+        await saveMonthlyBills(updatedBills);
+        mutate("monthly-bills", undefined, { revalidate: true });
+        mutate("pending-bills", undefined, { revalidate: true });
+        
+        // 濡傛灉鏄箍鍛婅处鍗曪紝涓旀湭鐢熸垚杩旂偣搴旀敹娆撅紝鍒欒嚜鍔ㄧ敓鎴?
+        if (bill.billType === "广告" && bill.agencyId && bill.adAccountId) {
+          (async () => {
+            try {
+              // 鑾峰彇浠ｇ悊鍟嗕俊鎭紝鐢ㄤ簬鑾峰彇杩旂偣姣斾緥锛圓PI锛?
+              const agenciesRes = await fetch("/api/ad-agencies");
+              const agencies: Agency[] = agenciesRes.ok ? await agenciesRes.json() : [];
+              const agency = bill.agencyId ? agencies.find((a: Agency) => a.id === bill.agencyId) : null;
+              
+              if (agency && bill.agencyId) {
+                // 鑾峰彇杩旂偣姣斾緥
+                const rebateRate = agency?.rebateConfig?.rate || agency?.rebateRate || 0;
+                
+                // 璁＄畻杩旂偣閲戦锛氬熀浜庡疄浠橀噾棰濓紙netAmount锛?
+                // 瀹炰粯閲戦 = 鍏呭€奸噾棰濓紝杩旂偣閲戦 = 瀹炰粯閲戦 * 杩旂偣姣斾緥 / 100
+                const rebateAmount = (bill.netAmount * rebateRate) / 100;
+                
+                // 濡傛灉鏈夎繑鐐归噾棰濅笖澶т簬0锛岀敓鎴愯繑鐐瑰簲鏀舵璁板綍
+                if (rebateAmount > 0) {
+                  // 鑾峰彇鍏宠仈鐨勫厖鍊艰褰曪紙API锛?
+                  const rechargesRes = await fetch("/api/ad-recharges");
+                  const recharges: Array<{ id: string; date: string }> = rechargesRes.ok ? await rechargesRes.json() : [];
+                  const relatedRecharges = bill.rechargeIds 
+                    ? recharges.filter((r: { id: string }) => bill.rechargeIds?.includes(r.id))
+                    : [];
+                  
+                  // 濡傛灉娌℃湁鍏宠仈鍏呭€艰褰曪紝浣跨敤璐﹀崟鐨勬湀浠戒綔涓哄厖鍊兼棩鏈?
+                  const rechargeDate = relatedRecharges.length > 0 
+                    ? relatedRecharges[0].date 
+                    : `${bill.month}-01`;
+                  
+                  // 鑾峰彇绗竴涓厖鍊艰褰旾D锛屽鏋滄病鏈夊垯浣跨敤璐﹀崟ID浣滀负鍏宠仈ID
+                  const rechargeId = relatedRecharges.length > 0 
+                    ? relatedRecharges[0].id 
+                    : billId;
+                  
+                  // 妫€鏌ユ槸鍚﹀凡瀛樺湪璇ヨ处鍗曠殑杩旂偣搴旀敹娆撅紙API锛?
+                  const receivablesRes = await fetch("/api/rebate-receivables");
+                  const existingReceivables: Array<{ id: string; rechargeId: string }> = receivablesRes.ok ? await receivablesRes.json() : [];
+                  const existingReceivable = existingReceivables.find(
+                    (r: { rechargeId: string }) => r.rechargeId === rechargeId || r.rechargeId === billId
+                  );
+                  
+                  if (!existingReceivable) {
+                    // 鍒涘缓鏂扮殑杩旂偣搴旀敹娆捐褰曪紙API锛?
+                    const createRes = await fetch("/api/rebate-receivables", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        rechargeId,
+                        rechargeDate,
+                        agencyId: bill.agencyId,
+                        agencyName: bill.agencyName || agency.name,
+                        adAccountId: bill.adAccountId || "",
+                        accountName: bill.accountName || "-",
+                        platform: agency.platform || "其他",
+                        rebateAmount,
+                        currency: bill.currency,
+                        currentBalance: rebateAmount,
+                        status: "待核销",
+                        notes: `审批通过后自动生成：广告账单 ${billId} 的返点应收款（实付金额：${formatCurrencyString(bill.netAmount, bill.currency)}，返点比例：${rebateRate}%）`,
+                      }),
+                    });
+                    if (createRes.ok) {
+                      const created = await createRes.json();
+                      mutate("rebate-receivables");
+                      console.log("已生成返点应收款记录:", created.id, "金额:", formatCurrencyString(rebateAmount, bill.currency));
+                    }
+                    
+                    // 鍦ㄥ璐︿腑蹇冪敓鎴?骞垮憡杩旂偣"绫诲瀷鐨勫簲鏀舵璐﹀崟
+                    const existingBills = await getMonthlyBills();
+                    // 鏌ユ壘鍚屼竴鍏宠仈鏂癸紙浠ｇ悊鍟?璐︽埛锛夈€佸悓涓€鏈堜唤銆佸悓涓€绫诲瀷銆佸悓涓€甯佺鐨勮崏绋胯处鍗?
+                    const existingRebateBill = existingBills.find(
+                      (b) =>
+                        b.month === bill.month &&
+                        b.billType === "广告返点" &&
+                        b.billCategory === "Receivable" &&
+                        b.agencyId === bill.agencyId &&
+                        b.adAccountId === bill.adAccountId &&
+                        b.currency === bill.currency &&
+                        b.status === "Draft"
+                    );
+                    
+                    if (existingRebateBill) {
+                      // 鍚堝苟鍒扮幇鏈夎处鍗?
+                      const updatedRebateBill: MonthlyBill = {
+                        ...existingRebateBill,
+                        totalAmount: existingRebateBill.totalAmount + rebateAmount,
+                        rebateAmount: existingRebateBill.rebateAmount + rebateAmount,
+                        netAmount: existingRebateBill.netAmount + rebateAmount,
+                        rechargeIds: [...(existingRebateBill.rechargeIds || []), rechargeId],
+                        notes: `鏇存柊锛氬鎵归€氳繃骞垮憡璐﹀崟 ${billId} 鍚庤嚜鍔ㄧ敓鎴愯繑鐐瑰簲鏀舵`
+                      };
+                      const updatedBills = existingBills.map((b) =>
+                        b.id === existingRebateBill.id ? updatedRebateBill : b
+                      );
+                      await saveMonthlyBills(updatedBills);
+                      console.log("已更新对账中心应收款账单:", updatedRebateBill.id);
+                    } else {
+                      // 鍒涘缓鏂扮殑杩旂偣搴旀敹娆捐处鍗?
+                      const newRebateBill: MonthlyBill = {
+                        id: `bill-rebate-approval-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                        month: bill.month,
+                        billCategory: "Receivable" as const,
+                        billType: "广告返点" as const,
+                        agencyId: bill.agencyId || undefined,
+                        agencyName: bill.agencyName || agency.name,
+                        adAccountId: bill.adAccountId || undefined,
+                        accountName: bill.accountName || "-",
+                        totalAmount: rebateAmount,
+                        currency: bill.currency,
+                        rebateAmount: rebateAmount,
+                        netAmount: rebateAmount,
+                        consumptionIds: [],
+                        rechargeIds: [rechargeId],
+                        status: "Draft",
+                        createdBy: "系统",
+                        createdAt: new Date().toISOString(),
+                        notes: `自动生成：审批通过广告账单 ${billId} 后生成的返点应收款（关联单据号：${billId}）`
+                      };
+                      const updatedBills = [...existingBills, newRebateBill];
+                      await saveMonthlyBills(updatedBills);
+                      console.log("已生成对账中心应收款账单并推送到对账中心:", newRebateBill.id, "关联单号:", billId);
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.error("Failed to generate rebate receivable", e);
+            }
+          })();
+        }
+        
+        // 鎺ㄩ€侀€昏緫锛氬簲鏀舵鎺ㄩ€佸埌寰呭叆璐︼紝搴斾粯娆炬帹閫佸埌寰呬粯娆?
+        // 鍙湁搴旀敹娆撅紙Receivable锛夋墠鍒涘缓寰呭叆璐︿换鍔?
+        // 搴斾粯娆撅紙Payable锛変笉鍒涘缓寰呭叆璐︿换鍔★紝浼氳嚜鍔ㄥ嚭鐜板湪寰呬粯娆惧垪琛ㄤ腑
+        if (bill.billCategory === "Receivable") {
+          // 搴旀敹娆撅細鍒涘缓寰呭叆璐︿换鍔★紝鎺ㄩ€佺粰璐㈠姟浜哄憳澶勭悊鍏ヨ处
+          const existingEntry = await getPendingEntryByRelatedId("Bill", billId);
+          if (!existingEntry) {
+            try {
+              await createPendingEntry({
+                type: "Bill",
+                relatedId: billId,
+                billCategory: bill.billCategory,
+                billType: bill.billType,
+                month: bill.month,
+                agencyName: bill.agencyName,
+                supplierName: bill.supplierName,
+                factoryName: bill.factoryName,
+                accountName: bill.accountName,
+                amount: bill.totalAmount,
+                currency: bill.currency,
+                netAmount: bill.netAmount,
+                approvedBy: approver,
+                approvedAt,
+                notes: bill.notes
+              });
+              console.log("应收款账单", billId, "审批通过，已创建待入账任务（推送到待入账列表）");
+            } catch (e) {
+              console.error("创建待入账任务失败:", billId, e);
+              toast.error("创建待入账任务失败，请手动处理");
+            }
+          } else {
+            console.log("应收款账单", billId, "的待入账任务已存在，跳过创建");
+          }
+        } else if (bill.billCategory === "Payable") {
+          // 搴斾粯娆撅細涓嶅垱寤哄緟鍏ヨ处浠诲姟锛屼細鑷姩鍑虹幇鍦ㄥ緟浠樻鍒楄〃涓紙閫氳繃 status === "Approved" 鍜?billCategory === "Payable" 绛涢€夛級
+          console.log("应付账款单", billId, "审批通过，已推送到待付款列表（status: Approved, billCategory: Payable）");
+        } else {
+          // 濡傛灉 billCategory 鏈缃垨涓哄叾浠栧€硷紝鏍规嵁璐﹀崟绫诲瀷鎺ㄦ柇
+          console.warn("账单", billId, "的 billCategory 为", bill.billCategory || "undefined", "，无法确定推送位置");
+        }
+
+        // 财务工作台 / 对账中心：立即拉取待入账与账单（含跨标签页）
+        mutate("pending-entries", undefined, { revalidate: true });
+        window.dispatchEvent(new CustomEvent("approval-updated"));
+        broadcastFinanceSwrInvalidate();
+        setConfirmDialog(null);
+        toast.success("已批准，已推送给财务人员处理入账");
+      }
+    });
+  };
+
+  const handleReject = (billId: string) => {
+    setRejectModal({ open: true, type: "bill", id: billId });
+  };
+
+  const handleConfirmReject = () => {
+    if (!rejectModal.id || !rejectModal.type) return;
+    if (!rejectReason.trim()) {
+      toast.error("请输入退回原因");
+      return;
+    }
+    if (rejectSubmitting) return;
+    setRejectSubmitting(true);
+
+    if (rejectModal.type === "bill") {
+      getMonthlyBills()
+        .then(async (allBills) => {
+          const updatedBills = allBills.map((b) =>
+            b.id === rejectModal.id
+              ? { ...b, status: "Draft" as BillStatus, rejectionReason: rejectReason.trim() }
+              : b
+          );
+          await saveMonthlyBills(updatedBills);
+          mutate("monthly-bills");
+          mutate("pending-bills");
+          toast.success("已退回审批");
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        })
+        .catch((err: any) => {
+          toast.error(err?.message || "退回失败");
+        })
+        .finally(() => setRejectSubmitting(false));
+      return;
+    }
+    if (rejectModal.type === "expense") {
+      const expenseId = rejectModal.id;
+      updateExpenseRequest(expenseId, {
+        status: "Rejected",
+        rejectionReason: rejectReason.trim()
+      })
+        .then(async () => {
+          await refreshExpenseIncomeSwrAfterMutation();
+          toast.success("已退回审批");
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        })
+        .catch((error: any) => {
+          toast.error(error.message || "退回失败");
+        })
+        .finally(() => setRejectSubmitting(false));
+      return;
+    }
+    if (rejectModal.type === "income") {
+      const incomeId = rejectModal.id;
+      updateIncomeRequest(incomeId, {
+        status: "Rejected",
+        rejectionReason: rejectReason.trim()
+      })
+        .then(async () => {
+          await refreshExpenseIncomeSwrAfterMutation();
+          toast.success("已退回审批");
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        })
+        .catch((error: any) => {
+          toast.error(error.message || "退回失败");
+        })
+        .finally(() => setRejectSubmitting(false));
+      return;
+    }
+    setRejectSubmitting(false);
+  };
+
+  // PaymentRequest 宸插悎骞跺埌 ExpenseRequest锛岀浉鍏冲嚱鏁板凡鍒犻櫎
+
+  // 瀹℃壒鏀嚭鐢宠
+  const handleApproveExpenseRequest = async (requestId: string) => {
+    const allExpenseRequests = await getExpenseRequests();
+    const request = allExpenseRequests.find((r) => r.id === requestId);
+    if (!request) return;
+    
+    setConfirmDialog({
+      open: true,
+      title: "批准支出申请",
+      message: `确定要批准这笔支出申请吗？批准后财务将选择账户并完成出账。\n\n申请信息：\n- 摘要：${request.summary}\n- 分类：${request.category}\n- 金额：${formatCurrencyString(request.amount, request.currency)}`,
+      type: "info",
+      onConfirm: async () => {
+        try {
+          await updateExpenseRequest(requestId, {
+            status: "Approved",
+            approvedBy: getCurrentUserDisplayName(session),
+            approvedAt: new Date().toISOString()
+          });
+          window.dispatchEvent(new CustomEvent("approval-updated"));
+          broadcastFinanceSwrInvalidate();
+          toast.success("已批准，已推送给财务人员处理出账");
+          setConfirmDialog(null);
+          if (selectedExpenseRequest?.id === requestId) {
+            setSelectedExpenseRequest(null);
+            setIsRequestDetailOpen(false);
+          }
+          // 强制刷新页面确保列表更新
+          setTimeout(() => window.location.reload(), 500);
+        } catch (error: any) {
+          toast.error(error.message || "审批失败");
+          setConfirmDialog(null);
+        }
+      }
+    });
+  };
+
+  // 瀹℃壒鏀跺叆鐢宠
+  const handleApproveIncomeRequest = async (requestId: string) => {
+    const allIncomeRequests = await getIncomeRequests();
+    const request = allIncomeRequests.find((r) => r.id === requestId);
+    if (!request) return;
+    
+    setConfirmDialog({
+      open: true,
+      title: "批准收入申请",
+      message: `确定要批准这笔收入申请吗？批准后财务将选择账户并完成入账。\n\n申请信息：\n- 摘要：${request.summary}\n- 分类：${request.category}\n- 金额：${formatCurrencyString(request.amount, request.currency)}`,
+      type: "info",
+      onConfirm: async () => {
+        try {
+          await updateIncomeRequest(requestId, {
+            status: "Approved",
+            approvedBy: getCurrentUserDisplayName(session),
+            approvedAt: new Date().toISOString()
+          });
+          window.dispatchEvent(new CustomEvent("approval-updated"));
+          broadcastFinanceSwrInvalidate();
+          toast.success("已批准，已推送给财务人员处理入账");
+          setConfirmDialog(null);
+          if (selectedIncomeRequest?.id === requestId) {
+            setSelectedIncomeRequest(null);
+            setIsRequestDetailOpen(false);
+          }
+          // 强制刷新页面确保列表更新
+          setTimeout(() => window.location.reload(), 500);
+          setConfirmDialog(null);
+          if (selectedIncomeRequest?.id === requestId) {
+            setSelectedIncomeRequest(null);
+            setIsRequestDetailOpen(false);
+          }
+        } catch (error: any) {
+          toast.error(error.message || "审批失败");
+          setConfirmDialog(null);
+        }
+      }
+    });
+  };
+
+  // 閫€鍥炴敮鍑虹敵璇?
+  const handleRejectExpenseRequest = (requestId: string) => {
+    setRejectModal({ open: true, type: "expense", id: requestId });
+  };
+
+  // 閫€鍥炴敹鍏ョ敵璇?
+  const handleRejectIncomeRequest = (requestId: string) => {
+    setRejectModal({ open: true, type: "income", id: requestId });
+  };
+
+  const filteredPendingBills = useMemo(() => {
+    if (requestKindFilter === "expense" || requestKindFilter === "income") {
+      return [];
+    }
+    if (billTypeFilter === "all") return Array.isArray(pendingBills) ? pendingBills : [];
+    return Array.isArray(pendingBills) ? pendingBills.filter((b) => b.billType === billTypeFilter) : [];
+  }, [pendingBills, billTypeFilter, requestKindFilter]);
+
+  const filteredPendingExpenseRequests = useMemo(() => {
+    if (requestKindFilter === "income") return [];
+    let list =
+      billTypeFilter === "all"
+        ? pendingExpenseRequests
+        : pendingExpenseRequests.filter((r) => expenseIncomeRequestMatchesBillType(r, billTypeFilter));
+    return list;
+  }, [pendingExpenseRequests, billTypeFilter, requestKindFilter]);
+
+  const filteredPendingIncomeRequests = useMemo(() => {
+    if (requestKindFilter === "expense") return [];
+    let list =
+      billTypeFilter === "all"
+        ? pendingIncomeRequests
+        : pendingIncomeRequests.filter((r) => expenseIncomeRequestMatchesBillType(r, billTypeFilter));
+    return list;
+  }, [pendingIncomeRequests, billTypeFilter, requestKindFilter]);
+
+  const filteredHistoryBills = useMemo(() => {
+    if (requestKindFilter === "expense" || requestKindFilter === "income") {
+      return [];
+    }
+    if (!Array.isArray(historyBills)) return [];
+    return historyBills.filter((b) => {
+      if (historyFilter !== "all") {
+        if (historyFilter === "Draft" && b.rejectionReason) {
+          // 有退回原因即视为退回记录
+        } else if (b.status !== historyFilter) {
+          return false;
+        }
+      }
+      if (billTypeFilter !== "all" && b.billType !== billTypeFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [historyBills, historyFilter, billTypeFilter, requestKindFilter]);
+
+  const filteredHistoryRequests = useMemo(() => {
+    const expenseSource = Array.isArray(historyExpenseRequests) ? historyExpenseRequests : [];
+    const incomeSource = Array.isArray(historyIncomeRequests) ? historyIncomeRequests : [];
+    const merged =
+      requestKindFilter === "expense"
+        ? expenseSource
+        : requestKindFilter === "income"
+          ? incomeSource
+          : [...expenseSource, ...incomeSource];
+    return merged.filter((r) => {
+      if (!historyRequestMatchesStatusFilter(r, historyFilter)) return false;
+      if (!expenseIncomeRequestMatchesBillType(r, billTypeFilter)) return false;
+      return true;
+    });
+  }, [historyExpenseRequests, historyIncomeRequests, historyFilter, billTypeFilter, requestKindFilter]);
+
+  const handleTabChange = useCallback((tab: ActiveTab) => {
+    setActiveTab(tab);
+    if (tab === "history") {
+      mutate("monthly-bills");
+      mutate("expense-requests");
+      mutate("income-requests");
+    }
+  }, []);
+
+  const handleOpenRequestDetail = useCallback((request: ExpenseRequest | IncomeRequest, type: "expense" | "income") => {
+    if (type === "expense") {
+      setSelectedExpenseRequest(request as ExpenseRequest);
+      setSelectedIncomeRequest(null);
+    } else {
+      setSelectedIncomeRequest(request as IncomeRequest);
+      setSelectedExpenseRequest(null);
+    }
+    setIsRequestDetailOpen(true);
+  }, []);
+
+  const pendingCount =
+    filteredPendingBills.length +
+    filteredPendingExpenseRequests.length +
+    filteredPendingIncomeRequests.length;
+  const historyCount = filteredHistoryBills.length + filteredHistoryRequests.length;
+  const totalHistoryCount =
+    historyBills.length + historyExpenseRequests.length + historyIncomeRequests.length;
+
+  return (
+    <div className="p-6 space-y-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">审批中心</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            {activeTab === "pending"
+              ? requestKindFilter === "all"
+                ? `待审批：月账单 ${filteredPendingBills.length} 笔，支出申请 ${filteredPendingExpenseRequests.length} 笔，收入申请 ${filteredPendingIncomeRequests.length} 笔`
+                : requestKindFilter === "expense"
+                  ? `待审批（仅支出申请）：${filteredPendingExpenseRequests.length} 笔`
+                  : `待审批（仅收入申请）：${filteredPendingIncomeRequests.length} 笔`
+              : requestKindFilter === "all"
+                ? `历史记录：月账单 ${filteredHistoryBills.length} 笔，支出/收入申请 ${filteredHistoryRequests.length} 笔`
+                : requestKindFilter === "expense"
+                  ? `历史记录（仅支出申请）：${filteredHistoryRequests.length} 笔`
+                  : `历史记录（仅收入申请）：${filteredHistoryRequests.length} 笔`}
+          </p>
+        </div>
+      </div>
+
+      <ApprovalStats
+        pendingBills={pendingBills}
+        pendingExpenseRequests={pendingExpenseRequests}
+        pendingIncomeRequests={pendingIncomeRequests}
+        historyBills={historyBills}
+        historyExpenseRequests={historyExpenseRequests}
+        historyIncomeRequests={historyIncomeRequests}
+      />
+
+      <ApprovalFilters
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        billTypeFilter={billTypeFilter}
+        onBillTypeFilterChange={setBillTypeFilter}
+        requestKindFilter={requestKindFilter}
+        onRequestKindFilterChange={setRequestKindFilter}
+        historyFilter={historyFilter}
+        onHistoryFilterChange={setHistoryFilter}
+        pendingCount={pendingCount}
+        historyCount={historyCount}
+      />
+
+      <ApprovalList
+        activeTab={activeTab}
+        filteredPendingBills={filteredPendingBills}
+        pendingExpenseRequests={filteredPendingExpenseRequests}
+        pendingIncomeRequests={filteredPendingIncomeRequests}
+        filteredHistoryBills={filteredHistoryBills}
+        filteredHistoryRequests={filteredHistoryRequests}
+        historyExpenseRequests={historyExpenseRequests}
+        historyIncomeRequests={historyIncomeRequests}
+        totalHistoryCount={totalHistoryCount}
+        requestKindFilter={requestKindFilter}
+        onViewBillDetail={handleViewDetail}
+        onApproveBill={handleApprove}
+        onRejectBill={handleReject}
+        onApproveExpenseRequest={handleApproveExpenseRequest}
+        onRejectExpenseRequest={handleRejectExpenseRequest}
+        onApproveIncomeRequest={handleApproveIncomeRequest}
+        onRejectIncomeRequest={handleRejectIncomeRequest}
+        onOpenRequestDetail={handleOpenRequestDetail}
+      />
+
+      <ApprovalDetailDialog
+        isDetailModalOpen={isDetailModalOpen}
+        selectedBill={selectedBill}
+        onCloseBillDetail={() => setIsDetailModalOpen(false)}
+        isRequestDetailOpen={isRequestDetailOpen}
+        selectedExpenseRequest={selectedExpenseRequest}
+        selectedIncomeRequest={selectedIncomeRequest}
+        onCloseRequestDetail={() => {
+          setIsRequestDetailOpen(false);
+          setSelectedExpenseRequest(null);
+          setSelectedIncomeRequest(null);
+        }}
+        rejectModal={rejectModal}
+        rejectReason={rejectReason}
+        onRejectReasonChange={setRejectReason}
+        rejectSubmitting={rejectSubmitting}
+        onConfirmReject={handleConfirmReject}
+        onCloseReject={() => {
+          setRejectModal({ open: false, type: null, id: null });
+          setRejectReason("");
+        }}
+        voucherViewModal={voucherViewModal}
+        onCloseVoucher={() => setVoucherViewModal(null)}
+        recharges={recharges}
+        consumptions={consumptions}
+        rebateReceivables={rebateReceivables}
+        onVoucherView={setVoucherViewModal}
+      />
+
+      {confirmDialog && (
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          type={confirmDialog.type || "warning"}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
+    </div>
+  );
+}
+

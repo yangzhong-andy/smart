@@ -1,0 +1,25 @@
+node_modules/
+.next/
+
+# Runtime configuration and credentials
+.env*
+!.env.example
+!.env.*.example
+
+# Logs, temporary output, and build artifacts
+*.log
+.DS_Store
+.next.bak/
+/tmp/
+*.orig
+*.bak
+*.backup
+*.old
+*~
+*.tsbuildinfo
+
+# Crash dumps and local databases
+core
+core.*
+*.core
+prisma/*.db

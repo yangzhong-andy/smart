@@ -1,0 +1,2464 @@
+"use client";
+
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import useSWR, { mutate } from "swr";
+import useSWRMutation from "swr/mutation";
+import { toast } from "sonner";
+import InteractiveButton from "@/components/ui/InteractiveButton";
+import { Wallet, DollarSign, Clock, CheckCircle2, AlertCircle, ArrowRight, Eye, FileText, TrendingUp, TrendingDown } from "lucide-react";
+import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
+import MaintenanceView from "@/components/MaintenanceView";
+import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
+import Link from "next/link";
+import type { PendingEntry } from "@/lib/pending-entry-store";
+import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { type BankAccount, getAccountStats } from "@/lib/finance-store";
+import type { CashFlow as CashFlowType } from "@/lib/cash-flow-store";
+import { type FinanceRates } from "@/lib/exchange";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { formatCurrency as formatCurrencyUtil, formatCurrencyString } from "@/lib/currency-utils";
+import type { Agency } from "@/lib/ad-agency-store";
+import type { RebateReceivable } from "@/lib/rebate-receivable-store";
+import { FileImage } from "lucide-react";
+import ImageUploader from "@/components/ImageUploader";
+import { 
+  getExpenseRequests, 
+  getExpenseRequestsByStatus, 
+  updateExpenseRequest,
+  type ExpenseRequest 
+} from "@/lib/expense-income-request-store";
+import { 
+  getIncomeRequests, 
+  getIncomeRequestsByStatus, 
+  updateIncomeRequest,
+  type IncomeRequest 
+} from "@/lib/expense-income-request-store";
+import type { Store } from "@/lib/store-store";
+import ExpenseEntry from "../cash-flow/components/ExpenseEntry";
+import IncomeEntry from "../cash-flow/components/IncomeEntry";
+import TransferEntry from "../cash-flow/components/TransferEntry";
+import { enrichWithUID } from "@/lib/business-utils";
+import { FINANCE_SWR_SYNC_KEY, broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
+
+type CashFlow = {
+  id: string;
+  uid?: string;
+  date: string;
+  summary: string;
+  category: string;
+  type: "income" | "expense";
+  amount: number;
+  accountId: string;
+  accountName: string;
+  currency: string;
+  remark?: string;
+  relatedId?: string;
+  businessNumber?: string;
+  status: "confirmed" | "pending";
+  isReversal?: boolean;
+  reversedById?: string;
+  voucher?: string | string[];
+  createdAt?: string;
+};
+
+const formatDate = (dateString?: string) => {
+  if (!dateString) return "-";
+  try {
+    const date = new Date(dateString);
+    // 格式：YYYY/MM/DD HH:mm
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}/${month}/${day} ${hours}:${minutes}`;
+  } catch {
+    return dateString;
+  }
+};
+
+const formatCurrency = (amount: number, currency: string = "CNY") => {
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: currency,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
+const getStatusColor = (status: BillStatus | string) => {
+  switch (status) {
+    case "Pending_Approval":
+      return { bg: "bg-amber-500/20", text: "text-amber-300", label: "待审批" };
+    case "Approved":
+      return { bg: "bg-blue-500/20", text: "text-blue-300", label: "已审批" };
+    case "Paid":
+      return { bg: "bg-emerald-500/20", text: "text-emerald-300", label: "已支付" };
+    case "Draft":
+      return { bg: "bg-slate-500/20", text: "text-slate-300", label: "草稿" };
+    case "Pending":
+      return { bg: "bg-amber-500/20", text: "text-amber-300", label: "待处理" };
+    case "Completed":
+      return { bg: "bg-emerald-500/20", text: "text-emerald-300", label: "已完成" };
+    default:
+      return { bg: "bg-slate-500/20", text: "text-slate-300", label: status };
+  }
+};
+
+function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
+  if (!session?.user) return "当前用户";
+  const u = session.user;
+  return (u.name && String(u.name).trim()) || (u.email && String(u.email).trim()) || "当前用户";
+}
+
+export default function FinanceWorkbenchPage() {
+  const { data: session } = useSession();
+  const [selectedExpenseRequest, setSelectedExpenseRequest] = useState<ExpenseRequest | null>(null);
+  const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
+  const [expenseAccountModal, setExpenseAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  const [incomeAccountModal, setIncomeAccountModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  // 重构：详情查看改为按需加载，只存储 ID
+  const [expenseDetailModal, setExpenseDetailModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  const [incomeDetailModal, setIncomeDetailModal] = useState<{ open: boolean; requestId: string | null }>({ open: false, requestId: null });
+  
+  // 使用 useSWRMutation 按需获取详情
+  const { trigger: fetchExpenseDetail, data: expenseDetailData, isMutating: isLoadingExpenseDetail } = useSWRMutation(
+    expenseDetailModal.requestId ? `/api/expense-requests/${expenseDetailModal.requestId}` : null,
+    async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch expense request');
+      return res.json();
+    }
+  );
+  
+  const { trigger: fetchIncomeDetail, data: incomeDetailData, isMutating: isLoadingIncomeDetail } = useSWRMutation(
+    incomeDetailModal.requestId ? `/api/income-requests/${incomeDetailModal.requestId}` : null,
+    async (url: string) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch income request');
+      return res.json();
+    }
+  );
+  
+  // 当详情弹窗打开时，触发数据获取
+  useEffect(() => {
+    if (expenseDetailModal.open && expenseDetailModal.requestId) {
+      fetchExpenseDetail();
+    }
+  }, [expenseDetailModal.open, expenseDetailModal.requestId, fetchExpenseDetail]);
+  
+  useEffect(() => {
+    if (incomeDetailModal.open && incomeDetailModal.requestId) {
+      fetchIncomeDetail();
+    }
+  }, [incomeDetailModal.open, incomeDetailModal.requestId, fetchIncomeDetail]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [paymentVoucher, setPaymentVoucher] = useState<string | string[]>(""); // 转账凭证
+  const [inputExchangeRate, setInputExchangeRate] = useState<string>(""); // 付款当天的汇率
+  const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
+  const [isSavingFlow, setIsSavingFlow] = useState(false);
+  const [batchPaymentModal, setBatchPaymentModal] = useState(false);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([]);
+  const [batchPaying, setBatchPaying] = useState(false);
+
+  // SWR fetcher 函数：API 报错时抛出异常，由 SWR 捕获并触发 error 状态（不重试，显示系统维护中）
+  const fetcher = useCallback(async (key: string) => {
+    if (typeof window === "undefined") return null;
+    switch (key) {
+      case "pending-entries": {
+        const res = await fetch("/api/pending-entries");
+        if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+        return res.json();
+      }
+      case "monthly-bills":
+        return await getMonthlyBills();
+      case "bank-accounts": {
+        const response = await fetch("/api/accounts?page=1&pageSize=500");
+        if (!response.ok) {
+          throw new Error(`API 错误: ${response.status}`);
+        }
+        const json = await response.json();
+        return Array.isArray(json) ? json : (json?.data ?? []);
+      }
+      case "cash-flow": {
+        const cashFlowResponse = await fetch("/api/cash-flow?page=1&pageSize=5000");
+        if (!cashFlowResponse.ok) {
+          throw new Error(`API 错误: ${cashFlowResponse.status}`);
+        }
+        const json = await cashFlowResponse.json();
+        return Array.isArray(json) ? json : (json?.data ?? []);
+      }
+      case "pending-bills":
+        return await getBillsByStatus("Pending_Approval");
+      case "approved-expense-requests":
+        return await getExpenseRequestsByStatus("Approved");
+      case "approved-income-requests":
+        return await getIncomeRequestsByStatus("Approved");
+      default:
+        // 处理 URL 形式的 key（如 /api/finance/rates）
+        if (typeof key === "string" && key.startsWith("/api/")) {
+          const res = await fetch(key);
+          if (!res.ok) throw new Error(`API 错误: ${res.status}`);
+          return res.json();
+        }
+        return null;
+    }
+  }, []);
+
+  const swrOptions = {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+    errorRetryCount: 2,
+    errorRetryInterval: 3000,
+  };
+  /** 审批/入账相关列表：切回浏览器标签时自动拉取，避免必须手动刷新 */
+  const swrOptionsRefreshOnFocus = {
+    ...swrOptions,
+    revalidateOnFocus: true,
+    dedupingInterval: 3000,
+  };
+
+  // 使用 SWR 获取数据（优化：大幅增加去重间隔以减少数据库访问）
+  const { data: pendingEntriesData, error: pendingEntriesError } = useSWR("pending-entries", fetcher, {
+    ...swrOptionsRefreshOnFocus,
+    dedupingInterval: 8000,
+  });
+  const { data: monthlyBillsData, error: monthlyBillsError } = useSWR("monthly-bills", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 600000,
+  });
+  const { data: accountsData, error: accountsError } = useSWR("bank-accounts", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 600000,
+  });
+  const { data: cashFlowData, error: cashFlowError } = useSWR("cash-flow", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 300000,
+    shouldRetryOnError: true,
+    errorRetryCount: 2,
+  });
+  const { data: pendingBillsData, error: pendingBillsError } = useSWR("pending-bills", fetcher, {
+    ...swrOptionsRefreshOnFocus,
+    dedupingInterval: 8000,
+  });
+  const { data: approvedExpenseRequestsData, error: approvedExpenseError } = useSWR(
+    "approved-expense-requests",
+    fetcher,
+    { ...swrOptionsRefreshOnFocus, dedupingInterval: 8000 }
+  );
+  const { data: approvedIncomeRequestsData, error: approvedIncomeError } = useSWR(
+    "approved-income-requests",
+    fetcher,
+    { ...swrOptionsRefreshOnFocus, dedupingInterval: 8000 }
+  );
+  const { data: storesDataRaw } = useSWR<any>("/api/stores?page=1&pageSize=500", fetcher, {
+    ...swrOptions,
+    dedupingInterval: 300000,
+  });
+
+  // 使用 SWR 获取实时汇率（与账户中心保持一致）
+  const { data: financeRatesData, error: financeRatesError } = useSWR<{
+    success: boolean;
+    data?: FinanceRates;
+    error?: string;
+    errorCode?: string;
+  }>("/api/finance-rates", fetcher, {
+    ...swrOptions,
+    keepPreviousData: true,
+    dedupingInterval: 300000,
+  });
+
+  // 只有核心 API（流水+账户）都失败时才显示「系统维护中」
+  // 单个 API 偶尔失败不影响整个页面
+  const apiErrorSources: string[] = [];
+  if (cashFlowError) apiErrorSources.push("流水");
+  if (accountsError) apiErrorSources.push("银行账户");
+  // 只有流水和账户同时失败才认为是系统问题
+  const hasApiError = cashFlowError && accountsError;
+  const failedSourceText = apiErrorSources.length > 0 ? apiErrorSources.join("、") : undefined;
+
+  useEffect(() => {
+    if (!hasApiError) return;
+    const errs = [
+      pendingEntriesError,
+      monthlyBillsError,
+      accountsError,
+      cashFlowError,
+      pendingBillsError,
+      approvedExpenseError,
+      approvedIncomeError,
+    ].filter(Boolean);
+    console.error("[财务工作台] 以下接口加载失败，请检查网络或后端:", failedSourceText, errs);
+  }, [hasApiError, failedSourceText, pendingEntriesError, monthlyBillsError, accountsError, cashFlowError, pendingBillsError, approvedExpenseError, approvedIncomeError]);
+
+  // 提取汇率数据
+  const exchangeRates = useMemo(() => {
+    if (!financeRatesData) return null;
+    if (financeRatesData.success && financeRatesData.data) {
+      return financeRatesData.data;
+    }
+    return null;
+  }, [financeRatesData]);
+
+  // 确保数据是数组并指定类型
+  const pendingEntries: PendingEntry[] = Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [];
+  const monthlyBills: MonthlyBill[] = Array.isArray(monthlyBillsData) ? (monthlyBillsData as MonthlyBill[]) : [];
+  const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
+  const approvedExpenseRequests: ExpenseRequest[] = Array.isArray(approvedExpenseRequestsData) ? (approvedExpenseRequestsData as ExpenseRequest[]) : [];
+  const approvedIncomeRequests: IncomeRequest[] = Array.isArray(approvedIncomeRequestsData) ? (approvedIncomeRequestsData as IncomeRequest[]) : [];
+
+  const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data ?? [];
+  const cashFlowListRawRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
+  const cashFlowListRaw: any[] = Array.isArray(cashFlowListRawRaw) ? cashFlowListRawRaw : [];
+
+  // 统一流水 status / type 为小写，兼容 API 返回的枚举值，并用于统计卡片
+  const cashFlow: CashFlow[] = useMemo(
+    () =>
+      Array.isArray(cashFlowListRaw)
+        ? cashFlowListRaw.map((f: any) => {
+            const rawType = String(f.type ?? "").toLowerCase();
+            const type = (rawType === "income" || rawType === "expense" ? rawType : "expense") as "income" | "expense";
+            const status = (String(f.flowStatus ?? f.status ?? "").toLowerCase() || "pending") as "confirmed" | "pending";
+            return {
+              ...f,
+              type,
+              status,
+            };
+          })
+        : [],
+    [cashFlowListRaw]
+  );
+
+  // 重新计算账户余额（包含 initialCapital 和流水记录）
+  const accounts: BankAccount[] = useMemo(() => {
+    if (!accountsListRaw.length) return [];
+
+    // 从 initialCapital 开始重新计算余额
+    let updatedAccounts: BankAccount[] = accountsListRaw.map((acc: BankAccount) => {
+      const hasChildren = accountsListRaw.some((a: any) => a.parentId === acc.id);
+      if (acc.accountCategory === "PRIMARY" && hasChildren) {
+        // 主账户有子账户，余额应该从子账户汇总，先重置为0
+        return {
+          ...acc,
+          originalBalance: 0,
+          rmbBalance: 0,
+          initialCapital: acc.initialCapital || 0
+        };
+      } else {
+        // 其他账户（独立账户、没有子账户的主账户、虚拟子账户）
+        // 从 initialCapital 开始计算
+        const initialCapital = acc.initialCapital || 0;
+        return {
+          ...acc,
+          originalBalance: initialCapital, // 从初始资金开始
+          rmbBalance: acc.currency === "CNY" || acc.currency === "RMB" 
+            ? initialCapital 
+            : initialCapital * (acc.exchangeRate || 1),
+          initialCapital: initialCapital
+        };
+      }
+    });
+
+    // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
+    if (cashFlowListRaw.length > 0) {
+      cashFlowListRaw.forEach((flow: any) => {
+        const status = flow.status ?? flow.flowStatus;
+        const isConfirmed = String(status).toLowerCase() === "confirmed";
+        if (isConfirmed && flow.accountId) {
+          const account = updatedAccounts.find((a) => a.id === flow.accountId);
+          if (account) {
+            const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
+            
+            // 如果账户不是主账户，或者主账户没有子账户，则直接更新余额
+            if (account.accountCategory !== "PRIMARY" || !hasChildren) {
+              // 直接使用 flow.amount，因为：
+              // - 收入类型：amount 是正数
+              // - 支出类型：amount 是负数（包括划拨转出）
+              const change = Number(flow.amount);
+              const newBalance = account.originalBalance + change;
+              
+              account.originalBalance = newBalance;
+              account.rmbBalance = account.currency === "CNY" || account.currency === "RMB"
+                ? newBalance
+                : newBalance * (account.exchangeRate || 1);
+            }
+          }
+        }
+      });
+    }
+    
+    // 重新计算所有主账户的余额（汇总子账户，如果有子账户的话）
+    updatedAccounts = updatedAccounts.map((acc) => {
+      if (acc.accountCategory === "PRIMARY") {
+        const hasChildren = updatedAccounts.some((a) => a.parentId === acc.id);
+        if (hasChildren) {
+          // 汇总子账户余额
+          const childAccounts = updatedAccounts.filter((a) => a.parentId === acc.id);
+          const totalOriginalBalance = childAccounts.reduce((sum, child) => sum + (child.originalBalance || 0), 0);
+          const totalRmbBalance = childAccounts.reduce((sum, child) => {
+            const childRmb = child.currency === "CNY" || child.currency === "RMB" 
+              ? (child.originalBalance || 0)
+              : (child.originalBalance || 0) * (child.exchangeRate || 1);
+            return sum + childRmb;
+          }, 0);
+          
+          return {
+            ...acc,
+            originalBalance: totalOriginalBalance,
+            rmbBalance: totalRmbBalance
+          };
+        }
+      }
+      return acc;
+    });
+
+    // 回退：若前端计算余额为 0 但接口返回的 originalBalance 非零，则使用接口值（避免仅填了「当前余额」未填「初始资金」时出账账户显示为 0）
+    const apiBalanceById = new Map<string, number>();
+    accountsListRaw.forEach((raw: any) => {
+      const v = Number(raw.originalBalance);
+      if (!Number.isNaN(v)) apiBalanceById.set(raw.id, v);
+    });
+    updatedAccounts = updatedAccounts.map((acc) => {
+      const computed = acc.originalBalance || 0;
+      const apiBalance = apiBalanceById.get(acc.id);
+      if (computed === 0 && apiBalance != null && apiBalance !== 0) {
+        const rmb = acc.currency === "CNY" || acc.currency === "RMB"
+          ? apiBalance
+          : apiBalance * (acc.exchangeRate || 1);
+        return { ...acc, originalBalance: apiBalance, rmbBalance: rmb };
+      }
+      return acc;
+    });
+    
+    return updatedAccounts;
+  }, [accountsListRaw, cashFlowListRaw]);
+
+  const stores: Store[] = Array.isArray(storesDataRaw) ? (storesDataRaw as Store[]) : (storesDataRaw?.data ?? []);
+
+  // 打开收入入账弹窗时：若申请关联了回款店铺，自动带出该店铺的收款账户
+  useEffect(() => {
+    if (!incomeAccountModal.open || !incomeAccountModal.requestId) return;
+    const request = selectedIncomeRequest || approvedIncomeRequests.find((r) => r.id === incomeAccountModal.requestId);
+    if (!request) return;
+    setSelectedAccountId("");
+    if (request.storeId && stores.length > 0) {
+      const store = stores.find((s) => s.id === request.storeId);
+      if (store?.accountId && Array.isArray(accounts) && accounts.some((a) => a.id === store.accountId)) {
+        setSelectedAccountId(store.accountId);
+      }
+    }
+  }, [incomeAccountModal.open, incomeAccountModal.requestId, selectedIncomeRequest, approvedIncomeRequests, stores, accounts]);
+
+  // 刷新审批/待入账相关数据（与审批中心、对账中心写入后保持一致）
+  const refreshApprovalData = useCallback(() => {
+    mutate("pending-entries", undefined, { revalidate: true });
+    mutate("monthly-bills", undefined, { revalidate: true });
+    mutate("approved-expense-requests", undefined, { revalidate: true });
+    mutate("approved-income-requests", undefined, { revalidate: true });
+    mutate("pending-bills", undefined, { revalidate: true });
+  }, [mutate]);
+
+  // 处理流水记录创建
+  const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number) => {
+    if (isSavingFlow) {
+      return;
+    }
+
+    setIsSavingFlow(true);
+    try {
+      // 自动生成唯一业务ID
+      const flowWithUID = enrichWithUID(newFlow, "CASH_FLOW");
+      
+      const response = await fetch('/api/cash-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(flowWithUID)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        const errorMessage = error.details ? `${error.error}: ${error.details}` : (error.error || '创建失败');
+        throw new Error(errorMessage);
+      }
+      
+      // 刷新相关数据
+      await mutate('/api/cash-flow');
+      await mutate('/api/accounts');
+      await mutate("pending-entries");
+      await mutate("monthly-bills");
+      
+      // 如果是广告充值，更新广告账户余额（包括返点）
+      if (newFlow.category === "广告费" && adAccountId && typeof window !== "undefined") {
+        try {
+          const { getAdAccounts, saveAdAccounts } = require("@/lib/ad-agency-store");
+          const adAccounts = getAdAccounts();
+          
+          const adAccount = adAccounts.find((a: any) => a.id === adAccountId);
+          if (adAccount) {
+            const rechargeAmount = Math.abs(newFlow.amount) + (rebateAmount || 0);
+            const updatedAdAccounts = adAccounts.map((acc: any) => {
+              if (acc.id === adAccountId) {
+                return {
+                  ...acc,
+                  currentBalance: acc.currentBalance + rechargeAmount
+                };
+              }
+              return acc;
+            });
+            saveAdAccounts(updatedAdAccounts);
+          }
+        } catch (e) {
+          console.error("Failed to update ad account balance", e);
+        }
+      }
+      
+      toast.success("流水记录创建成功");
+      setActiveModal(null);
+    } catch (error: any) {
+      console.error('Failed to create cash flow:', error);
+      toast.error(error.message || '创建流水记录失败');
+    } finally {
+      setIsSavingFlow(false);
+    }
+  };
+
+  useEffect(() => {
+    // 优化：完全移除自动轮询，改为完全手动刷新，减少数据库访问
+    
+    // 监听 localStorage 变化（当审批状态更新时）
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === "expenseRequests" ||
+        e.key === "incomeRequests" ||
+        e.key === FINANCE_SWR_SYNC_KEY
+      ) {
+        refreshApprovalData();
+      }
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    
+    // 监听自定义事件（当审批通过时触发）
+    const handleApprovalUpdate = () => {
+      refreshApprovalData();
+    };
+    
+    window.addEventListener("approval-updated", handleApprovalUpdate);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("approval-updated", handleApprovalUpdate);
+    };
+  }, [refreshApprovalData, mutate]); // 修复：添加 mutate 到依赖项
+
+  // 统计信息
+  // 已审批待付款月账单
+  const approvedBills = useMemo(() => {
+    return monthlyBills.filter((b) =>
+      b.status === "Approved" &&
+      (b.billCategory === "Payable" || (!b.billCategory && ["广告", "物流", "工厂订单"].includes(b.billType)))
+    );
+  }, [monthlyBills]);
+
+  const stats = useMemo(() => {
+    // 支出申请统计（统一使用 ExpenseRequest）
+    const expensePending = approvedExpenseRequests.filter((p) => p.status === "Approved").length;
+    const expenseTotal = approvedExpenseRequests.length;
+
+    // 待入账任务统计
+    const entryPending = pendingEntries.filter((e) => e.status === "Pending").length;
+    const entryTotal = pendingEntries.length;
+
+    // 账单统计
+    const billPending = monthlyBills.filter((b) => b.status === "Pending_Approval").length;
+    const billApproved = monthlyBills.filter((b) => b.status === "Approved").length;
+    const billTotal = monthlyBills.length;
+
+    // 财务指标
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    // 获取汇率
+    const getRate = (curr: string): number => {
+      if (curr === "CNY" || curr === "RMB") return 1;
+      const rates = exchangeRates as any;
+      return Number(rates?.[curr]) || 1;
+    };
+    const thisMonthIncome = cashFlow
+      .filter((f) => String(f.type).toLowerCase() === "income" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal && f.category !== "内部划拨" && f.category !== "换汇")
+      .reduce((sum, f) => sum + Math.abs(f.amount || 0) * getRate(f.currency || "CNY"), 0);
+    const thisMonthExpense = cashFlow
+      .filter((f) => String(f.type).toLowerCase() === "expense" && f.date && f.date.startsWith(currentMonth) && !(f as any).isReversal && f.category !== "内部划拨" && f.category !== "换汇")
+      .reduce((sum, f) => sum + Math.abs(f.amount || 0) * getRate(f.currency || "CNY"), 0);
+
+    // 账户总余额：使用与账户中心相同的计算逻辑（使用实时汇率）
+    const totalBalance = accounts.reduce((sum, acc) => {
+      if (acc.currency === "CNY" || acc.currency === "RMB") {
+        // CNY 账户直接使用原币余额
+        return sum + (acc.originalBalance || 0);
+      } else if (acc.currency === "USD") {
+        // USD 账户使用实时汇率
+        const rate = exchangeRates?.USD || acc.exchangeRate || 1;
+        return sum + (acc.originalBalance || 0) * rate;
+      } else if (acc.currency === "JPY") {
+        // JPY 账户使用实时汇率
+        const rate = exchangeRates?.JPY || acc.exchangeRate || 1;
+        return sum + (acc.originalBalance || 0) * rate;
+      } else {
+        // 其他币种使用账户中存储的汇率
+        return sum + (acc.originalBalance || 0) * (acc.exchangeRate || 1);
+      }
+    }, 0);
+
+    return {
+      expense: {
+        pending: expensePending,
+        total: expenseTotal
+      },
+      entry: {
+        pending: entryPending,
+        total: entryTotal
+      },
+      bill: {
+        pending: billPending,
+        approved: billApproved,
+        total: billTotal
+      },
+      finance: {
+        totalBalance,
+        thisMonthIncome,
+        thisMonthExpense,
+        netIncome: thisMonthIncome - thisMonthExpense
+      }
+    };
+  }, [approvedExpenseRequests, pendingEntries, monthlyBills, accounts, cashFlow, exchangeRates]);
+
+  // 待入账任务
+  const urgentPendingEntries = useMemo(() => {
+    return pendingEntries
+      .filter((e) => e.status === "Pending")
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+  }, [pendingEntries]);
+
+  // 待审批的账单
+  const urgentBills = useMemo(() => {
+    return monthlyBills
+      .filter((b) => b.status === "Pending_Approval")
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+  }, [monthlyBills]);
+
+  // 处理支出申请（选择账户并创建现金流）
+  const handleProcessExpenseRequest = async (requestId: string) => {
+    if (!selectedAccountId) {
+      toast.error("请选择出款账户");
+      return;
+    }
+
+    const request = approvedExpenseRequests.find((r) => r.id === requestId);
+    if (!request) {
+      toast.error("申请不存在");
+      return;
+    }
+
+    const account = accounts.find((a) => a.id === selectedAccountId);
+    if (!account) {
+      toast.error("账户不存在");
+      return;
+    }
+
+    // 外币付款时必须有汇率
+    const isForeignCurrency = request.currency && request.currency !== "CNY" && request.currency !== "RMB";
+    const flowRate = isForeignCurrency ? (parseFloat(inputExchangeRate) || 0) : 1;
+    if (isForeignCurrency && (!inputExchangeRate || flowRate <= 0)) {
+      toast.error("请输入付款当天的汇率");
+      return;
+    }
+    
+    // 检查账户余额
+    const totalBalance = account.originalBalance || 0;
+    if (totalBalance < request.amount) {
+      toast.error("账户余额不足");
+      return;
+    }
+    
+    try {
+      // 凭证分开传：发起付款时的凭证 -> paymentVoucher，财务打款后上传的 -> transferVoucher
+      const toVoucherStr = (v: string | string[] | null | undefined): string | null => {
+        if (v == null || v === "") return null;
+        if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
+        return typeof v === "string" ? v : null;
+      };
+      const paymentVoucherStr = toVoucherStr(request.voucher); // 发起时的凭证
+      const transferVoucherStr = toVoucherStr(paymentVoucher);   // 财务上传的转账凭证
+      const reqDate = request.date;
+      const fallbackDate = request.createdAt || request.submittedAt || new Date().toISOString();
+      const flowDate = (reqDate != null && String(reqDate).trim() !== "") ? new Date(reqDate) : new Date(fallbackDate);
+      const dateStr = Number.isNaN(flowDate.getTime()) ? new Date(fallbackDate).toISOString().slice(0, 10) : flowDate.toISOString().slice(0, 10);
+      
+      const cashFlowData = {
+        date: dateStr,
+        summary: request.summary,
+        category: request.category,
+        type: "expense" as const,
+        amount: -request.amount, // 支出为负数
+        accountId: selectedAccountId,
+        accountName: account.name,
+        currency: request.currency || "CNY",
+        exchangeRate: flowRate, // 付款当天输入的汇率
+        remark: request.remark || "",
+        businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
+        relatedId: ('relatedId' in request ? request.relatedId : null) || null,
+        status: "confirmed" as const,
+        paymentVoucher: paymentVoucherStr ?? undefined,  // 发起付款时的凭证（申请单上的）
+        transferVoucher: transferVoucherStr ?? undefined, // 财务打款后的转账凭证
+        voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined, // 兼容旧逻辑
+      };
+
+      // 调用 API 创建现金流
+      const response = await fetch('/api/cash-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cashFlowData)
+      });
+
+      if (!response.ok) {
+        let errMsg = '创建现金流失败';
+        try {
+          const error = await response.json();
+          errMsg = error.details ? `${error.error || errMsg}：${error.details}` : (error.error || errMsg);
+        } catch (_) {
+          errMsg = `请求失败（${response.status}）`;
+        }
+        throw new Error(errMsg);
+      }
+
+      // 获取创建的现金流ID
+      const cashFlowResult = await response.json();
+      
+      // 更新申请状态为已支付
+      await updateExpenseRequest(requestId, {
+        status: "Paid",
+        financeAccountId: selectedAccountId,
+        financeAccountName: account.name,
+        paidBy: getCurrentUserDisplayName(session),
+        paidAt: new Date().toISOString(),
+        paymentFlowId: cashFlowResult.id
+      });
+
+      // 采购尾款：同步更新拿货单已付尾款与合同已付总额
+      const isPurchaseTail =
+        request.relatedId &&
+        (request.category === "采购/采购尾款" ||
+          (request.summary || "").includes("采购尾款"));
+
+      // 海外仓代发费：累加仓库充值总额
+      if ((request as any).warehouseId) {
+        try {
+          await fetch(`/api/warehouses/${(request as any).warehouseId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rechargeAdd: request.amount }),
+          });
+        } catch (e) {
+          console.error("更新仓库充值总额失败", e);
+        }
+      }
+
+      if (isPurchaseTail) {
+        try {
+          const payTailRes = await fetch(`/api/delivery-orders/${request.relatedId}/pay-tail`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: request.amount }),
+          });
+          if (!payTailRes.ok) {
+            const err = await payTailRes.json().catch(() => ({}));
+            console.error("同步拿货单尾款失败:", err);
+            toast.error("流水已生成，但同步拿货单/合同失败，请手动核对");
+          }
+        } catch (e) {
+          console.error("同步拿货单尾款异常:", e);
+          toast.error("流水已生成，但同步拿货单/合同失败，请手动核对");
+        }
+      }
+      
+      // 立即从「待处理/已审批」列表中移除该条，并重新拉取
+      mutate(
+        "approved-expense-requests",
+        (prev: ExpenseRequest[] | undefined) =>
+          Array.isArray(prev) ? prev.filter((r) => r.id !== requestId) : prev,
+        { revalidate: true }
+      );
+      mutate('/api/cash-flow', undefined, { revalidate: true });
+      mutate('/api/accounts', undefined, { revalidate: true });
+      mutate("pending-entries", undefined, { revalidate: true });
+      broadcastFinanceSwrInvalidate();
+      // 刷新拿货单/合同，避免 SWR 缓存导致“财务已付款但页面未更新”
+      mutate("/api/delivery-orders?page=1&pageSize=500", undefined, { revalidate: true });
+      mutate("/api/purchase-contracts?page=1&pageSize=500", undefined, { revalidate: true });
+      
+      toast.success("支出已成功出账");
+      setExpenseAccountModal({ open: false, requestId: null });
+      setSelectedAccountId("");
+      setPaymentVoucher(""); // 清空凭证
+      setInputExchangeRate(""); // 清空汇率
+      // 强制刷新页面确保列表更新
+      setTimeout(() => window.location.reload(), 500);
+    } catch (error: any) {
+      console.error("处理支出申请失败:", error);
+      toast.error(error?.message || "处理失败，请重试");
+      throw error; // 重新抛出错误，让按钮的 onClick 也能捕获
+    }
+  };
+
+  // 合并付款 - 多笔审批通过，生成多条独立流水共享同一业务单号
+  const handleBatchPayment = async () => {
+    if (!selectedAccountId) { toast.error("请选择出款账户"); return; }
+    if (batchSelectedIds.length < 2) { toast.error("请至少选择2笔申请进行合并"); return; }
+
+    const selectedRequests = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id));
+    if (selectedRequests.length !== batchSelectedIds.length) { toast.error("部分申请数据异常"); return; }
+
+    const account = accounts.find(a => a.id === selectedAccountId);
+    if (!account) { toast.error("账户不存在"); return; }
+
+    const currencies = [...new Set(selectedRequests.map(r => r.currency || "CNY"))];
+    if (currencies.length > 1) { toast.error("所选申请币种不一致，无法合并"); return; }
+
+    const currency = currencies[0];
+    const isForeignCurrency = currency !== "CNY" && currency !== "RMB";
+    const flowRate = isForeignCurrency ? (parseFloat(inputExchangeRate) || 0) : 1;
+    if (isForeignCurrency && (!inputExchangeRate || flowRate <= 0)) { toast.error("请输入付款当天汇率"); return; }
+
+    const totalAmount = selectedRequests.reduce((sum, r) => sum + r.amount, 0);
+    const accountCurrency = account.currency || "CNY";
+    const isCrossCurrency = currency !== accountCurrency;
+
+    // 生成共享的业务单号
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+    const randomStr = Math.random().toString(36).slice(2, 6).toUpperCase();
+    const sharedBusinessNo = `BATCH-${dateStr}-${randomStr}`;
+
+    setBatchPaying(true);
+    try {
+      // 为每笔申请创建独立的流水，共享同一个 businessNumber
+      for (const req of selectedRequests) {
+        const reqAmount = isCrossCurrency ? req.amount * flowRate : req.amount;
+
+        const cashFlowData = {
+          date: req.date || new Date().toISOString().slice(0, 10),
+          summary: req.summary || "合并付款",
+          category: req.category || "其他",
+          type: "expense" as const,
+          amount: -Math.abs(reqAmount),
+          accountId: selectedAccountId,
+          accountName: account.name,
+          currency: accountCurrency,
+          exchangeRate: isCrossCurrency ? flowRate : 1,
+          remark: `合并付款(${sharedBusinessNo})：${req.summary}`,
+          businessNumber: sharedBusinessNo,
+          status: "confirmed" as const,
+          paymentVoucher: paymentVoucher || undefined,
+          transferVoucher: undefined,
+        };
+
+        const response = await fetch('/api/cash-flow', {
+          method: "POST",
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cashFlowData)
+        });
+        if (!response.ok) throw new Error("创建流水失败");
+        const cashFlowResult = await response.json();
+
+        // 更新该申请为已付款
+        await updateExpenseRequest(req.id, {
+          status: "Paid",
+          financeAccountId: selectedAccountId,
+          financeAccountName: account.name,
+          paidBy: getCurrentUserDisplayName(session),
+          paidAt: new Date().toISOString(),
+          paymentFlowId: cashFlowResult.id,
+        });
+      }
+
+      toast.success(`已合并付款 ${selectedRequests.length} 笔，合计 ${currency} ${totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}（单号：${sharedBusinessNo}）`);
+      setBatchPaymentModal(false);
+      setBatchSelectedIds([]);
+      setSelectedAccountId("");
+      setPaymentVoucher("");
+      setInputExchangeRate("");
+      setTimeout(() => window.location.reload(), 500);
+    } catch (error: any) {
+      toast.error(error?.message || "合并付款失败");
+    } finally {
+      setBatchPaying(false);
+    }
+  };
+
+  // 处理收入申请（选择账户并创建现金流）
+  const handleProcessIncomeRequest = async (requestId: string) => {
+    if (!selectedAccountId) {
+      toast.error("请选择收款账户");
+      return;
+    }
+
+    const request = approvedIncomeRequests.find((r) => r.id === requestId);
+    if (!request) {
+      toast.error("申请不存在");
+      return;
+    }
+
+    const account = accounts.find((a) => a.id === selectedAccountId);
+    if (!account) {
+      toast.error("账户不存在");
+      return;
+    }
+
+    // 外币收款时必须有汇率
+    const isForeignCurrency = request.currency && request.currency !== "CNY" && request.currency !== "RMB";
+    const flowRate = isForeignCurrency ? (parseFloat(inputExchangeRate) || 0) : 1;
+    if (isForeignCurrency && (!inputExchangeRate || flowRate <= 0)) {
+      toast.error("请输入收款当天的汇率");
+      return;
+    }
+    
+    try {
+      // 凭证分开传：发起时的凭证 -> paymentVoucher，财务上传的收款凭证 -> transferVoucher
+      const toVoucherStr = (v: string | string[] | null | undefined): string | null => {
+        if (v == null || v === "") return null;
+        if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
+        return typeof v === "string" ? v : null;
+      };
+      const paymentVoucherStr = toVoucherStr(request.voucher);
+      const transferVoucherStr = toVoucherStr(paymentVoucher);
+      const reqDate = request.date;
+      const flowDate = (reqDate != null && String(reqDate).trim() !== "") ? new Date(reqDate) : new Date();
+      const dateStr = Number.isNaN(flowDate.getTime()) ? new Date().toISOString().slice(0, 10) : flowDate.toISOString().slice(0, 10);
+      
+      const cashFlowData = {
+        date: dateStr,
+        summary: request.summary,
+        category: request.category,
+        type: "income" as const,
+        amount: request.amount, // 收入为正数
+        accountId: selectedAccountId,
+        accountName: account.name,
+        currency: request.currency || "CNY",
+        exchangeRate: flowRate, // 收款当天输入的汇率
+        remark: request.remark || "",
+        businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
+        relatedId: ('relatedId' in request ? request.relatedId : null) || null,
+        status: "confirmed" as const,
+        paymentVoucher: paymentVoucherStr ?? undefined,
+        transferVoucher: transferVoucherStr ?? undefined,
+        voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined,
+      };
+
+      // 调用 API 创建现金流
+      const response = await fetch('/api/cash-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cashFlowData)
+      });
+      
+      if (!response.ok) {
+        let errMsg = '创建现金流失败';
+        try {
+          const error = await response.json();
+          errMsg = error.details ? `${error.error || errMsg}：${error.details}` : (error.error || errMsg);
+        } catch (_) {
+          errMsg = `请求失败（${response.status}）`;
+        }
+        throw new Error(errMsg);
+      }
+      
+      // 获取创建的现金流ID
+      const cashFlowResult = await response.json();
+      
+      // 更新申请状态为已收款
+      await updateIncomeRequest(requestId, {
+        status: "Received",
+        financeAccountId: selectedAccountId,
+        financeAccountName: account.name,
+        receivedBy: getCurrentUserDisplayName(session),
+        receivedAt: new Date().toISOString(),
+        paymentFlowId: cashFlowResult.id
+      });
+      
+      // 乐观更新：从「已审批」列表中移除本条，入账后不再停留
+      mutate(
+        "approved-income-requests",
+        (current: IncomeRequest[] | undefined) =>
+          Array.isArray(current) ? current.filter((r) => r.id !== requestId) : current,
+        { revalidate: true }
+      );
+      mutate("cash-flow", undefined, { revalidate: true });
+      mutate("bank-accounts", undefined, { revalidate: true });
+      mutate("pending-entries", undefined, { revalidate: true });
+      broadcastFinanceSwrInvalidate();
+      
+      toast.success("收入已成功入账");
+      setIncomeAccountModal({ open: false, requestId: null });
+      setSelectedAccountId("");
+      setPaymentVoucher(""); // 清空凭证
+      setInputExchangeRate(""); // 清空汇率
+      // 强制刷新页面确保列表更新
+      setTimeout(() => window.location.reload(), 500);
+    } catch (error: any) {
+      toast.error(error.message || "处理失败，请重试");
+    }
+  };
+
+  const handleRetryFromMaintenance = useCallback(() => {
+    mutate("pending-entries");
+    mutate("monthly-bills");
+    mutate("bank-accounts");
+    mutate("cash-flow");
+    mutate("pending-bills");
+    mutate("approved-expense-requests");
+    mutate("approved-income-requests");
+    mutate("/api/finance-rates");
+  }, [mutate]);
+
+  if (hasApiError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 flex items-center justify-center p-6">
+        <MaintenanceView
+          description="数据加载失败，可能是系统维护或网络异常，请稍后再试"
+          failedSource={failedSourceText}
+          onRetry={handleRetryFromMaintenance}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
+      <PageHeader
+        title="财务工作台"
+        description="待审批事项、待入账任务、财务指标"
+        actions={
+          <>
+            <div className="flex items-center gap-2">
+              <InteractiveButton
+                onClick={() => setActiveModal("expense")}
+                variant="danger"
+                size="md"
+                className="rounded-lg bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-rose-500/20 hover:from-rose-600 hover:to-rose-700"
+              >
+                登记支出
+              </InteractiveButton>
+              <InteractiveButton
+                onClick={() => setActiveModal("income")}
+                variant="success"
+                size="md"
+                className="rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-emerald-500/20 hover:from-emerald-600 hover:to-emerald-700"
+              >
+                登记收入
+              </InteractiveButton>
+              <InteractiveButton
+                onClick={() => setActiveModal("transfer")}
+                variant="primary"
+                size="md"
+                className="rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-blue-700"
+              >
+                内部划拨
+              </InteractiveButton>
+            </div>
+            <InteractiveButton
+              onClick={async () => {
+                // 强制重新验证所有数据，忽略缓存
+                await Promise.all([
+                  mutate("pending-entries", undefined, { revalidate: true }),
+                  mutate("monthly-bills", undefined, { revalidate: true }),
+                  mutate("pending-bills", undefined, { revalidate: true }),
+                  mutate("bank-accounts", undefined, { revalidate: true }),
+                  mutate("cash-flow", undefined, { revalidate: true }),
+                  mutate("approved-expense-requests", undefined, { revalidate: true }),
+                  mutate("approved-income-requests", undefined, { revalidate: true }),
+                ]);
+                refreshApprovalData();
+                toast.success("数据已刷新");
+              }}
+              variant="secondary"
+              size="md"
+              className="rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 text-cyan-300 hover:from-cyan-500/30 hover:to-blue-500/30 hover:border-cyan-400/50"
+              title="刷新数据"
+            >
+              <span>🔄</span>
+              <span>刷新数据</span>
+            </InteractiveButton>
+            <Link href="/finance/reconciliation">
+              <ActionButton variant="secondary" icon={FileText}>
+                对账中心
+              </ActionButton>
+            </Link>
+            <Link href="/finance/cash-flow">
+              <ActionButton variant="secondary" icon={DollarSign}>
+                流水明细
+              </ActionButton>
+            </Link>
+          </>
+        }
+      />
+
+      {/* 统计面板 - 优化样式 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-5 backdrop-blur-sm hover:border-emerald-500/50 transition-all duration-300 shadow-lg shadow-emerald-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <TrendingUp className="h-5 w-5 text-emerald-400" />
+            <div className="text-xs text-slate-400">本月收入</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-100">{formatCurrency(stats.finance.thisMonthIncome)}</div>
+        </div>
+        
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-rose-500/10 to-rose-600/5 p-5 backdrop-blur-sm hover:border-rose-500/50 transition-all duration-300 shadow-lg shadow-rose-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <TrendingDown className="h-5 w-5 text-rose-400" />
+            <div className="text-xs text-slate-400">本月支出</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-100">{formatCurrency(stats.finance.thisMonthExpense)}</div>
+        </div>
+        
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-5 backdrop-blur-sm hover:border-amber-500/50 transition-all duration-300 shadow-lg shadow-amber-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <Clock className="h-5 w-5 text-amber-400" />
+            <div className="text-xs text-slate-400">待处理支出申请</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-100">{stats.expense.pending}</div>
+        </div>
+        
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-purple-500/10 to-purple-600/5 p-5 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300 shadow-lg shadow-purple-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <FileText className="h-5 w-5 text-purple-400" />
+            <div className="text-xs text-slate-400">待入账任务</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-100">{stats.entry.pending}</div>
+        </div>
+        
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-orange-500/10 to-orange-600/5 p-5 backdrop-blur-sm hover:border-orange-500/50 transition-all duration-300 shadow-lg shadow-orange-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <AlertCircle className="h-5 w-5 text-orange-400" />
+            <div className="text-xs text-slate-400">待审批账单</div>
+          </div>
+          <div className="text-2xl font-bold text-slate-100">{stats.bill.pending}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* 待审批支付申请 */}
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-amber-500/20 p-2">
+                <DollarSign className="h-5 w-5 text-amber-400" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-100">已审批支出申请（待付款）</h2>
+              {approvedExpenseRequests.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-300 font-medium">
+                  {approvedExpenseRequests.length}
+                </span>
+              )}
+            </div>
+            <Link href="/finance/approval">
+              <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
+                查看全部
+              </ActionButton>
+            </Link>
+            {approvedExpenseRequests.length >= 2 && (
+              <ActionButton
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setBatchSelectedIds([]);
+                  setBatchPaymentModal(true);
+                }}
+              >
+                合并付款
+              </ActionButton>
+            )}
+          </div>
+
+          {approvedExpenseRequests.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
+                <DollarSign className="h-8 w-8 opacity-30" />
+              </div>
+              <p className="text-sm">暂无已审批支出申请</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {approvedExpenseRequests.slice(0, 5).map((request) => {
+                const colors = getStatusColor(request.status);
+                return (
+                  <div key={request.id} className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-amber-500/50 hover:bg-slate-900/60 transition-all duration-200 group">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
+                            {colors.label}
+                          </span>
+                        </div>
+                        <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-amber-300 transition-colors">
+                          {request.summary}
+                        </div>
+                        <div className="text-xs text-slate-400 mb-1">
+                          <span className="font-medium text-slate-300">{formatCurrency(request.amount, request.currency)}</span>
+                          {(request as any).payeeName && <span className="ml-2">· 收款人：{(request as any).payeeName}</span>}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-2">
+                          创建：{formatDate(request.createdAt)}
+                        </div>
+                      </div>
+                      <div className="ml-3 flex flex-col gap-2">
+                        <button
+                          onClick={() => setExpenseDetailModal({ open: true, requestId: request.id })}
+                          className="px-3 py-1.5 rounded-lg bg-slate-700/50 text-slate-300 hover:bg-slate-700 text-xs transition flex items-center gap-1"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          详情
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedExpenseRequest(request);
+                            setExpenseAccountModal({ open: true, requestId: request.id });
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-rose-500/80 text-white hover:bg-rose-500 text-xs transition"
+                        >
+                          出账付款
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 待入账任务 */}
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-purple-500/20 p-2">
+                <FileText className="h-5 w-5 text-purple-400" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-100">待入账任务</h2>
+              {urgentPendingEntries.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/20 text-purple-300 font-medium">
+                  {urgentPendingEntries.length}
+                </span>
+              )}
+            </div>
+            <Link href="/finance/reconciliation">
+              <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
+                查看全部
+              </ActionButton>
+            </Link>
+          </div>
+
+          {!pendingEntriesData ? (
+            <SkeletonTable rows={3} cols={2} />
+          ) : urgentPendingEntries.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
+                <FileText className="h-8 w-8 opacity-30" />
+              </div>
+              <p className="text-sm">暂无待入账任务</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {urgentPendingEntries.map((entry) => {
+                const colors = getStatusColor(entry.status);
+                return (
+                  <Link key={entry.id} href="/finance/reconciliation">
+                    <div className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-purple-500/50 hover:bg-slate-900/60 transition-all duration-200 group cursor-pointer">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
+                              {colors.label}
+                            </span>
+                          </div>
+                          <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-purple-300 transition-colors">
+                            {entry.type === "Bill" ? entry.agencyName || entry.supplierName : entry.expenseItem}
+                          </div>
+                          <div className="text-xs text-slate-400 mb-1">
+                            <span className="font-medium text-slate-300">{formatCurrency(entry.netAmount, entry.currency)}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-2">
+                            审批：{formatDate(entry.approvedAt)}
+                          </div>
+                        </div>
+                        <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="rounded-lg bg-purple-500/10 p-2">
+                            <Eye className="h-4 w-4 text-purple-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 已审批月账单（待付款） */}
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-rose-500/20 p-2">
+                <Wallet className="h-5 w-5 text-rose-400" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-100">已审批月账单（待付款）</h2>
+              <span className="px-2 py-0.5 rounded-full text-xs bg-rose-500/20 text-rose-300 font-medium">
+                {approvedBills.length}
+              </span>
+            </div>
+            <span className="text-xs text-slate-500">点击下方账单去付款</span>
+          </div>
+          {approvedBills.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
+                <Wallet className="h-8 w-8 opacity-30" />
+              </div>
+              <p className="text-sm">暂无已审批待付款账单</p>
+            </div>
+          ) : (
+          <div className="space-y-3">
+            {approvedBills.slice(0, 5).map((bill) => (
+              <Link
+                key={bill.id}
+                href="/finance/reconciliation"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem("reconciliationActiveTab", "PendingPayment");
+                    window.localStorage.setItem("reconciliationAutoPayBillId", bill.id);
+                  }
+                }}
+              >
+                <div className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-rose-500/50 hover:bg-slate-900/60 transition-all duration-200 group cursor-pointer">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-500/20 text-emerald-300">已核准</span>
+                        <span className="text-xs text-slate-500">{bill.billType}</span>
+                      </div>
+                      <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-rose-300 transition-colors">
+                        {bill.agencyName || bill.supplierName || bill.factoryName || "-"} · {bill.month}
+                      </div>
+                      <div className="text-xs text-slate-400 mb-1">
+                        <span className="font-medium text-slate-300">{formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency)}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-2">
+                        审批时间：{formatDate(bill.approvedAt || bill.createdAt)}
+                      </div>
+                    </div>
+                    <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="rounded-lg bg-rose-500/10 p-2">
+                        <ArrowRight className="h-4 w-4 text-rose-400" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+          )}
+        </div>
+
+        {/* 已审批的支出申请 */}
+        {/* 已审批的收入申请 */}
+        {approvedIncomeRequests.length > 0 && (
+          <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-emerald-500/20 p-2">
+                  <TrendingUp className="h-5 w-5 text-emerald-400" />
+                </div>
+                <h2 className="text-lg font-semibold text-slate-100">已审批收入申请</h2>
+                <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-300 font-medium">
+                  {approvedIncomeRequests.length}
+                </span>
+                <span className="text-xs text-slate-500 ml-1">（选择账户入账后将从本列表移除）</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {approvedIncomeRequests.slice(0, 5).map((request) => (
+                <div
+                  key={request.id}
+                  className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-emerald-500/50 hover:bg-slate-900/60 transition-all duration-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-200 mb-2">
+                        {request.summary}
+                      </div>
+                      <div className="text-xs text-slate-400 mb-1">
+                        <span className="font-medium text-emerald-300">{formatCurrency(request.amount, request.currency)}</span>
+                        <span className="ml-2">· {request.category}</span>
+                        {request.storeName && <span className="ml-2">· {request.storeName}</span>}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-2">
+                        审批：{formatDate(request.approvedAt)}
+                      </div>
+                    </div>
+                    <div className="ml-3 flex gap-2">
+                      <button
+                        onClick={() => {
+                          setIncomeDetailModal({ open: true, requestId: request.id });
+                        }}
+                        className="px-3 py-2 rounded-lg bg-slate-700/50 text-slate-300 hover:bg-slate-700 font-medium text-sm transition flex items-center gap-1"
+                      >
+                        <Eye className="h-4 w-4" />
+                        查看详情
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 待审批账单 */}
+        <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
+          <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-orange-500/20 p-2">
+                <AlertCircle className="h-5 w-5 text-orange-400" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-100">待审批账单</h2>
+              {urgentBills.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs bg-orange-500/20 text-orange-300 font-medium">
+                  {urgentBills.length}
+                </span>
+              )}
+            </div>
+            <Link href="/finance/reconciliation">
+              <ActionButton variant="ghost" size="sm" icon={ArrowRight}>
+                查看全部
+              </ActionButton>
+            </Link>
+          </div>
+
+          {!pendingBillsData ? (
+            <SkeletonTable rows={3} cols={2} />
+          ) : urgentBills.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              <div className="rounded-full bg-slate-800/50 p-4 w-16 h-16 mx-auto mb-3 flex items-center justify-center">
+                <AlertCircle className="h-8 w-8 opacity-30" />
+              </div>
+              <p className="text-sm">暂无待审批账单</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {urgentBills.map((bill) => {
+                const colors = getStatusColor(bill.status);
+                return (
+                  <Link key={bill.id} href="/finance/reconciliation">
+                    <div className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-orange-500/50 hover:bg-slate-900/60 transition-all duration-200 group cursor-pointer">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
+                              {colors.label}
+                            </span>
+                          </div>
+                          <div className="text-sm font-medium text-slate-200 mb-2 group-hover:text-orange-300 transition-colors">
+                            {bill.agencyName || bill.supplierName || bill.factoryName}
+                          </div>
+                          <div className="text-xs text-slate-400 mb-1">
+                            <span className="font-medium text-slate-300">{bill.billType}</span>
+                            <span className="mx-2">·</span>
+                            <span className="font-medium text-slate-300">{formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency)}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-2">
+                            {bill.month}
+                          </div>
+                        </div>
+                        <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="rounded-lg bg-orange-500/10 p-2">
+                            <Eye className="h-4 w-4 text-orange-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 快速操作 */}
+      <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-6 backdrop-blur-sm shadow-xl">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="rounded-lg bg-primary-500/20 p-2">
+            <FileText className="h-5 w-5 text-primary-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-100">快速操作</h2>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <Link href="/finance/reconciliation">
+            <div className="group rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/60 to-slate-800/30 p-5 hover:border-primary-500/50 hover:from-primary-500/10 hover:to-primary-600/5 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-xl hover:shadow-primary-500/10">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="rounded-xl bg-primary-500/20 p-3 group-hover:bg-primary-500/30 group-hover:scale-110 transition-all duration-300">
+                  <FileText className="h-6 w-6 text-primary-400" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-200 group-hover:text-primary-300 transition-colors">对账中心</div>
+                  <div className="text-xs text-slate-400 mt-1">管理月账单</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/finance/cash-flow">
+            <div className="group rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/60 to-slate-800/30 p-5 hover:border-emerald-500/50 hover:from-emerald-500/10 hover:to-emerald-600/5 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-xl hover:shadow-emerald-500/10">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="rounded-xl bg-emerald-500/20 p-3 group-hover:bg-emerald-500/30 group-hover:scale-110 transition-all duration-300">
+                  <DollarSign className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-200 group-hover:text-emerald-300 transition-colors">流水清单</div>
+                  <div className="text-xs text-slate-400 mt-1">查看财务流水</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/finance/payment-request">
+            <div className="group rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/60 to-slate-800/30 p-5 hover:border-blue-500/50 hover:from-blue-500/10 hover:to-blue-600/5 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-xl hover:shadow-blue-500/10">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="rounded-xl bg-blue-500/20 p-3 group-hover:bg-blue-500/30 group-hover:scale-110 transition-all duration-300">
+                  <Wallet className="h-6 w-6 text-blue-400" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-200 group-hover:text-blue-300 transition-colors">支付申请</div>
+                  <div className="text-xs text-slate-400 mt-1">管理付款申请</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/finance/accounts">
+            <div className="group rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/60 to-slate-800/30 p-5 hover:border-purple-500/50 hover:from-purple-500/10 hover:to-purple-600/5 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-xl hover:shadow-purple-500/10">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="rounded-xl bg-purple-500/20 p-3 group-hover:bg-purple-500/30 group-hover:scale-110 transition-all duration-300">
+                  <Wallet className="h-6 w-6 text-purple-400" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-200 group-hover:text-purple-300 transition-colors">账户列表</div>
+                  <div className="text-xs text-slate-400 mt-1">管理银行账户</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/finance/approval">
+            <div className="group rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/60 to-slate-800/30 p-5 hover:border-amber-500/50 hover:from-amber-500/10 hover:to-amber-600/5 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-xl hover:shadow-amber-500/10 relative">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="rounded-xl bg-amber-500/20 p-3 group-hover:bg-amber-500/30 group-hover:scale-110 transition-all duration-300 relative">
+                  <CheckCircle2 className="h-6 w-6 text-amber-400" />
+                  {pendingBills.length > 0 && (
+                    <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-xs bg-rose-500 text-white font-bold animate-pulse shadow-lg">
+                      {pendingBills.length}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-200 group-hover:text-amber-300 transition-colors">审批中心</div>
+                  <div className="text-xs text-slate-400 mt-1">审批账单和支付申请</div>
+                </div>
+              </div>
+            </div>
+          </Link>
+        </div>
+      </div>
+
+      {/* 选择账户出账弹窗（支出申请） */}
+      {expenseAccountModal.open && expenseAccountModal.requestId && (() => {
+        // 如果没有 selectedExpenseRequest，尝试从 approvedExpenseRequests 中查找
+        const request = selectedExpenseRequest || approvedExpenseRequests.find(r => r.id === expenseAccountModal.requestId);
+        if (!request) {
+          console.error("找不到申请信息，requestId:", expenseAccountModal.requestId);
+          return null;
+        }
+        
+        // 计算匹配的账户数量
+        const matchingAccounts = Array.isArray(accounts) ? accounts.filter((acc) => {
+          const requestCurrency = request.currency as string;
+          const accountCurrency = acc.currency as string;
+          return accountCurrency === requestCurrency || 
+                 (requestCurrency === "CNY" && (accountCurrency === "CNY" || accountCurrency === "RMB")) ||
+                 ((requestCurrency === "CNY" || requestCurrency === "RMB") && accountCurrency === "CNY");
+        }) : [];
+        
+        return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-100">选择出款账户</h2>
+              <button
+                onClick={() => {
+                  setExpenseAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                  setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
+                }}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mb-4 p-4 rounded-lg bg-slate-800/50">
+              <div className="text-sm text-slate-300 mb-2">申请信息</div>
+              <div className="text-xs text-slate-400 space-y-1">
+                <div>摘要：{request.summary}</div>
+                <div>金额：{formatCurrency(request.amount, request.currency)}</div>
+                <div>分类：{request.category}</div>
+                <div>币种：{request.currency}</div>
+              </div>
+            </div>
+            <label className="block mb-4">
+              <span className="text-sm text-slate-300 mb-2 block">
+                选择账户
+                <span className="ml-2 text-xs text-slate-500">
+                  ({matchingAccounts.length} 个可用)
+                </span>
+                {!Array.isArray(accounts) || accounts.length === 0 && (
+                  <span className="ml-2 text-xs text-rose-400">(账户数据加载中...)</span>
+                )}
+              </span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                disabled={!Array.isArray(accounts) || accounts.length === 0}
+              >
+                <option value="">{!Array.isArray(accounts) || accounts.length === 0 ? "暂无可用账户" : "请选择账户"}</option>
+                {(() => {
+                  const groups: Record<string, typeof matchingAccounts> = {};
+                  matchingAccounts.forEach((acc) => {
+                    const cur = acc.currency || "OTHER";
+                    if (!groups[cur]) groups[cur] = [];
+                    groups[cur].push(acc);
+                  });
+                  return Object.keys(groups).sort().map((cur) => (
+                    <optgroup key={cur} label={`${cur} 账户（${groups[cur].length}个）`}>
+                      {groups[cur].map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name} — 余额 {formatCurrency(acc.originalBalance || 0, acc.currency)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ));
+                })()}
+              </select>
+              {matchingAccounts.length === 0 && (
+                <p className="mt-2 text-xs text-amber-400">
+                  没有匹配币种 {request.currency} 的账户，请先创建账户
+                  {Array.isArray(accounts) && accounts.length > 0 && (
+                    <span className="block mt-1 text-slate-500">
+                      当前系统共有 {accounts.length} 个账户，币种包括：{Array.from(new Set(accounts.map(a => a.currency))).join(", ")}
+                    </span>
+                  )}
+                </p>
+              )}
+            </label>
+
+            {/* 汇率输入（外币时显示） */}
+            {request && request.currency && request.currency !== "CNY" && request.currency !== "RMB" && (
+              <label className="block mb-4">
+                <span className="block text-sm text-slate-300 mb-2">
+                  付款当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
+                </span>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={inputExchangeRate}
+                  onChange={(e) => setInputExchangeRate(e.target.value)}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder={`如：${request.currency === "USD" ? "7.2500" : "1.0000"}`}
+                  required
+                />
+                {inputExchangeRate && parseFloat(inputExchangeRate) > 0 && (
+                  <span className="block text-xs text-slate-500 mt-1">
+                    折合人民币：¥{(Math.abs(request.amount) * parseFloat(inputExchangeRate)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </label>
+            )}
+
+            {/* 转账凭证上传 */}
+            <div className="mb-4">
+              <label className="block text-sm text-slate-300 mb-2">
+                转账凭证 <span className="text-slate-500 text-xs">(可选)</span>
+              </label>
+              <ImageUploader
+                value={paymentVoucher}
+                onChange={(value) => setPaymentVoucher(value)}
+                multiple={true}
+                label="上传转账凭证"
+                placeholder="点击上传或直接 Ctrl + V 粘贴转账凭证图片"
+                maxImages={5}
+                onError={(error) => toast.error(error)}
+              />
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setExpenseAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                  setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                取消
+              </button>
+              <InteractiveButton
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!request) {
+                    toast.error("申请信息丢失，请重新选择");
+                    return;
+                  }
+                  if (!selectedAccountId) {
+                    toast.error("请选择出款账户");
+                    return;
+                  }
+                  try {
+                    console.log("开始执行出账操作，requestId:", request.id);
+                    await handleProcessExpenseRequest(request.id);
+                    console.log("出账操作完成");
+                  } catch (error: any) {
+                    console.error("出账处理失败:", error);
+                    // 错误已在 handleProcessExpenseRequest 中处理，这里只记录日志
+                  }
+                }}
+                variant="danger"
+                size="md"
+                className="px-4 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600"
+                disabled={!selectedAccountId || !request}
+              >
+                确认出账
+              </InteractiveButton>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* 合并付款弹窗 */}
+      {batchPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur" onClick={() => setBatchPaymentModal(false)}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">合并付款</h2>
+              <button onClick={() => setBatchPaymentModal(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+
+            {/* 选择申请 */}
+            <div className="mb-4">
+              <div className="text-sm text-slate-300 mb-2">选择要合并的支出申请（同币种）</div>
+              <div className="max-h-60 overflow-y-auto rounded-md border border-slate-700 bg-slate-950 p-2 space-y-1">
+                {approvedExpenseRequests.length === 0 ? (
+                  <div className="text-center text-slate-500 py-4">暂无可合并的支出申请</div>
+                ) : (
+                  approvedExpenseRequests.map((r) => {
+                    const sameCurrency = batchSelectedIds.length === 0 || (r.currency || "CNY") === (approvedExpenseRequests.find(x => x.id === batchSelectedIds[0])?.currency || "CNY");
+                    return (
+                      <label key={r.id} className={`flex items-center gap-2 text-xs p-1.5 rounded ${sameCurrency ? "text-slate-300 hover:bg-slate-800/50" : "text-slate-600 cursor-not-allowed"}`}>
+                        <input
+                          type="checkbox"
+                          checked={batchSelectedIds.includes(r.id)}
+                          disabled={!sameCurrency}
+                          onChange={(e) => {
+                            setBatchSelectedIds(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id));
+                          }}
+                        />
+                        <span className="flex-1 truncate">{r.summary}</span>
+                        <span className="text-slate-400">{r.currency} {r.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {batchSelectedIds.length > 0 && (
+                <div className="mt-2 text-xs text-slate-400">
+                  已选 {batchSelectedIds.length} 笔，合计：<span className="text-amber-300 font-medium">{(() => {
+                    const total = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id)).reduce((sum, r) => sum + r.amount, 0);
+                    const curr = approvedExpenseRequests.find(r => batchSelectedIds.includes(r.id))?.currency || "CNY";
+                    return `${curr} ${total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+                  })()}</span>
+                </div>
+              )}
+            </div>
+
+            {/* 选择账户 */}
+            <label className="block mb-3">
+              <span className="text-sm text-slate-300">出款账户 <span className="text-rose-400">*</span></span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              >
+                <option value="">请选择账户</option>
+                {(() => {
+                  if (!Array.isArray(accounts)) return null;
+                  const groups: Record<string, typeof accounts> = {};
+                  accounts.forEach((acc) => {
+                    const cur = acc.currency || "OTHER";
+                    if (!groups[cur]) groups[cur] = [];
+                    groups[cur].push(acc);
+                  });
+                  const currencyOrder = ["CNY", "RMB", "USD", "JPY", "EUR", "GBP", "HKD", "SGD", "AUD"];
+                  return Object.keys(groups).sort((a, b) => {
+                    const aIdx = currencyOrder.indexOf(a);
+                    const bIdx = currencyOrder.indexOf(b);
+                    if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                  }).map((cur) => (
+                    <optgroup key={cur} label={"━━━ " + cur + " 账户（" + groups[cur].length + "个） ━━━"}>
+                      {groups[cur].map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name} — 余额 {formatCurrency(acc.originalBalance || 0, acc.currency)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ));
+                })()}
+              </select>
+            </label>
+
+            {/* 汇率 */}
+            {selectedAccountId && (() => {
+              const acc = accounts.find(a => a.id === selectedAccountId);
+              const curr = approvedExpenseRequests.find(r => batchSelectedIds.includes(r.id))?.currency || "CNY";
+              const isForeign = curr !== "CNY" && curr !== "RMB";
+              if (!isForeign) return null;
+              return (
+                <label className="block mb-3">
+                  <span className="text-sm text-slate-300">付款当天汇率（{curr} → CNY）<span className="text-rose-400">*</span></span>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={inputExchangeRate}
+                    onChange={(e) => setInputExchangeRate(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                    placeholder="如：7.2500"
+                  />
+                  {inputExchangeRate && parseFloat(inputExchangeRate) > 0 && (() => {
+                    const total = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id)).reduce((sum, r) => sum + r.amount, 0);
+                    return <span className="block text-xs text-slate-500 mt-1">折合人民币：¥{(total * parseFloat(inputExchangeRate)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+                  })()}
+                </label>
+              );
+            })()}
+
+            {/* 凭证 */}
+            <label className="block mb-4">
+              <span className="text-sm text-slate-300">转账凭证 <span className="text-slate-500">(可选)</span></span>
+              <div className="mt-1">
+                <ImageUploader
+                  value={paymentVoucher}
+                  onChange={(value) => setPaymentVoucher(value)}
+                  multiple={true}
+                  label="上传转账凭证"
+                  placeholder="点击上传或 Ctrl+V 粘贴"
+                  maxImages={5}
+                  onError={(error) => toast.error(error)}
+                />
+              </div>
+            </label>
+
+            <div className="flex justify-end gap-2">
+              <ActionButton type="button" variant="secondary" onClick={() => setBatchPaymentModal(false)}>取消</ActionButton>
+              <ActionButton
+                type="button"
+                onClick={handleBatchPayment}
+                isLoading={batchPaying}
+                disabled={batchSelectedIds.length < 2 || !selectedAccountId}
+              >
+                确认合并付款
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 选择账户入账弹窗（收入申请） */}
+      {incomeAccountModal.open && incomeAccountModal.requestId && (() => {
+        // 如果没有 selectedIncomeRequest，尝试从 approvedIncomeRequests 中查找
+        const request = selectedIncomeRequest || approvedIncomeRequests.find(r => r.id === incomeAccountModal.requestId);
+        if (!request) {
+          console.error("找不到申请信息，requestId:", incomeAccountModal.requestId);
+          return null;
+        }
+        
+        // 计算匹配的账户数量
+        const matchingAccounts = Array.isArray(accounts) ? accounts.filter((acc) => {
+          const requestCurrency = request.currency as string;
+          const accountCurrency = acc.currency as string;
+          return accountCurrency === requestCurrency || 
+                 (requestCurrency === "CNY" && (accountCurrency === "CNY" || accountCurrency === "RMB")) ||
+                 ((requestCurrency === "CNY" || requestCurrency === "RMB") && accountCurrency === "CNY");
+        }) : [];
+        
+        return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-100">选择收款账户</h2>
+              <button
+                onClick={() => {
+                  setIncomeAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                  setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
+                }}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mb-4 p-4 rounded-lg bg-slate-800/50">
+              <div className="text-sm text-slate-300 mb-2">申请信息</div>
+              <div className="text-xs text-slate-400 space-y-1">
+                <div>摘要：{request.summary}</div>
+                <div>金额：{formatCurrency(request.amount, request.currency)}</div>
+                <div>分类：{request.category}</div>
+                <div>币种：{request.currency}</div>
+                {request.storeName && (
+                  <div className="text-emerald-400/90">回款店铺：{request.storeName}</div>
+                )}
+              </div>
+            </div>
+            <label className="block mb-4">
+              <span className="text-sm text-slate-300 mb-2 block">
+                选择账户
+                {request.storeId && stores.find((s) => s.id === request.storeId)?.accountId === selectedAccountId && (
+                  <span className="ml-2 text-xs text-emerald-400">（已按回款店铺预选）</span>
+                )}
+                <span className="ml-2 text-xs text-slate-500">
+                  ({matchingAccounts.length} 个可用)
+                </span>
+                {!Array.isArray(accounts) || accounts.length === 0 && (
+                  <span className="ml-2 text-xs text-rose-400">(账户数据加载中...)</span>
+                )}
+              </span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 text-sm"
+                disabled={!Array.isArray(accounts) || accounts.length === 0}
+              >
+                <option value="">{!Array.isArray(accounts) || accounts.length === 0 ? "暂无可用账户" : "请选择账户"}</option>
+                {(() => {
+                  const groups: Record<string, typeof matchingAccounts> = {};
+                  matchingAccounts.forEach((acc) => {
+                    const cur = acc.currency || "OTHER";
+                    if (!groups[cur]) groups[cur] = [];
+                    groups[cur].push(acc);
+                  });
+                  return Object.keys(groups).sort().map((cur) => (
+                    <optgroup key={cur} label={`${cur} 账户（${groups[cur].length}个）`}>
+                      {groups[cur].map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name} — 余额 {formatCurrency(acc.originalBalance || 0, acc.currency)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ));
+                })()}
+              </select>
+              {matchingAccounts.length === 0 && (
+                <p className="mt-2 text-xs text-amber-400">
+                  没有匹配币种 {request.currency} 的账户，请先创建账户
+                  {Array.isArray(accounts) && accounts.length > 0 && (
+                    <span className="block mt-1 text-slate-500">
+                      当前系统共有 {accounts.length} 个账户，币种包括：{Array.from(new Set(accounts.map(a => a.currency))).join(", ")}
+                    </span>
+                  )}
+                </p>
+              )}
+            </label>
+
+            {/* 汇率输入（外币时显示） */}
+            {request && request.currency && request.currency !== "CNY" && request.currency !== "RMB" && (
+              <label className="block mb-4">
+                <span className="block text-sm text-slate-300 mb-2">
+                  收款当天汇率（{request.currency} → CNY）<span className="text-rose-400"> *</span>
+                </span>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={inputExchangeRate}
+                  onChange={(e) => setInputExchangeRate(e.target.value)}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                  placeholder={`如：${request.currency === "USD" ? "7.2500" : "1.0000"}`}
+                  required
+                />
+                {inputExchangeRate && parseFloat(inputExchangeRate) > 0 && (
+                  <span className="block text-xs text-slate-500 mt-1">
+                    折合人民币：¥{(Math.abs(request.amount) * parseFloat(inputExchangeRate)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </label>
+            )}
+
+            {/* 转账凭证上传 */}
+            <div className="mb-4">
+              <label className="block text-sm text-slate-300 mb-2">
+                转账凭证 <span className="text-slate-500 text-xs">(可选)</span>
+              </label>
+              <ImageUploader
+                value={paymentVoucher}
+                onChange={(value) => setPaymentVoucher(value)}
+                multiple={true}
+                label="上传转账凭证"
+                placeholder="点击上传或直接 Ctrl + V 粘贴转账凭证图片"
+                maxImages={5}
+                onError={(error) => toast.error(error)}
+              />
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setIncomeAccountModal({ open: false, requestId: null });
+                  setSelectedAccountId("");
+                  setPaymentVoucher(""); // 清空凭证
+                  setInputExchangeRate(""); // 清空汇率
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                取消
+              </button>
+              <InteractiveButton
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!request) {
+                    toast.error("申请信息丢失，请重新选择");
+                    return;
+                  }
+                  if (!selectedAccountId) {
+                    toast.error("请选择入款账户");
+                    return;
+                  }
+                  try {
+                    await handleProcessIncomeRequest(request.id);
+                  } catch (error: any) {
+                    console.error("入账处理失败:", error);
+                    // 错误已在 handleProcessIncomeRequest 中处理
+                  }
+                }}
+                variant="success"
+                size="md"
+                className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"
+                disabled={!selectedAccountId || !request}
+              >
+                确认入账
+              </InteractiveButton>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* 支出申请详情弹窗 - 重构为按需加载 */}
+      {expenseDetailModal.open && expenseDetailModal.requestId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-slate-100">支出申请详情</h2>
+              <button
+                onClick={() => {
+                  setExpenseDetailModal({ open: false, requestId: null });
+                }}
+                className="text-slate-400 hover:text-slate-200 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {isLoadingExpenseDetail ? (
+              <SkeletonDetail />
+            ) : expenseDetailData ? (
+            <div className="space-y-4">
+              {/* 基本信息 */}
+              <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">基本信息</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-slate-400">摘要：</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.summary}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">金额：</span>
+                    <span className="text-rose-300 font-medium ml-2">{formatCurrency(expenseDetailData.amount, expenseDetailData.currency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">分类：</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.category}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">币种：</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.currency}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">日期：</span>
+                    <span className="text-slate-200 ml-2">{formatDate(expenseDetailData.date)}</span>
+                  </div>
+                  {expenseDetailData.businessNumber && (
+                    <div>
+                      <span className="text-slate-400">关联单号：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.businessNumber}</span>
+                    </div>
+                  )}
+                  {expenseDetailData.storeName && (
+                    <div>
+                      <span className="text-slate-400">店铺：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.storeName}</span>
+                    </div>
+                  )}
+                  {expenseDetailData.departmentName && (
+                    <div>
+                      <span className="text-slate-400">部门：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.departmentName}</span>
+                    </div>
+                  )}
+                  {expenseDetailData.payeeName && (
+                    <div>
+                      <span className="text-slate-400">收款人：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.payeeName}</span>
+                    </div>
+                  )}
+                  {expenseDetailData.payeeAccount && (
+                    <div>
+                      <span className="text-slate-400">收款账号：</span>
+                      <span className="text-slate-200 ml-2">{expenseDetailData.payeeAccount}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 备注 */}
+              {expenseDetailData.remark && (
+                <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-2">备注</h3>
+                  <p className="text-sm text-slate-300">{expenseDetailData.remark}</p>
+                </div>
+              )}
+
+              {/* 凭证 */}
+              {expenseDetailData.voucher && (
+                <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3">凭证</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Array.isArray(expenseDetailData.voucher) ? (
+                      expenseDetailData.voucher.map((v: string, idx: number) => (
+                        <img key={idx} src={v} alt={`凭证${idx + 1}`} className="rounded-lg max-h-48 object-contain bg-slate-900" />
+                      ))
+                    ) : (
+                      <img src={expenseDetailData.voucher} alt="凭证" className="rounded-lg max-h-48 object-contain bg-slate-900" />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 审批信息 */}
+              <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">审批信息</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-slate-400">发起人：</span>
+                    <span className="text-slate-200 ml-2">{expenseDetailData.createdBy}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">创建时间：</span>
+                    <span className="text-slate-200 ml-2">{formatDate(expenseDetailData.createdAt)}</span>
+                  </div>
+                  {expenseDetailData.approvedBy && (
+                    <>
+                      <div>
+                        <span className="text-slate-400">审批人：</span>
+                        <span className="text-slate-200 ml-2">{expenseDetailData.approvedBy}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">审批时间：</span>
+                        <span className="text-slate-200 ml-2">{formatDate(expenseDetailData.approvedAt)}</span>
+                      </div>
+                    </>
+                  )}
+                  {expenseDetailData.rejectionReason && (
+                    <div className="col-span-2">
+                      <span className="text-slate-400">退回原因：</span>
+                      <span className="text-red-400 ml-2">{expenseDetailData.rejectionReason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 付款信息（如果已付款） */}
+              {expenseDetailData.paidBy && (
+                <div className="rounded-lg border border-emerald-800/50 bg-emerald-900/20 p-4">
+                  <h3 className="text-sm font-semibold text-emerald-300 mb-3">付款信息</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-slate-400">付款人：</span>
+                      <span className="text-emerald-300 ml-2">{expenseDetailData.paidBy}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">付款时间：</span>
+                      <span className="text-emerald-300 ml-2">{formatDate(expenseDetailData.paidAt)}</span>
+                    </div>
+                    {expenseDetailData.financeAccountName && (
+                      <div>
+                        <span className="text-slate-400">付款账户：</span>
+                        <span className="text-emerald-300 ml-2">{expenseDetailData.financeAccountName}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            ) : (
+              <div className="text-center py-8 text-slate-400">
+                <p>加载失败，请重试</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  setExpenseDetailModal({ open: false, requestId: null });
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                关闭
+              </button>
+              {expenseDetailData && !expenseDetailData.paidBy && (
+                <button
+                  onClick={() => {
+                    setSelectedExpenseRequest(expenseDetailData as ExpenseRequest);
+                    setExpenseDetailModal({ open: false, requestId: null });
+                    if (expenseDetailData) {
+                      setExpenseAccountModal({ open: true, requestId: expenseDetailData.id });
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600"
+                >
+                  选择账户出账
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 收入申请详情弹窗 - 重构为按需加载 */}
+      {incomeDetailModal.open && incomeDetailModal.requestId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-slate-100">收入申请详情</h2>
+              <button
+                onClick={() => {
+                  setIncomeDetailModal({ open: false, requestId: null });
+                }}
+                className="text-slate-400 hover:text-slate-200 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {isLoadingIncomeDetail ? (
+              <SkeletonDetail />
+            ) : incomeDetailData ? (
+            <div className="space-y-4">
+              {/* 基本信息 */}
+              <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">基本信息</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-slate-400">摘要：</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.summary}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">金额：</span>
+                    <span className="text-emerald-300 font-medium ml-2">{formatCurrency(incomeDetailData.amount, incomeDetailData.currency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">分类：</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.category}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">币种：</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.currency}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">日期：</span>
+                    <span className="text-slate-200 ml-2">{formatDate(incomeDetailData.date)}</span>
+                  </div>
+                  {incomeDetailData.storeName && (
+                    <div>
+                      <span className="text-slate-400">店铺：</span>
+                      <span className="text-slate-200 ml-2">{incomeDetailData.storeName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 备注 */}
+              {incomeDetailData.remark && (
+                <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-2">备注</h3>
+                  <p className="text-sm text-slate-300">{incomeDetailData.remark}</p>
+                </div>
+              )}
+
+              {/* 凭证 */}
+              {incomeDetailData.voucher && (
+                <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3">凭证</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Array.isArray(incomeDetailData.voucher) ? (
+                      incomeDetailData.voucher.map((v: string, idx: number) => (
+                        <img key={idx} src={v} alt={`凭证${idx + 1}`} className="rounded-lg max-h-48 object-contain bg-slate-900" />
+                      ))
+                    ) : (
+                      <img src={incomeDetailData.voucher} alt="凭证" className="rounded-lg max-h-48 object-contain bg-slate-900" />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 审批信息 */}
+              <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-4">
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">审批信息</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-slate-400">发起人：</span>
+                    <span className="text-slate-200 ml-2">{incomeDetailData.createdBy}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">创建时间：</span>
+                    <span className="text-slate-200 ml-2">{formatDate(incomeDetailData.createdAt)}</span>
+                  </div>
+                  {incomeDetailData.approvedBy && (
+                    <>
+                      <div>
+                        <span className="text-slate-400">审批人：</span>
+                        <span className="text-slate-200 ml-2">{incomeDetailData.approvedBy}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">审批时间：</span>
+                        <span className="text-slate-200 ml-2">{formatDate(incomeDetailData.approvedAt)}</span>
+                      </div>
+                    </>
+                  )}
+                  {incomeDetailData.rejectionReason && (
+                    <div className="col-span-2">
+                      <span className="text-slate-400">退回原因：</span>
+                      <span className="text-red-400 ml-2">{incomeDetailData.rejectionReason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 收款信息（如果已收款） */}
+              {incomeDetailData.receivedBy && (
+                <div className="rounded-lg border border-emerald-800/50 bg-emerald-900/20 p-4">
+                  <h3 className="text-sm font-semibold text-emerald-300 mb-3">收款信息</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-slate-400">收款人：</span>
+                      <span className="text-emerald-300 ml-2">{incomeDetailData.receivedBy}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">收款时间：</span>
+                      <span className="text-emerald-300 ml-2">{formatDate(incomeDetailData.receivedAt)}</span>
+                    </div>
+                    {incomeDetailData.financeAccountName && (
+                      <div>
+                        <span className="text-slate-400">收款账户：</span>
+                        <span className="text-emerald-300 ml-2">{incomeDetailData.financeAccountName}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            ) : (
+              <div className="text-center py-8 text-slate-400">
+                <p>加载失败，请重试</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  setIncomeDetailModal({ open: false, requestId: null });
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                关闭
+              </button>
+              {incomeDetailData && !incomeDetailData.receivedBy && (
+                <button
+                  onClick={() => {
+                    setSelectedIncomeRequest(incomeDetailData as IncomeRequest);
+                    setIncomeDetailModal({ open: false, requestId: null });
+                    if (incomeDetailData) {
+                      setIncomeAccountModal({ open: true, requestId: incomeDetailData.id });
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"
+                >
+                  选择账户入账
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 流水录入组件 */}
+      {activeModal === "expense" && (
+        <ExpenseEntry
+          accounts={Array.isArray(accounts) ? accounts : []}
+          onClose={() => setActiveModal(null)}
+          onSave={handleAddFlow}
+          skipAccountSelection
+        />
+      )}
+      {activeModal === "income" && (
+        <IncomeEntry
+          accounts={Array.isArray(accounts) ? accounts : []}
+          onClose={() => setActiveModal(null)}
+          onSave={handleAddFlow}
+          skipAccountSelection
+        />
+      )}
+      {activeModal === "transfer" && (
+        <TransferEntry
+          accounts={Array.isArray(accounts) ? accounts : []}
+          onClose={() => setActiveModal(null)}
+          onSave={handleAddFlow}
+        />
+      )}
+    </div>
+  );
+}

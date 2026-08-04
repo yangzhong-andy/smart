@@ -1,0 +1,197 @@
+import { randomUUID } from 'node:crypto'
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-options'
+import { prisma } from '@/lib/prisma'
+import { AccountType } from '@prisma/client'
+import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
+import { serverError } from '@/lib/api-response'
+
+export const dynamic = 'force-dynamic'
+
+// 辅助：权限检查
+async function requireAuth() {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: '未登录' }, { status: 401 })
+  }
+  return null
+}
+
+// 缓存配置
+const CACHE_TTL = 600; // 10分钟
+const CACHE_KEY_PREFIX = 'accounts';
+
+// GET - 获取所有账户（需要登录）
+export async function GET(request: NextRequest) {
+  const authError = await requireAuth()
+  if (authError) return authError
+  try {
+    const { searchParams } = new URL(request.url)
+    const accountType = searchParams.get('type')
+    const storeId = searchParams.get('storeId')
+    const page = parseInt(searchParams.get("page") || "1")
+    const pageSize = parseInt(searchParams.get("pageSize") || "20")
+    const noCache = searchParams.get("noCache") === "true"
+
+    // 生成缓存键
+    const cacheKey = generateCacheKey(
+      CACHE_KEY_PREFIX,
+      accountType || 'all',
+      storeId || 'all',
+      String(page),
+      String(pageSize)
+    )
+
+    // 尝试从缓存获取（仅第一页）
+    if (!noCache && page === 1) {
+      const cached = await getCache<any>(cacheKey)
+      if (cached) {
+        return NextResponse.json(cached)
+      }
+    }
+
+    const where: any = {}
+    if (accountType) where.accountType = accountType as AccountType
+    if (storeId) where.storeId = storeId
+
+    const [accounts, total] = await prisma.$transaction([
+      prisma.bankAccount.findMany({
+        where,
+        include: {
+          cashFlows: {
+            select: { amount: true, type: true },
+          },
+          children: {
+            select: { id: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.bankAccount.count({ where }),
+    ])
+    
+    const response = {
+      data: accounts.map(acc => {
+        // 根据流水计算实时余额：初始资金 + 收入 - 支出
+        const initialCapital = Number(acc.initialCapital) || 0;
+        let balance = initialCapital;
+        acc.cashFlows.forEach((flow: any) => {
+          if (String(flow.type).toLowerCase() === 'income') {
+            balance += Number(flow.amount);
+          } else if (String(flow.type).toLowerCase() === "expense") {
+            // 注意：expense 的 amount 已经是负数，直接加即可，不要减
+            balance += Number(flow.amount);
+          }
+        });
+        
+        return {
+          id: acc.id,
+          name: acc.name,
+          accountNumber: acc.accountNumber,
+          accountType: acc.accountType === 'CORPORATE' ? '对公' as const : acc.accountType === 'PERSONAL' ? '对私' as const : '平台' as const,
+          accountCategory: acc.accountCategory === 'PRIMARY' ? 'PRIMARY' as const : 'VIRTUAL' as const,
+          accountPurpose: acc.accountPurpose,
+          currency: (acc.currency === 'RMB' ? 'CNY' : acc.currency) as 'CNY' | 'USD' | 'JPY' | 'EUR' | 'GBP' | 'HKD' | 'SGD' | 'AUD',
+          country: acc.country,
+          originalBalance: balance, // 使用计算后的余额
+          initialCapital: acc.initialCapital ? Number(acc.initialCapital) : undefined,
+          exchangeRate: Number(acc.exchangeRate),
+          rmbBalance: Number(acc.rmbBalance),
+          parentId: acc.parentId || undefined,
+          storeId: acc.storeId || undefined,
+          companyEntity: acc.companyEntity || undefined,
+          owner: acc.owner || undefined,
+          notes: acc.notes,
+          platformAccount: acc.platformAccount || undefined,
+          platformPassword: acc.platformPassword || undefined,
+          platformUrl: acc.platformUrl || undefined,
+          createdAt: acc.createdAt.toISOString(),
+          updatedAt: acc.updatedAt.toISOString(),
+          childCount: acc.children?.length || 0,
+          cashFlowCount: acc.cashFlows?.length || 0,
+        };
+      }),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
+    }
+
+    // 设置缓存（仅第一页）
+    if (!noCache && page === 1) {
+      await setCache(cacheKey, response, CACHE_TTL)
+    }
+
+    return NextResponse.json(response)
+  } catch (error: any) {
+    if (error?.message?.includes('TLS connection') || error?.message?.includes('connection') || error?.message?.includes('ECONNREFUSED') || error?.code === 'P1001' || !process.env.DATABASE_URL) {
+      return NextResponse.json({ error: '数据库连接失败，请检查网络或数据库状态', code: 'DATABASE_CONNECTION_ERROR' }, { status: 503 })
+    }
+    return serverError(error?.message || '获取账户列表失败')
+  }
+}
+
+// POST - 创建账户（需要登录，清除缓存）
+export async function POST(request: NextRequest) {
+  const authError = await requireAuth()
+  if (authError) return authError
+  try {
+    const body = await request.json()
+
+    // 兼容中文账户类型到枚举值的映射
+    const rawAccountType = (body.accountType || '').toString().trim()
+    const normalizedAccountType: AccountType = ((): AccountType => {
+      switch (rawAccountType) {
+        case '对公':
+          return 'CORPORATE'
+        case '对私':
+          return 'PERSONAL'
+        case '平台':
+        case '平台账户':
+          return 'PLATFORM'
+        default:
+          // 直接假定前端已经传的是枚举值，例如 CORPORATE / PERSONAL / PLATFORM
+          return rawAccountType as AccountType
+      }
+    })()
+    
+    const account = await prisma.bankAccount.create({
+      data: {
+        id: typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID(),
+        name: body.name,
+        accountNumber: body.accountNumber,
+        accountType: normalizedAccountType,
+        accountCategory: body.accountCategory || 'PRIMARY',
+        // accountPurpose 在 schema 中是必填字段，不能为 null；如果前端未填，则使用一个默认说明
+        accountPurpose: body.accountPurpose ? String(body.accountPurpose) : '未指定用途',
+        currency: body.currency || 'CNY',
+        country: body.country,
+        originalBalance: body.originalBalance ?? 0,
+        initialCapital: body.initialCapital ?? null,
+        exchangeRate: body.exchangeRate ?? 1,
+        rmbBalance: body.rmbBalance ?? 0,
+        parentId: body.parentId ?? null,
+        storeId: body.storeId ?? null,
+        companyEntity: body.companyEntity ?? null,
+        owner: body.owner ?? null,
+        notes: body.notes ?? null,
+        platformAccount: body.platformAccount ?? null,
+        platformPassword: body.platformPassword ?? null,
+        platformUrl: body.platformUrl ?? null,
+        updatedAt: new Date(),
+      }
+    })
+
+    // 清除账户相关缓存
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
+
+    return NextResponse.json({
+      id: account.id,
+      name: account.name,
+      accountType: account.accountType,
+      createdAt: account.createdAt.toISOString()
+    })
+  } catch (error: any) {
+    return serverError(error?.message || '创建账户失败')
+  }
+}
