@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserFromRequest } from "@/lib/permissions";
+import { getApiUser } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +10,13 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUserFromRequest(request);
-    if (!user?.userId) {
+    const user = await getApiUser(request);
+    if (!user?.id) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
     const userRecord = await prisma.user.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: { preferences: true },
     });
 
@@ -39,8 +39,8 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const user = await getCurrentUserFromRequest(request);
-    if (!user?.userId) {
+    const user = await getApiUser(request);
+    if (!user?.id) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest) {
 
     // 先读取现有 preferences，再深层合并
     const userRecord = await prisma.user.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: { preferences: true },
     });
 
@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest) {
     }
 
     await prisma.user.update({
-      where: { id: user.userId },
+      where: { id: user.id },
       data: { preferences: merged as any },
     });
 

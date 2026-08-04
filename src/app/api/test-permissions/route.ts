@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUserFromRequest, filterFieldsByPermission, canReadField, DEPARTMENT_CODES } from '@/lib/permissions'
+import { filterFieldsByPermission, canReadField, DEPARTMENT_CODES } from '@/lib/permissions'
+import { getApiUser } from '@/lib/api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -7,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     // 获取用户信息
-    const user = await getCurrentUserFromRequest(request)
+    const user = await getApiUser(request)
     const departmentCode = user?.departmentCode || null
     
     // 测试数据
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
       success: true,
       message: '权限系统测试',
       user: {
-        userId: user?.userId,
+        userId: user?.id,
         departmentCode,
         departmentName: user?.departmentName,
         role: user?.role,

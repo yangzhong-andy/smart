@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Shared authentication secret. Production must provide it through the
  * environment so signing and verification always use the same value.
