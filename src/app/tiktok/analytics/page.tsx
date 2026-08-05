@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Loader2, TrendingUp, ShoppingCart, DollarSign, Percent, Package, Truck, Clock, Gift, Calendar } from "lucide-react";
+import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
 type Analytics = {
   summary: {
@@ -83,6 +84,7 @@ export default function TikTokAnalyticsPage() {
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
+      <StoreMarketingNav />
       {/* 标题 + 筛选 */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>

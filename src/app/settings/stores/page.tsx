@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Megaphone, Pencil, Trash2, Search, X, Download, Wallet, Globe, Building2, Users } from "lucide-react";
+import { Megaphone, Pencil, Trash2, Search, X, Download, Wallet, Globe, Building2 } from "lucide-react";
 import { type Store } from "@/lib/store-store";
 import { type BankAccount } from "@/lib/finance-store";
 import { COUNTRIES, getCurrencyByCountry, getCountriesByRegion, getCountryByCode, getCurrencyLabelZh, type Country } from "@/lib/country-config";
-import { getInfluencerStats } from "@/lib/influencer-bd-store";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import InteractiveButton from "@/components/ui/InteractiveButton";
 import useSWR from "swr";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
 import { renderGroupedAccountOptions } from "@/lib/account-grouped-options";
+import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
 const formatDate = (dateString: string): string => {
   try {
@@ -32,8 +30,6 @@ const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function StoresPage() {
   const { confirm, confirmDialog } = useSystemConfirm();
-  const router = useRouter();
-  const [influencerStats, setInfluencerStats] = useState({ pendingSample: 0, creating: 0 });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editStore, setEditStore] = useState<Store | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -80,14 +76,6 @@ export default function StoresPage() {
       }
     }
   }, [form.country]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    
-    // 获取达人统计
-    const stats = getInfluencerStats();
-    setInfluencerStats(stats);
-  }, []);
 
   const resetForm = () => {
     setForm({
@@ -343,24 +331,7 @@ export default function StoresPage() {
 
   return (
     <div className="space-y-6">
-      {/* 顶部Tab导航 */}
-      <div className="flex gap-4 border-b border-slate-800">
-        <button
-          onClick={() => router.push("/settings/stores")}
-          className="px-4 py-3 text-base font-semibold text-white border-b-2 border-primary-500 transition-colors"
-        >
-          店铺管理
-        </button>
-        <button
-          onClick={() => router.push("/advertising/influencers")}
-          className="px-4 py-3 text-base font-semibold text-slate-400 hover:text-white transition-colors relative"
-        >
-          达人中心
-          <span className="ml-2 text-xs font-normal text-slate-500">
-            待寄样: {influencerStats.pendingSample} | 创作中: {influencerStats.creating}
-          </span>
-        </button>
-      </div>
+      <StoreMarketingNav />
 
       <header className="flex items-baseline justify-between gap-3">
         <div>

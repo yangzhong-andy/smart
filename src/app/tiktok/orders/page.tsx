@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
+import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
 type Order = {
   id: string;
@@ -169,6 +170,7 @@ export default function TikTokOrdersPage() {
 
   return (
     <div className="space-y-4 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
+      <StoreMarketingNav />
       {/* 标题 */}
       <div className="flex items-center justify-between">
         <div>
