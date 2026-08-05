@@ -179,7 +179,7 @@ export default function TikTokAnalyticsPage() {
               {/* 悬浮提示 */}
               <div className="absolute bottom-full mb-2 hidden group-hover:block bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs whitespace-nowrap z-10 shadow-xl">
                 <div className="text-slate-400">{fmtDate(d.date)}</div>
-                <div className="text-emerald-400">💰 {fmtMoney(d.sales)}</div>
+                <div className="text-emerald-400">💰 {fmtMoney(d.sales, s.currency)}</div>
                 <div className="text-blue-400">📦 {d.orders}单</div>
                 {d.cancelled > 0 && <div className="text-rose-400">❌ 取消{d.cancelled}单</div>}
               </div>
