@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getOrderDetail } from "@/lib/tiktok-shop-api";
-import { deductStockForOrder } from "@/lib/tiktok-stock-deduct";
+import { deductStockForOrder, restoreStockForCancelledOrder } from "@/lib/tiktok-stock-deduct";
 import { Buffer } from "buffer";
 
 export const dynamic = "force-dynamic";
@@ -215,8 +215,16 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
       });
       console.log(`[TikTok Webhook] ✅ 订单 ${orderId} 已实时更新: ${o.status}`);
 
-      // 扣减库存（待揽收 + 有物流信息时）
+      // 待揽收时扣减；订单取消时幂等回补。
       try {
+        if (o.status === "CANCELLED") {
+          const restoreResult = await restoreStockForCancelledOrder(orderId);
+          if (restoreResult.success && restoreResult.results.length > 0) {
+            console.log(`[TikTok Stock] 订单 ${orderId} 取消，回补 ${restoreResult.results.length} 个SKU`);
+          }
+          return;
+        }
+
         const deductResult = await deductStockForOrder(orderId, shopId, o);
         if (deductResult.success) {
           const deducted = deductResult.results.filter((r: any) => r.status === "deducted");
@@ -246,15 +254,22 @@ async function updateOrderBasic(orderId: string, shopId: string, orderData: any)
   try {
     const existing = await prisma.tikTokOrder.findUnique({ where: { orderId } });
     if (existing) {
+      const nextStatus = orderData.order_status || existing.status;
       await prisma.tikTokOrder.update({
         where: { orderId },
         data: {
-          status: orderData.order_status || existing.status,
+          status: nextStatus,
+          orderStatus: nextStatus,
           updateTime: orderData.update_time ? new Date(orderData.update_time * 1000) : new Date(),
         },
       });
+      if (nextStatus === "CANCELLED") {
+        await restoreStockForCancelledOrder(orderId);
+      }
     }
-  } catch {}
+  } catch (error: any) {
+    console.error(`[TikTok Stock] 订单 ${orderId} 基本状态更新/回补失败:`, error.message);
+  }
 }
 
 async function readStreamBytes(stream: ReadableStream<Uint8Array> | null): Promise<Buffer> {

@@ -64,16 +64,6 @@ export async function deductStockForOrder(orderId: string, shopId: string, order
   // 4. 按 SKU 数量逐个扣库存
   const results: any[] = [];
   for (const [sellerSku, qty] of skuQtyMap) {
-
-    // 检查是否已扣减过（防止重复）
-    const existingDeduction = await prisma.tikTokStockDeduction.findFirst({
-      where: { tiktokOrderId: orderId, sellerSku },
-    });
-    if (existingDeduction) {
-      results.push({ sku: sellerSku, status: "skipped", reason: "已扣减过" });
-      continue;
-    }
-
     // 查 SKU 映射
     const skuMapping = await prisma.tikTokSkuMapping.findFirst({
       where: { tiktokShopId: shopId, sellerSku },
@@ -84,68 +74,158 @@ export async function deductStockForOrder(orderId: string, shopId: string, order
     }
     const variantId = skuMapping.variantId;
 
-    // 查当前库存
-    const stock = await prisma.stock.findUnique({
-      where: { variantId_warehouseId: { variantId, warehouseId } },
-    });
-    if (!stock) {
-      results.push({ sku: sellerSku, status: "no_stock", reason: "库存记录不存在" });
-      continue;
-    }
+    // 库存、日志和防重复记录必须一起成功或一起回滚。
+    const result = await prisma.$transaction(async (tx) => {
+      const existingDeduction = await tx.tikTokStockDeduction.findFirst({
+        where: { tiktokOrderId: orderId, variantId },
+      });
+      if (existingDeduction) {
+        return { sku: sellerSku, status: "skipped", reason: "已处理过库存" };
+      }
 
-    const qtyBefore = stock.qty;
-    const qtyAfter = stock.qty - qty;
-    const availableAfter = Math.max(0, stock.availableQty - qty);
+      const stock = await tx.stock.findUnique({
+        where: { variantId_warehouseId: { variantId, warehouseId } },
+      });
+      if (!stock) {
+        return { sku: sellerSku, status: "no_stock", reason: "库存记录不存在" };
+      }
+      if (stock.qty < qty || stock.availableQty < qty) {
+        return {
+          sku: sellerSku,
+          status: "insufficient_stock",
+          reason: `库存不足（库内 ${stock.qty}，可用 ${stock.availableQty}，需扣 ${qty}）`,
+        };
+      }
 
-    // 扣减库存
-    await prisma.stock.update({
-      where: { id: stock.id },
-      data: {
-        qty: qtyAfter,
-        availableQty: availableAfter,
-      },
-    });
+      const qtyBefore = stock.qty;
+      const qtyAfter = stock.qty - qty;
+      await tx.stock.update({
+        where: { id: stock.id },
+        data: {
+          qty: qtyAfter,
+          availableQty: stock.availableQty - qty,
+        },
+      });
 
-    // 记录库存日志
-    await prisma.stockLog.create({
-      data: {
-        variantId,
-        warehouseId,
-        movementType: "DOMESTIC_OUTBOUND",
-        reason: "SALE_OUTBOUND",
-        qty: -qty,
+      await tx.stockLog.create({
+        data: {
+          variantId,
+          warehouseId,
+          movementType: "DOMESTIC_OUTBOUND",
+          reason: "SALE_OUTBOUND",
+          qty: -qty,
+          qtyBefore,
+          qtyAfter,
+          operationDate: new Date(),
+          relatedOrderId: orderId,
+          relatedOrderType: "TIKTOK_ORDER",
+          notes: `TikTok订单自动扣减 (${shippingProvider || ""} ${trackingNumber || ""})`,
+        },
+      });
+
+      await tx.tikTokStockDeduction.create({
+        data: {
+          tiktokOrderId: orderId,
+          shopId,
+          warehouseId,
+          variantId,
+          sellerSku,
+          qty,
+          status: "deducted",
+        },
+      });
+
+      return {
+        sku: sellerSku,
+        status: "deducted",
+        qty,
+        warehouse: warehouseId,
         qtyBefore,
         qtyAfter,
-        operationDate: new Date(),
-        relatedOrderId: orderId,
-        relatedOrderType: "TIKTOK_ORDER",
-        notes: `TikTok订单自动扣减 (${shippingProvider || ""} ${trackingNumber || ""})`,
-      },
+      };
     });
 
-    // 记录扣减记录（防止重复）
-    await prisma.tikTokStockDeduction.create({
-      data: {
-        tiktokOrderId: orderId,
-        shopId,
-        warehouseId,
-        variantId,
-        sellerSku,
-        qty,
-        status: "deducted",
-      },
-    });
-
-    results.push({
-      sku: sellerSku,
-      status: "deducted",
-      qty,
-      warehouse: warehouseId,
-      qtyBefore,
-      qtyAfter,
-    });
-    console.log(`[TikTok Stock] ✅ 扣减: ${sellerSku} -${qty} (仓库库存 ${qtyBefore}→${qtyAfter})`);
+    results.push(result);
+    if (result.status === "deducted") {
+      console.log(`[TikTok Stock] ✅ 扣减: ${sellerSku} -${qty} (仓库库存 ${result.qtyBefore}→${result.qtyAfter})`);
+    }
   }
 
   return { success: true, results };
+}
+
+/**
+ * 已取消订单自动回补库存。
+ *
+ * 扣减记录会先从 deducted 原子地改为 reverted，因此 webhook、定时同步或
+ * 人工补偿重复触发时都不会重复增加库存。
+ */
+export async function restoreStockForCancelledOrder(orderId: string) {
+  return prisma.$transaction(async (tx) => {
+    const deductions = await tx.tikTokStockDeduction.findMany({
+      where: { tiktokOrderId: orderId, status: "deducted" },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (deductions.length === 0) {
+      return { skipped: true, reason: "没有待回补的库存扣减", results: [] };
+    }
+
+    const results: any[] = [];
+    for (const deduction of deductions) {
+      const stock = await tx.stock.findUnique({
+        where: {
+          variantId_warehouseId: {
+            variantId: deduction.variantId,
+            warehouseId: deduction.warehouseId,
+          },
+        },
+      });
+      if (!stock) {
+        throw new Error(`订单 ${orderId} 的库存记录不存在，取消回补已整体回滚`);
+      }
+
+      const claimed = await tx.tikTokStockDeduction.updateMany({
+        where: { id: deduction.id, status: "deducted" },
+        data: { status: "reverted" },
+      });
+      if (claimed.count === 0) continue;
+
+      const qtyBefore = stock.qty;
+      const updated = await tx.stock.update({
+        where: { id: stock.id },
+        data: {
+          qty: { increment: deduction.qty },
+          availableQty: { increment: deduction.qty },
+        },
+      });
+
+      await tx.stockLog.create({
+        data: {
+          variantId: deduction.variantId,
+          warehouseId: deduction.warehouseId,
+          movementType: "ADJUSTMENT",
+          reason: "RETURN_INBOUND",
+          qty: deduction.qty,
+          qtyBefore,
+          qtyAfter: updated.qty,
+          operationDate: new Date(),
+          relatedOrderId: orderId,
+          relatedOrderType: "TIKTOK_ORDER_CANCELLED",
+          notes: `TikTok取消订单自动回补 ${deduction.sellerSku || ""}`.trim(),
+        },
+      });
+
+      results.push({
+        sku: deduction.sellerSku,
+        status: "reverted",
+        qty: deduction.qty,
+        warehouse: deduction.warehouseId,
+        qtyBefore,
+        qtyAfter: updated.qty,
+      });
+    }
+
+    return { success: true, results };
+  });
 }

@@ -146,7 +146,7 @@ export default function WarehouseInventoryPage() {
           <ActionButton
             icon={Download}
             onClick={() => {
-              const headers = ["仓库", "SKU", "产品名称", "规格", "总库存", "TikTok出库", "可用", "锁定"];
+              const headers = ["仓库", "SKU", "产品名称", "规格", "库内库存", "TikTok出库", "可用", "锁定"];
               const rows = filteredWarehouseStocks.map((item: StockItem) => [
                 item.warehouseName,
                 item.skuId,
@@ -258,7 +258,7 @@ export default function WarehouseInventoryPage() {
                     <div className="text-lg font-semibold text-slate-200">{stat.skuCount}</div>
                   </div>
                   <div>
-                    <div className="text-slate-500">总库存</div>
+                    <div className="text-slate-500">库内库存</div>
                     <div className="text-lg font-semibold text-slate-200">{stat.totalQty.toLocaleString("en-US")}</div>
                   </div>
                   <div>
@@ -273,7 +273,7 @@ export default function WarehouseInventoryPage() {
                         <tr className="text-slate-500 border-b border-slate-700/30">
                           <th className="pb-1 pr-2 text-left">SKU</th>
                           <th className="pb-1 pr-2 text-left">产品</th>
-                          <th className="pb-1 pr-2 text-right">总库存</th>
+                          <th className="pb-1 pr-2 text-right">库内库存</th>
                           <th className="pb-1 pr-2 text-right">TikTok出库</th>
                           <th className="pb-1 text-right">可用</th>
                         </tr>
@@ -362,7 +362,7 @@ export default function WarehouseInventoryPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">SKU</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">产品名称</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">规格</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">总库存</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">库内库存</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">TikTok出库</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">可用</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">锁定</th>
