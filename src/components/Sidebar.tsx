@@ -252,6 +252,7 @@ const navItems: NavItem[] = [
       { label: "订单中心", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
       { label: "店铺分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
       { label: "营销增长", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
+      { label: "广告代理", labelEn: "", icon: Building2, href: "/advertising/agencies" },
       { label: "平台管理", labelEn: "", icon: Settings, href: "/settings/stores" },
     ]
   },

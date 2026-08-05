@@ -73,6 +73,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "订单中心", href: "/tiktok/orders" },
       { label: "店铺分析", href: "/tiktok/analytics" },
       { label: "营销增长", href: "/advertising/influencers" },
+      { label: "广告代理", href: "/advertising/agencies" },
       { label: "平台管理", href: "/settings/stores" },
     ],
   },

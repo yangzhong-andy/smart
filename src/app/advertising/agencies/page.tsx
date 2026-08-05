@@ -77,6 +77,7 @@ import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
+import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
 const formatNumber = (n: number) => {
   if (!Number.isFinite(n)) return "0.00";
@@ -2037,6 +2038,7 @@ export default function AdAgenciesPage() {
   if (!mounted) {
     return (
       <div className="space-y-4">
+        <StoreMarketingNav />
         <header className="flex items-baseline justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">广告代理管理</h1>
@@ -2052,6 +2054,7 @@ export default function AdAgenciesPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <StoreMarketingNav />
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">广告代理管理</h1>
