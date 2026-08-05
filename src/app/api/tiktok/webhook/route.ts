@@ -8,14 +8,33 @@ import { Buffer } from "buffer";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
+function normalizeSignature(value: string): string {
+  return value.trim()
+    .replace(/^HMAC-SHA256\s+/i, "")
+    .replace(/^sha256=/i, "")
+    .trim()
+    .toLowerCase();
+}
+
 function signaturesMatch(expected: string, received: string | null): boolean {
   if (!received) return false;
-  const normalize = (value: string) => value.trim()
-    .replace(/^HMAC-SHA256\s+/i, "")
-    .replace(/^sha256=/i, "");
-  const expectedBytes = Buffer.from(normalize(expected), "utf8");
-  const receivedBytes = Buffer.from(normalize(received), "utf8");
+  const expectedBytes = Buffer.from(normalizeSignature(expected), "utf8");
+  const receivedBytes = Buffer.from(normalizeSignature(received), "utf8");
   return expectedBytes.length === receivedBytes.length && timingSafeEqual(expectedBytes, receivedBytes);
+}
+
+function buildSignatureCandidates(appSecret: string, rawBytes: Buffer): string[] {
+  const bodyText = rawBytes.toString("utf-8");
+  // TikTok's webhook signing scheme uses HMAC-SHA256 over the wrapped body.
+  // Keep the raw-body form for compatibility with older webhook revisions.
+  const messages = [
+    rawBytes,
+    Buffer.from(`${appSecret}${bodyText}${appSecret}`, "utf-8"),
+  ];
+  return messages.flatMap((message) => [
+    createHmac("sha256", appSecret).update(message).digest("hex"),
+    createHmac("sha256", appSecret).update(message).digest("base64"),
+  ]);
 }
 
 async function getWebhookSecret(shopId: string | null): Promise<string> {
@@ -65,18 +84,20 @@ export async function POST(request: NextRequest) {
     const orderId = orderData?.order_id;
 
     const appSecret = await getWebhookSecret(shopId);
-    const signature = request.headers.get("authorization") || request.headers.get("x-tts-signature");
-    const bodyText = rawBytes.toString("utf-8");
-    const signatureCandidates = [
-      [rawBytes, "hex"],
-      [rawBytes, "base64"],
-      [Buffer.from(`${appSecret}${bodyText}${appSecret}`, "utf-8"), "hex"],
-      [Buffer.from(`${appSecret}${bodyText}${appSecret}`, "utf-8"), "base64"],
-    ].map(([message, encoding]) => createHmac("sha256", appSecret).update(message as Buffer).digest(encoding as "hex" | "base64"));
-    const signatureValid = !!appSecret && signatureCandidates.some((candidate) => signaturesMatch(candidate, signature));
-    if (!signatureValid) {
-      const signatureInfo = signature
-        ? `${signature.trim().split(/\s+/)[0]} (length=${signature.length})`
+    const signatureHeaders: Array<[string, string | null]> = [
+      // TikTok sends this header on the current webhook protocol.
+      ["x-tt-signature", request.headers.get("x-tt-signature")],
+      ["x-tts-signature", request.headers.get("x-tts-signature")],
+      ["authorization", request.headers.get("authorization")],
+    ];
+    const signatureCandidates = buildSignatureCandidates(appSecret, rawBytes);
+    const matchingHeader = signatureHeaders.find(([, value]) =>
+      Boolean(value) && signatureCandidates.some((candidate) => signaturesMatch(candidate, value)),
+    );
+    if (!appSecret || !matchingHeader) {
+      const providedHeader = signatureHeaders.find(([, value]) => Boolean(value));
+      const signatureInfo = providedHeader
+        ? `${providedHeader[0]} (length=${providedHeader[1]?.length ?? 0})`
         : "missing";
       console.warn(
         `[TikTok Webhook] invalid signature shop=${shopId || "unknown"} header=${signatureInfo} names=${Array.from(request.headers.keys()).join(",")}`,
@@ -84,7 +105,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ code: 1, message: "invalid signature" }, { status: 401 });
     }
 
-    console.log(`[TikTok Webhook] type=${typeNum} shop=${shopId} order=${orderId} took=${Date.now() - startTime}ms`);
+    console.log(`[TikTok Webhook] type=${typeNum} shop=${shopId} order=${orderId} signature=${matchingHeader[0]} took=${Date.now() - startTime}ms`);
 
     if (notificationId) {
       const duplicate = await prisma.tikTokWebhookLog.findFirst({
