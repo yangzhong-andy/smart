@@ -821,7 +821,13 @@ export default function MonthlyBillsPage() {
                   <th className="px-4 py-4 text-left text-sm font-semibold text-slate-200">账单类型</th>
                   <th className="px-4 py-4 text-left text-sm font-semibold text-slate-200">关联方</th>
                   <th className="px-4 py-4 text-right text-sm font-semibold text-slate-200">账单金额</th>
-                  <th className="px-4 py-4 text-right text-sm font-semibold text-slate-200">实付金额</th>
+                  <th className="px-4 py-4 text-right text-sm font-semibold text-slate-200">
+                    {filterType === "广告返点"
+                      ? "实收金额"
+                      : filterType === "all"
+                        ? "实付/实收金额"
+                        : "实付金额"}
+                  </th>
                   <th className="px-4 py-4 text-left text-sm font-semibold text-slate-200">币种</th>
                   <th className="px-4 py-4 text-left text-sm font-semibold text-slate-200">状态</th>
                   <th className="px-4 py-4 text-left text-sm font-semibold text-slate-200">付款单号</th>
@@ -886,6 +892,10 @@ export default function MonthlyBillsPage() {
                               )}
                             </div>
                           );
+                        }
+                        if (bill.billType === "广告返点") {
+                          if (bill.status !== "Paid") return <span className="text-slate-500">-</span>;
+                          return <span className="text-emerald-300">{formatCurrency(bill.rebateAmount, bill.currency, "income")}</span>;
                         }
                         if (bill.status !== "Paid") return <span className="text-slate-500">-</span>;
                         const actualPaid = bill.totalAmount - (bill.offsetAmount || 0);
