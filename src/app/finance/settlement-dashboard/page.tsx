@@ -14,6 +14,7 @@ import {
   Legend,
 } from "recharts";
 import { TrendingUp, ShoppingBag, DollarSign, Store, Package } from "lucide-react";
+import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -119,6 +120,7 @@ export default function SettlementDashboardPage() {
 
   return (
     <div className="space-y-6">
+      <StoreMarketingNav />
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <nav className="text-xs text-slate-400 mb-1">

@@ -33,6 +33,7 @@ import {
 } from "@/lib/influencer-bd-store";
 import { StatCard, ActionButton, PageHeader, SearchBar, EmptyState } from "@/components/ui";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
+import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
 // 格式化粉丝数
 const formatFollowerCount = (count: number): string => {
@@ -304,6 +305,7 @@ export default function InfluencersPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <StoreMarketingNav />
       <PageHeader
         title="达人 BD 管理"
         description="管理达人账号、寄样追踪、合作状态，智能预测推广效果"

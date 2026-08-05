@@ -110,7 +110,6 @@ import {
   Factory,
   Truck,
   Megaphone,
-  MessageSquare,
   ShoppingBag,
   Wallet,
   Users,
@@ -120,7 +119,6 @@ import {
   Database,
   Settings,
   LogOut,
-  Upload,
   BarChart3,
   Building2,
   GripVertical,
@@ -241,7 +239,8 @@ const navItems: NavItem[] = [
       { label: "柜子管理", labelEn: "", icon: Truck, href: "/logistics/containers" },
       { label: "柜子预录单", labelEn: "", icon: Truck, href: "/logistics/pre-records" },
       { label: "仓储管理", labelEn: "", icon: Truck, href: "/logistics/warehouse" },
-      { label: "关税统计", labelEn: "", icon: Truck, href: "/logistics/duty-stats" }
+      { label: "关税统计", labelEn: "", icon: Truck, href: "/logistics/duty-stats" },
+      { label: "物流费用分摊", labelEn: "", icon: Truck, href: "/finance/logistics-cost-allocation" }
     ]
   },
   {
@@ -249,18 +248,11 @@ const navItems: NavItem[] = [
     labelEn: "Marketing & Store",
     icon: Megaphone,
     children: [
-      { label: "店铺管理", labelEn: "", icon: Megaphone, href: "/settings/stores" },
-      { label: "数据导入", labelEn: "", icon: Upload, href: "/finance/import" },
-      { label: "店铺订单看板", labelEn: "", icon: BarChart3, href: "/finance/settlement-dashboard" },
-      { label: "店铺回款统计", labelEn: "", icon: BarChart3, href: "/finance/store-report" },
-      { label: "物流费用分摊", labelEn: "", icon: BarChart3, href: "/finance/logistics-cost-allocation" },
-      { label: "达人 BD 管理", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
-      { label: "广告代理管理", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
-      { label: "TikTok订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
-      { label: "TikTok订单分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
-      { label: "TikTok商店分析", labelEn: "", icon: BarChart3, href: "/tiktok/shop-analytics" },
-      { label: "TikTok联盟营销", labelEn: "", icon: MessageSquare, href: "/tiktok/affiliate" },
-      { label: "TikTok财务回款", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
+      { label: "经营总览", labelEn: "", icon: LayoutDashboard, href: "/finance/settlement-dashboard" },
+      { label: "订单中心", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
+      { label: "店铺分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
+      { label: "营销增长", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
+      { label: "平台管理", labelEn: "", icon: Settings, href: "/settings/stores" },
     ]
   },
   {
@@ -275,7 +267,9 @@ const navItems: NavItem[] = [
       { label: "账户列表", labelEn: "", icon: Wallet, href: "/finance/accounts" },
       { label: "内部划拨", labelEn: "", icon: Wallet, href: "/finance/transfer" },
       { label: "审批中心", labelEn: "", icon: Wallet, href: "/finance/approval" },
-      { label: "应收款管理", labelEn: "", icon: Wallet, href: "/finance/receivables" }
+      { label: "应收款管理", labelEn: "", icon: Wallet, href: "/finance/receivables" },
+      { label: "平台回款", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
+      { label: "店铺回款统计", labelEn: "", icon: Wallet, href: "/finance/store-report" }
     ]
   },
   {

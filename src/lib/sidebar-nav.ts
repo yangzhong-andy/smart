@@ -63,18 +63,17 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "柜子预录单", href: "/logistics/pre-records" },
       { label: "仓储管理", href: "/logistics/warehouse" },
       { label: "关税统计", href: "/logistics/duty-stats" },
+      { label: "物流费用分摊", href: "/finance/logistics-cost-allocation" },
     ],
   },
   {
     label: "营销与店铺",
     children: [
-      { label: "店铺管理", href: "/settings/stores" },
-      { label: "数据导入", href: "/finance/import" },
-      { label: "店铺订单看板", href: "/finance/settlement-dashboard" },
-      { label: "店铺回款统计", href: "/finance/store-report" },
-      { label: "物流费用分摊", href: "/finance/logistics-cost-allocation" },
-      { label: "达人BD管理", href: "/advertising/influencers" },
-      { label: "广告代理管理", href: "/advertising/agencies" },
+      { label: "经营总览", href: "/finance/settlement-dashboard" },
+      { label: "订单中心", href: "/tiktok/orders" },
+      { label: "店铺分析", href: "/tiktok/analytics" },
+      { label: "营销增长", href: "/advertising/influencers" },
+      { label: "平台管理", href: "/settings/stores" },
     ],
   },
   {
@@ -88,6 +87,8 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "内部划拨", href: "/finance/transfer" },
       { label: "审批中心", href: "/finance/approval" },
       { label: "应收款管理", href: "/finance/receivables" },
+      { label: "平台回款", href: "/tiktok/finance" },
+      { label: "店铺回款统计", href: "/finance/store-report" },
     ],
   },
   {
