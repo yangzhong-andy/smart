@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
     // 获取 TikTok 扣减统计（按仓库+变体分组）
     const tiktokDeductions = await prisma.tikTokStockDeduction.groupBy({
       by: ['warehouseId', 'variantId'],
+      where: { status: 'deducted' },
       _sum: { qty: true },
     })
     const deductionMap = new Map(
@@ -61,7 +62,6 @@ export async function GET(request: NextRequest) {
     // 转换数据格式
     const transformed = stocks.map(stock => {
       const tiktokDeducted = deductionMap.get(`${stock.warehouseId}_${stock.variantId}`) || 0
-      const originalQty = stock.qty + tiktokDeducted // 原始库存 = 当前库存 + 已出库
       return {
         id: stock.id,
         variantId: stock.variantId,
@@ -75,11 +75,11 @@ export async function GET(request: NextRequest) {
         warehouseName: stock.warehouse.name,
         warehouseType: stock.warehouse.type,
         location: stock.warehouse.location,
-        qty: originalQty,       // 总库存 = 原始库存（含已出库）
-        tiktokDeducted,         // TikTok 出库量
-        availableQty: stock.qty, // 可用 = 扣减后的实际剩余
+        qty: stock.qty,         // 当前库内实物库存
+        tiktokDeducted,         // TikTok 有效累计出库量（已取消订单不计）
+        availableQty: stock.availableQty,
         reservedQty: stock.reservedQty,
-        lockedQty: tiktokDeducted, // 锁定 = TikTok 出库量
+        lockedQty: stock.reservedQty,
         costPrice: stock.variant.costPrice ? Number(stock.variant.costPrice) : 0,
         currency: stock.variant.currency,
         totalValue: (stock.qty - stock.reservedQty) * (stock.variant.costPrice ? Number(stock.variant.costPrice) : 0),

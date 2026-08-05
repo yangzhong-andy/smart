@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { deductStockForOrder, restoreStockForCancelledOrder } from "@/lib/tiktok-stock-deduct";
 import {
   refreshAccessToken,
   searchOrders,
@@ -133,6 +134,18 @@ export async function POST(request: NextRequest) {
                       rawData: o,
                     },
                   });
+
+                  // 定时同步也负责库存补漏：待揽收订单扣减，取消订单回补。
+                  // 两个操作都有扣减状态保护，重复同步不会重复增减库存。
+                  try {
+                    if (o.status === "CANCELLED") {
+                      await restoreStockForCancelledOrder(o.id);
+                    } else if (o.status === "AWAITING_COLLECTION") {
+                      await deductStockForOrder(o.id, shop.shopId, o);
+                    }
+                  } catch (stockError: any) {
+                    console.error(`[TikTok Stock] 定时同步订单 ${o.id} 库存处理失败:`, stockError.message);
+                  }
                   count++;
                 }
 
