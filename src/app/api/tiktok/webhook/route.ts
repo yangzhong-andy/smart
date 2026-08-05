@@ -23,21 +23,14 @@ function signaturesMatch(expected: string, received: string | null): boolean {
   return expectedBytes.length === receivedBytes.length && timingSafeEqual(expectedBytes, receivedBytes);
 }
 
-function buildSignatureCandidates(appSecret: string, rawBytes: Buffer): string[] {
-  const bodyText = rawBytes.toString("utf-8");
-  // TikTok's webhook signing scheme uses HMAC-SHA256 over the wrapped body.
-  // Keep the raw-body form for compatibility with older webhook revisions.
-  const messages = [
-    rawBytes,
-    Buffer.from(`${appSecret}${bodyText}${appSecret}`, "utf-8"),
-  ];
-  return messages.flatMap((message) => [
-    createHmac("sha256", appSecret).update(message).digest("hex"),
-    createHmac("sha256", appSecret).update(message).digest("base64"),
-  ]);
+function buildSignature(appKey: string, appSecret: string, rawBytes: Buffer): string {
+  // TikTok Shop signs the exact bytes of `app_key + raw request body`.
+  return createHmac("sha256", appSecret)
+    .update(Buffer.concat([Buffer.from(appKey, "utf-8"), rawBytes]))
+    .digest("hex");
 }
 
-async function getWebhookSecret(shopId: string | null): Promise<string> {
+async function getWebhookCredentials(shopId: string | null): Promise<{ appKey: string; appSecret: string }> {
   try {
     const shop = shopId
       ? await prisma.tikTokShopSetting.findUnique({
@@ -48,10 +41,13 @@ async function getWebhookSecret(shopId: string | null): Promise<string> {
     const appConfig = shop?.appKey
       ? await prisma.tikTokAppConfig.findUnique({ where: { appKey: shop.appKey } })
       : null;
-    return appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+    return {
+      appKey: appConfig?.appKey || shop?.appKey || process.env.TIKTOK_APP_KEY || "",
+      appSecret: appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "",
+    };
   } catch (error) {
     console.error("[TikTok Webhook] failed to resolve app secret:", error);
-    return "";
+    return { appKey: "", appSecret: "" };
   }
 }
 
@@ -83,14 +79,16 @@ export async function POST(request: NextRequest) {
     const orderData = eventData.data;
     const orderId = orderData?.order_id;
 
-    const appSecret = await getWebhookSecret(shopId);
+    const { appKey, appSecret } = await getWebhookCredentials(shopId);
     const signatureHeaders: Array<[string, string | null]> = [
       // TikTok sends this header on the current webhook protocol.
       ["x-tt-signature", request.headers.get("x-tt-signature")],
       ["x-tts-signature", request.headers.get("x-tts-signature")],
       ["authorization", request.headers.get("authorization")],
     ];
-    const signatureCandidates = buildSignatureCandidates(appSecret, rawBytes);
+    const signatureCandidates = appKey && appSecret
+      ? [buildSignature(appKey, appSecret, rawBytes)]
+      : [];
     const matchingHeader = signatureHeaders.find(([, value]) =>
       Boolean(value) && signatureCandidates.some((candidate) => signaturesMatch(candidate, value)),
     );
