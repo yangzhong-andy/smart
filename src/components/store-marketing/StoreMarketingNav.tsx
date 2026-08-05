@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Building2,
   ChevronDown,
   LayoutDashboard,
   Megaphone,
@@ -16,6 +17,7 @@ const PRIMARY_LINKS = [
   { label: "订单中心", href: "/tiktok/orders", icon: ShoppingBag },
   { label: "店铺分析", href: "/tiktok/analytics", icon: BarChart3 },
   { label: "营销增长", href: "/advertising/influencers", icon: Megaphone },
+  { label: "广告代理", href: "/advertising/agencies", icon: Building2 },
   { label: "平台管理", href: "/settings/stores", icon: Settings },
 ];
 
@@ -23,7 +25,6 @@ const MORE_LINKS = [
   { label: "数据导入", href: "/finance/import" },
   { label: "商店分析", href: "/tiktok/shop-analytics" },
   { label: "联盟营销", href: "/tiktok/affiliate" },
-  { label: "广告代理", href: "/advertising/agencies" },
   { label: "TikTok 授权", href: "/settings/tiktok" },
 ];
 
