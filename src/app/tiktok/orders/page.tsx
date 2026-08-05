@@ -21,6 +21,7 @@ type Order = {
   rtsTime: string | null;
   deliveryTime: string | null;
   deliveryType: string | null;
+  shippingType: string | null;
   buyerName: string | null;
   buyerAddress: string | null;
   paymentMethod: string | null;
@@ -48,6 +49,11 @@ const STATUS_COLORS: Record<string, string> = {
   AWAITING_SHIPMENT: "text-amber-400 bg-amber-500/10 border-amber-500/30",
   UNPAID: "text-slate-400 bg-slate-500/10 border-slate-500/30",
   IN_TRANSIT: "text-blue-400 bg-blue-500/10 border-blue-500/30",
+};
+
+const SHIPPING_TYPE_LABELS: Record<string, string> = {
+  TIKTOK: "平台物流",
+  SELLER: "卖家物流",
 };
 
 const fmtMoney = (v: string | number | null, currency = "BRL") => {
@@ -78,6 +84,9 @@ export default function TikTokOrdersPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [skuFilter, setSkuFilter] = useState("");
+  const [shippingTypeFilter, setShippingTypeFilter] = useState("");
+  const [filterOptions, setFilterOptions] = useState<{ skus: string[]; shippingTypes: string[] }>({ skus: [], shippingTypes: [] });
   const [shopFilter, setShopFilter] = useState("");
   const [shops, setShops] = useState<{shopId:string; shopName:string}[]>([]);
 
@@ -93,6 +102,15 @@ export default function TikTokOrdersPage() {
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams({ type: "orderFilters" });
+    if (shopFilter) params.set("shopId", shopFilter);
+    fetch(`/api/tiktok/data?${params}`)
+      .then(r => r.json())
+      .then(d => setFilterOptions({ skus: d.skus || [], shippingTypes: d.shippingTypes || [] }))
+      .catch(() => {});
+  }, [shopFilter]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -100,6 +118,8 @@ export default function TikTokOrdersPage() {
       if (statusFilter) params.set("status", statusFilter);
       if (shopFilter) params.set("shopId", shopFilter);
       if (keyword) params.set("keyword", keyword);
+      if (skuFilter) params.set("sku", skuFilter);
+      if (shippingTypeFilter) params.set("shippingType", shippingTypeFilter);
       const res = await fetch(`/api/tiktok/data?${params}`);
       const d = await res.json();
       setOrders(d.data || []);
@@ -108,7 +128,7 @@ export default function TikTokOrdersPage() {
       toast.error("加载订单失败");
     }
     setLoading(false);
-  }, [page, pageSize, statusFilter, keyword, shopFilter]);
+  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, shopFilter]);
 
 
   // 访问页面自动同步最近1天订单
@@ -222,7 +242,7 @@ export default function TikTokOrdersPage() {
       )}
 
       {/* 筛选 */}
-      <div className="flex items-center gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(140px,auto)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(220px,2fr)]">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
@@ -234,6 +254,24 @@ export default function TikTokOrdersPage() {
           <option value="DELIVERED">已送达</option>
           <option value="AWAITING_COLLECTION">待揽收</option>
           <option value="AWAITING_SHIPMENT">待发货</option>
+        </select>
+        <select
+          value={skuFilter}
+          onChange={(e) => { setSkuFilter(e.target.value); setPage(1); }}
+          className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200"
+        >
+          <option value="">全部SKU</option>
+          {filterOptions.skus.map(sku => <option key={sku} value={sku}>{sku}</option>)}
+        </select>
+        <select
+          value={shippingTypeFilter}
+          onChange={(e) => { setShippingTypeFilter(e.target.value); setPage(1); }}
+          className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200"
+        >
+          <option value="">全部物流方式</option>
+          {filterOptions.shippingTypes.map(type => (
+            <option key={type} value={type}>{SHIPPING_TYPE_LABELS[type] || type}</option>
+          ))}
         </select>
         <input
           type="text"
@@ -301,7 +339,7 @@ export default function TikTokOrdersPage() {
                           {STATUS_LABELS[o.status || ""] || o.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-400">{(o.status === "UNPAID" || o.status === "CANCELLED") ? "-" : ((o as any).deliveryType === "HOME_DELIVERY" ? "平台发货" : (o as any).deliveryType || "-")}</td>
+                      <td className="px-4 py-3 text-xs text-slate-400">{(o.status === "UNPAID" || o.status === "CANCELLED") ? "-" : (SHIPPING_TYPE_LABELS[o.shippingType || ""] || o.shippingType || "-")}</td>
                       <td className="px-4 py-3 text-xs text-slate-400">{(o.status === "UNPAID" || o.status === "CANCELLED") ? "-" : ((o as any).deliveryOptionName || "-")}</td>
                       <td className="px-4 py-3 text-right text-slate-100 font-medium">
                         {fmtMoney(o.totalAmount, o.currency)}

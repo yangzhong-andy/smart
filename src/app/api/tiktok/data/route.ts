@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
+import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,8 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("pageSize") || "20");
     const status = searchParams.get("status");
     const keyword = searchParams.get("keyword");
+    const sku = searchParams.get("sku");
+    const shippingType = searchParams.get("shippingType");
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
@@ -28,6 +31,19 @@ export async function GET(request: NextRequest) {
     if (keyword && type === "orders") {
       where.OR = [
         { orderId: { contains: keyword, mode: "insensitive" } },
+      ];
+    }
+    if (type === "orders" && sku) {
+      where.rawData = {
+        ...(where.rawData || {}),
+        path: ["line_items"],
+        array_contains: [{ seller_sku: sku }],
+      };
+    }
+    if (type === "orders" && shippingType) {
+      where.AND = [
+        ...(where.AND || []),
+        { rawData: { path: ["shipping_type"], equals: shippingType } },
       ];
     }
 
@@ -45,6 +61,35 @@ export async function GET(request: NextRequest) {
         orderBy: { shopName: "asc" },
       });
       return NextResponse.json({ shops });
+    }
+
+    if (type === "orderFilters") {
+      const shopCondition = shopId
+        ? Prisma.sql`AND o."shopId" = ${shopId}`
+        : Prisma.empty;
+      const [skuRows, shippingTypeRows] = await Promise.all([
+        prisma.$queryRaw<Array<{ value: string }>>(Prisma.sql`
+          SELECT DISTINCT item->>'seller_sku' AS value
+          FROM "TikTokOrder" o
+          CROSS JOIN LATERAL jsonb_array_elements(
+            COALESCE(o."rawData"->'line_items', '[]'::jsonb)
+          ) item
+          WHERE NULLIF(item->>'seller_sku', '') IS NOT NULL
+          ${shopCondition}
+          ORDER BY value
+        `),
+        prisma.$queryRaw<Array<{ value: string }>>(Prisma.sql`
+          SELECT DISTINCT o."rawData"->>'shipping_type' AS value
+          FROM "TikTokOrder" o
+          WHERE NULLIF(o."rawData"->>'shipping_type', '') IS NOT NULL
+          ${shopCondition}
+          ORDER BY value
+        `),
+      ]);
+      return NextResponse.json({
+        skus: skuRows.map(row => row.value),
+        shippingTypes: shippingTypeRows.map(row => row.value),
+      });
     }
 
     if (type === "summary") {
@@ -153,6 +198,7 @@ export async function GET(request: NextRequest) {
           rtsTime: raw?.rts_time ? new Date(raw.rts_time * 1000) : null,
           deliveryTime: raw?.delivery_time ? new Date(raw.delivery_time * 1000) : null,
           deliveryType: raw?.delivery_type,
+          shippingType: raw?.shipping_type,
           deliveryOptionName: raw?.delivery_option_name,
           // 买家信息（未付款用 cpf_name，已付款用收件人姓名）
           buyerName: (() => {

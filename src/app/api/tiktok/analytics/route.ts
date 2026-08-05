@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const orders = await prisma.tikTokOrder.findMany({
       where,
       select: {
-        orderId: true, shopId: true, status: true, totalAmount: true,
+        orderId: true, shopId: true, status: true, totalAmount: true, currency: true,
         createTime: true, updateTime: true, rawData: true,
       },
       orderBy: { createTime: "desc" },
@@ -43,6 +43,22 @@ export async function GET(request: NextRequest) {
     // 店铺名映射
     const shops = await prisma.tikTokShopSetting.findMany({ select: { shopId: true, shopName: true } });
     const shopMap = new Map(shops.map(s => [s.shopId, s.shopName]));
+    const currencyCounts = new Map<string, number>();
+    for (const order of orders) {
+      const raw = order.rawData as any;
+      const currency = order.currency || raw?.payment?.currency || raw?.currency;
+      if (currency) currencyCounts.set(currency, (currencyCounts.get(currency) || 0) + 1);
+    }
+    const fallbackCurrency = await prisma.tikTokOrder.findFirst({
+      where: {
+        ...(shopId ? { shopId } : {}),
+        currency: { not: null },
+      },
+      orderBy: { createTime: "desc" },
+      select: { currency: true },
+    });
+    const displayCurrency = [...currencyCounts.entries()]
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || fallbackCurrency?.currency || "BRL";
 
     // ===== 1. 核心指标 =====
     let totalSales = 0;
@@ -232,7 +248,7 @@ export async function GET(request: NextRequest) {
         avgPrice: validOrders > 0 ? parseFloat((totalSales / validOrders).toFixed(2)) : 0,
         cancelRate: parseFloat(cancelRate.toFixed(1)),
         avgShipHours: parseFloat(avgShipHours.toFixed(1)),
-        currency: "BRL",
+        currency: displayCurrency,
       },
       today: {
         sales: parseFloat(todaySales.toFixed(2)),
