@@ -153,18 +153,27 @@ export async function getAuthorizedShops(accessToken: string, appKey: string, ap
 
 export async function searchOrders(
   accessToken: string, shopCipher: string, appKey: string, appSecret: string,
-  params: { page_size?: number; page_token?: string; update_time_ge?: number; update_time_lt?: number } = {}
+  params: {
+    page_size?: number;
+    page_token?: string;
+    update_time_ge?: number;
+    update_time_lt?: number;
+    sort_field?: "create_time" | "update_time";
+    sort_order?: "ASC" | "DESC";
+  } = {}
 ) {
   const query: Record<string, string> = {
     shop_cipher: shopCipher,
     page_size: String(params.page_size || 50),
+    sort_field: params.sort_field || "update_time",
+    sort_order: params.sort_order || "DESC",
   };
   if (params.page_token) query.page_token = params.page_token;
   const body: any = {};
-  if (params.update_time_ge || params.update_time_lt) {
+  if (params.update_time_ge !== undefined || params.update_time_lt !== undefined) {
     body.update_time = {};
-    if (params.update_time_ge) body.update_time.start = params.update_time_ge;
-    if (params.update_time_lt) body.update_time.end = params.update_time_lt;
+    if (params.update_time_ge !== undefined) body.update_time.start = params.update_time_ge;
+    if (params.update_time_lt !== undefined) body.update_time.end = params.update_time_lt;
   }
   const data = await callTikTokApi("/order/202309/orders/search", accessToken, appKey, appSecret, {
     method: "POST", query, body: Object.keys(body).length > 0 ? body : {},

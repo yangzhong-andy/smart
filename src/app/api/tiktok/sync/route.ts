@@ -19,6 +19,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const { dataType = "all", days = 7 } = body;
+    const requestedDays = Number(days);
+    const syncDays = Number.isFinite(requestedDays) && requestedDays > 0
+      ? Math.floor(requestedDays)
+      : 7;
 
     const shops = await prisma.tikTokShopSetting.findMany({
       where: { status: "active", accessToken: { not: null } },
@@ -64,28 +68,53 @@ export async function POST(request: NextRequest) {
         if (!cipher) throw new Error("缺少 shopCipher，请重新授权");
 
         const now = Math.floor(Date.now() / 1000);
-        const past = now - days * 86400;
+        const past = now - syncDays * 86400;
 
         // 同步订单（分段拉取，每段7天，避免单次订单太多超过翻页上限）
         if (dataType === "all" || dataType === "orders") {
           try {
             let count = 0;
             const segmentDays = 7;
-            const totalSegments = Math.ceil(days / segmentDays);
+            const totalSegments = Math.max(1, Math.ceil(syncDays / segmentDays));
             for (let seg = 0; seg < totalSegments; seg++) {
               const segEnd = now - seg * segmentDays * 86400;
-              const segStart = segEnd - segmentDays * 86400;
+              const segStart = Math.max(past, segEnd - segmentDays * 86400);
               let pageToken: string | undefined = undefined;
               let pageCount = 0;
+              const seenPageTokens = new Set<string>();
+              let reachedSegmentStart = false;
               while (pageCount < 500) {
                 pageCount++;
                 const ordersData = await searchOrders(accessToken, cipher, appKey, appSecret, {
                   page_size: 50, page_token: pageToken,
                   update_time_ge: segStart, update_time_lt: segEnd,
+                  sort_field: "update_time", sort_order: "DESC",
                 });
-                const orders = ordersData?.orders || [];
-                if (orders.length === 0) break;
+                const orders = Array.isArray(ordersData?.orders) ? ordersData.orders : [];
+                const nextPageToken = ordersData?.next_page_token as string | undefined;
+
+                // TikTok may return an empty page together with a cursor. Keep following
+                // it, but stop on a repeated cursor to avoid an infinite sync loop.
+                if (orders.length === 0) {
+                  if (!nextPageToken) break;
+                  if (seenPageTokens.has(nextPageToken)) {
+                    throw new Error("TikTok returned a repeated order page token");
+                  }
+                  seenPageTokens.add(nextPageToken);
+                  pageToken = nextPageToken;
+                  continue;
+                }
+
                 for (const o of orders) {
+                  const updateSeconds = Number(o.update_time);
+                  if (Number.isFinite(updateSeconds)) {
+                    if (updateSeconds < segStart) {
+                      reachedSegmentStart = true;
+                      continue;
+                    }
+                    if (updateSeconds >= segEnd) continue;
+                  }
+
                   await prisma.tikTokOrder.upsert({
                     where: { orderId: o.id },
                     create: {
@@ -106,8 +135,13 @@ export async function POST(request: NextRequest) {
                   });
                   count++;
                 }
-                pageToken = ordersData?.next_page_token;
-                if (!pageToken) break;
+
+                if (reachedSegmentStart || !nextPageToken) break;
+                if (seenPageTokens.has(nextPageToken)) {
+                  throw new Error("TikTok returned a repeated order page token");
+                }
+                seenPageTokens.add(nextPageToken);
+                pageToken = nextPageToken;
               }
               console.log(`[TikTok Sync] ${shop.shopName} 第${seg+1}/${totalSegments}段(${pageCount}页) 累计${count}条`);
             }
