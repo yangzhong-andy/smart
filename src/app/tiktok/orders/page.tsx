@@ -8,6 +8,7 @@ import { Pagination } from "@/components/Pagination";
 type Order = {
   id: string;
   orderId: string;
+  shopRegion: string | null;
   status: string;
   totalAmount: string | null;
   currency: string;
@@ -56,12 +57,14 @@ const fmtMoney = (v: string | number | null, currency = "BRL") => {
   return `${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 };
 
-const fmtDate = (d: string | Date | null) => {
+const timeZoneForRegion = (region: string | null | undefined) =>
+  region === "US" ? "America/Denver" : "America/Sao_Paulo";
+
+const fmtDate = (d: string | Date | null, region?: string | null) => {
   if (!d) return "-";
-  // 统一显示巴西时间（UTC-3），与TikTok店铺后台一致
   return new Date(d).toLocaleString("zh-CN", {
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-    timeZone: "America/Sao_Paulo",
+    timeZone: timeZoneForRegion(region),
   });
 };
 
@@ -303,7 +306,7 @@ export default function TikTokOrdersPage() {
                       <td className="px-4 py-3 text-right text-slate-100 font-medium">
                         {fmtMoney(o.totalAmount, o.currency)}
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-400">{fmtDate(o.createTime)}</td>
+                      <td className="px-4 py-3 text-xs text-slate-400">{fmtDate(o.createTime, o.shopRegion)}</td>
                     </tr>
                     {expanded === o.orderId && (
                       <tr className="bg-slate-800/20">
@@ -341,8 +344,8 @@ export default function TikTokOrdersPage() {
                                 <div className="rounded-lg bg-slate-900/40 p-3 space-y-1 text-xs">
                                   <div className="flex justify-between"><span className="text-slate-500">物流商</span><span className="text-slate-300">{o.shippingProvider || "-"}</span></div>
                                   <div className="flex justify-between"><span className="text-slate-500">物流单号</span><span className="text-slate-300 font-mono">{o.trackingNumber || "-"}</span></div>
-                                  <div className="flex justify-between"><span className="text-slate-500">发货时间</span><span className="text-slate-300">{fmtDate(o.rtsTime)}</span></div>
-                                  <div className="flex justify-between"><span className="text-slate-500">送达时间</span><span className="text-slate-300">{fmtDate(o.deliveryTime)}</span></div>
+                                  <div className="flex justify-between"><span className="text-slate-500">发货时间</span><span className="text-slate-300">{fmtDate(o.rtsTime, o.shopRegion)}</span></div>
+                                  <div className="flex justify-between"><span className="text-slate-500">送达时间</span><span className="text-slate-300">{fmtDate(o.deliveryTime, o.shopRegion)}</span></div>
                                 </div>
                               </div>
 
