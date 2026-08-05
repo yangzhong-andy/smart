@@ -109,9 +109,10 @@ export async function GET(request: NextRequest) {
     if (type === "orders") {
       // 先获取店铺名映射
       const allShops = await prisma.tikTokShopSetting.findMany({
-        select: { shopId: true, shopName: true },
+        select: { shopId: true, shopName: true, region: true },
       });
       const shopMap = new Map(allShops.map(s => [s.shopId, s.shopName]));
+      const shopRegionMap = new Map(allShops.map(s => [s.shopId, s.region]));
 
       const [data, total] = await Promise.all([
         prisma.tikTokOrder.findMany({
@@ -131,6 +132,7 @@ export async function GET(request: NextRequest) {
           orderId: o.orderId,
           shopId: o.shopId,
           shopName: shopMap.get(o.shopId) || o.shopId,
+          shopRegion: shopRegionMap.get(o.shopId) || null,
           status: o.status,
           totalAmount: o.totalAmount,
           currency: raw?.payment?.currency || raw?.currency || "BRL",
