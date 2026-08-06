@@ -11,6 +11,8 @@ import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
+  ProfitOriginalAmounts,
+  ProfitOriginalMetric,
   ProfitReportResponse,
   ProfitSampleRow,
   ProfitSkuRow,
@@ -38,6 +40,51 @@ function number(value: unknown): number {
 function round(value: number, digits = 2): number {
   const factor = 10 ** digits;
   return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+const ORIGINAL_METRICS: ProfitOriginalMetric[] = [
+  "gmv", "platformFee", "fulfillmentFee", "warehouseFulfillment",
+  "adSpend", "rebate", "netAdCost", "taxCost",
+];
+
+function emptyOriginalAmounts(): ProfitOriginalAmounts {
+  return Object.fromEntries(ORIGINAL_METRICS.map((metric) => [metric, {}])) as ProfitOriginalAmounts;
+}
+
+function originalAmounts(
+  entries: Array<[ProfitOriginalMetric, string | null | undefined, number]>,
+): ProfitOriginalAmounts {
+  const result = emptyOriginalAmounts();
+  for (const [metric, currency, value] of entries) {
+    const code = String(currency || "CNY").trim().toUpperCase();
+    if (!code || !Number.isFinite(value) || Math.abs(value) < 0.000001) continue;
+    result[metric][code] = (result[metric][code] || 0) + value;
+  }
+  return result;
+}
+
+function roundedOriginalAmounts(values: ProfitOriginalAmounts): ProfitOriginalAmounts {
+  const result = emptyOriginalAmounts();
+  for (const metric of ORIGINAL_METRICS) {
+    for (const [currency, value] of Object.entries(values[metric] || {})) {
+      result[metric][currency] = round(value);
+    }
+  }
+  return result;
+}
+
+function scaleOriginalAmounts(
+  values: ProfitOriginalAmounts,
+  metrics: ProfitOriginalMetric[],
+  factor: number,
+): ProfitOriginalAmounts {
+  const result = emptyOriginalAmounts();
+  for (const metric of metrics) {
+    for (const [currency, value] of Object.entries(values[metric] || {})) {
+      result[metric][currency] = value * factor;
+    }
+  }
+  return result;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -126,6 +173,7 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
     rebateCny: 0,
     netAdCostCny: 0,
     taxCostCny: 0,
+    originalAmounts: emptyOriginalAmounts(),
     productCoveredUnits: 0,
     logisticsCoveredUnits: 0,
     exactSettlementOrders: 0,
@@ -157,6 +205,7 @@ function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
     rebateCny: round(metric.rebateCny),
     netAdCostCny: round(metric.netAdCostCny),
     taxCostCny: round(metric.taxCostCny),
+    originalAmounts: roundedOriginalAmounts(metric.originalAmounts),
     grossProfitCny: round(grossProfitCny),
     contributionProfitCny: round(contributionProfitCny),
     margin: metric.gmvCny > 0 ? round((contributionProfitCny / metric.gmvCny) * 100, 1) : 0,
@@ -178,6 +227,13 @@ function addMetric(target: MutableMetric, values: Partial<MutableMetric>) {
   for (const key of numericKeys) {
     if (values[key] != null) (target[key] as number) += number(values[key]);
   }
+  if (values.originalAmounts) {
+    for (const metric of ORIGINAL_METRICS) {
+      for (const [currency, value] of Object.entries(values.originalAmounts[metric] || {})) {
+        target.originalAmounts[metric][currency] = (target.originalAmounts[metric][currency] || 0) + number(value);
+      }
+    }
+  }
 }
 
 function parseLineItems(rawData: unknown): any[] {
@@ -196,7 +252,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const today = new Date().toISOString().slice(0, 10);
-    const startDate = searchParams.get("startDate") || addDays(today, -29);
+    const startDate = searchParams.get("startDate") || addDays(today, -89);
     const endDate = searchParams.get("endDate") || today;
     const requestedGroup = searchParams.get("groupBy") as ProfitGroupBy | null;
     const groupBy: ProfitGroupBy = requestedGroup && VALID_GROUPS.has(requestedGroup) ? requestedGroup : "day";
@@ -365,6 +421,15 @@ export async function GET(request: NextRequest) {
       }
       return number(value) * rate;
     };
+    const fromCny = (valueCny: number, currency: string | null | undefined) => {
+      const code = (currency || "CNY").toUpperCase();
+      const rate = rates[code];
+      if (!rate) {
+        missingCurrencies.add(code);
+        return 0;
+      }
+      return valueCny / rate;
+    };
 
     const variantById = new Map(variants.map((variant) => [variant.id, variant]));
     const variantBySku = new Map(variants.map((variant) => [variant.skuId.trim().toLowerCase(), variant]));
@@ -455,10 +520,12 @@ export async function GET(request: NextRequest) {
       orderAmount: number,
       gmvCny: number,
       totalQty: number,
+      orderLines: Array<{ unitAmount: number; quantity: number }>,
     ) => calculateEstimatedProfitFees({
       orderAmount,
       gmvCny,
       totalQty,
+      orderLines,
       fulfillmentRatePercent: number(rule.ratePercent),
       fixedPerOrder: number(rule.fixedPerOrder),
       fixedPerUnit: number(rule.fixedPerUnit),
@@ -506,6 +573,7 @@ export async function GET(request: NextRequest) {
           ? "mapped"
           : mappingSource;
         const lineValue = Math.max(0, number(item?.sale_price) * qty);
+        const unitSalePrice = Math.max(0, number(item?.sale_price));
         const productUnitCost = resolvedComponents.reduce((sum, component) => (
           sum + (purchaseUnitCost.get(component.variant.id) || 0) * component.quantity
         ), 0);
@@ -560,7 +628,7 @@ export async function GET(request: NextRequest) {
           covered: resolvedComponents.length > 0,
         });
         return {
-          sellerSku, skuKey, qty, variant, internalSku, mappingStatus, mappingSource, costComponents,
+          sellerSku, skuKey, qty, unitSalePrice, variant, internalSku, mappingStatus, mappingSource, costComponents,
           lineValue, productUnitCost, logisticsUnitCost, productCostCovered, logisticsCostCovered,
           ...physical,
           productName: String(item?.product_name || variant?.product.name || sellerSku),
@@ -569,7 +637,7 @@ export async function GET(request: NextRequest) {
       return parsedLines.length > 0 ? parsedLines : [{
         sellerSku: "未知 SKU", skuKey: "未知 sku", qty: Math.max(number((order.rawData as any)?.item_count), 1), variant: undefined,
         internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
-        lineValue: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
+        lineValue: 0, unitSalePrice: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
         actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0, covered: false,
         productName: "未识别商品",
       }];
@@ -638,6 +706,8 @@ export async function GET(request: NextRequest) {
       const requiresPhysicalData = pricingMode !== "FLAT_UNIT";
       return {
         costCny: rule ? toCny(feeResult.fee, rule.currency) : 0,
+        costOriginal: rule ? feeResult.fee : 0,
+        currency: rule?.currency || null,
         covered: Boolean(mapping && rule && feeResult.covered && (!requiresPhysicalData || physical.covered)),
         warehouseId: mapping?.warehouseId || null,
         warehouseName: rule?.warehouse.name || (tiktokWarehouseId ? `仓库 ${tiktokWarehouseId}` : "未识别仓库"),
@@ -738,7 +808,13 @@ export async function GET(request: NextRequest) {
       const hasExactSettlement = financial?.source === "SETTLED" || settledCny != null;
       const platformRule = activeShopRule(order.shopId, "PLATFORM_FULFILLMENT", businessDate);
       const estimatedFeeBreakdown = platformRule
-        ? platformRuleCost(platformRule, number(order.totalAmount), gmvCny, totalQty)
+        ? platformRuleCost(
+            platformRule,
+            number(order.totalAmount),
+            gmvCny,
+            totalQty,
+            fallbackLines.map((line) => ({ unitAmount: line.unitSalePrice, quantity: line.qty })),
+          )
         : null;
       let feeBreakdown: ProfitFeeBreakdown;
       if (financial) {
@@ -766,6 +842,7 @@ export async function GET(request: NextRequest) {
         feeBreakdown = { platformFeeCny: fallbackTotal, fulfillmentFeeCny: 0, totalCny: fallbackTotal };
       }
       const { platformFeeCny, fulfillmentFeeCny, totalCny: platformCostCny } = feeBreakdown;
+      const feeCurrency = financial?.currency || platformRule?.currency || orderCurrency;
       const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
       if (fulfillment.mappingStatus === "mapped") warehouseMappingMappedOrders += 1;
       else if (fulfillment.mappingStatus === "missing_id") warehouseMappingMissingIdOrders += 1;
@@ -773,6 +850,7 @@ export async function GET(request: NextRequest) {
       const taxRule = activeShopRule(order.shopId, "TAX", businessDate);
       const influencerRule = activeShopRule(order.shopId, "INFLUENCER_COMMISSION", businessDate);
       const taxCostCny = taxRule ? gmvCny * number(taxRule.ratePercent) / 100 : 0;
+      const taxCostOriginal = taxRule ? number(order.totalAmount) * number(taxRule.ratePercent) / 100 : 0;
       const influencerCommissionCny = influencerRule ? gmvCny * number(influencerRule.ratePercent) / 100 : 0;
       influencerTeamCommissionCny += influencerCommissionCny;
       let orderProductCost = 0;
@@ -790,6 +868,13 @@ export async function GET(request: NextRequest) {
         const lineLogisticsCost = line.logisticsUnitCost * line.qty;
         const lineWarehouseCost = fulfillment.costCny * allocation;
         const lineTaxCost = taxCostCny * allocation;
+        const lineOriginalAmounts = originalAmounts([
+          ["gmv", orderCurrency, number(order.totalAmount) * allocation],
+          ["platformFee", feeCurrency, fromCny(linePlatformFee, feeCurrency)],
+          ["fulfillmentFee", feeCurrency, fromCny(lineFulfillmentFee, feeCurrency)],
+          ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal * allocation],
+          ["taxCost", orderCurrency, taxCostOriginal * allocation],
+        ]);
         orderProductCost += lineProductCost;
         orderLogisticsCost += lineLogisticsCost;
         if (line.productCostCovered) productCoveredUnits += line.qty;
@@ -820,6 +905,7 @@ export async function GET(request: NextRequest) {
           logisticsCostCny: lineLogisticsCost,
           warehouseFulfillmentCostCny: lineWarehouseCost,
           taxCostCny: lineTaxCost,
+          originalAmounts: lineOriginalAmounts,
           productCoveredUnits: line.productCostCovered ? line.qty : 0,
           logisticsCoveredUnits: line.logisticsCostCovered ? line.qty : 0,
           exactSettlementOrders: hasExactSettlement ? 1 : 0,
@@ -839,6 +925,13 @@ export async function GET(request: NextRequest) {
         logisticsCostCny: orderLogisticsCost,
         warehouseFulfillmentCostCny: fulfillment.costCny,
         taxCostCny,
+        originalAmounts: originalAmounts([
+          ["gmv", orderCurrency, number(order.totalAmount)],
+          ["platformFee", feeCurrency, fromCny(platformFeeCny, feeCurrency)],
+          ["fulfillmentFee", feeCurrency, fromCny(fulfillmentFeeCny, feeCurrency)],
+          ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal],
+          ["taxCost", orderCurrency, taxCostOriginal],
+        ]),
         productCoveredUnits,
         logisticsCoveredUnits,
         exactSettlementOrders: hasExactSettlement ? 1 : 0,
@@ -925,18 +1018,26 @@ export async function GET(request: NextRequest) {
       if (selectedShopId && (!ad.storeId || !selectedStoreIds.has(ad.storeId))) continue;
       const businessDate = ad.date.toISOString().slice(0, 10);
       if (businessDate < startDate || businessDate > endDate) continue;
-      const spendCny = Math.max(0, toCny(number(ad.amount) - number(ad.giftConsumption), ad.currency));
-      const rebateCny = Math.max(0, toCny(ad.estimatedRebate, ad.currency));
+      const spendOriginal = Math.max(0, number(ad.amount) - number(ad.giftConsumption));
+      const rebateOriginal = Math.max(0, number(ad.estimatedRebate));
+      const netAdCostOriginal = Math.max(0, spendOriginal - rebateOriginal);
+      const spendCny = Math.max(0, toCny(spendOriginal, ad.currency));
+      const rebateCny = Math.max(0, toCny(rebateOriginal, ad.currency));
       const netAdCostCny = Math.max(0, spendCny - rebateCny);
+      const adOriginalAmounts = originalAmounts([
+        ["adSpend", ad.currency, spendOriginal],
+        ["rebate", ad.currency, rebateOriginal],
+        ["netAdCost", ad.currency, netAdCostOriginal],
+      ]);
       totalAdCny += spendCny;
       const periodInfo = periodFor(businessDate, groupBy);
       const period = periods.get(periodInfo.id);
-      if (period) addMetric(period, { adSpendCny: spendCny, rebateCny, netAdCostCny });
+      if (period) addMetric(period, { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
 
       const linkedShopId = ad.storeId ? shopByStoreId.get(ad.storeId) : undefined;
       if (linkedShopId && (!selectedShopId || linkedShopId === selectedShopId)) {
         linkedAdCny += spendCny;
-        addMetric(ensureStore(linkedShopId), { adSpendCny: spendCny, rebateCny, netAdCostCny });
+        addMetric(ensureStore(linkedShopId), { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
       }
     }
 
@@ -949,6 +1050,7 @@ export async function GET(request: NextRequest) {
           adSpendCny: store.adSpendCny * share,
           rebateCny: store.rebateCny * share,
           netAdCostCny: store.netAdCostCny * share,
+          originalAmounts: scaleOriginalAmounts(store.originalAmounts, ["adSpend", "rebate", "netAdCost"], share),
         });
       }
     }
