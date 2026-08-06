@@ -18,6 +18,10 @@ type EstimateInput = {
   orderAmount: number;
   gmvCny: number;
   totalQty: number;
+  orderLines?: Array<{
+    unitAmount: number;
+    quantity: number;
+  }>;
   fulfillmentRatePercent: number;
   fixedPerOrder: number;
   fixedPerUnit: number;
@@ -54,12 +58,27 @@ export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBre
     };
   }
 
-  const tier = findProfitPlatformFeeTier(input.orderAmount, input.tiers);
-  if (!tier) return { platformFeeCny: 0, fulfillmentFeeCny: 0, totalCny: 0 };
-
-  const platformFeeCny = (input.gmvCny * tier.platformRatePercent / 100)
-    + input.convertToCny(tier.perUnitFee * input.totalQty, tier.currency)
-    + fixedRuleFeeCny;
+  const fallbackUnitAmount = input.totalQty > 0 ? input.orderAmount / input.totalQty : input.orderAmount;
+  const orderLines = (input.orderLines || [])
+    .map((line) => ({
+      unitAmount: line.unitAmount > 0 ? line.unitAmount : fallbackUnitAmount,
+      quantity: Math.max(0, line.quantity),
+    }))
+    .filter((line) => line.quantity > 0);
+  const pricedLines = orderLines.length > 0
+    ? orderLines
+    : [{ unitAmount: fallbackUnitAmount, quantity: Math.max(0, input.totalQty) }];
+  const totalLineAmount = pricedLines.reduce((sum, line) => sum + line.unitAmount * line.quantity, 0);
+  let platformFeeCny = fixedRuleFeeCny;
+  for (const line of pricedLines) {
+    const tier = findProfitPlatformFeeTier(line.unitAmount, input.tiers);
+    if (!tier) return { platformFeeCny: 0, fulfillmentFeeCny: 0, totalCny: 0 };
+    const lineShare = totalLineAmount > 0
+      ? (line.unitAmount * line.quantity) / totalLineAmount
+      : line.quantity / Math.max(input.totalQty, 1);
+    platformFeeCny += (input.gmvCny * lineShare * tier.platformRatePercent / 100)
+      + input.convertToCny(tier.perUnitFee * line.quantity, tier.currency);
+  }
   return {
     platformFeeCny,
     fulfillmentFeeCny,

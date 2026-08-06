@@ -1,5 +1,17 @@
 export type ProfitGroupBy = "day" | "week" | "month";
 
+export type ProfitOriginalMetric =
+  | "gmv"
+  | "platformFee"
+  | "fulfillmentFee"
+  | "warehouseFulfillment"
+  | "adSpend"
+  | "rebate"
+  | "netAdCost"
+  | "taxCost";
+
+export type ProfitOriginalAmounts = Record<ProfitOriginalMetric, Record<string, number>>;
+
 export type ProfitMetricRow = {
   id: string;
   label: string;
@@ -19,6 +31,7 @@ export type ProfitMetricRow = {
   rebateCny: number;
   netAdCostCny: number;
   taxCostCny: number;
+  originalAmounts: ProfitOriginalAmounts;
   grossProfitCny: number;
   contributionProfitCny: number;
   margin: number;

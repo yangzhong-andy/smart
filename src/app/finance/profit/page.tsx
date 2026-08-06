@@ -36,6 +36,7 @@ import {
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
+  ProfitOriginalAmounts,
   ProfitReportResponse,
   ProfitSkuRow,
 } from "@/lib/profit-report-types";
@@ -64,25 +65,36 @@ function money(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function originalMoney(valueCny: number, currency: string | null, rates: Record<string, number>) {
-  const code = currency?.toUpperCase();
-  const rate = code ? rates[code] : 0;
-  if (!code || code === "CNY" || !Number.isFinite(rate) || rate <= 0) return null;
-  return new Intl.NumberFormat(code === "BRL" ? "pt-BR" : "en-US", {
-    style: "currency",
-    currency: code,
-    maximumFractionDigits: 2,
-  }).format(valueCny / rate);
+function originalMoney(currency: string, amount: number) {
+  try {
+    return new Intl.NumberFormat(currency === "BRL" ? "pt-BR" : "en-US", {
+      style: "currency",
+      currency,
+      currencyDisplay: "code",
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
 }
 
-function OriginalAmount({ valueCny, currency, rates }: {
-  valueCny: number;
-  currency: string | null;
-  rates: Record<string, number>;
-}) {
-  const value = originalMoney(valueCny, currency, rates);
-  if (!value) return null;
-  return <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="按本次报表汇率折算前的原币金额">{value}</div>;
+function originalSummary(amounts: Record<string, number> | undefined) {
+  return Object.entries(amounts || {})
+    .filter(([, amount]) => Number.isFinite(amount) && Math.abs(amount) > 0.000001)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, amount]) => originalMoney(currency, amount))
+    .join(" + ");
+}
+
+function OriginalAmount({ amounts }: { amounts: Record<string, number> | undefined }) {
+  const values = originalSummary(amounts);
+  if (!values) return null;
+  return <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="来源系统的原始币种金额">{values}</div>;
+}
+
+function CostShare({ value, gmvCny, prefix = "占 GMV" }: { value: number; gmvCny: number; prefix?: string }) {
+  const ratio = gmvCny > 0 ? value / gmvCny * 100 : 0;
+  return <div className="mt-0.5 text-[11px] font-normal text-slate-600">{prefix} {percent(ratio)}</div>;
 }
 
 function compactMoney(value: number) {
@@ -143,39 +155,43 @@ function CoverageBar({ label, value, detail }: { label: string; value: number; d
   );
 }
 
-function MetricCells({ row, currency, rates }: {
-  row: ProfitMetricRow;
-  currency: string | null;
-  rates: Record<string, number>;
-}) {
-  const platformOriginal = originalMoney(row.platformFeeCny, currency, rates);
-  const fulfillmentOriginal = originalMoney(row.fulfillmentFeeCny, currency, rates);
+function MetricCells({ row }: { row: ProfitMetricRow }) {
+  const originals: ProfitOriginalAmounts = row.originalAmounts || {
+    gmv: {}, platformFee: {}, fulfillmentFee: {}, warehouseFulfillment: {},
+    adSpend: {}, rebate: {}, netAdCost: {}, taxCost: {},
+  };
+  const platformOriginal = originalSummary(originals.platformFee);
+  const fulfillmentOriginal = originalSummary(originals.fulfillmentFee);
   return (
     <>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">
         <div>{money(row.gmvCny)}</div>
-        <OriginalAmount valueCny={row.gmvCny} currency={currency} rates={rates} />
+        <OriginalAmount amounts={originals.gmv} />
       </td>
       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-300" title={`合计 ${money(row.platformCostCny)}`}>
         <div>{money(row.platformFeeCny)} / {money(row.fulfillmentFeeCny)}</div>
-        {platformOriginal && fulfillmentOriginal && <div className="mt-0.5 text-[11px] font-normal text-slate-600" title="按本次报表汇率折算前的原币金额">{platformOriginal} / {fulfillmentOriginal}</div>}
+        {(platformOriginal || fulfillmentOriginal) && <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="来源系统的原始币种金额">{platformOriginal || "-"} / {fulfillmentOriginal || "-"}</div>}
+        <div className="mt-0.5 text-[11px] font-normal text-slate-600">占 GMV {percent(row.gmvCny > 0 ? row.platformFeeCny / row.gmvCny * 100 : 0)} / {percent(row.gmvCny > 0 ? row.fulfillmentFeeCny / row.gmvCny * 100 : 0)}</div>
       </td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.productCostCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.logisticsCostCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300"><div>{money(row.productCostCny)}</div><CostShare value={row.productCostCny} gmvCny={row.gmvCny} /></td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300"><div>{money(row.logisticsCostCny)}</div><CostShare value={row.logisticsCostCny} gmvCny={row.gmvCny} /></td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
         <div>{money(row.warehouseFulfillmentCostCny)}</div>
-        <OriginalAmount valueCny={row.warehouseFulfillmentCostCny} currency={currency} rates={rates} />
+        <OriginalAmount amounts={originals.warehouseFulfillment} />
+        <CostShare value={row.warehouseFulfillmentCostCny} gmvCny={row.gmvCny} />
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
         <div>{money(row.netAdCostCny)}</div>
-        <OriginalAmount valueCny={row.netAdCostCny} currency={currency} rates={rates} />
+        <OriginalAmount amounts={originals.netAdCost} />
+        <CostShare value={row.netAdCostCny} gmvCny={row.gmvCny} />
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
         <div>{money(row.taxCostCny)}</div>
-        <OriginalAmount valueCny={row.taxCostCny} currency={currency} rates={rates} />
+        <OriginalAmount amounts={originals.taxCost} />
+        <CostShare value={row.taxCostCny} gmvCny={row.gmvCny} />
       </td>
       <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${row.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-        {money(row.contributionProfitCny)}
+        <div>{money(row.contributionProfitCny)}</div><CostShare value={row.contributionProfitCny} gmvCny={row.gmvCny} prefix="利润率" />
       </td>
       <td className={`px-3 py-2.5 text-right font-medium tabular-nums ${row.margin >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{percent(row.margin)}</td>
     </>
@@ -184,7 +200,7 @@ function MetricCells({ row, currency, rates }: {
 
 export default function ProfitPage() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [startDate, setStartDate] = useState(() => addDays(new Date().toISOString().slice(0, 10), -29));
+  const [startDate, setStartDate] = useState(() => addDays(new Date().toISOString().slice(0, 10), -89));
   const [endDate, setEndDate] = useState(today);
   const [groupBy, setGroupBy] = useState<ProfitGroupBy>("day");
   const [shopId, setShopId] = useState("all");
@@ -212,18 +228,6 @@ export default function ProfitPage() {
       [sku.sellerSku, sku.internalSku, sku.productName, sku.storeName].some((value) => value?.toLowerCase().includes(keyword)),
     );
   }, [data?.skus, skuSearch]);
-
-  const currencyByShop = useMemo(
-    () => new Map((data?.shops || []).map((shop) => [shop.id, shop.currency.toUpperCase()])),
-    [data?.shops],
-  );
-  const reportCurrency = useMemo(() => {
-    const currencies = new Set((data?.stores || [])
-      .filter((store) => store.orderCount > 0)
-      .map((store) => store.currency.toUpperCase())
-      .filter((currency) => currency !== "CNY"));
-    return currencies.size === 1 ? [...currencies][0] : null;
-  }, [data?.stores]);
 
   const costRows = useMemo(() => {
     if (!data) return [];
@@ -375,7 +379,10 @@ export default function ProfitPage() {
               <button
                 key={value}
                 type="button"
-                onClick={() => setGroupBy(value)}
+                onClick={() => {
+                  setGroupBy(value);
+                  if (value === "month" && startDate > addDays(today, -89)) setStartDate(addDays(today, -89));
+                }}
                 className={`min-w-16 rounded px-3 text-sm ${groupBy === value ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"}`}
               >
                 {value === "day" ? "日报" : value === "week" ? "周报" : "月报"}
@@ -444,7 +451,7 @@ export default function ProfitPage() {
             <MetricCard label="平台 / 履约" value={`${money(data.summary.platformFeeCny)} / ${money(data.summary.fulfillmentFeeCny)}`} detail={`合计 ${money(data.summary.platformCostCny)} · 实际账单 ${percent(data.coverage.platformActual)}`} icon={WalletCards} />
             <MetricCard label="采购 + 物流" value={money(data.summary.productCostCny + data.summary.logisticsCostCny)} detail={`采购 ${percent(data.coverage.productCost)} / 物流 ${percent(data.coverage.logisticsCost)}`} icon={PackageCheck} />
             <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
-            <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`消耗 ${money(data.summary.adSpendCny)} / 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
+            <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`原币 ${originalSummary(data.summary.originalAmounts?.netAdCost) || "-"} · 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
             <MetricCard label="税务成本" value={money(data.summary.taxCostCny)} detail={`规则覆盖 ${percent(data.coverage.taxRule)}`} icon={WalletCards} />
             <MetricCard label="核算完整度" value={percent(data.coverage.score)} detail={`${data.coverage.mappedSkuCount}/${data.coverage.totalSkuCount} 个 SKU 已映射`} icon={PackageCheck} tone={coverageTone(data.coverage.score)} />
           </section>
@@ -536,7 +543,7 @@ export default function ProfitPage() {
                       <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                         <td className="px-3 py-2.5 text-slate-200"><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td>
-                        <MetricCells row={row} currency={reportCurrency} rates={data.rates} />
+                        <MetricCells row={row} />
                       </tr>
                     ))}
                   </tbody>
@@ -550,7 +557,7 @@ export default function ProfitPage() {
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
                     <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告净消耗</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
-                  <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} currency={row.currency} rates={data.rates} /></tr>)}</tbody>
+                  <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} /></tr>)}</tbody>
                 </table>
               </div>
             )}
@@ -563,7 +570,7 @@ export default function ProfitPage() {
                   </tr></thead>
                   <tbody>{filteredSkus.map((row: ProfitSkuRow) => <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                     <td className="max-w-[320px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span><button type="button" onClick={() => openCostMapping(row)} title="配置成本映射" className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"><Settings2 className="h-4 w-4" /></button></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
-                    <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} currency={currencyByShop.get(row.shopId) || null} rates={data.rates} />
+                    <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} />
                   </tr>)}</tbody>
                 </table>
                 {filteredSkus.length === 0 && <div className="py-12 text-center text-sm text-slate-500">没有匹配的 SKU</div>}
