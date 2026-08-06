@@ -394,7 +394,7 @@ export default function ProfitPage() {
             <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
             <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`消耗 ${money(data.summary.adSpendCny)} / 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
             <MetricCard label="税务成本" value={money(data.summary.taxCostCny)} detail={`规则覆盖 ${percent(data.coverage.taxRule)}`} icon={WalletCards} />
-            <MetricCard label="达人营销" value={money(data.summary.influencerCommissionCny + data.summary.sampleMarketingCostCny)} detail={`团队佣金 + ${data.influencerMarketing.sampleOrders} 单寄样`} icon={Users} />
+            <MetricCard label="达人营销" value={money(data.summary.influencerCommissionCny + data.summary.sampleMarketingCostCny)} detail={`团队佣金 + ${data.influencerMarketing?.sampleOrders ?? 0} 单寄样`} icon={Users} />
             <MetricCard label="核算完整度" value={percent(data.coverage.score)} detail={`${data.coverage.mappedSkuCount}/${data.coverage.totalSkuCount} 个 SKU 已映射`} icon={PackageCheck} tone={coverageTone(data.coverage.score)} />
           </section>
 
