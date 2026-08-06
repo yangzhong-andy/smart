@@ -132,7 +132,7 @@ function MetricCells({ row }: { row: ProfitMetricRow }) {
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.warehouseFulfillmentCostCny)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.netAdCostCny)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.taxCostCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.influencerCommissionCny + row.sampleMarketingCostCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300" title="不计入贡献利润">{money(row.sampleMarketingCostCny)}</td>
       <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${row.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
         {money(row.contributionProfitCny)}
       </td>
@@ -181,7 +181,7 @@ export default function ProfitPage() {
       { label: "海外仓代发", value: data.summary.warehouseFulfillmentCostCny, color: "bg-violet-500" },
       { label: "广告净消耗", value: data.summary.netAdCostCny, color: "bg-rose-500" },
       { label: "店铺税务", value: data.summary.taxCostCny, color: "bg-lime-500" },
-      { label: "达人营销", value: data.summary.influencerCommissionCny + data.summary.sampleMarketingCostCny, color: "bg-fuchsia-500" },
+      { label: "达人寄样成本（另计）", value: data.summary.sampleMarketingCostCny, color: "bg-fuchsia-500" },
     ];
   }, [data]);
 
@@ -262,15 +262,15 @@ export default function ProfitPage() {
     if (!data) return;
     const rows = tab === "store" ? data.stores : tab === "sku" ? filteredSkus : data.periods;
     const headers = tab === "store"
-      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人营销", "贡献利润", "利润率"]
+      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人寄样（另计）", "贡献利润", "利润率"]
       : tab === "sku"
-        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告分摊", "税务成本", "达人佣金", "贡献利润", "利润率"]
-        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人营销", "贡献利润", "利润率"];
+        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告分摊", "税务成本", "达人寄样（另计）", "贡献利润", "利润率"]
+        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人寄样（另计）", "贡献利润", "利润率"];
     const values = rows.map((row: any) => tab === "store"
-      ? [row.label, row.orderCount, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.influencerCommissionCny + row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]
+        ? [row.label, row.orderCount, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]
       : tab === "sku"
-        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.influencerCommissionCny, row.contributionProfitCny, row.margin]
-        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.influencerCommissionCny + row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]);
+        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]
+        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]);
     const csv = [headers, ...values].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -394,7 +394,7 @@ export default function ProfitPage() {
             <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
             <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`消耗 ${money(data.summary.adSpendCny)} / 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
             <MetricCard label="税务成本" value={money(data.summary.taxCostCny)} detail={`规则覆盖 ${percent(data.coverage.taxRule)}`} icon={WalletCards} />
-            <MetricCard label="达人营销" value={money(data.summary.influencerCommissionCny + data.summary.sampleMarketingCostCny)} detail={`团队佣金 + ${data.influencerMarketing?.sampleOrders ?? 0} 单寄样`} icon={Users} />
+            <MetricCard label="达人寄样成本（另计）" value={money(data.summary.sampleMarketingCostCny)} detail={`${data.influencerMarketing?.sampleOrders ?? 0} 单免费样品；达人佣金单独核算`} icon={Users} />
             <MetricCard label="核算完整度" value={percent(data.coverage.score)} detail={`${data.coverage.mappedSkuCount}/${data.coverage.totalSkuCount} 个 SKU 已映射`} icon={PackageCheck} tone={coverageTone(data.coverage.score)} />
           </section>
 
