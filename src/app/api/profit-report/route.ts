@@ -140,8 +140,9 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
 function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
   const grossProfitCny = metric.gmvCny - metric.platformCostCny - metric.productCostCny
     - metric.logisticsCostCny - metric.warehouseFulfillmentCostCny;
-  const contributionProfitCny = grossProfitCny - metric.netAdCostCny - metric.taxCostCny
-    - metric.influencerCommissionCny - metric.sampleMarketingCostCny;
+  // Influencer commissions and sample costs are reported in the separate
+  // influencer marketing module and are intentionally excluded here.
+  const contributionProfitCny = grossProfitCny - metric.netAdCostCny - metric.taxCostCny;
   return {
     id: metric.id,
     label: metric.label,
