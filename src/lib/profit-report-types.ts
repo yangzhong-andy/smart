@@ -19,8 +19,6 @@ export type ProfitMetricRow = {
   rebateCny: number;
   netAdCostCny: number;
   taxCostCny: number;
-  influencerCommissionCny: number;
-  sampleMarketingCostCny: number;
   grossProfitCny: number;
   contributionProfitCny: number;
   margin: number;
@@ -110,9 +108,12 @@ export type ProfitReportResponse = {
       exactSettlementOrders: number;
       validOrders: number;
       platformActual: number;
+      warehouseMapping: number;
+      warehouseMappingMappedOrders: number;
+      warehouseMappingMissingIdOrders: number;
+      warehouseMappingUnmappedIds: string[];
       warehouseFulfillment: number;
       taxRule: number;
-      influencerCommissionRule: number;
     };
   influencerMarketing: {
     sampleOrders: number;
