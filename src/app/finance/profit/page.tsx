@@ -1,19 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
   Download,
   PackageCheck,
+  Plus,
   RefreshCw,
   Search,
+  Settings2,
   ShoppingCart,
+  Trash2,
   TrendingDown,
   TrendingUp,
+  Users,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   Bar,
@@ -34,6 +41,7 @@ import type {
 } from "@/lib/profit-report-types";
 
 type DetailTab = "period" | "store" | "sku" | "coverage";
+type CostComponentDraft = { variantId: string; quantity: number };
 
 const fetcher = async (url: string): Promise<ProfitReportResponse> => {
   const response = await fetch(url);
@@ -118,10 +126,13 @@ function MetricCells({ row }: { row: ProfitMetricRow }) {
   return (
     <>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">{money(row.gmvCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.platformCostCny)}</td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-300" title={`合计 ${money(row.platformCostCny)}`}>{money(row.platformFeeCny)} / {money(row.fulfillmentFeeCny)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.productCostCny)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.logisticsCostCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.warehouseFulfillmentCostCny)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.netAdCostCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.taxCostCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.influencerCommissionCny + row.sampleMarketingCostCny)}</td>
       <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${row.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
         {money(row.contributionProfitCny)}
       </td>
@@ -138,6 +149,9 @@ export default function ProfitPage() {
   const [shopId, setShopId] = useState("all");
   const [tab, setTab] = useState<DetailTab>("period");
   const [skuSearch, setSkuSearch] = useState("");
+  const [mappingSku, setMappingSku] = useState<ProfitSkuRow | null>(null);
+  const [mappingComponents, setMappingComponents] = useState<CostComponentDraft[]>([]);
+  const [isMappingSaving, setIsMappingSaving] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ startDate, endDate, groupBy });
@@ -161,10 +175,13 @@ export default function ProfitPage() {
   const costRows = useMemo(() => {
     if (!data) return [];
     return [
-      { label: "平台及履约费", value: data.summary.platformCostCny, color: "bg-sky-500" },
+      { label: "平台 / 履约合计", value: data.summary.platformCostCny, color: "bg-sky-500" },
       { label: "采购成本", value: data.summary.productCostCny, color: "bg-amber-500" },
       { label: "物流分摊", value: data.summary.logisticsCostCny, color: "bg-cyan-500" },
+      { label: "海外仓代发", value: data.summary.warehouseFulfillmentCostCny, color: "bg-violet-500" },
       { label: "广告净消耗", value: data.summary.netAdCostCny, color: "bg-rose-500" },
+      { label: "店铺税务", value: data.summary.taxCostCny, color: "bg-lime-500" },
+      { label: "达人营销", value: data.summary.influencerCommissionCny + data.summary.sampleMarketingCostCny, color: "bg-fuchsia-500" },
     ];
   }, [data]);
 
@@ -173,19 +190,87 @@ export default function ProfitPage() {
     setStartDate(addDays(today, 1 - days));
   };
 
+  const openCostMapping = (row: ProfitSkuRow) => {
+    setMappingSku(row);
+    setMappingComponents(row.costComponents.length > 0
+      ? row.costComponents.map((component) => ({ variantId: component.variantId, quantity: component.quantity }))
+      : [{ variantId: "", quantity: 1 }]);
+  };
+
+  const closeCostMapping = () => {
+    if (isMappingSaving) return;
+    setMappingSku(null);
+    setMappingComponents([]);
+  };
+
+  const saveCostMapping = async () => {
+    if (!mappingSku) return;
+    const components = mappingComponents.filter((component) => component.variantId && component.quantity > 0);
+    if (components.length === 0) {
+      toast.error("请至少选择一个内部 SKU");
+      return;
+    }
+    setIsMappingSaving(true);
+    try {
+      const response = await fetch("/api/profit-sku-mappings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "TIKTOK",
+          shopId: mappingSku.shopId,
+          sellerSku: mappingSku.sellerSku,
+          components,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "成本映射保存失败");
+      await mutate();
+      toast.success("成本映射已保存");
+      setMappingSku(null);
+      setMappingComponents([]);
+    } catch (mappingError: any) {
+      toast.error(mappingError?.message || "成本映射保存失败");
+    } finally {
+      setIsMappingSaving(false);
+    }
+  };
+
+  const deleteCostMapping = async () => {
+    if (!mappingSku || mappingSku.mappingSource !== "profit") return;
+    setIsMappingSaving(true);
+    try {
+      const params = new URLSearchParams({
+        platform: "TIKTOK",
+        shopId: mappingSku.shopId,
+        sellerSku: mappingSku.sellerSku,
+      });
+      const response = await fetch(`/api/profit-sku-mappings?${params.toString()}`, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "成本映射删除失败");
+      await mutate();
+      toast.success("成本映射已删除");
+      setMappingSku(null);
+      setMappingComponents([]);
+    } catch (mappingError: any) {
+      toast.error(mappingError?.message || "成本映射删除失败");
+    } finally {
+      setIsMappingSaving(false);
+    }
+  };
+
   const exportCsv = () => {
     if (!data) return;
     const rows = tab === "store" ? data.stores : tab === "sku" ? filteredSkus : data.periods;
     const headers = tab === "store"
-      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台费", "采购成本", "物流成本", "广告净消耗", "贡献利润", "利润率"]
+      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人营销", "贡献利润", "利润率"]
       : tab === "sku"
-        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台费", "采购成本", "物流成本", "广告分摊", "贡献利润", "利润率"]
-        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台费", "采购成本", "物流成本", "广告净消耗", "贡献利润", "利润率"];
+        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告分摊", "税务成本", "达人佣金", "贡献利润", "利润率"]
+        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人营销", "贡献利润", "利润率"];
     const values = rows.map((row: any) => tab === "store"
-      ? [row.label, row.orderCount, row.units, row.gmvCny, row.platformCostCny, row.productCostCny, row.logisticsCostCny, row.netAdCostCny, row.contributionProfitCny, row.margin]
+      ? [row.label, row.orderCount, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.influencerCommissionCny + row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]
       : tab === "sku"
-        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.gmvCny, row.platformCostCny, row.productCostCny, row.logisticsCostCny, row.netAdCostCny, row.contributionProfitCny, row.margin]
-        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.gmvCny, row.platformCostCny, row.productCostCny, row.logisticsCostCny, row.netAdCostCny, row.contributionProfitCny, row.margin]);
+        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.influencerCommissionCny, row.contributionProfitCny, row.margin]
+        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.influencerCommissionCny + row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]);
     const csv = [headers, ...values].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -207,6 +292,8 @@ export default function ProfitPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/advertising/influencer-costs" title="达人营销核算" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><Users className="h-4 w-4" /></Link>
+          <Link href="/finance/profit/settings" title="成本规则" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><Settings2 className="h-4 w-4" /></Link>
           <button
             type="button"
             onClick={() => mutate()}
@@ -299,12 +386,15 @@ export default function ProfitPage() {
             </div>
           )}
 
-          <section className="grid gap-3 py-5 sm:grid-cols-2 xl:grid-cols-6">
+          <section className="grid gap-3 py-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-9">
             <MetricCard label="订单 GMV" value={money(data.summary.gmvCny)} detail={`${data.summary.orderCount.toLocaleString()} 单 / ${data.summary.units.toLocaleString()} 件`} icon={ShoppingCart} />
-            <MetricCard label="预估贡献利润" value={money(data.summary.contributionProfitCny)} detail={`利润率 ${percent(data.summary.margin)}`} icon={data.summary.contributionProfitCny >= 0 ? TrendingUp : TrendingDown} tone={data.summary.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"} />
-            <MetricCard label="平台及履约费" value={money(data.summary.platformCostCny)} detail={`逐单覆盖 ${percent(data.coverage.orderSettlement)}`} icon={WalletCards} />
+            <MetricCard label="贡献利润" value={money(data.summary.contributionProfitCny)} detail={`利润率 ${percent(data.summary.margin)}`} icon={data.summary.contributionProfitCny >= 0 ? TrendingUp : TrendingDown} tone={data.summary.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"} />
+            <MetricCard label="平台 / 履约" value={`${money(data.summary.platformFeeCny)} / ${money(data.summary.fulfillmentFeeCny)}`} detail={`合计 ${money(data.summary.platformCostCny)} · 实际账单 ${percent(data.coverage.platformActual)}`} icon={WalletCards} />
             <MetricCard label="采购 + 物流" value={money(data.summary.productCostCny + data.summary.logisticsCostCny)} detail={`采购 ${percent(data.coverage.productCost)} / 物流 ${percent(data.coverage.logisticsCost)}`} icon={PackageCheck} />
+            <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
             <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`消耗 ${money(data.summary.adSpendCny)} / 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
+            <MetricCard label="税务成本" value={money(data.summary.taxCostCny)} detail={`规则覆盖 ${percent(data.coverage.taxRule)}`} icon={WalletCards} />
+            <MetricCard label="达人营销" value={money(data.summary.influencerCommissionCny + data.summary.sampleMarketingCostCny)} detail={`团队佣金 + ${data.influencerMarketing.sampleOrders} 单寄样`} icon={Users} />
             <MetricCard label="核算完整度" value={percent(data.coverage.score)} detail={`${data.coverage.mappedSkuCount}/${data.coverage.totalSkuCount} 个 SKU 已映射`} icon={PackageCheck} tone={coverageTone(data.coverage.score)} />
           </section>
 
@@ -374,16 +464,19 @@ export default function ProfitPage() {
 
             {tab === "period" && (
               <div className="overflow-x-auto">
-                <table className="min-w-[1100px] w-full text-sm">
+                <table className="min-w-[1500px] w-full text-sm">
                   <thead className="text-xs text-slate-500">
                     <tr className="border-b border-slate-800">
                       <th className="px-3 py-3 text-left font-medium">周期</th>
                       <th className="px-3 py-3 text-right font-medium">订单 / 销量</th>
                       <th className="px-3 py-3 text-right font-medium">GMV</th>
-                      <th className="px-3 py-3 text-right font-medium">平台及履约</th>
+                      <th className="px-3 py-3 text-right font-medium">平台 / 履约</th>
                       <th className="px-3 py-3 text-right font-medium">采购成本</th>
                       <th className="px-3 py-3 text-right font-medium">物流分摊</th>
+                      <th className="px-3 py-3 text-right font-medium">海外仓代发</th>
                       <th className="px-3 py-3 text-right font-medium">广告净消耗</th>
+                      <th className="px-3 py-3 text-right font-medium">税务成本</th>
+                      <th className="px-3 py-3 text-right font-medium">达人营销</th>
                       <th className="px-3 py-3 text-right font-medium">贡献利润</th>
                       <th className="px-3 py-3 text-right font-medium">利润率</th>
                     </tr>
@@ -403,9 +496,9 @@ export default function ProfitPage() {
 
             {tab === "store" && (
               <div className="overflow-x-auto">
-                <table className="min-w-[1100px] w-full text-sm">
+                <table className="min-w-[1500px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台及履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">广告净消耗</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告净消耗</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">达人营销</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
                   <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} /></tr>)}</tbody>
                 </table>
@@ -414,12 +507,12 @@ export default function ProfitPage() {
 
             {tab === "sku" && (
               <div className="overflow-x-auto">
-                <table className="min-w-[1240px] w-full text-sm">
+                <table className="min-w-[1650px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台及履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">广告分摊</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告分摊</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">达人佣金</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
                   <tbody>{filteredSkus.map((row: ProfitSkuRow) => <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
-                    <td className="max-w-[300px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
+                    <td className="max-w-[320px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span><button type="button" onClick={() => openCostMapping(row)} title="配置成本映射" className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"><Settings2 className="h-4 w-4" /></button></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
                     <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} />
                   </tr>)}</tbody>
                 </table>
@@ -432,7 +525,10 @@ export default function ProfitPage() {
                 <div>
                   <CoverageBar label="采购成本覆盖" value={data.coverage.productCost} detail={`${data.coverage.missingCostSkuCount} 个 SKU 待补成本`} />
                   <CoverageBar label="物流成本覆盖" value={data.coverage.logisticsCost} detail={`${data.coverage.missingLogisticsSkuCount} 个 SKU 待分摊`} />
-                  <CoverageBar label="逐单结算覆盖" value={data.coverage.orderSettlement} detail={`${data.coverage.exactSettlementOrders.toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`} />
+                  <CoverageBar label="逐单平台账单" value={data.coverage.platformActual} detail={`${data.coverage.exactSettlementOrders.toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`} />
+                  <CoverageBar label="海外仓代发规则" value={data.coverage.warehouseFulfillment} detail="按订单仓库代码匹配" />
+                  <CoverageBar label="店铺税率规则" value={data.coverage.taxRule} detail="按主体和生效日期匹配" />
+                  <CoverageBar label="达人团队佣金规则" value={data.coverage.influencerCommissionRule} detail="按店铺营业额计提" />
                   <CoverageBar label="广告店铺覆盖" value={data.coverage.adStore} detail="按广告消耗金额计算" />
                 </div>
                 <div className="border-t border-slate-800 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
@@ -448,6 +544,63 @@ export default function ProfitPage() {
           </section>
         </>
       ) : null}
+
+      {mappingSku && data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="配置成本映射">
+          <div className="w-full max-w-2xl rounded-md border border-slate-700 bg-slate-950 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-100">配置成本映射</h2>
+                <p className="mt-1 truncate text-sm text-slate-400" title={mappingSku.sellerSku}>{mappingSku.sellerSku}</p>
+                <p className="mt-0.5 text-xs text-slate-600">{mappingSku.storeName}</p>
+              </div>
+              <button type="button" onClick={closeCostMapping} title="关闭" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4">
+              {mappingComponents.map((component, index) => (
+                <div key={`${index}-${component.variantId}`} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px_36px] sm:items-end">
+                  <label className="min-w-0 text-xs text-slate-500">
+                    <span className="mb-1.5 block">内部 SKU</span>
+                    <select
+                      value={component.variantId}
+                      onChange={(event) => setMappingComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, variantId: event.target.value } : item))}
+                      className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500"
+                    >
+                      <option value="">请选择</option>
+                      {data.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.skuId} · {variant.productName} · {money(variant.unitCostCny)}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs text-slate-500">
+                    <span className="mb-1.5 block">单套数量</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      step={1}
+                      value={component.quantity}
+                      onChange={(event) => setMappingComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: Math.max(1, Math.round(Number(event.target.value) || 1)) } : item))}
+                      className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm tabular-nums text-slate-200 outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                  <button type="button" onClick={() => setMappingComponents((current) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={mappingComponents.length === 1} title="移除组成" className="inline-flex h-10 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300 disabled:opacity-30"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setMappingComponents((current) => [...current, { variantId: "", quantity: 1 }])} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" />添加组成</button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-5 py-4">
+              <div>
+                {mappingSku.mappingSource === "profit" && <button type="button" onClick={deleteCostMapping} disabled={isMappingSaving} className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"><Trash2 className="h-4 w-4" />删除映射</button>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={closeCostMapping} disabled={isMappingSaving} className="h-9 rounded-md border border-slate-700 px-4 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50">取消</button>
+                <button type="button" onClick={saveCostMapping} disabled={isMappingSaving} className="h-9 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">{isMappingSaving ? "保存中" : "保存映射"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

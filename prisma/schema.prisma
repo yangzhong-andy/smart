@@ -61,27 +61,27 @@ model Product {
 }
 
 model ProductVariant {
-  id                  String                     @id @default(uuid())
+  id                  String                      @id @default(uuid())
   productId           String
-  skuId               String                     @unique
+  skuId               String                      @unique
   color               String?
   size                String?
-  weightKg            Decimal?                   @db.Decimal(10, 3)
+  weightKg            Decimal?                    @db.Decimal(10, 3)
   barcode             String?
-  costPrice           Decimal?                   @db.Decimal(18, 2)
-  stockQuantity       Int                        @default(0)
-  currency            String                     @default("CNY")
-  targetRoi           Decimal?                   @db.Decimal(5, 2)
-  lengthCm            Decimal?                   @db.Decimal(10, 2)
-  widthCm             Decimal?                   @db.Decimal(10, 2)
-  heightCm            Decimal?                   @db.Decimal(10, 2)
+  costPrice           Decimal?                    @db.Decimal(18, 2)
+  stockQuantity       Int                         @default(0)
+  currency            String                      @default("CNY")
+  targetRoi           Decimal?                    @db.Decimal(5, 2)
+  lengthCm            Decimal?                    @db.Decimal(10, 2)
+  widthCm             Decimal?                    @db.Decimal(10, 2)
+  heightCm            Decimal?                    @db.Decimal(10, 2)
   volumetricDivisor   Int?
-  atFactory           Int                        @default(0)
-  atDomestic          Int                        @default(0)
-  inTransit           Int                        @default(0)
+  atFactory           Int                         @default(0)
+  atDomestic          Int                         @default(0)
+  inTransit           Int                         @default(0)
   platformSkuMapping  Json?
-  createdAt           DateTime                   @default(now())
-  updatedAt           DateTime                   @updatedAt
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
   inventoryLogs       InventoryLog[]
   movements           InventoryMovement[]
   ownershipLedgers    InventoryOwnershipLedger[]
@@ -91,8 +91,9 @@ model ProductVariant {
   outboundOrderItems  OutboundOrderItem[]
   pendingInbound      PendingInbound[]
   pendingInboundItems PendingInboundItem[]
-  product             Product                    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product             Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
   profitCalculations  ProfitCalculation[]
+  profitSkuComponents ProfitSkuMappingComponent[]
   contractItems       PurchaseContractItem[]
   stocks              Stock[]
   stockLogs           StockLog[]
@@ -121,7 +122,7 @@ model Store {
 }
 
 model Influencer {
-  id                       String      @id @default(uuid())
+  id                       String                 @id @default(uuid())
   accountName              String
   platform                 Platform
   accountUrl               String?
@@ -136,13 +137,14 @@ model Influencer {
   sampleProductId          String?
   sampleSentAt             DateTime?
   sampleReceivedAt         DateTime?
-  historicalEngagementRate Decimal?    @db.Decimal(5, 2)
+  historicalEngagementRate Decimal?               @db.Decimal(5, 2)
   estimatedOrders          Int?
   actualOrders             Int?
   notes                    String?
-  createdAt                DateTime    @default(now())
-  updatedAt                DateTime    @updatedAt
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
   videoTasks               VideoTask[]
+  sampleCostAttributions   InfluencerSampleCost[]
 }
 
 model Department {
@@ -262,29 +264,30 @@ model CommissionRecord {
 }
 
 model Warehouse {
-  id                String            @id @default(uuid())
-  code              String            @unique
+  id                String                     @id @default(uuid())
+  code              String                     @unique
   name              String
   address           String?
   contact           String?
   phone             String?
   manager           String?
   location          InventoryLocation
-  type              WarehouseType     @default(DOMESTIC)
-  isActive          Boolean           @default(true)
+  type              WarehouseType              @default(DOMESTIC)
+  isActive          Boolean                    @default(true)
   capacity          Int?
-  balance          Decimal?          @default(0) @db.Decimal(18, 2)  // 海外仓一件代发费用余额
+  balance           Decimal?                   @default(0) @db.Decimal(18, 2) // 海外仓一件代发费用余额
   notes             String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
   inboundBatches    InboundBatch[]
-  inventoryLogsFrom InventoryLog[]    @relation("InventoryLogFrom")
-  inventoryLogsTo   InventoryLog[]    @relation("InventoryLogTo")
-  inventoryLogs     InventoryLog[]    @relation("InventoryLogWarehouse")
+  inventoryLogsFrom InventoryLog[]             @relation("InventoryLogFrom")
+  inventoryLogsTo   InventoryLog[]             @relation("InventoryLogTo")
+  inventoryLogs     InventoryLog[]             @relation("InventoryLogWarehouse")
   outboundBatches   OutboundBatch[]
   outboundOrders    OutboundOrder[]
   stocks            Stock[]
   stockLogs         StockLog[]
+  profitFeeRules    WarehouseFulfillmentRule[]
 
   @@index([code])
   @@index([location])
@@ -1208,8 +1211,8 @@ model ExpenseRequest {
   payeeName           String?
   containerId         String?
   containerNo         String?
-  warehouseId      String?
-  warehouseName    String?
+  warehouseId         String?
+  warehouseName       String?
   overseasCompanyId   String?
   overseasCompanyName String?
 
@@ -1250,8 +1253,8 @@ model IncomeRequest {
   updatedAt           DateTime  @updatedAt
   containerId         String?
   containerNo         String?
-  warehouseId      String?
-  warehouseName    String?
+  warehouseId         String?
+  warehouseName       String?
   overseasCompanyId   String?
   overseasCompanyName String?
 
@@ -2183,19 +2186,19 @@ enum DocumentType {
 // 应收款管理（借款/投资/预支/其他应收）
 model Receivable {
   id              String    @id @default(uuid())
-  receivableNo    String?               // 单号 REC-YYYYMMDD-XXXX
-  type            String                // 借款/投资/个人预支/其他应收
-  counterparty    String                // 对方名称
-  description     String                // 描述
+  receivableNo    String? // 单号 REC-YYYYMMDD-XXXX
+  type            String // 借款/投资/个人预支/其他应收
+  counterparty    String // 对方名称
+  description     String // 描述
   originalAmount  Decimal   @db.Decimal(18, 2)
   currentBalance  Decimal   @db.Decimal(18, 2)
-  currency        String                // CNY/USD/HKD
-  dueDate         DateTime?             // 预计回收日
-  issuedDate      DateTime              // 放款日
-  status          String    @default("Draft")  // Draft/Pending_Approval/Approved/Rejected/Disbursed/PartiallyReceived/Settled
-  receiptRecords  Json?     @default("[]")     // 回收记录
-  outFlowId       String?               // 放款流水ID
-  outAccountId    String?               // 放款账户ID
+  currency        String // CNY/USD/HKD
+  dueDate         DateTime? // 预计回收日
+  issuedDate      DateTime // 放款日
+  status          String    @default("Draft") // Draft/Pending_Approval/Approved/Rejected/Disbursed/PartiallyReceived/Settled
+  receiptRecords  Json?     @default("[]") // 回收记录
+  outFlowId       String? // 放款流水ID
+  outAccountId    String? // 放款账户ID
   outAccountName  String?
   rejectionReason String?
   notes           String?
@@ -2211,93 +2214,92 @@ model Receivable {
   @@index([counterparty])
 }
 
-
 // 工资单（月度）
 model Payroll {
-  id                String   @id @default(uuid())
-  payrollNo         String?  // 工资单号 SAL-202605-XXXX
-  
+  id        String  @id @default(uuid())
+  payrollNo String? // 工资单号 SAL-202605-XXXX
+
   // 关联
-  employeeId        String
-  employeeName      String
-  department        String
-  periodLabel       String   // 月份 2026-05
-  
+  employeeId   String
+  employeeName String
+  department   String
+  periodLabel  String // 月份 2026-05
+
   // 薪资组成
-  baseSalary        Float    @default(0)
-  positionSalary    Float    @default(0)
-  actualSalary      Float    @default(0)
-  fullAttendance    Float    @default(0)
-  totalSalary       Float    @default(0)
-  
+  baseSalary     Float @default(0)
+  positionSalary Float @default(0)
+  actualSalary   Float @default(0)
+  fullAttendance Float @default(0)
+  totalSalary    Float @default(0)
+
   // 考勤
-  monthDays         Int      @default(31)
-  workHourStandard  Int      @default(8)
-  restDays          Int      @default(7)
-  legalHolidays     Int      @default(0)
-  injuryHolidays    Int      @default(0)
-  paidLeaveTotal    Int      @default(0)
-  payableDays       Int      @default(24)
-  personalLeave     String?
-  sickLeave         String?
-  actualAttendDays  Int      @default(24)
-  
+  monthDays        Int     @default(31)
+  workHourStandard Int     @default(8)
+  restDays         Int     @default(7)
+  legalHolidays    Int     @default(0)
+  injuryHolidays   Int     @default(0)
+  paidLeaveTotal   Int     @default(0)
+  payableDays      Int     @default(24)
+  personalLeave    String?
+  sickLeave        String?
+  actualAttendDays Int     @default(24)
+
   // 应发合计
-  payableAmount     Float    @default(0)
-  
+  payableAmount Float @default(0)
+
   // 浮动工资
-  performance       Float    @default(0)
-  commission        Float    @default(0)
-  otherAllowance    Float    @default(0)
-  
+  performance    Float @default(0)
+  commission     Float @default(0)
+  otherAllowance Float @default(0)
+
   // 应扣金额
-  absenteeism       Float    @default(0)
-  lateRecords       Json?
-  missedPunch       Json?
-  leaveDeduction    Json?
-  advancePayment    Float    @default(0)
-  otherDeduction    Float    @default(0)
-  totalDeduction    Float    @default(0)
-  
+  absenteeism    Float @default(0)
+  lateRecords    Json?
+  missedPunch    Json?
+  leaveDeduction Json?
+  advancePayment Float @default(0)
+  otherDeduction Float @default(0)
+  totalDeduction Float @default(0)
+
   // 应发工资
-  grossSalary       Float    @default(0)
-  
+  grossSalary Float @default(0)
+
   // 代扣代缴
-  pension           Float    @default(0)
-  unemployment      Float    @default(0)
-  medical           Float    @default(0)
-  incomeTax         Float    @default(0)
-  
+  pension      Float @default(0)
+  unemployment Float @default(0)
+  medical      Float @default(0)
+  incomeTax    Float @default(0)
+
   // 实发工资
-  netSalary         Float    @default(0)
-  
+  netSalary Float @default(0)
+
   // 付款信息
-  bankAccount       String?
-  bankName          String?
-  idNumber          String?
-  phone             String?
-  notes             String?
-  
+  bankAccount String?
+  bankName    String?
+  idNumber    String?
+  phone       String?
+  notes       String?
+
   // 状态与审批
-  status            String   @default("Draft")
-  submittedAt       DateTime?
-  approvedBy        String?
-  approvedAt        DateTime?
-  rejectionReason   String?
-  
+  status          String    @default("Draft")
+  submittedAt     DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+
   // 财务关联
-  outFlowId         String?
-  outAccountId      String?
-  outAccountName    String?
-  businessNumber    String?
-  paidBy            String?
-  paidAt            DateTime?
-  paymentVoucher    String?
-  
-  createdBy         String   @default("系统")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
+  outFlowId      String?
+  outAccountId   String?
+  outAccountName String?
+  businessNumber String?
+  paidBy         String?
+  paidAt         DateTime?
+  paymentVoucher String?
+
+  createdBy String   @default("系统")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([periodLabel])
   @@index([employeeId])
   @@index([status])
@@ -2306,22 +2308,22 @@ model Payroll {
 
 // TikTok Shop 授权配置
 model TikTokShopSetting {
-  id              String    @id @default(uuid())
-  shopId          String    @unique  // TikTok 店铺ID
-  shopName        String             // 店铺名称
-  region          String    @default("BR")  // 地区
-  sellerType      String?            // 卖家类型
-  appKey          String?            // 关联的 App Key
-  shopCipher      String?            // 店铺密钥（API调用必需）
-  bankAccountId    String?            // 关联的财务账户(BankAccount.id)
-  accessToken     String?            // 访问令牌
-  refreshToken    String?            // 刷新令牌
-  tokenExpireAt   DateTime?          // 令牌过期时间
-  openId          String?            // 开放平台用户ID
-  status          String    @default("disconnected")  // active/expired/disconnected
-  lastSyncAt      DateTime?          // 最后同步时间
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  shopId        String    @unique // TikTok 店铺ID
+  shopName      String // 店铺名称
+  region        String    @default("BR") // 地区
+  sellerType    String? // 卖家类型
+  appKey        String? // 关联的 App Key
+  shopCipher    String? // 店铺密钥（API调用必需）
+  bankAccountId String? // 关联的财务账户(BankAccount.id)
+  accessToken   String? // 访问令牌
+  refreshToken  String? // 刷新令牌
+  tokenExpireAt DateTime? // 令牌过期时间
+  openId        String? // 开放平台用户ID
+  status        String    @default("disconnected") // active/expired/disconnected
+  lastSyncAt    DateTime? // 最后同步时间
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([shopId])
   @@index([status])
@@ -2329,21 +2331,21 @@ model TikTokShopSetting {
 
 // TikTok 订单数据
 model TikTokOrder {
-  id              String   @id @default(uuid())
-  shopId          String                        // 店铺ID
-  orderId         String   @unique              // TikTok 订单ID
-  status          String?                       // 订单状态
-  orderStatus     String?                       // UNPAID/ON_HOLD/IN_TRANSIT/DELIVERED/COMPLETED/CANCELLED
-  totalAmount     String?                       // 总金额
-  currency        String?                       // 币种
-  itemCount       Int?                          // 商品数量
-  buyerEmail      String?                       // 买家邮箱（脱敏）
-  shippingProvider String?                      // 物流商
-  trackingNumber  String?                       // 物流单号
-  createTime      DateTime?                     // 下单时间
-  updateTime      DateTime?                     // 更新时间
-  rawData         Json?                         // 原始数据
-  syncedAt        DateTime @default(now())      // 同步时间
+  id               String    @id @default(uuid())
+  shopId           String // 店铺ID
+  orderId          String    @unique // TikTok 订单ID
+  status           String? // 订单状态
+  orderStatus      String? // UNPAID/ON_HOLD/IN_TRANSIT/DELIVERED/COMPLETED/CANCELLED
+  totalAmount      String? // 总金额
+  currency         String? // 币种
+  itemCount        Int? // 商品数量
+  buyerEmail       String? // 买家邮箱（脱敏）
+  shippingProvider String? // 物流商
+  trackingNumber   String? // 物流单号
+  createTime       DateTime? // 下单时间
+  updateTime       DateTime? // 更新时间
+  rawData          Json? // 原始数据
+  syncedAt         DateTime  @default(now()) // 同步时间
 
   @@index([shopId])
   @@index([orderId])
@@ -2353,22 +2355,22 @@ model TikTokOrder {
 
 // TikTok 结算日报表
 model TikTokStatement {
-  id               String   @id @default(uuid())
-  shopId           String                        // 店铺ID
-  statementId      String   @unique              // 结算单ID
-  statementTime    DateTime?                     // 结算日期
-  paymentId        String?                       // 支付ID
-  paymentStatus    String?                       // PAID/PENDING
-  paymentTime      DateTime?                     // 支付时间
-  netSalesAmount   String?                       // 净销售额
-  feeAmount        String?                       // 手续费
-  adjustmentAmount String?                       // 调整金额
-  shippingCost     String?                       // 运费
-  settlementAmount String?                       // 结算金额
-  revenueAmount    String?                       // 收入金额
-  currency         String?                       // 币种
-  rawData          Json?                         // 原始数据
-  syncedAt         DateTime @default(now())      // 同步时间
+  id               String    @id @default(uuid())
+  shopId           String // 店铺ID
+  statementId      String    @unique // 结算单ID
+  statementTime    DateTime? // 结算日期
+  paymentId        String? // 支付ID
+  paymentStatus    String? // PAID/PENDING
+  paymentTime      DateTime? // 支付时间
+  netSalesAmount   String? // 净销售额
+  feeAmount        String? // 手续费
+  adjustmentAmount String? // 调整金额
+  shippingCost     String? // 运费
+  settlementAmount String? // 结算金额
+  revenueAmount    String? // 收入金额
+  currency         String? // 币种
+  rawData          Json? // 原始数据
+  syncedAt         DateTime  @default(now()) // 同步时间
 
   @@index([shopId])
   @@index([statementId])
@@ -2378,20 +2380,20 @@ model TikTokStatement {
 
 // TikTok 回款记录（实际打款到银行账户）
 model TikTokPayment {
-  id              String   @id @default(uuid())
-  shopId          String                        // 店铺ID
-  paymentId       String   @unique              // 回款ID
-  amount          String?                       // 回款金额
-  currency        String?                       // 币种
-  settlementAmount String?                      // 结算金额
-  reserveAmount   String?                       // 保留金额
-  exchangeRate    String?                       // 汇率
-  status          String?                       // PAID/PROCESSING/FAILED
-  bankAccount     String?                       // 银行账户（脱敏）
-  createTime      DateTime?                     // 创建时间
-  paidTime        DateTime?                     // 实际打款时间
-  rawData         Json?                         // 原始数据
-  syncedAt        DateTime @default(now())      // 同步时间
+  id               String    @id @default(uuid())
+  shopId           String // 店铺ID
+  paymentId        String    @unique // 回款ID
+  amount           String? // 回款金额
+  currency         String? // 币种
+  settlementAmount String? // 结算金额
+  reserveAmount    String? // 保留金额
+  exchangeRate     String? // 汇率
+  status           String? // PAID/PROCESSING/FAILED
+  bankAccount      String? // 银行账户（脱敏）
+  createTime       DateTime? // 创建时间
+  paidTime         DateTime? // 实际打款时间
+  rawData          Json? // 原始数据
+  syncedAt         DateTime  @default(now()) // 同步时间
 
   @@index([shopId])
   @@index([paymentId])
@@ -2401,19 +2403,19 @@ model TikTokPayment {
 
 // TikTok 产品数据
 model TikTokProduct {
-  id              String   @id @default(uuid())
-  shopId          String                        // 店铺ID
-  productId       String   @unique              // TikTok 产品ID
-  title           String?                       // 产品标题
-  description     String?                       // 产品描述
-  status          String?                       // 产品状态
-  categoryId      String?                       // 分类ID
-  mainImage       String?                       // 主图URL
-  images          String[]                      // 图片列表
-  url             String?                       // 产品链接
-  createTime      DateTime?                     // 创建时间
-  rawData         Json?                         // 原始数据
-  syncedAt        DateTime @default(now())      // 同步时间
+  id          String    @id @default(uuid())
+  shopId      String // 店铺ID
+  productId   String    @unique // TikTok 产品ID
+  title       String? // 产品标题
+  description String? // 产品描述
+  status      String? // 产品状态
+  categoryId  String? // 分类ID
+  mainImage   String? // 主图URL
+  images      String[] // 图片列表
+  url         String? // 产品链接
+  createTime  DateTime? // 创建时间
+  rawData     Json? // 原始数据
+  syncedAt    DateTime  @default(now()) // 同步时间
 
   @@index([shopId])
   @@index([productId])
@@ -2422,17 +2424,17 @@ model TikTokProduct {
 
 // TikTok Webhook 事件日志
 model TikTokWebhookLog {
-  id              String   @id @default(uuid())
-  shopId          String?                        // 店铺ID
-  eventType       String?                        // 事件类型 (ORDER_STATUS_CHANGE 等)
-  notificationId  String?                        // TikTok 通知ID
-  eventTypeNum    Int?                           // 数字类型
-  timestamp       DateTime?                      // 事件时间
-  rawData         Json                           // 完整原始数据
-  signatureValid  Boolean  @default(false)       // 签名是否验证通过
-  processed       Boolean  @default(false)       // 是否已处理
-  processError    String?                        // 处理错误信息
-  createdAt       DateTime @default(now())       // 接收时间
+  id             String    @id @default(uuid())
+  shopId         String? // 店铺ID
+  eventType      String? // 事件类型 (ORDER_STATUS_CHANGE 等)
+  notificationId String? // TikTok 通知ID
+  eventTypeNum   Int? // 数字类型
+  timestamp      DateTime? // 事件时间
+  rawData        Json // 完整原始数据
+  signatureValid Boolean   @default(false) // 签名是否验证通过
+  processed      Boolean   @default(false) // 是否已处理
+  processError   String? // 处理错误信息
+  createdAt      DateTime  @default(now()) // 接收时间
 
   @@index([shopId])
   @@index([eventType])
@@ -2442,14 +2444,14 @@ model TikTokWebhookLog {
 
 // TikTok App 配置（支持多个 Private App）
 model TikTokAppConfig {
-  id          String   @id @default(uuid())
-  appKey      String   @unique  // TikTok App Key
-  appSecret   String            // TikTok App Secret
-  appName     String?           // 应用名称（备注）
-  remark      String?           // 备注（如：BRILHO NOVO 店铺专用）
-  status      String   @default("active")  // active/disabled
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  appKey    String   @unique // TikTok App Key
+  appSecret String // TikTok App Secret
+  appName   String? // 应用名称（备注）
+  remark    String? // 备注（如：BRILHO NOVO 店铺专用）
+  status    String   @default("active") // active/disabled
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([appKey])
   @@index([status])
@@ -2457,12 +2459,12 @@ model TikTokAppConfig {
 
 // TikTok 仓库映射（TikTok warehouse_id → 系统仓库）
 model TikTokWarehouseMapping {
-  id              String   @id @default(uuid())
-  tiktokWarehouseId String @unique  // TikTok 的 warehouse_id
-  tiktokShopId    String?           // 关联的店铺ID（可选，不同店铺可能不同仓库）
-  warehouseId     String            // 系统的 Warehouse.id
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(uuid())
+  tiktokWarehouseId String   @unique // TikTok 的 warehouse_id
+  tiktokShopId      String? // 关联的店铺ID（可选，不同店铺可能不同仓库）
+  warehouseId       String // 系统的 Warehouse.id
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([tiktokShopId])
 }
@@ -2470,12 +2472,12 @@ model TikTokWarehouseMapping {
 // TikTok SKU 映射（TikTok seller_sku → 系统 variant）
 model TikTokSkuMapping {
   id              String   @id @default(uuid())
-  tiktokShopId    String             // TikTok 店铺ID
-  tiktokProductId String?            // TikTok 产品ID
-  tiktokSkuId     String?            // TikTok SKU ID
-  tiktokSkuName   String?            // TikTok SKU 名称
-  sellerSku       String             // TikTok seller_sku（订单里的）
-  variantId       String             // 系统的 Variant.id
+  tiktokShopId    String // TikTok 店铺ID
+  tiktokProductId String? // TikTok 产品ID
+  tiktokSkuId     String? // TikTok SKU ID
+  tiktokSkuName   String? // TikTok SKU 名称
+  sellerSku       String // TikTok seller_sku（订单里的）
+  variantId       String // 系统的 Variant.id
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -2485,16 +2487,174 @@ model TikTokSkuMapping {
 }
 
 // TikTok 订单库存扣减记录
+// Platform seller SKU cost mapping used by profit reports. A seller SKU can
+// contain multiple internal variants, which keeps bundle costing accurate.
+model ProfitSkuMapping {
+  id         String                      @id @default(uuid())
+  platform   String                      @default("TIKTOK")
+  shopId     String
+  sellerSku  String
+  createdAt  DateTime                    @default(now())
+  updatedAt  DateTime                    @updatedAt
+  components ProfitSkuMappingComponent[]
+
+  @@unique([platform, shopId, sellerSku])
+  @@index([shopId])
+  @@index([sellerSku])
+}
+
+model ProfitSkuMappingComponent {
+  id        String           @id @default(uuid())
+  mappingId String
+  variantId String
+  quantity  Int              @default(1)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  mapping   ProfitSkuMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  variant   ProductVariant   @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([mappingId, variantId])
+  @@index([variantId])
+}
+
+// Effective-dated percentage and fallback rules used by store profit reports.
+model ProfitShopCostRule {
+  id               String                  @id @default(uuid())
+  platform         String                  @default("TIKTOK")
+  shopId           String
+  costType         String
+  ratePercent      Decimal                 @default(0) @db.Decimal(10, 6)
+  fixedPerOrder    Decimal                 @default(0) @db.Decimal(18, 4)
+  fixedPerUnit     Decimal                 @default(0) @db.Decimal(18, 4)
+  currency         String                  @default("BRL")
+  effectiveFrom    DateTime                @db.Date
+  effectiveTo      DateTime?               @db.Date
+  enabled          Boolean                 @default(true)
+  notes            String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  platformFeeTiers ProfitPlatformFeeTier[]
+
+  @@unique([platform, shopId, costType, effectiveFrom])
+  @@index([shopId, costType, effectiveFrom])
+}
+
+model ProfitPlatformFeeTier {
+  id                  String             @id @default(uuid())
+  ruleId              String
+  minOrderAmount      Decimal?           @db.Decimal(18, 4)
+  maxOrderAmount      Decimal?           @db.Decimal(18, 4)
+  minInclusive        Boolean            @default(true)
+  maxInclusive        Boolean            @default(false)
+  platformRatePercent Decimal            @default(0) @db.Decimal(10, 6)
+  perUnitFee          Decimal            @default(0) @db.Decimal(18, 4)
+  currency            String             @default("BRL")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  rule                ProfitShopCostRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+}
+
+// Overseas warehouse fulfillment pricing. The order warehouse_id decides
+// which rule applies, so shops can switch warehouses without rewriting history.
+model WarehouseFulfillmentRule {
+  id                    String                        @id @default(uuid())
+  warehouseId           String
+  shopId                String?
+  pricingMode           String                        @default("FLAT_UNIT")
+  billingUnit           String                        @default("SELLER_UNIT")
+  baseOrderFee          Decimal                       @default(0) @db.Decimal(18, 4)
+  firstUnitFee          Decimal                       @default(0) @db.Decimal(18, 4)
+  additionalUnitFee     Decimal                       @default(0) @db.Decimal(18, 4)
+  volumetricDivisor     Int                           @default(6000)
+  overweightThresholdKg Decimal?                      @db.Decimal(10, 3)
+  overweightFeePerKg    Decimal                       @default(0) @db.Decimal(18, 4)
+  currency              String                        @default("BRL")
+  effectiveFrom         DateTime                      @db.Date
+  effectiveTo           DateTime?                     @db.Date
+  enabled               Boolean                       @default(true)
+  notes                 String?
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+  warehouse             Warehouse                     @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  feeTiers              WarehouseFulfillmentFeeTier[]
+
+  @@index([warehouseId, effectiveFrom])
+  @@index([shopId, effectiveFrom])
+}
+
+model WarehouseFulfillmentFeeTier {
+  id              String                   @id @default(uuid())
+  ruleId          String
+  minWeightKg     Decimal?                 @db.Decimal(10, 3)
+  maxWeightKg     Decimal?                 @db.Decimal(10, 3)
+  minInclusive    Boolean                  @default(false)
+  maxInclusive    Boolean                  @default(true)
+  maxLengthCm     Decimal?                 @db.Decimal(10, 2)
+  maxWidthCm      Decimal?                 @db.Decimal(10, 2)
+  maxHeightCm     Decimal?                 @db.Decimal(10, 2)
+  baseFee         Decimal                  @default(0) @db.Decimal(18, 4)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  fulfillmentRule WarehouseFulfillmentRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+}
+
+// Per-order financial snapshot from TikTok statement transactions. Settled
+// snapshots replace estimates while preserving the order-level calculation.
+model TikTokOrderFinancial {
+  id                 String    @id @default(uuid())
+  orderId            String    @unique
+  shopId             String
+  orderCreateTime    DateTime?
+  currency           String    @default("BRL")
+  revenueAmount      Decimal   @default(0) @db.Decimal(18, 4)
+  feeTaxAmount       Decimal   @default(0) @db.Decimal(18, 4)
+  shippingCostAmount Decimal   @default(0) @db.Decimal(18, 4)
+  adjustmentAmount   Decimal   @default(0) @db.Decimal(18, 4)
+  settlementAmount   Decimal   @default(0) @db.Decimal(18, 4)
+  source             String    @default("ESTIMATED")
+  statementIds       String[]  @default([])
+  syncedAt           DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([shopId, orderCreateTime])
+  @@index([source, syncedAt])
+}
+
+// Optional attribution and manually entered costs for TikTok sample orders.
+// Product and fulfillment costs remain derived from the order itself.
+model InfluencerSampleCost {
+  id                 String      @id @default(uuid())
+  orderId            String      @unique
+  shopId             String
+  influencerId       String?
+  teamName           String?
+  manualShippingCost Decimal     @default(0) @db.Decimal(18, 4)
+  otherCost          Decimal     @default(0) @db.Decimal(18, 4)
+  currency           String      @default("BRL")
+  notes              String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  influencer         Influencer? @relation(fields: [influencerId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([influencerId])
+}
+
 model TikTokStockDeduction {
-  id              String   @id @default(uuid())
-  tiktokOrderId   String             // TikTok 订单号
-  shopId          String             // 店铺ID
-  warehouseId     String             // 扣减的系统仓库ID
-  variantId       String             // 系统产品变体ID
-  sellerSku       String?            // TikTok SKU
-  qty             Int                // 扣减数量
-  status          String   @default("deducted")  // deducted / reverted
-  createdAt       DateTime @default(now())
+  id            String   @id @default(uuid())
+  tiktokOrderId String // TikTok 订单号
+  shopId        String // 店铺ID
+  warehouseId   String // 扣减的系统仓库ID
+  variantId     String // 系统产品变体ID
+  sellerSku     String? // TikTok SKU
+  qty           Int // 扣减数量
+  status        String   @default("deducted") // deducted / reverted
+  createdAt     DateTime @default(now())
 
   @@unique([tiktokOrderId, variantId])
   @@index([tiktokOrderId])
@@ -2503,11 +2663,11 @@ model TikTokStockDeduction {
 
 // TikTok 渠道号配置（标记哪些账号是店铺渠道号）
 model TikTokChannel {
-  id          String   @id @default(uuid())
-  shopId      String                    // 关联的店铺ID
-  username    String                    // TikTok 用户名（不含@）
-  remark      String?                   // 备注
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  shopId    String // 关联的店铺ID
+  username  String // TikTok 用户名（不含@）
+  remark    String? // 备注
+  createdAt DateTime @default(now())
 
   @@unique([shopId, username])
   @@index([shopId])

@@ -10,11 +10,17 @@ export type ProfitMetricRow = {
   units: number;
   gmvCny: number;
   platformCostCny: number;
+  platformFeeCny: number;
+  fulfillmentFeeCny: number;
   productCostCny: number;
   logisticsCostCny: number;
+  warehouseFulfillmentCostCny: number;
   adSpendCny: number;
   rebateCny: number;
   netAdCostCny: number;
+  taxCostCny: number;
+  influencerCommissionCny: number;
+  sampleMarketingCostCny: number;
   grossProfitCny: number;
   contributionProfitCny: number;
   margin: number;
@@ -37,6 +43,39 @@ export type ProfitSkuRow = ProfitMetricRow & {
   shopId: string;
   storeName: string;
   mappingStatus: "mapped" | "direct" | "unmapped";
+  mappingSource: "profit" | "inventory" | "direct" | "unmapped";
+  costComponents: Array<{
+    variantId: string;
+    skuId: string;
+    quantity: number;
+  }>;
+};
+
+export type ProfitSampleRow = {
+  orderId: string;
+  date: string;
+  shopId: string;
+  storeName: string;
+  warehouseId: string | null;
+  warehouseName: string;
+  sellerSkus: string;
+  units: number;
+  influencerId: string | null;
+  influencerName: string | null;
+  teamName: string | null;
+  productCostCny: number;
+  logisticsCostCny: number;
+  warehouseFulfillmentCostCny: number;
+  shippingCostCny: number;
+  otherCostCny: number;
+  manualShippingCost: number;
+  manualOtherCost: number;
+  manualCurrency: string;
+  notes: string | null;
+  totalCostCny: number;
+  productCostCovered: boolean;
+  logisticsCostCovered: boolean;
+  warehouseCostCovered: boolean;
 };
 
 export type ProfitReportResponse = {
@@ -51,6 +90,12 @@ export type ProfitReportResponse = {
   periods: ProfitMetricRow[];
   stores: ProfitStoreRow[];
   skus: ProfitSkuRow[];
+  variants: Array<{
+    id: string;
+    skuId: string;
+    productName: string;
+    unitCostCny: number;
+  }>;
   shops: Array<{ id: string; name: string; region: string; currency: string }>;
   coverage: {
     score: number;
@@ -62,8 +107,26 @@ export type ProfitReportResponse = {
     totalSkuCount: number;
     missingCostSkuCount: number;
     missingLogisticsSkuCount: number;
-    exactSettlementOrders: number;
-    validOrders: number;
+      exactSettlementOrders: number;
+      validOrders: number;
+      platformActual: number;
+      warehouseFulfillment: number;
+      taxRule: number;
+      influencerCommissionRule: number;
+    };
+  influencerMarketing: {
+    sampleOrders: number;
+    sampleUnits: number;
+    linkedSampleOrders: number;
+    sampleProductCostCny: number;
+    sampleLogisticsCostCny: number;
+    sampleWarehouseCostCny: number;
+    sampleShippingCostCny: number;
+    sampleOtherCostCny: number;
+    totalSampleCostCny: number;
+    teamCommissionCny: number;
+    totalCostCny: number;
+    samples: ProfitSampleRow[];
   };
   rates: Record<string, number>;
   warnings: string[];
