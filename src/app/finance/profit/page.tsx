@@ -2,18 +2,23 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
   Download,
   PackageCheck,
+  Plus,
   RefreshCw,
   Search,
+  Settings2,
   ShoppingCart,
+  Trash2,
   TrendingDown,
   TrendingUp,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   Bar,
@@ -34,6 +39,7 @@ import type {
 } from "@/lib/profit-report-types";
 
 type DetailTab = "period" | "store" | "sku" | "coverage";
+type CostComponentDraft = { variantId: string; quantity: number };
 
 const fetcher = async (url: string): Promise<ProfitReportResponse> => {
   const response = await fetch(url);
@@ -138,6 +144,9 @@ export default function ProfitPage() {
   const [shopId, setShopId] = useState("all");
   const [tab, setTab] = useState<DetailTab>("period");
   const [skuSearch, setSkuSearch] = useState("");
+  const [mappingSku, setMappingSku] = useState<ProfitSkuRow | null>(null);
+  const [mappingComponents, setMappingComponents] = useState<CostComponentDraft[]>([]);
+  const [isMappingSaving, setIsMappingSaving] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ startDate, endDate, groupBy });
@@ -171,6 +180,74 @@ export default function ProfitPage() {
   const setPreset = (days: number) => {
     setEndDate(today);
     setStartDate(addDays(today, 1 - days));
+  };
+
+  const openCostMapping = (row: ProfitSkuRow) => {
+    setMappingSku(row);
+    setMappingComponents(row.costComponents.length > 0
+      ? row.costComponents.map((component) => ({ variantId: component.variantId, quantity: component.quantity }))
+      : [{ variantId: "", quantity: 1 }]);
+  };
+
+  const closeCostMapping = () => {
+    if (isMappingSaving) return;
+    setMappingSku(null);
+    setMappingComponents([]);
+  };
+
+  const saveCostMapping = async () => {
+    if (!mappingSku) return;
+    const components = mappingComponents.filter((component) => component.variantId && component.quantity > 0);
+    if (components.length === 0) {
+      toast.error("请至少选择一个内部 SKU");
+      return;
+    }
+    setIsMappingSaving(true);
+    try {
+      const response = await fetch("/api/profit-sku-mappings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "TIKTOK",
+          shopId: mappingSku.shopId,
+          sellerSku: mappingSku.sellerSku,
+          components,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "成本映射保存失败");
+      await mutate();
+      toast.success("成本映射已保存");
+      setMappingSku(null);
+      setMappingComponents([]);
+    } catch (mappingError: any) {
+      toast.error(mappingError?.message || "成本映射保存失败");
+    } finally {
+      setIsMappingSaving(false);
+    }
+  };
+
+  const deleteCostMapping = async () => {
+    if (!mappingSku || mappingSku.mappingSource !== "profit") return;
+    setIsMappingSaving(true);
+    try {
+      const params = new URLSearchParams({
+        platform: "TIKTOK",
+        shopId: mappingSku.shopId,
+        sellerSku: mappingSku.sellerSku,
+      });
+      const response = await fetch(`/api/profit-sku-mappings?${params.toString()}`, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "成本映射删除失败");
+      await mutate();
+      toast.success("成本映射已删除");
+      setMappingSku(null);
+      setMappingComponents([]);
+    } catch (mappingError: any) {
+      toast.error(mappingError?.message || "成本映射删除失败");
+    } finally {
+      setIsMappingSaving(false);
+    }
   };
 
   const exportCsv = () => {
@@ -419,7 +496,7 @@ export default function ProfitPage() {
                     <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台及履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">广告分摊</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
                   <tbody>{filteredSkus.map((row: ProfitSkuRow) => <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
-                    <td className="max-w-[300px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
+                    <td className="max-w-[320px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span><button type="button" onClick={() => openCostMapping(row)} title="配置成本映射" className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"><Settings2 className="h-4 w-4" /></button></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
                     <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} />
                   </tr>)}</tbody>
                 </table>
@@ -448,6 +525,63 @@ export default function ProfitPage() {
           </section>
         </>
       ) : null}
+
+      {mappingSku && data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="配置成本映射">
+          <div className="w-full max-w-2xl rounded-md border border-slate-700 bg-slate-950 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-100">配置成本映射</h2>
+                <p className="mt-1 truncate text-sm text-slate-400" title={mappingSku.sellerSku}>{mappingSku.sellerSku}</p>
+                <p className="mt-0.5 text-xs text-slate-600">{mappingSku.storeName}</p>
+              </div>
+              <button type="button" onClick={closeCostMapping} title="关闭" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4">
+              {mappingComponents.map((component, index) => (
+                <div key={`${index}-${component.variantId}`} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px_36px] sm:items-end">
+                  <label className="min-w-0 text-xs text-slate-500">
+                    <span className="mb-1.5 block">内部 SKU</span>
+                    <select
+                      value={component.variantId}
+                      onChange={(event) => setMappingComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, variantId: event.target.value } : item))}
+                      className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500"
+                    >
+                      <option value="">请选择</option>
+                      {data.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.skuId} · {variant.productName} · {money(variant.unitCostCny)}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs text-slate-500">
+                    <span className="mb-1.5 block">单套数量</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      step={1}
+                      value={component.quantity}
+                      onChange={(event) => setMappingComponents((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: Math.max(1, Math.round(Number(event.target.value) || 1)) } : item))}
+                      className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm tabular-nums text-slate-200 outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                  <button type="button" onClick={() => setMappingComponents((current) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={mappingComponents.length === 1} title="移除组成" className="inline-flex h-10 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300 disabled:opacity-30"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setMappingComponents((current) => [...current, { variantId: "", quantity: 1 }])} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" />添加组成</button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-5 py-4">
+              <div>
+                {mappingSku.mappingSource === "profit" && <button type="button" onClick={deleteCostMapping} disabled={isMappingSaving} className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"><Trash2 className="h-4 w-4" />删除映射</button>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={closeCostMapping} disabled={isMappingSaving} className="h-9 rounded-md border border-slate-700 px-4 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50">取消</button>
+                <button type="button" onClick={saveCostMapping} disabled={isMappingSaving} className="h-9 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50">{isMappingSaving ? "保存中" : "保存映射"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

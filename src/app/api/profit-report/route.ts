@@ -194,7 +194,7 @@ export async function GET(request: NextRequest) {
     const queryStart = new Date(`${addDays(startDate, -2)}T00:00:00Z`);
     const queryEnd = new Date(`${addDays(endDate, 3)}T00:00:00Z`);
 
-    const [ordersRaw, stores, variants, skuMappings, purchaseItems, logisticsCosts, adConsumptions, statements, accounts] = await Promise.all([
+    const [ordersRaw, stores, variants, skuMappings, profitSkuMappings, purchaseItems, logisticsCosts, adConsumptions, statements, accounts] = await Promise.all([
       prisma.tikTokOrder.findMany({
         where: {
           ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
@@ -210,6 +210,17 @@ export async function GET(request: NextRequest) {
       prisma.tikTokSkuMapping.findMany({
         where: selectedShopId ? { tiktokShopId: selectedShopId } : undefined,
         select: { tiktokShopId: true, sellerSku: true, variantId: true },
+      }),
+      prisma.profitSkuMapping.findMany({
+        where: {
+          platform: "TIKTOK",
+          ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
+        },
+        select: {
+          shopId: true,
+          sellerSku: true,
+          components: { select: { variantId: true, quantity: true } },
+        },
       }),
       prisma.purchaseContractItem.findMany({
         where: { variantId: { not: null } },
@@ -290,6 +301,10 @@ export async function GET(request: NextRequest) {
     const variantById = new Map(variants.map((variant) => [variant.id, variant]));
     const variantBySku = new Map(variants.map((variant) => [variant.skuId.trim().toLowerCase(), variant]));
     const mappingByShopSku = new Map(skuMappings.map((mapping) => [`${mapping.tiktokShopId}\u0000${mapping.sellerSku.trim().toLowerCase()}`, mapping.variantId]));
+    const profitMappingByShopSku = new Map(profitSkuMappings.map((mapping) => [
+      `${mapping.shopId}\u0000${mapping.sellerSku.trim().toLowerCase()}`,
+      mapping.components,
+    ]));
 
     const purchaseTotals = new Map<string, { amount: number; qty: number }>();
     for (const item of purchaseItems) {
@@ -381,7 +396,16 @@ export async function GET(request: NextRequest) {
       if (!periods.has(period.id)) periods.set(period.id, emptyMetric(period.id, period.label, period.startDate, period.endDate));
     }
     const storesMap = new Map<string, MutableMetric & { shopId: string; storeId: string | null; currency: string }>();
-    const skusMap = new Map<string, MutableMetric & { sellerSku: string; internalSku: string | null; productName: string; shopId: string; storeName: string; mappingStatus: "mapped" | "direct" | "unmapped" }>();
+    const skusMap = new Map<string, MutableMetric & {
+      sellerSku: string;
+      internalSku: string | null;
+      productName: string;
+      shopId: string;
+      storeName: string;
+      mappingStatus: "mapped" | "direct" | "unmapped";
+      mappingSource: "profit" | "inventory" | "direct" | "unmapped";
+      costComponents: Array<{ variantId: string; skuId: string; quantity: number }>;
+    }>();
 
     const ensureStore = (shopId: string) => {
       const shop = shopById.get(shopId);
@@ -424,20 +448,70 @@ export async function GET(request: NextRequest) {
         const sellerSku = String(item?.seller_sku || "未知 SKU").trim();
         const skuKey = sellerSku.toLowerCase();
         const qty = Math.max(1, Math.round(number(item?.quantity) || 1));
+        const profitComponents = profitMappingByShopSku.get(`${order.shopId}\u0000${skuKey}`) || [];
         const mappedVariantId = mappingByShopSku.get(`${order.shopId}\u0000${skuKey}`);
         const directVariant = variantBySku.get(skuKey);
-        const variant = mappedVariantId ? variantById.get(mappedVariantId) : directVariant;
-        const mappingStatus: "mapped" | "direct" | "unmapped" = mappedVariantId ? "mapped" : directVariant ? "direct" : "unmapped";
+        const resolvedComponents = profitComponents.length > 0
+          ? profitComponents.flatMap((component) => {
+              const resolvedVariant = variantById.get(component.variantId);
+              return resolvedVariant ? [{ variant: resolvedVariant, quantity: Math.max(1, component.quantity) }] : [];
+            })
+          : mappedVariantId && variantById.has(mappedVariantId)
+            ? [{ variant: variantById.get(mappedVariantId)!, quantity: 1 }]
+            : directVariant
+              ? [{ variant: directVariant, quantity: 1 }]
+              : [];
+        const variant = resolvedComponents[0]?.variant;
+        const mappingSource: "profit" | "inventory" | "direct" | "unmapped" = profitComponents.length > 0
+          ? "profit"
+          : mappedVariantId
+            ? "inventory"
+            : directVariant
+              ? "direct"
+              : "unmapped";
+        const mappingStatus: "mapped" | "direct" | "unmapped" = mappingSource === "profit" || mappingSource === "inventory"
+          ? "mapped"
+          : mappingSource;
         const lineValue = Math.max(0, number(item?.sale_price) * qty);
-        const productUnitCost = variant ? purchaseUnitCost.get(variant.id) || 0 : 0;
-        const logisticsUnitCost = variant
-          ? logisticsUnitByVariant.get(variant.id) || logisticsUnitBySku.get(skuKey) || 0
+        const productUnitCost = resolvedComponents.reduce((sum, component) => (
+          sum + (purchaseUnitCost.get(component.variant.id) || 0) * component.quantity
+        ), 0);
+        const logisticsUnitCost = resolvedComponents.length > 0
+          ? resolvedComponents.reduce((sum, component) => (
+              sum + (
+                logisticsUnitByVariant.get(component.variant.id)
+                || logisticsUnitBySku.get(component.variant.skuId.trim().toLowerCase())
+                || 0
+              ) * component.quantity
+            ), 0)
           : logisticsUnitBySku.get(skuKey) || 0;
-        return { sellerSku, skuKey, qty, variant, mappingStatus, lineValue, productUnitCost, logisticsUnitCost, productName: String(item?.product_name || variant?.product.name || sellerSku) };
+        const productCostCovered = resolvedComponents.length > 0 && resolvedComponents.every((component) => (
+          (purchaseUnitCost.get(component.variant.id) || 0) > 0
+        ));
+        const logisticsCostCovered = resolvedComponents.length > 0 && resolvedComponents.every((component) => (
+          (logisticsUnitByVariant.get(component.variant.id)
+            || logisticsUnitBySku.get(component.variant.skuId.trim().toLowerCase())
+            || 0) > 0
+        ));
+        const costComponents = resolvedComponents.map((component) => ({
+          variantId: component.variant.id,
+          skuId: component.variant.skuId,
+          quantity: component.quantity,
+        }));
+        const internalSku = costComponents.length > 0
+          ? costComponents.map((component) => `${component.quantity > 1 ? `${component.quantity}x` : ""}${component.skuId}`).join(" + ")
+          : null;
+        return {
+          sellerSku, skuKey, qty, variant, internalSku, mappingStatus, mappingSource, costComponents,
+          lineValue, productUnitCost, logisticsUnitCost, productCostCovered, logisticsCostCovered,
+          productName: String(item?.product_name || variant?.product.name || sellerSku),
+        };
       });
       const fallbackLines = parsedLines.length > 0 ? parsedLines : [{
         sellerSku: "未知 SKU", skuKey: "未知 sku", qty: Math.max(order.rawData && (order.rawData as any).item_count || 1, 1), variant: undefined,
-        mappingStatus: "unmapped" as const, lineValue: 0, productUnitCost: 0, logisticsUnitCost: 0, productName: "未识别商品",
+        internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
+        lineValue: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
+        productName: "未识别商品",
       }];
       const totalLineValue = fallbackLines.reduce((sum, line) => sum + line.lineValue, 0);
       const totalQty = fallbackLines.reduce((sum, line) => sum + line.qty, 0);
@@ -454,19 +528,21 @@ export async function GET(request: NextRequest) {
         const lineLogisticsCost = line.logisticsUnitCost * line.qty;
         orderProductCost += lineProductCost;
         orderLogisticsCost += lineLogisticsCost;
-        if (line.productUnitCost > 0) productCoveredUnits += line.qty;
-        if (line.logisticsUnitCost > 0) logisticsCoveredUnits += line.qty;
+        if (line.productCostCovered) productCoveredUnits += line.qty;
+        if (line.logisticsCostCovered) logisticsCoveredUnits += line.qty;
 
         const skuMapKey = `${order.shopId}\u0000${line.skuKey}`;
         if (!skusMap.has(skuMapKey)) {
           skusMap.set(skuMapKey, {
             ...emptyMetric(skuMapKey, line.sellerSku, startDate, endDate),
             sellerSku: line.sellerSku,
-            internalSku: line.variant?.skuId || null,
+            internalSku: line.internalSku,
             productName: line.productName,
             shopId: order.shopId,
             storeName: storeMetric.label,
             mappingStatus: line.mappingStatus,
+            mappingSource: line.mappingSource,
+            costComponents: line.costComponents,
           });
         }
         addMetric(skusMap.get(skuMapKey)!, {
@@ -476,8 +552,8 @@ export async function GET(request: NextRequest) {
           platformCostCny: linePlatformCost,
           productCostCny: lineProductCost,
           logisticsCostCny: lineLogisticsCost,
-          productCoveredUnits: line.productUnitCost > 0 ? line.qty : 0,
-          logisticsCoveredUnits: line.logisticsUnitCost > 0 ? line.qty : 0,
+          productCoveredUnits: line.productCostCovered ? line.qty : 0,
+          logisticsCoveredUnits: line.logisticsCostCovered ? line.qty : 0,
           exactSettlementOrders: hasExactSettlement ? 1 : 0,
         });
       }
@@ -548,6 +624,8 @@ export async function GET(request: NextRequest) {
       shopId: sku.shopId,
       storeName: sku.storeName,
       mappingStatus: sku.mappingStatus,
+      mappingSource: sku.mappingSource,
+      costComponents: sku.costComponents,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
     const summary = finalizeMetric(summaryMutable);
 
@@ -570,6 +648,12 @@ export async function GET(request: NextRequest) {
       periods: finalizedPeriods,
       stores: finalizedStores,
       skus: finalizedSkus,
+      variants: variants.map((variant) => ({
+        id: variant.id,
+        skuId: variant.skuId,
+        productName: variant.product.name,
+        unitCostCny: round(purchaseUnitCost.get(variant.id) || 0),
+      })).sort((a, b) => a.skuId.localeCompare(b.skuId)),
       shops: allShops.map((shop) => ({
         id: shop.shopId,
         name: shopStore.get(shop.shopId)?.name || shop.shopName,

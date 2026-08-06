@@ -37,6 +37,12 @@ export type ProfitSkuRow = ProfitMetricRow & {
   shopId: string;
   storeName: string;
   mappingStatus: "mapped" | "direct" | "unmapped";
+  mappingSource: "profit" | "inventory" | "direct" | "unmapped";
+  costComponents: Array<{
+    variantId: string;
+    skuId: string;
+    quantity: number;
+  }>;
 };
 
 export type ProfitReportResponse = {
@@ -51,6 +57,12 @@ export type ProfitReportResponse = {
   periods: ProfitMetricRow[];
   stores: ProfitStoreRow[];
   skus: ProfitSkuRow[];
+  variants: Array<{
+    id: string;
+    skuId: string;
+    productName: string;
+    unitCostCny: number;
+  }>;
   shops: Array<{ id: string; name: string; region: string; currency: string }>;
   coverage: {
     score: number;
