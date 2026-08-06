@@ -64,6 +64,27 @@ function money(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+function originalMoney(valueCny: number, currency: string | null, rates: Record<string, number>) {
+  const code = currency?.toUpperCase();
+  const rate = code ? rates[code] : 0;
+  if (!code || code === "CNY" || !Number.isFinite(rate) || rate <= 0) return null;
+  return new Intl.NumberFormat(code === "BRL" ? "pt-BR" : "en-US", {
+    style: "currency",
+    currency: code,
+    maximumFractionDigits: 2,
+  }).format(valueCny / rate);
+}
+
+function OriginalAmount({ valueCny, currency, rates }: {
+  valueCny: number;
+  currency: string | null;
+  rates: Record<string, number>;
+}) {
+  const value = originalMoney(valueCny, currency, rates);
+  if (!value) return null;
+  return <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="按本次报表汇率折算前的原币金额">{value}</div>;
+}
+
 function compactMoney(value: number) {
   if (Math.abs(value) >= 1_000_000) return `¥${(value / 1_000_000).toFixed(1)}m`;
   if (Math.abs(value) >= 10_000) return `¥${(value / 10_000).toFixed(1)}w`;
@@ -122,17 +143,37 @@ function CoverageBar({ label, value, detail }: { label: string; value: number; d
   );
 }
 
-function MetricCells({ row }: { row: ProfitMetricRow }) {
+function MetricCells({ row, currency, rates }: {
+  row: ProfitMetricRow;
+  currency: string | null;
+  rates: Record<string, number>;
+}) {
+  const platformOriginal = originalMoney(row.platformFeeCny, currency, rates);
+  const fulfillmentOriginal = originalMoney(row.fulfillmentFeeCny, currency, rates);
   return (
     <>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">{money(row.gmvCny)}</td>
-      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-300" title={`合计 ${money(row.platformCostCny)}`}>{money(row.platformFeeCny)} / {money(row.fulfillmentFeeCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">
+        <div>{money(row.gmvCny)}</div>
+        <OriginalAmount valueCny={row.gmvCny} currency={currency} rates={rates} />
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-300" title={`合计 ${money(row.platformCostCny)}`}>
+        <div>{money(row.platformFeeCny)} / {money(row.fulfillmentFeeCny)}</div>
+        {platformOriginal && fulfillmentOriginal && <div className="mt-0.5 text-[11px] font-normal text-slate-600" title="按本次报表汇率折算前的原币金额">{platformOriginal} / {fulfillmentOriginal}</div>}
+      </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.productCostCny)}</td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.logisticsCostCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.warehouseFulfillmentCostCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.netAdCostCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{money(row.taxCostCny)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300" title="不计入贡献利润">{money(row.sampleMarketingCostCny)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+        <div>{money(row.warehouseFulfillmentCostCny)}</div>
+        <OriginalAmount valueCny={row.warehouseFulfillmentCostCny} currency={currency} rates={rates} />
+      </td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+        <div>{money(row.netAdCostCny)}</div>
+        <OriginalAmount valueCny={row.netAdCostCny} currency={currency} rates={rates} />
+      </td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+        <div>{money(row.taxCostCny)}</div>
+        <OriginalAmount valueCny={row.taxCostCny} currency={currency} rates={rates} />
+      </td>
       <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${row.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
         {money(row.contributionProfitCny)}
       </td>
@@ -172,6 +213,18 @@ export default function ProfitPage() {
     );
   }, [data?.skus, skuSearch]);
 
+  const currencyByShop = useMemo(
+    () => new Map((data?.shops || []).map((shop) => [shop.id, shop.currency.toUpperCase()])),
+    [data?.shops],
+  );
+  const reportCurrency = useMemo(() => {
+    const currencies = new Set((data?.stores || [])
+      .filter((store) => store.orderCount > 0)
+      .map((store) => store.currency.toUpperCase())
+      .filter((currency) => currency !== "CNY"));
+    return currencies.size === 1 ? [...currencies][0] : null;
+  }, [data?.stores]);
+
   const costRows = useMemo(() => {
     if (!data) return [];
     return [
@@ -181,7 +234,6 @@ export default function ProfitPage() {
       { label: "海外仓代发", value: data.summary.warehouseFulfillmentCostCny, color: "bg-violet-500" },
       { label: "广告净消耗", value: data.summary.netAdCostCny, color: "bg-rose-500" },
       { label: "店铺税务", value: data.summary.taxCostCny, color: "bg-lime-500" },
-      { label: "达人寄样成本（另计）", value: data.summary.sampleMarketingCostCny, color: "bg-fuchsia-500" },
     ];
   }, [data]);
 
@@ -262,15 +314,15 @@ export default function ProfitPage() {
     if (!data) return;
     const rows = tab === "store" ? data.stores : tab === "sku" ? filteredSkus : data.periods;
     const headers = tab === "store"
-      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人寄样（另计）", "贡献利润", "利润率"]
+      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "贡献利润", "利润率"]
       : tab === "sku"
-        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告分摊", "税务成本", "达人寄样（另计）", "贡献利润", "利润率"]
-        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "达人寄样（另计）", "贡献利润", "利润率"];
+        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告分摊", "税务成本", "贡献利润", "利润率"]
+        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "贡献利润", "利润率"];
     const values = rows.map((row: any) => tab === "store"
-        ? [row.label, row.orderCount, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]
+        ? [row.label, row.orderCount, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.contributionProfitCny, row.margin]
       : tab === "sku"
-        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]
-        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.sampleMarketingCostCny, row.contributionProfitCny, row.margin]);
+        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.contributionProfitCny, row.margin]
+        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.contributionProfitCny, row.margin]);
     const csv = [headers, ...values].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -386,7 +438,7 @@ export default function ProfitPage() {
             </div>
           )}
 
-          <section className="grid gap-3 py-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-9">
+          <section className="grid gap-3 py-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-8">
             <MetricCard label="订单 GMV" value={money(data.summary.gmvCny)} detail={`${data.summary.orderCount.toLocaleString()} 单 / ${data.summary.units.toLocaleString()} 件`} icon={ShoppingCart} />
             <MetricCard label="贡献利润" value={money(data.summary.contributionProfitCny)} detail={`利润率 ${percent(data.summary.margin)}`} icon={data.summary.contributionProfitCny >= 0 ? TrendingUp : TrendingDown} tone={data.summary.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"} />
             <MetricCard label="平台 / 履约" value={`${money(data.summary.platformFeeCny)} / ${money(data.summary.fulfillmentFeeCny)}`} detail={`合计 ${money(data.summary.platformCostCny)} · 实际账单 ${percent(data.coverage.platformActual)}`} icon={WalletCards} />
@@ -394,7 +446,6 @@ export default function ProfitPage() {
             <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
             <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`消耗 ${money(data.summary.adSpendCny)} / 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
             <MetricCard label="税务成本" value={money(data.summary.taxCostCny)} detail={`规则覆盖 ${percent(data.coverage.taxRule)}`} icon={WalletCards} />
-            <MetricCard label="达人寄样成本（另计）" value={money(data.summary.sampleMarketingCostCny)} detail={`${data.influencerMarketing?.sampleOrders ?? 0} 单免费样品；达人佣金单独核算`} icon={Users} />
             <MetricCard label="核算完整度" value={percent(data.coverage.score)} detail={`${data.coverage.mappedSkuCount}/${data.coverage.totalSkuCount} 个 SKU 已映射`} icon={PackageCheck} tone={coverageTone(data.coverage.score)} />
           </section>
 
@@ -476,7 +527,6 @@ export default function ProfitPage() {
                       <th className="px-3 py-3 text-right font-medium">海外仓代发</th>
                       <th className="px-3 py-3 text-right font-medium">广告净消耗</th>
                       <th className="px-3 py-3 text-right font-medium">税务成本</th>
-                      <th className="px-3 py-3 text-right font-medium">达人营销</th>
                       <th className="px-3 py-3 text-right font-medium">贡献利润</th>
                       <th className="px-3 py-3 text-right font-medium">利润率</th>
                     </tr>
@@ -486,7 +536,7 @@ export default function ProfitPage() {
                       <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                         <td className="px-3 py-2.5 text-slate-200"><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td>
-                        <MetricCells row={row} />
+                        <MetricCells row={row} currency={reportCurrency} rates={data.rates} />
                       </tr>
                     ))}
                   </tbody>
@@ -498,9 +548,9 @@ export default function ProfitPage() {
               <div className="overflow-x-auto">
                 <table className="min-w-[1500px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告净消耗</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">达人营销</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告净消耗</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
-                  <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} /></tr>)}</tbody>
+                  <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} currency={row.currency} rates={data.rates} /></tr>)}</tbody>
                 </table>
               </div>
             )}
@@ -509,11 +559,11 @@ export default function ProfitPage() {
               <div className="overflow-x-auto">
                 <table className="min-w-[1650px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告分摊</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">达人佣金</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告分摊</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
                   <tbody>{filteredSkus.map((row: ProfitSkuRow) => <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                     <td className="max-w-[320px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span><button type="button" onClick={() => openCostMapping(row)} title="配置成本映射" className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"><Settings2 className="h-4 w-4" /></button></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
-                    <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} />
+                    <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} currency={currencyByShop.get(row.shopId) || null} rates={data.rates} />
                   </tr>)}</tbody>
                 </table>
                 {filteredSkus.length === 0 && <div className="py-12 text-center text-sm text-slate-500">没有匹配的 SKU</div>}
@@ -528,7 +578,6 @@ export default function ProfitPage() {
                   <CoverageBar label="逐单平台账单" value={data.coverage.platformActual} detail={`${data.coverage.exactSettlementOrders.toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`} />
                   <CoverageBar label="海外仓代发规则" value={data.coverage.warehouseFulfillment} detail="按订单仓库代码匹配" />
                   <CoverageBar label="店铺税率规则" value={data.coverage.taxRule} detail="按主体和生效日期匹配" />
-                  <CoverageBar label="达人团队佣金规则" value={data.coverage.influencerCommissionRule} detail="按店铺营业额计提" />
                   <CoverageBar label="广告店铺覆盖" value={data.coverage.adStore} detail="按广告消耗金额计算" />
                 </div>
                 <div className="border-t border-slate-800 pt-4 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">

@@ -7,6 +7,7 @@ import {
   type ProfitFeeBreakdown,
 } from "@/lib/profit-platform-fees";
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
+import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
@@ -24,7 +25,6 @@ type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfi
   exactSettlementOrders: number;
   warehouseCoveredOrders: number;
   taxCoveredOrders: number;
-  influencerCoveredOrders: number;
 };
 
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -126,22 +126,17 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
     rebateCny: 0,
     netAdCostCny: 0,
     taxCostCny: 0,
-    influencerCommissionCny: 0,
-    sampleMarketingCostCny: 0,
     productCoveredUnits: 0,
     logisticsCoveredUnits: 0,
     exactSettlementOrders: 0,
     warehouseCoveredOrders: 0,
     taxCoveredOrders: 0,
-    influencerCoveredOrders: 0,
   };
 }
 
 function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
   const grossProfitCny = metric.gmvCny - metric.platformCostCny - metric.productCostCny
     - metric.logisticsCostCny - metric.warehouseFulfillmentCostCny;
-  // Influencer commissions and sample costs are reported in the separate
-  // influencer marketing module and are intentionally excluded here.
   const contributionProfitCny = grossProfitCny - metric.netAdCostCny - metric.taxCostCny;
   return {
     id: metric.id,
@@ -162,8 +157,6 @@ function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
     rebateCny: round(metric.rebateCny),
     netAdCostCny: round(metric.netAdCostCny),
     taxCostCny: round(metric.taxCostCny),
-    influencerCommissionCny: round(metric.influencerCommissionCny),
-    sampleMarketingCostCny: round(metric.sampleMarketingCostCny),
     grossProfitCny: round(grossProfitCny),
     contributionProfitCny: round(contributionProfitCny),
     margin: metric.gmvCny > 0 ? round((contributionProfitCny / metric.gmvCny) * 100, 1) : 0,
@@ -179,9 +172,8 @@ function addMetric(target: MutableMetric, values: Partial<MutableMetric>) {
     "orderCount", "cancelledOrders", "units", "gmvCny", "platformCostCny", "platformFeeCny",
     "fulfillmentFeeCny", "productCostCny",
     "logisticsCostCny", "warehouseFulfillmentCostCny", "adSpendCny", "rebateCny", "netAdCostCny",
-    "taxCostCny", "influencerCommissionCny", "sampleMarketingCostCny", "productCoveredUnits",
+    "taxCostCny", "productCoveredUnits",
     "logisticsCoveredUnits", "exactSettlementOrders", "warehouseCoveredOrders", "taxCoveredOrders",
-    "influencerCoveredOrders",
   ];
   for (const key of numericKeys) {
     if (values[key] != null) (target[key] as number) += number(values[key]);
@@ -440,11 +432,9 @@ export async function GET(request: NextRequest) {
     const influencerBySampleOrder = new Map(influencers.flatMap((influencer) => (
       influencer.sampleOrderNumber ? [[influencer.sampleOrderNumber, influencer] as const] : []
     )));
-    const warehouseMappingFor = (shopId: string, tiktokWarehouseId: string) => (
-      warehouseMappings.find((mapping) => mapping.tiktokWarehouseId === tiktokWarehouseId && mapping.tiktokShopId === shopId)
-      || warehouseMappings.find((mapping) => mapping.tiktokWarehouseId === tiktokWarehouseId && !mapping.tiktokShopId)
-      || null
-    );
+    // Warehouse selection belongs to the order. A shop may switch fulfillment
+    // providers, so never use shopId as the primary warehouse key.
+    const resolveWarehouse = createWarehouseResolver(warehouseMappings);
     const activeShopRule = (shopId: string, costType: string, date: string) => shopCostRules.find((rule) => (
       rule.shopId === shopId
       && rule.costType === costType
@@ -585,8 +575,9 @@ export async function GET(request: NextRequest) {
       }];
     };
     const fulfillmentForOrder = (order: (typeof orders)[number], lines: ReturnType<typeof resolveOrderLines>, date: string) => {
-      const tiktokWarehouseId = String((order.rawData as any)?.warehouse_id || "").trim();
-      const mapping = tiktokWarehouseId ? warehouseMappingFor(order.shopId, tiktokWarehouseId) : null;
+      const resolution = resolveWarehouse(order.rawData);
+      const tiktokWarehouseId = resolution.tiktokWarehouseId;
+      const mapping = resolution.mapping;
       const rule = mapping ? activeWarehouseRule(mapping.warehouseId, order.shopId, date) : null;
       const sellerUnits = lines.reduce((sum, line) => sum + line.qty, 0);
       const internalUnits = lines.reduce((sum, line) => (
@@ -651,6 +642,8 @@ export async function GET(request: NextRequest) {
         warehouseId: mapping?.warehouseId || null,
         warehouseName: rule?.warehouse.name || (tiktokWarehouseId ? `仓库 ${tiktokWarehouseId}` : "未识别仓库"),
         chargeableWeightKg,
+        tiktokWarehouseId,
+        mappingStatus: resolution.status,
       };
     };
 
@@ -691,6 +684,10 @@ export async function GET(request: NextRequest) {
       if (!periods.has(period.id)) periods.set(period.id, emptyMetric(period.id, period.label, period.startDate, period.endDate));
     }
     const storesMap = new Map<string, MutableMetric & { shopId: string; storeId: string | null; currency: string }>();
+    let warehouseMappingMappedOrders = 0;
+    let warehouseMappingMissingIdOrders = 0;
+    const warehouseMappingUnmappedIds = new Set<string>();
+    let influencerTeamCommissionCny = 0;
     const skusMap = new Map<string, MutableMetric & {
       sellerSku: string;
       internalSku: string | null;
@@ -770,10 +767,14 @@ export async function GET(request: NextRequest) {
       }
       const { platformFeeCny, fulfillmentFeeCny, totalCny: platformCostCny } = feeBreakdown;
       const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
+      if (fulfillment.mappingStatus === "mapped") warehouseMappingMappedOrders += 1;
+      else if (fulfillment.mappingStatus === "missing_id") warehouseMappingMissingIdOrders += 1;
+      else if (fulfillment.tiktokWarehouseId) warehouseMappingUnmappedIds.add(fulfillment.tiktokWarehouseId);
       const taxRule = activeShopRule(order.shopId, "TAX", businessDate);
       const influencerRule = activeShopRule(order.shopId, "INFLUENCER_COMMISSION", businessDate);
       const taxCostCny = taxRule ? gmvCny * number(taxRule.ratePercent) / 100 : 0;
       const influencerCommissionCny = influencerRule ? gmvCny * number(influencerRule.ratePercent) / 100 : 0;
+      influencerTeamCommissionCny += influencerCommissionCny;
       let orderProductCost = 0;
       let orderLogisticsCost = 0;
       let productCoveredUnits = 0;
@@ -789,7 +790,6 @@ export async function GET(request: NextRequest) {
         const lineLogisticsCost = line.logisticsUnitCost * line.qty;
         const lineWarehouseCost = fulfillment.costCny * allocation;
         const lineTaxCost = taxCostCny * allocation;
-        const lineInfluencerCommission = influencerCommissionCny * allocation;
         orderProductCost += lineProductCost;
         orderLogisticsCost += lineLogisticsCost;
         if (line.productCostCovered) productCoveredUnits += line.qty;
@@ -820,13 +820,11 @@ export async function GET(request: NextRequest) {
           logisticsCostCny: lineLogisticsCost,
           warehouseFulfillmentCostCny: lineWarehouseCost,
           taxCostCny: lineTaxCost,
-          influencerCommissionCny: lineInfluencerCommission,
           productCoveredUnits: line.productCostCovered ? line.qty : 0,
           logisticsCoveredUnits: line.logisticsCostCovered ? line.qty : 0,
           exactSettlementOrders: hasExactSettlement ? 1 : 0,
           warehouseCoveredOrders: fulfillment.covered ? 1 : 0,
           taxCoveredOrders: taxRule ? 1 : 0,
-          influencerCoveredOrders: influencerRule ? 1 : 0,
         });
       }
 
@@ -841,13 +839,11 @@ export async function GET(request: NextRequest) {
         logisticsCostCny: orderLogisticsCost,
         warehouseFulfillmentCostCny: fulfillment.costCny,
         taxCostCny,
-        influencerCommissionCny,
         productCoveredUnits,
         logisticsCoveredUnits,
         exactSettlementOrders: hasExactSettlement ? 1 : 0,
         warehouseCoveredOrders: fulfillment.covered ? 1 : 0,
         taxCoveredOrders: taxRule ? 1 : 0,
-        influencerCoveredOrders: influencerRule ? 1 : 0,
       };
       addMetric(period, orderValues);
       addMetric(storeMetric, orderValues);
@@ -895,8 +891,6 @@ export async function GET(request: NextRequest) {
       sampleWarehouseCostCny += fulfillment.costCny;
       sampleShippingCostCny += shippingCost;
       sampleOtherCostCny += otherCost;
-      addMetric(period, { sampleMarketingCostCny: totalCost });
-      addMetric(storeMetric, { sampleMarketingCostCny: totalCost });
       sampleRows.push({
         orderId: order.orderId,
         date: businessDate,
@@ -992,19 +986,19 @@ export async function GET(request: NextRequest) {
     const warehouseCoverage = summaryMutable.orderCount > 0
       ? round((summaryMutable.warehouseCoveredOrders / summaryMutable.orderCount) * 100, 1)
       : 100;
+    const warehouseMappingCoverage = summaryMutable.orderCount > 0
+      ? round((warehouseMappingMappedOrders / summaryMutable.orderCount) * 100, 1)
+      : 100;
     const taxRuleCoverage = summaryMutable.orderCount > 0
       ? round((summaryMutable.taxCoveredOrders / summaryMutable.orderCount) * 100, 1)
       : 100;
-    const influencerRuleCoverage = summaryMutable.orderCount > 0
-      ? round((summaryMutable.influencerCoveredOrders / summaryMutable.orderCount) * 100, 1)
-      : 100;
     const score = round(
-      (summary.productCoverage * 0.25)
+      (summary.productCoverage * 0.3)
       + (summary.logisticsCoverage * 0.15)
       + (platformActualCoverage * 0.2)
-      + (warehouseCoverage * 0.15)
+      + (warehouseMappingCoverage * 0.05)
+      + (warehouseCoverage * 0.1)
       + (taxRuleCoverage * 0.1)
-      + (influencerRuleCoverage * 0.05)
       + (adStoreCoverage * 0.1),
       1,
     );
@@ -1012,12 +1006,10 @@ export async function GET(request: NextRequest) {
     if (summary.productCoverage < 95) warnings.push("部分订单 SKU 未关联采购成本，利润暂为预估值");
     if (summary.logisticsCoverage < 95) warnings.push("部分 SKU 暂无物流分摊成本");
     if (platformActualCoverage < 80) warnings.push("部分订单尚无逐单结算，当前使用预估平台及履约费");
+    if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} 笔订单没有 warehouse_id，无法判断发货仓库`);
+    if (warehouseMappingUnmappedIds.size > 0) warnings.push(`未配置仓库映射：${[...warehouseMappingUnmappedIds].join("、")}`);
     if (warehouseCoverage < 100) warnings.push("部分销售订单缺少对应仓库代发费规则");
     if (taxRuleCoverage < 100) warnings.push("部分销售订单缺少店铺税率规则");
-    if (influencerRuleCoverage < 100) warnings.push("部分销售订单缺少达人团队佣金规则");
-    if (sampleRows.some((row) => !row.productCostCovered || !row.logisticsCostCovered)) warnings.push("部分免费样品订单缺少 SKU 成本映射");
-    if (sampleRows.some((row) => !row.warehouseCostCovered)) warnings.push("部分免费样品订单缺少仓库代发费规则");
-    if (sampleRows.length > linkedSampleOrders) warnings.push("部分免费样品订单尚未关联达人");
     if (adStoreCoverage < 95) warnings.push("部分广告消耗未关联到已授权店铺");
     if (missingCurrencies.size > 0) warnings.push(`缺少汇率：${[...missingCurrencies].join("、")}`);
 
@@ -1052,9 +1044,12 @@ export async function GET(request: NextRequest) {
         exactSettlementOrders: summaryMutable.exactSettlementOrders,
         validOrders: summaryMutable.orderCount,
         platformActual: platformActualCoverage,
+        warehouseMapping: warehouseMappingCoverage,
+        warehouseMappingMappedOrders,
+        warehouseMappingMissingIdOrders,
+        warehouseMappingUnmappedIds: [...warehouseMappingUnmappedIds],
         warehouseFulfillment: warehouseCoverage,
         taxRule: taxRuleCoverage,
-        influencerCommissionRule: influencerRuleCoverage,
       },
       influencerMarketing: {
         sampleOrders: sampleRows.length,
@@ -1066,8 +1061,8 @@ export async function GET(request: NextRequest) {
         sampleShippingCostCny: round(sampleShippingCostCny),
         sampleOtherCostCny: round(sampleOtherCostCny),
         totalSampleCostCny: round(sampleProductCostCny + sampleLogisticsCostCny + sampleWarehouseCostCny + sampleShippingCostCny + sampleOtherCostCny),
-        teamCommissionCny: summary.influencerCommissionCny,
-        totalCostCny: round(summary.influencerCommissionCny + sampleProductCostCny + sampleLogisticsCostCny + sampleWarehouseCostCny + sampleShippingCostCny + sampleOtherCostCny),
+        teamCommissionCny: round(influencerTeamCommissionCny),
+        totalCostCny: round(influencerTeamCommissionCny + sampleProductCostCny + sampleLogisticsCostCny + sampleWarehouseCostCny + sampleShippingCostCny + sampleOtherCostCny),
         samples: sampleRows.sort((a, b) => b.date.localeCompare(a.date)),
       },
       rates: Object.fromEntries(Object.entries(rates).filter(([, value]) => value > 0)),
