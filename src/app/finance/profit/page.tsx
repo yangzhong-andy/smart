@@ -229,6 +229,12 @@ export default function ProfitPage() {
     );
   }, [data?.skus, skuSearch]);
 
+  // Keep the chart chronological while showing the newest reporting period first in the detail table.
+  const periodRows = useMemo(
+    () => [...(data?.periods || [])].sort((left, right) => right.startDate.localeCompare(left.startDate)),
+    [data?.periods],
+  );
+
   const costRows = useMemo(() => {
     if (!data) return [];
     return [
@@ -316,7 +322,7 @@ export default function ProfitPage() {
 
   const exportCsv = () => {
     if (!data) return;
-    const rows = tab === "store" ? data.stores : tab === "sku" ? filteredSkus : data.periods;
+    const rows = tab === "store" ? data.stores : tab === "sku" ? filteredSkus : periodRows;
     const headers = tab === "store"
       ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "贡献利润", "利润率"]
       : tab === "sku"
@@ -539,7 +545,7 @@ export default function ProfitPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.periods.map((row) => (
+                    {periodRows.map((row) => (
                       <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                         <td className="px-3 py-2.5 text-slate-200"><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td>
