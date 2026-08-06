@@ -2559,24 +2559,47 @@ model ProfitPlatformFeeTier {
 // Overseas warehouse fulfillment pricing. The order warehouse_id decides
 // which rule applies, so shops can switch warehouses without rewriting history.
 model WarehouseFulfillmentRule {
-  id                String    @id @default(uuid())
-  warehouseId       String
-  shopId            String?
-  billingUnit       String    @default("SELLER_UNIT")
-  baseOrderFee      Decimal   @default(0) @db.Decimal(18, 4)
-  firstUnitFee      Decimal   @default(0) @db.Decimal(18, 4)
-  additionalUnitFee Decimal   @default(0) @db.Decimal(18, 4)
-  currency          String    @default("BRL")
-  effectiveFrom     DateTime  @db.Date
-  effectiveTo       DateTime? @db.Date
-  enabled           Boolean   @default(true)
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  warehouse         Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  id                    String                        @id @default(uuid())
+  warehouseId           String
+  shopId                String?
+  pricingMode           String                        @default("FLAT_UNIT")
+  billingUnit           String                        @default("SELLER_UNIT")
+  baseOrderFee          Decimal                       @default(0) @db.Decimal(18, 4)
+  firstUnitFee          Decimal                       @default(0) @db.Decimal(18, 4)
+  additionalUnitFee     Decimal                       @default(0) @db.Decimal(18, 4)
+  volumetricDivisor     Int                           @default(6000)
+  overweightThresholdKg Decimal?                      @db.Decimal(10, 3)
+  overweightFeePerKg    Decimal                       @default(0) @db.Decimal(18, 4)
+  currency              String                        @default("BRL")
+  effectiveFrom         DateTime                      @db.Date
+  effectiveTo           DateTime?                     @db.Date
+  enabled               Boolean                       @default(true)
+  notes                 String?
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+  warehouse             Warehouse                     @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  feeTiers              WarehouseFulfillmentFeeTier[]
 
   @@index([warehouseId, effectiveFrom])
   @@index([shopId, effectiveFrom])
+}
+
+model WarehouseFulfillmentFeeTier {
+  id              String                   @id @default(uuid())
+  ruleId          String
+  minWeightKg     Decimal?                 @db.Decimal(10, 3)
+  maxWeightKg     Decimal?                 @db.Decimal(10, 3)
+  minInclusive    Boolean                  @default(false)
+  maxInclusive    Boolean                  @default(true)
+  maxLengthCm     Decimal?                 @db.Decimal(10, 2)
+  maxWidthCm      Decimal?                 @db.Decimal(10, 2)
+  maxHeightCm     Decimal?                 @db.Decimal(10, 2)
+  baseFee         Decimal                  @default(0) @db.Decimal(18, 4)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  fulfillmentRule WarehouseFulfillmentRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
 }
 
 // Per-order financial snapshot from TikTok statement transactions. Settled

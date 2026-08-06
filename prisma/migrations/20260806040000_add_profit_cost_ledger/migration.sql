@@ -20,10 +20,14 @@ CREATE TABLE "WarehouseFulfillmentRule" (
     "id" TEXT NOT NULL,
     "warehouseId" TEXT NOT NULL,
     "shopId" TEXT,
+    "pricingMode" TEXT NOT NULL DEFAULT 'FLAT_UNIT',
     "billingUnit" TEXT NOT NULL DEFAULT 'SELLER_UNIT',
     "baseOrderFee" DECIMAL(18,4) NOT NULL DEFAULT 0,
     "firstUnitFee" DECIMAL(18,4) NOT NULL DEFAULT 0,
     "additionalUnitFee" DECIMAL(18,4) NOT NULL DEFAULT 0,
+    "volumetricDivisor" INTEGER NOT NULL DEFAULT 6000,
+    "overweightThresholdKg" DECIMAL(10,3),
+    "overweightFeePerKg" DECIMAL(18,4) NOT NULL DEFAULT 0,
     "currency" TEXT NOT NULL DEFAULT 'BRL',
     "effectiveFrom" DATE NOT NULL,
     "effectiveTo" DATE,
@@ -32,6 +36,22 @@ CREATE TABLE "WarehouseFulfillmentRule" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "WarehouseFulfillmentRule_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "WarehouseFulfillmentFeeTier" (
+    "id" TEXT NOT NULL,
+    "ruleId" TEXT NOT NULL,
+    "minWeightKg" DECIMAL(10,3),
+    "maxWeightKg" DECIMAL(10,3),
+    "minInclusive" BOOLEAN NOT NULL DEFAULT false,
+    "maxInclusive" BOOLEAN NOT NULL DEFAULT true,
+    "maxLengthCm" DECIMAL(10,2),
+    "maxWidthCm" DECIMAL(10,2),
+    "maxHeightCm" DECIMAL(10,2),
+    "baseFee" DECIMAL(18,4) NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "WarehouseFulfillmentFeeTier_pkey" PRIMARY KEY ("id")
 );
 
 CREATE TABLE "ProfitPlatformFeeTier" (
@@ -92,6 +112,8 @@ CREATE INDEX "WarehouseFulfillmentRule_warehouseId_effectiveFrom_idx"
     ON "WarehouseFulfillmentRule"("warehouseId", "effectiveFrom");
 CREATE INDEX "WarehouseFulfillmentRule_shopId_effectiveFrom_idx"
     ON "WarehouseFulfillmentRule"("shopId", "effectiveFrom");
+CREATE INDEX "WarehouseFulfillmentFeeTier_ruleId_idx"
+    ON "WarehouseFulfillmentFeeTier"("ruleId");
 CREATE UNIQUE INDEX "TikTokOrderFinancial_orderId_key" ON "TikTokOrderFinancial"("orderId");
 CREATE INDEX "TikTokOrderFinancial_shopId_orderCreateTime_idx"
     ON "TikTokOrderFinancial"("shopId", "orderCreateTime");
@@ -108,6 +130,10 @@ ALTER TABLE "WarehouseFulfillmentRule"
 ALTER TABLE "ProfitPlatformFeeTier"
     ADD CONSTRAINT "ProfitPlatformFeeTier_ruleId_fkey"
     FOREIGN KEY ("ruleId") REFERENCES "ProfitShopCostRule"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "WarehouseFulfillmentFeeTier"
+    ADD CONSTRAINT "WarehouseFulfillmentFeeTier_ruleId_fkey"
+    FOREIGN KEY ("ruleId") REFERENCES "WarehouseFulfillmentRule"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "InfluencerSampleCost"
     ADD CONSTRAINT "InfluencerSampleCost_influencerId_fkey"

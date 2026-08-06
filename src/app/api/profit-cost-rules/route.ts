@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SHOP_COST_TYPES = new Set(["PLATFORM_FULFILLMENT", "TAX", "INFLUENCER_COMMISSION"]);
 const BILLING_UNITS = new Set(["SELLER_UNIT", "INTERNAL_COMPONENT"]);
+const WAREHOUSE_PRICING_MODES = new Set(["FLAT_UNIT", "WEIGHT_TIER", "PACKAGE_TIER"]);
 
 function finiteNumber(value: unknown, fallback = 0) {
   const parsed = Number(value ?? fallback);
@@ -39,6 +40,26 @@ function normalizeTiers(value: unknown) {
   ));
 }
 
+function normalizeFeeTiers(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((raw: any) => ({
+    minWeightKg: raw?.minWeightKg === "" || raw?.minWeightKg == null ? null : finiteNumber(raw.minWeightKg),
+    maxWeightKg: raw?.maxWeightKg === "" || raw?.maxWeightKg == null ? null : finiteNumber(raw.maxWeightKg),
+    minInclusive: raw?.minInclusive === true,
+    maxInclusive: raw?.maxInclusive !== false,
+    maxLengthCm: raw?.maxLengthCm === "" || raw?.maxLengthCm == null ? null : finiteNumber(raw.maxLengthCm),
+    maxWidthCm: raw?.maxWidthCm === "" || raw?.maxWidthCm == null ? null : finiteNumber(raw.maxWidthCm),
+    maxHeightCm: raw?.maxHeightCm === "" || raw?.maxHeightCm == null ? null : finiteNumber(raw.maxHeightCm),
+    baseFee: finiteNumber(raw?.baseFee),
+  })).filter((tier) => (
+    tier.baseFee >= 0
+    && (tier.minWeightKg == null || tier.minWeightKg >= 0)
+    && (tier.maxWeightKg == null || tier.maxWeightKg > 0)
+    && (tier.minWeightKg == null || tier.maxWeightKg == null || tier.maxWeightKg > tier.minWeightKg)
+    && [tier.maxLengthCm, tier.maxWidthCm, tier.maxHeightCm].every((value) => value == null || value > 0)
+  ));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireApiUser(request);
@@ -60,7 +81,10 @@ export async function GET(request: NextRequest) {
         orderBy: [{ shopId: "asc" }, { costType: "asc" }, { effectiveFrom: "desc" }],
       }),
       prisma.warehouseFulfillmentRule.findMany({
-        include: { warehouse: { select: { name: true, code: true } } },
+        include: {
+          warehouse: { select: { name: true, code: true } },
+          feeTiers: { orderBy: [{ maxWeightKg: "asc" }, { baseFee: "asc" }] },
+        },
         orderBy: [{ warehouseId: "asc" }, { effectiveFrom: "desc" }],
       }),
     ]);
@@ -93,6 +117,17 @@ export async function GET(request: NextRequest) {
         baseOrderFee: Number(rule.baseOrderFee),
         firstUnitFee: Number(rule.firstUnitFee),
         additionalUnitFee: Number(rule.additionalUnitFee),
+        overweightThresholdKg: rule.overweightThresholdKg == null ? null : Number(rule.overweightThresholdKg),
+        overweightFeePerKg: Number(rule.overweightFeePerKg),
+        feeTiers: rule.feeTiers.map((tier) => ({
+          ...tier,
+          minWeightKg: tier.minWeightKg == null ? null : Number(tier.minWeightKg),
+          maxWeightKg: tier.maxWeightKg == null ? null : Number(tier.maxWeightKg),
+          maxLengthCm: tier.maxLengthCm == null ? null : Number(tier.maxLengthCm),
+          maxWidthCm: tier.maxWidthCm == null ? null : Number(tier.maxWidthCm),
+          maxHeightCm: tier.maxHeightCm == null ? null : Number(tier.maxHeightCm),
+          baseFee: Number(tier.baseFee),
+        })),
         effectiveFrom: rule.effectiveFrom.toISOString().slice(0, 10),
         effectiveTo: rule.effectiveTo?.toISOString().slice(0, 10) || null,
       })),
@@ -180,11 +215,28 @@ export async function POST(request: NextRequest) {
       const id = String(body?.id || "").trim();
       const warehouseId = String(body?.warehouseId || "").trim();
       const shopId = String(body?.shopId || "").trim() || null;
+      const pricingMode = String(body?.pricingMode || "FLAT_UNIT").trim().toUpperCase();
       const billingUnit = String(body?.billingUnit || "SELLER_UNIT").trim().toUpperCase();
       const baseOrderFee = finiteNumber(body?.baseOrderFee);
       const firstUnitFee = finiteNumber(body?.firstUnitFee);
       const additionalUnitFee = finiteNumber(body?.additionalUnitFee);
-      if (!warehouseId || !BILLING_UNITS.has(billingUnit) || [baseOrderFee, firstUnitFee, additionalUnitFee].some((value) => value < 0)) {
+      const volumetricDivisor = Math.round(finiteNumber(body?.volumetricDivisor, 6000));
+      const overweightThresholdKg = body?.overweightThresholdKg === "" || body?.overweightThresholdKg == null
+        ? null
+        : finiteNumber(body.overweightThresholdKg);
+      const overweightFeePerKg = finiteNumber(body?.overweightFeePerKg);
+      const feeTiers = normalizeFeeTiers(body?.feeTiers);
+      if (pricingMode !== "FLAT_UNIT" && (!Array.isArray(body?.feeTiers) || feeTiers.length !== body.feeTiers.length || feeTiers.length === 0)) {
+        return NextResponse.json({ error: "仓库费用分档参数无效" }, { status: 400 });
+      }
+      if (
+        !warehouseId
+        || !WAREHOUSE_PRICING_MODES.has(pricingMode)
+        || !BILLING_UNITS.has(billingUnit)
+        || [baseOrderFee, firstUnitFee, additionalUnitFee, overweightFeePerKg].some((value) => value < 0)
+        || volumetricDivisor <= 0
+        || (overweightThresholdKg != null && overweightThresholdKg <= 0)
+      ) {
         return NextResponse.json({ error: "仓库代发规则参数无效" }, { status: 400 });
       }
       const [warehouse, shop] = await Promise.all([
@@ -196,19 +248,32 @@ export async function POST(request: NextRequest) {
       const data = {
         warehouseId,
         shopId,
+        pricingMode,
         billingUnit,
         baseOrderFee,
         firstUnitFee,
         additionalUnitFee,
+        volumetricDivisor,
+        overweightThresholdKg,
+        overweightFeePerKg,
         currency: String(body?.currency || "BRL").trim().toUpperCase(),
         effectiveFrom,
         effectiveTo,
         enabled: true,
         notes: String(body?.notes || "").trim() || null,
       };
-      const rule = id
-        ? await prisma.warehouseFulfillmentRule.update({ where: { id }, data })
-        : await prisma.warehouseFulfillmentRule.create({ data });
+      const rule = await prisma.$transaction(async (tx) => {
+        const saved = id
+          ? await tx.warehouseFulfillmentRule.update({ where: { id }, data })
+          : await tx.warehouseFulfillmentRule.create({ data });
+        await tx.warehouseFulfillmentFeeTier.deleteMany({ where: { ruleId: saved.id } });
+        if (pricingMode !== "FLAT_UNIT") {
+          await tx.warehouseFulfillmentFeeTier.createMany({
+            data: feeTiers.map((tier) => ({ ruleId: saved.id, ...tier })),
+          });
+        }
+        return saved;
+      });
       return NextResponse.json({ success: true, id: rule.id });
     }
 

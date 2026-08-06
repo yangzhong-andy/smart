@@ -6,6 +6,7 @@ import {
   calculateEstimatedProfitFees,
   type ProfitFeeBreakdown,
 } from "@/lib/profit-platform-fees";
+import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
@@ -237,7 +238,17 @@ export async function GET(request: NextRequest) {
       }),
       prisma.store.findMany({ select: { id: true, name: true, currency: true, accountId: true } }),
       prisma.productVariant.findMany({
-        select: { id: true, skuId: true, costPrice: true, lengthCm: true, widthCm: true, heightCm: true, product: { select: { name: true } } },
+        select: {
+          id: true,
+          skuId: true,
+          costPrice: true,
+          weightKg: true,
+          lengthCm: true,
+          widthCm: true,
+          heightCm: true,
+          volumetricDivisor: true,
+          product: { select: { name: true } },
+        },
       }),
       prisma.tikTokSkuMapping.findMany({
         where: selectedShopId ? { tiktokShopId: selectedShopId } : undefined,
@@ -288,7 +299,10 @@ export async function GET(request: NextRequest) {
       }),
       prisma.warehouseFulfillmentRule.findMany({
         where: { enabled: true },
-        include: { warehouse: { select: { name: true } } },
+        include: {
+          warehouse: { select: { name: true } },
+          feeTiers: { orderBy: [{ maxWeightKg: "asc" }, { baseFee: "asc" }] },
+        },
         orderBy: { effectiveFrom: "desc" },
       }),
       prisma.profitShopCostRule.findMany({
@@ -529,9 +543,35 @@ export async function GET(request: NextRequest) {
         const internalSku = costComponents.length > 0
           ? costComponents.map((component) => `${component.quantity > 1 ? `${component.quantity}x` : ""}${component.skuId}`).join(" + ")
           : null;
+        const physical = resolvedComponents.reduce((total, component) => {
+          const dimensions = [
+            number(component.variant.lengthCm),
+            number(component.variant.widthCm),
+            number(component.variant.heightCm),
+          ].sort((left, right) => right - left);
+          const componentQty = Math.max(1, component.quantity);
+          return {
+            actualWeightKg: total.actualWeightKg + number(component.variant.weightKg) * componentQty,
+            volumeCm3: total.volumeCm3 + dimensions[0] * dimensions[1] * dimensions[2] * componentQty,
+            maxLengthCm: Math.max(total.maxLengthCm, dimensions[0]),
+            maxWidthCm: Math.max(total.maxWidthCm, dimensions[1]),
+            maxHeightCm: Math.max(total.maxHeightCm, dimensions[2]),
+            covered: total.covered
+              && number(component.variant.weightKg) > 0
+              && dimensions.every((dimension) => dimension > 0),
+          };
+        }, {
+          actualWeightKg: 0,
+          volumeCm3: 0,
+          maxLengthCm: 0,
+          maxWidthCm: 0,
+          maxHeightCm: 0,
+          covered: resolvedComponents.length > 0,
+        });
         return {
           sellerSku, skuKey, qty, variant, internalSku, mappingStatus, mappingSource, costComponents,
           lineValue, productUnitCost, logisticsUnitCost, productCostCovered, logisticsCostCovered,
+          ...physical,
           productName: String(item?.product_name || variant?.product.name || sellerSku),
         };
       });
@@ -539,6 +579,7 @@ export async function GET(request: NextRequest) {
         sellerSku: "未知 SKU", skuKey: "未知 sku", qty: Math.max(number((order.rawData as any)?.item_count), 1), variant: undefined,
         internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
         lineValue: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
+        actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0, covered: false,
         productName: "未识别商品",
       }];
     };
@@ -551,14 +592,64 @@ export async function GET(request: NextRequest) {
         sum + line.qty * Math.max(1, line.costComponents.reduce((componentSum, component) => componentSum + component.quantity, 0))
       ), 0);
       const billedUnits = rule?.billingUnit === "INTERNAL_COMPONENT" ? internalUnits : sellerUnits;
-      const fee = rule && billedUnits > 0
-        ? number(rule.baseOrderFee) + number(rule.firstUnitFee) + Math.max(0, billedUnits - 1) * number(rule.additionalUnitFee)
+      const physical = lines.reduce((total, line) => ({
+        actualWeightKg: total.actualWeightKg + line.actualWeightKg * line.qty,
+        volumeCm3: total.volumeCm3 + line.volumeCm3 * line.qty,
+        maxLengthCm: Math.max(total.maxLengthCm, line.maxLengthCm),
+        maxWidthCm: Math.max(total.maxWidthCm, line.maxWidthCm),
+        maxHeightCm: Math.max(total.maxHeightCm, line.maxHeightCm),
+        covered: total.covered && line.covered,
+      }), {
+        actualWeightKg: 0,
+        volumeCm3: 0,
+        maxLengthCm: 0,
+        maxWidthCm: 0,
+        maxHeightCm: 0,
+        covered: lines.length > 0,
+      });
+      const volumetricDivisor = Math.max(1, rule?.volumetricDivisor || 6000);
+      const volumetricWeightKg = physical.volumeCm3 / volumetricDivisor;
+      const chargeableWeightKg = Math.max(physical.actualWeightKg, volumetricWeightKg);
+      const compactHeightCm = physical.maxLengthCm > 0 && physical.maxWidthCm > 0
+        ? Math.max(physical.maxHeightCm, physical.volumeCm3 / (physical.maxLengthCm * physical.maxWidthCm))
         : 0;
+      const packageDimensions = [physical.maxLengthCm, physical.maxWidthCm, compactHeightCm]
+        .sort((left, right) => right - left);
+      const pricingMode = rule?.pricingMode === "WEIGHT_TIER" || rule?.pricingMode === "PACKAGE_TIER"
+        ? rule.pricingMode
+        : "FLAT_UNIT";
+      const feeResult = rule
+        ? calculateWarehouseFulfillmentFee({
+            pricingMode,
+            billedUnits,
+            chargeableWeightKg,
+            packageLengthCm: packageDimensions[0],
+            packageWidthCm: packageDimensions[1],
+            packageHeightCm: packageDimensions[2],
+            baseOrderFee: number(rule.baseOrderFee),
+            firstUnitFee: number(rule.firstUnitFee),
+            additionalUnitFee: number(rule.additionalUnitFee),
+            overweightThresholdKg: rule.overweightThresholdKg == null ? null : number(rule.overweightThresholdKg),
+            overweightFeePerKg: number(rule.overweightFeePerKg),
+            feeTiers: rule.feeTiers.map((tier) => ({
+              minWeightKg: tier.minWeightKg == null ? null : number(tier.minWeightKg),
+              maxWeightKg: tier.maxWeightKg == null ? null : number(tier.maxWeightKg),
+              minInclusive: tier.minInclusive,
+              maxInclusive: tier.maxInclusive,
+              maxLengthCm: tier.maxLengthCm == null ? null : number(tier.maxLengthCm),
+              maxWidthCm: tier.maxWidthCm == null ? null : number(tier.maxWidthCm),
+              maxHeightCm: tier.maxHeightCm == null ? null : number(tier.maxHeightCm),
+              baseFee: number(tier.baseFee),
+            })),
+          })
+        : { fee: 0, covered: false };
+      const requiresPhysicalData = pricingMode !== "FLAT_UNIT";
       return {
-        costCny: rule ? toCny(fee, rule.currency) : 0,
-        covered: Boolean(mapping && rule),
+        costCny: rule ? toCny(feeResult.fee, rule.currency) : 0,
+        covered: Boolean(mapping && rule && feeResult.covered && (!requiresPhysicalData || physical.covered)),
         warehouseId: mapping?.warehouseId || null,
         warehouseName: rule?.warehouse.name || (tiktokWarehouseId ? `仓库 ${tiktokWarehouseId}` : "未识别仓库"),
+        chargeableWeightKg,
       };
     };
 
