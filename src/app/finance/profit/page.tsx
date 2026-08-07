@@ -103,6 +103,18 @@ function OriginalAmount({ amounts }: { amounts: Record<string, number> | undefin
   return <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="来源系统的原始币种金额">{values}</div>;
 }
 
+function platformFulfillmentOriginal(amounts: ProfitOriginalAmounts | undefined) {
+  const platform = originalSummary(amounts?.platformFee);
+  const fulfillment = originalSummary(amounts?.fulfillmentFee);
+  return platform || fulfillment ? `${platform || "-"} / ${fulfillment || "-"}` : "";
+}
+
+function PlatformFulfillmentOriginal({ amounts }: { amounts: ProfitOriginalAmounts | undefined }) {
+  const value = platformFulfillmentOriginal(amounts);
+  if (!value) return null;
+  return <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="BRL 原币：平台佣金 / 履约服务费">{value}</div>;
+}
+
 function CostShare({ value, gmvCny, prefix = "占 GMV" }: { value: number; gmvCny: number; prefix?: string }) {
   const ratio = gmvCny > 0 ? value / gmvCny * 100 : 0;
   return <div className="mt-0.5 text-[11px] font-normal text-slate-600">{prefix} {percent(ratio)}</div>;
@@ -128,12 +140,14 @@ function MetricCard({
   label,
   value,
   detail,
+  original,
   icon: Icon,
   tone = "text-slate-100",
 }: {
   label: string;
   value: string;
   detail: string;
+  original?: string;
   icon: typeof TrendingUp;
   tone?: string;
 }) {
@@ -144,6 +158,7 @@ function MetricCard({
         <Icon className="h-4 w-4 shrink-0 text-slate-500" />
       </div>
       <div className={`mt-2 truncate text-xl font-semibold tabular-nums ${tone}`} title={value}>{value}</div>
+      {original && <div className="mt-1 truncate text-[11px] tabular-nums text-slate-500" title={original}>{original}</div>}
       <div className="mt-1 truncate text-xs text-slate-500" title={detail}>{detail}</div>
     </div>
   );
@@ -171,8 +186,6 @@ function MetricCells({ row }: { row: ProfitMetricRow }) {
     gmv: {}, platformFee: {}, fulfillmentFee: {}, logisticsCost: {}, warehouseFulfillment: {},
     adSpend: {}, rebate: {}, netAdCost: {}, taxCost: {},
   };
-  const platformOriginal = originalSummary(originals.platformFee);
-  const fulfillmentOriginal = originalSummary(originals.fulfillmentFee);
   return (
     <>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">
@@ -181,7 +194,7 @@ function MetricCells({ row }: { row: ProfitMetricRow }) {
       </td>
       <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-300" title={`合计 ${money(row.platformCostCny)}`}>
         <div>{money(row.platformFeeCny)} / {money(row.fulfillmentFeeCny)}</div>
-        {(platformOriginal || fulfillmentOriginal) && <div className="mt-0.5 whitespace-nowrap text-[11px] font-normal text-slate-600" title="来源系统的原始币种金额">{platformOriginal || "-"} / {fulfillmentOriginal || "-"}</div>}
+        <PlatformFulfillmentOriginal amounts={originals} />
         <div className="mt-0.5 text-[11px] font-normal text-slate-600">占 GMV {percent(row.gmvCny > 0 ? row.platformFeeCny / row.gmvCny * 100 : 0)} / {percent(row.gmvCny > 0 ? row.fulfillmentFeeCny / row.gmvCny * 100 : 0)}</div>
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300"><div>{money(row.productCostCny)}</div><CostShare value={row.productCostCny} gmvCny={row.gmvCny} /></td>
@@ -389,7 +402,7 @@ function DailyOrdersDialog({
                         <td className="max-w-[320px] px-3 py-3">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div><div className="truncate text-xs text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[11px] text-slate-600">内部 {line.internalSku}</div>}</div>)}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300">{order.units}</td>
                         <td className="px-3 py-3 text-right tabular-nums"><div className="text-slate-200">{order.includedInProfit ? money(order.gmvCny) : "未计入"}</div><div className="mt-1 whitespace-nowrap text-[11px] text-slate-600">{originalMoney(order.currency, order.orderAmountOriginal)}</div></td>
-                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-slate-300">{money(order.platformFeeCny)} / {money(order.fulfillmentFeeCny)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.platformFeeCny)} / {money(order.fulfillmentFeeCny)}</div><PlatformFulfillmentOriginal amounts={order.originalAmounts} /></td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.productCostCny)}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.logisticsCostCny)}</div><OriginalAmount amounts={order.originalAmounts.logisticsCost} /></td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.warehouseFulfillmentCostCny)}</div><div className="mt-1 max-w-[180px] truncate text-[11px] text-slate-600" title={`${order.warehouseName}${order.tiktokWarehouseId ? ` / TikTok ${order.tiktokWarehouseId}` : ""}`}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="max-w-[180px] truncate text-[10px] text-slate-700" title={`TikTok 仓库编号 ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}</td>
@@ -412,11 +425,11 @@ function DailyOrdersDialog({
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs">{[
                       ["GMV", order.includedInProfit ? money(order.gmvCny) : "未计入"],
                       ["原始金额", originalMoney(order.currency, order.orderAmountOriginal)],
-                      ["平台 / 履约", `${money(order.platformFeeCny)} / ${money(order.fulfillmentFeeCny)}`],
+                      ["平台 / 履约", `${money(order.platformFeeCny)} / ${money(order.fulfillmentFeeCny)}${platformFulfillmentOriginal(order.originalAmounts) ? `\n${platformFulfillmentOriginal(order.originalAmounts)}` : ""}`],
                       ["采购 / 物流", `${money(order.productCostCny)} / ${money(order.logisticsCostCny)}`],
                       ["代发 / 广告", `${money(order.warehouseFulfillmentCostCny)} / ${money(order.netAdCostCny)}`],
                       ["税务成本", money(order.taxCostCny)],
-                    ].map(([label, value]) => <div key={label}><div className="text-slate-600">{label}</div><div className="mt-0.5 truncate tabular-nums text-slate-300" title={value}>{value}</div></div>)}</div>
+                    ].map(([label, value]) => <div key={label}><div className="text-slate-600">{label}</div><div className="mt-0.5 whitespace-pre-line tabular-nums text-slate-300" title={value}>{value}</div></div>)}</div>
                     <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800 pt-3"><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
                   </article>;
                 })}
@@ -686,7 +699,7 @@ export default function ProfitPage() {
           <section className="grid gap-3 py-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-8">
             <MetricCard label="订单 GMV" value={money(data.summary.gmvCny)} detail={`${data.summary.orderCount.toLocaleString()} 单 / ${data.summary.units.toLocaleString()} 件`} icon={ShoppingCart} />
             <MetricCard label="贡献利润" value={money(data.summary.contributionProfitCny)} detail={`利润率 ${percent(data.summary.margin)}`} icon={data.summary.contributionProfitCny >= 0 ? TrendingUp : TrendingDown} tone={data.summary.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"} />
-            <MetricCard label="平台 / 履约" value={`${money(data.summary.platformFeeCny)} / ${money(data.summary.fulfillmentFeeCny)}`} detail={`合计 ${money(data.summary.platformCostCny)} · 实际账单 ${percent(data.coverage.platformActual)}`} icon={WalletCards} />
+            <MetricCard label="平台 / 履约" value={`${money(data.summary.platformFeeCny)} / ${money(data.summary.fulfillmentFeeCny)}`} original={platformFulfillmentOriginal(data.summary.originalAmounts)} detail={`合计 ${money(data.summary.platformCostCny)} · 实际账单 ${percent(data.coverage.platformActual)}`} icon={WalletCards} />
             <MetricCard label="采购 + 物流" value={money(data.summary.productCostCny + data.summary.logisticsCostCny)} detail={`采购 ${percent(data.coverage.productCost)} / 物流 ${percent(data.coverage.logisticsCost)}`} icon={PackageCheck} />
             <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
             <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`原币 ${originalSummary(data.summary.originalAmounts?.netAdCost) || "-"} · 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
