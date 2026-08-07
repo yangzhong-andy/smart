@@ -237,6 +237,46 @@ function addMetric(target: MutableMetric, values: Partial<MutableMetric>) {
   }
 }
 
+type ProfitOrderDetailMoneyMetric =
+  | "gmvCny"
+  | "platformFeeCny"
+  | "fulfillmentFeeCny"
+  | "productCostCny"
+  | "logisticsCostCny"
+  | "warehouseFulfillmentCostCny"
+  | "netAdCostCny"
+  | "taxCostCny"
+  | "contributionProfitCny";
+
+// Keep the sum of displayed order amounts equal to the rounded daily report.
+// The calculation remains unchanged; only unavoidable cent-level display tails
+// are distributed across the orders with the largest remaining fractions.
+function balanceOrderDetailRounding(
+  orders: ProfitOrderDetailRow[],
+  metric: ProfitOrderDetailMoneyMetric,
+  target: number,
+) {
+  const includedOrders = orders.filter((order) => order.includedInProfit);
+  if (includedOrders.length === 0) return;
+  const toCents = (value: number) => Math.round((number(value) + Number.EPSILON) * 100);
+  const targetCents = toCents(target);
+  const currentCents = includedOrders.reduce((sum, order) => sum + toCents(order[metric]), 0);
+  const delta = targetCents - currentCents;
+  if (delta === 0) return;
+
+  const direction = Math.sign(delta);
+  const ordered = [...includedOrders].sort((left, right) => {
+    const leftFraction = number(left[metric]) * 100 - Math.floor(number(left[metric]) * 100);
+    const rightFraction = number(right[metric]) * 100 - Math.floor(number(right[metric]) * 100);
+    const byFraction = direction > 0 ? rightFraction - leftFraction : leftFraction - rightFraction;
+    return byFraction || left.orderId.localeCompare(right.orderId);
+  });
+  for (let index = 0; index < Math.abs(delta); index += 1) {
+    const order = ordered[index % ordered.length];
+    order[metric] = number(order[metric]) + direction / 100;
+  }
+}
+
 function parseLineItems(rawData: unknown): any[] {
   if (!rawData || typeof rawData !== "object") return [];
   const value = (rawData as any).line_items;
@@ -1195,6 +1235,35 @@ export async function GET(request: NextRequest) {
       mappingSource: sku.mappingSource,
       costComponents: sku.costComponents,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
+
+    const summary = finalizeMetric(summaryMutable);
+    if (includeOrders) {
+      const moneyMetrics: ProfitOrderDetailMoneyMetric[] = [
+        "gmvCny",
+        "platformFeeCny",
+        "fulfillmentFeeCny",
+        "productCostCny",
+        "logisticsCostCny",
+        "warehouseFulfillmentCostCny",
+        "netAdCostCny",
+        "taxCostCny",
+      ];
+      for (const metric of moneyMetrics) {
+        balanceOrderDetailRounding(orderDetails, metric, summary[metric]);
+      }
+      for (const order of orderDetails) {
+        if (!order.includedInProfit) continue;
+        order.contributionProfitCny = order.gmvCny
+          - order.platformFeeCny
+          - order.fulfillmentFeeCny
+          - order.productCostCny
+          - order.logisticsCostCny
+          - order.warehouseFulfillmentCostCny
+          - order.netAdCostCny
+          - order.taxCostCny;
+      }
+      balanceOrderDetailRounding(orderDetails, "contributionProfitCny", summary.contributionProfitCny);
+    }
     const finalizedOrders = includeOrders
       ? orderDetails.map((order) => {
           const contributionProfitCny = order.gmvCny
@@ -1222,7 +1291,6 @@ export async function GET(request: NextRequest) {
           } satisfies ProfitOrderDetailRow;
         }).sort((left, right) => right.createTime.localeCompare(left.createTime))
       : undefined;
-    const summary = finalizeMetric(summaryMutable);
 
     const totalSkuCount = finalizedSkus.length;
     const mappedSkuCount = finalizedSkus.filter((sku) => sku.mappingStatus !== "unmapped").length;
