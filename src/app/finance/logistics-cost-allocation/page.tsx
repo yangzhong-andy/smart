@@ -4,9 +4,14 @@ import { useState, useEffect, useMemo } from "react";
 import useSWR from "swr";
 import { Package, TrendingDown, Box } from "lucide-react";
 
+const truncate = (value: number, digits = 2) => {
+  const factor = 10 ** digits;
+  return Math.trunc((value + (value >= 0 ? 1e-9 : -1e-9)) * factor) / factor;
+};
+
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
-    Number.isFinite(n) ? n : 0
+    truncate(Number.isFinite(n) ? n : 0)
   );
 
 type AllocationItem = {
@@ -54,7 +59,7 @@ export default function LogisticsCostAllocationPage() {
     const totalCost = data.reduce((s, d) => s + d.allocatedCost, 0);
     const skuSet = new Set(data.map(d => d.sku));
     return {
-      totalCost: Math.round(totalCost * 100) / 100,
+      totalCost: truncate(totalCost),
       containerCount: new Set(data.map(d => d.containerNo)).size,
       skuCount: skuSet.size,
     };

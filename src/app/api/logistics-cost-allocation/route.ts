@@ -3,6 +3,11 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+function truncate(value: number, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.trunc((value + (value >= 0 ? 1e-9 : -1e-9)) * factor) / factor;
+}
+
 /**
  * GET /api/logistics-cost-allocation
  * 按柜子汇总物流费，并按产品体积分摊到每个SKU
@@ -132,11 +137,11 @@ export async function GET(request: NextRequest) {
           currency: group.currency,
           sku: vv.sku,
           qty: vv.qty,
-          unitVolCBM: Math.round(vv.unitVolCBM * 1e6) / 1e6,
-          totalVolCBM: Math.round(vv.totalVolCBM * 1e6) / 1e6,
-          volumeRatio: Math.round(ratio * 10000) / 100,
-          allocatedCost: Math.round(allocatedCost * 100) / 100,
-          unitCost: Math.round(unitCost * 100) / 100,
+          unitVolCBM: truncate(vv.unitVolCBM, 6),
+          totalVolCBM: truncate(vv.totalVolCBM, 6),
+          volumeRatio: truncate(ratio * 100, 2),
+          allocatedCost: truncate(allocatedCost),
+          unitCost: truncate(unitCost),
         });
       }
     }
@@ -149,7 +154,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       data: result,
       summary: {
-        totalCost: Math.round(totalCost * 100) / 100,
+        totalCost: truncate(totalCost),
         containerCount: containerGroups.size,
         skuCount: new Set(result.map(r => r.sku)).size,
       },

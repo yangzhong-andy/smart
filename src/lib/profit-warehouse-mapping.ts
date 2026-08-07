@@ -48,13 +48,18 @@ export function createWarehouseResolver(mappings: ProfitWarehouseMapping[]) {
     byTikTokId.set(tiktokWarehouseId, rows);
   }
 
-  return (rawData: unknown): WarehouseResolution => {
+  return (rawData: unknown, shopId?: string | null): WarehouseResolution => {
     const tiktokWarehouseId = extractTikTokWarehouseId(rawData);
     if (!tiktokWarehouseId) {
       return { tiktokWarehouseId: null, warehouseId: null, mapping: null, status: "missing_id" };
     }
 
-    const rows = byTikTokId.get(tiktokWarehouseId) || [];
+    const allRows = byTikTokId.get(tiktokWarehouseId) || [];
+    // A TikTok warehouse id may be reused by different shops. Prefer the
+    // shop-specific mapping, then fall back to a generic mapping.
+    const shopRows = shopId ? allRows.filter((row) => row.tiktokShopId === shopId) : [];
+    const genericRows = allRows.filter((row) => !row.tiktokShopId);
+    const rows = shopRows.length > 0 ? shopRows : genericRows.length > 0 ? genericRows : allRows;
     const warehouseIds = new Set(rows.map((row) => row.warehouseId));
     if (warehouseIds.size > 1) {
       return { tiktokWarehouseId, warehouseId: null, mapping: null, status: "ambiguous" };
