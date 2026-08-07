@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner";
@@ -8,7 +8,9 @@ import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  ChevronRight,
   Download,
+  Loader2,
   PackageCheck,
   Plus,
   RefreshCw,
@@ -36,6 +38,7 @@ import {
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
+  ProfitOrderDetailRow,
   ProfitOriginalAmounts,
   ProfitReportResponse,
   ProfitSkuRow,
@@ -198,6 +201,226 @@ function MetricCells({ row }: { row: ProfitMetricRow }) {
   );
 }
 
+function orderStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    UNPAID: "未付款",
+    ON_HOLD: "待处理",
+    AWAITING_SHIPMENT: "待发货",
+    AWAITING_COLLECTION: "待揽收",
+    PARTIALLY_SHIPPING: "部分发货",
+    IN_TRANSIT: "运输中",
+    SHIPPED: "已发货",
+    DELIVERED: "已送达",
+    COMPLETED: "已完成",
+    CANCELLED: "已取消",
+  };
+  return labels[status] || status || "未知状态";
+}
+
+function orderStatusTone(status: string) {
+  if (status === "CANCELLED") return "bg-rose-500/15 text-rose-300";
+  if (["COMPLETED", "DELIVERED"].includes(status)) return "bg-emerald-500/15 text-emerald-300";
+  if (status === "UNPAID") return "bg-amber-500/15 text-amber-300";
+  return "bg-sky-500/15 text-sky-300";
+}
+
+function orderCreatedAt(order: ProfitOrderDetailRow) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: order.timeZone,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(order.createTime));
+}
+
+function orderCoverageWarnings(order: ProfitOrderDetailRow) {
+  if (!order.includedInProfit) return order.exclusionReason ? [order.exclusionReason] : [];
+  const warnings: string[] = [];
+  if (!order.coverage.productCost) warnings.push("缺采购成本");
+  if (!order.coverage.logisticsCost) warnings.push("缺物流成本");
+  if (!order.coverage.settlement) warnings.push("平台费为预估");
+  if (!order.coverage.warehouse) warnings.push("缺代发规则");
+  if (!order.coverage.tax) warnings.push("缺税率规则");
+  return warnings;
+}
+
+function DailyOrdersDialog({
+  day,
+  selectedShopId,
+  onClose,
+}: {
+  day: ProfitMetricRow;
+  selectedShopId: string;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [detailShopId, setDetailShopId] = useState("all");
+  const query = useMemo(() => {
+    const params = new URLSearchParams({
+      startDate: day.startDate,
+      endDate: day.startDate,
+      groupBy: "day",
+      includeOrders: "1",
+    });
+    if (selectedShopId !== "all") params.set("shopId", selectedShopId);
+    return `/api/profit-report?${params.toString()}`;
+  }, [day.startDate, selectedShopId]);
+  const { data, error, isLoading, mutate } = useSWR<ProfitReportResponse>(query, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60_000,
+  });
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const orders = data?.orders || [];
+  const availableStores = useMemo(() => {
+    const values = new Map<string, string>();
+    orders.forEach((order) => values.set(order.shopId, order.storeName));
+    return [...values].map(([id, name]) => ({ id, name })).sort((left, right) => left.name.localeCompare(right.name));
+  }, [orders]);
+  const filteredOrders = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return orders.filter((order) => {
+      if (detailShopId !== "all" && order.shopId !== detailShopId) return false;
+      if (!keyword) return true;
+      return [
+        order.orderId,
+        order.storeName,
+        order.status,
+        ...order.lines.flatMap((line) => [line.sellerSku, line.internalSku || "", line.productName]),
+      ].some((value) => value.toLowerCase().includes(keyword));
+    });
+  }, [detailShopId, orders, search]);
+  const filteredValidOrders = filteredOrders.filter((order) => order.includedInProfit);
+  const totals = filteredValidOrders.reduce((result, order) => ({
+    units: result.units + order.units,
+    gmvCny: result.gmvCny + order.gmvCny,
+    contributionProfitCny: result.contributionProfitCny + order.contributionProfitCny,
+  }), { units: 0, gmvCny: 0, contributionProfitCny: 0 });
+  const cancelledOrders = filteredOrders.filter((order) => order.status === "CANCELLED").length;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/75 p-0 md:p-5" role="dialog" aria-modal="true" aria-label={`${day.label}订单明细`}>
+      <div className="flex min-h-0 w-full max-w-[1800px] flex-col overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl md:rounded-md">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 px-4 py-4 md:px-6">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-slate-100 md:text-lg">{day.label}订单明细</h2>
+            <p className="mt-1 text-xs text-slate-500">{day.startDate} · 按订单所属店铺区分 · 金额按利润日报口径</p>
+          </div>
+          <button type="button" onClick={onClose} title="关闭" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="shrink-0 border-b border-slate-800 px-4 py-3 md:px-6">
+          <div className="grid divide-y divide-slate-800 border-b border-slate-800 pb-3 sm:grid-cols-5 sm:divide-x sm:divide-y-0">
+            {[
+              ["当前订单", filteredOrders.length.toLocaleString()],
+              ["计入核算", filteredValidOrders.length.toLocaleString()],
+              ["取消订单", cancelledOrders.toLocaleString()],
+              ["销量", totals.units.toLocaleString()],
+              ["GMV / 贡献利润", `${money(totals.gmvCny)} / ${money(totals.contributionProfitCny)}`],
+            ].map(([label, value]) => <div key={label} className="min-w-0 px-3 py-2 first:pl-0 sm:py-0"><div className="text-[11px] text-slate-500">{label}</div><div className="mt-1 truncate text-sm font-semibold tabular-nums text-slate-200" title={value}>{value}</div></div>)}
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <label className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索订单号、SKU、商品或店铺" className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 pl-9 pr-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-emerald-500" />
+            </label>
+            <select value={detailShopId} onChange={(event) => setDetailShopId(event.target.value)} aria-label="按店铺筛选订单" className="h-9 min-w-[190px] rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500">
+              <option value="all">全部店铺（{orders.length}）</option>
+              {availableStores.map((store) => <option key={store.id} value={store.id}>{store.name}（{orders.filter((order) => order.shopId === store.id).length}）</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {isLoading && <div className="flex h-56 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />正在核算当天订单...</div>}
+          {error && !isLoading && <div className="flex h-56 flex-col items-center justify-center gap-3 text-sm text-rose-300"><span>{error.message || "订单明细加载失败"}</span><button type="button" onClick={() => mutate()} className="h-9 rounded-md border border-slate-700 px-3 text-slate-300 hover:bg-slate-800">重试</button></div>}
+          {!isLoading && !error && filteredOrders.length === 0 && <div className="flex h-56 items-center justify-center text-sm text-slate-500">没有匹配的订单</div>}
+
+          {!isLoading && !error && filteredOrders.length > 0 && (
+            <>
+              <div className="hidden md:block">
+                <table className="w-full min-w-[2050px] text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-950 text-xs text-slate-500">
+                    <tr className="border-b border-slate-800">
+                      <th className="px-3 py-3 text-left font-medium">订单 / 时间</th>
+                      <th className="px-3 py-3 text-left font-medium">店铺 / 状态</th>
+                      <th className="px-3 py-3 text-left font-medium">SKU / 商品</th>
+                      <th className="px-3 py-3 text-right font-medium">件数</th>
+                      <th className="px-3 py-3 text-right font-medium">GMV</th>
+                      <th className="px-3 py-3 text-right font-medium">平台 / 履约</th>
+                      <th className="px-3 py-3 text-right font-medium">采购成本</th>
+                      <th className="px-3 py-3 text-right font-medium">物流成本</th>
+                      <th className="px-3 py-3 text-right font-medium">海外仓代发</th>
+                      <th className="px-3 py-3 text-right font-medium">广告分摊</th>
+                      <th className="px-3 py-3 text-right font-medium">税务成本</th>
+                      <th className="px-3 py-3 text-right font-medium">贡献利润</th>
+                      <th className="px-3 py-3 text-left font-medium">核算状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrders.map((order) => {
+                      const coverageWarnings = orderCoverageWarnings(order);
+                      return <tr key={order.orderId} className={`border-b border-slate-900 align-top ${order.includedInProfit ? "hover:bg-slate-900/60" : "bg-slate-900/30 text-slate-500"}`}>
+                        <td className="px-3 py-3"><div className="font-medium text-slate-200">{order.orderId}</div><div className="mt-1 text-xs text-slate-500">{orderCreatedAt(order)}</div></td>
+                        <td className="px-3 py-3"><div className="max-w-[180px] truncate text-slate-300" title={order.storeName}>{order.storeName}</div><span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></td>
+                        <td className="max-w-[320px] px-3 py-3">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div><div className="truncate text-xs text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[11px] text-slate-600">内部 {line.internalSku}</div>}</div>)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{order.units}</td>
+                        <td className="px-3 py-3 text-right tabular-nums"><div className="text-slate-200">{order.includedInProfit ? money(order.gmvCny) : "未计入"}</div><div className="mt-1 whitespace-nowrap text-[11px] text-slate-600">{originalMoney(order.currency, order.orderAmountOriginal)}</div></td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-slate-300">{money(order.platformFeeCny)} / {money(order.fulfillmentFeeCny)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.productCostCny)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.logisticsCostCny)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.warehouseFulfillmentCostCny)}</div><div className="mt-1 max-w-[150px] truncate text-[11px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div></td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.netAdCostCny)}</div><OriginalAmount amounts={order.originalAmounts.netAdCost} /></td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.taxCostCny)}</td>
+                        <td className={`px-3 py-3 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-1 text-[11px] font-normal text-slate-600">{percent(order.margin)}</div></td>
+                        <td className="max-w-[190px] px-3 py-3">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">完整</span> : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>}</td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="divide-y divide-slate-800 md:hidden">
+                {filteredOrders.map((order) => {
+                  const coverageWarnings = orderCoverageWarnings(order);
+                  return <article key={order.orderId} className="px-4 py-4">
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-semibold text-slate-200">{order.orderId}</div><div className="mt-1 truncate text-xs text-slate-500">{order.storeName} · {orderCreatedAt(order)}</div></div><span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></div>
+                    <div className="mt-3 space-y-2">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`}><div className="text-sm text-slate-300">{line.sellerSku} × {line.quantity}</div><div className="truncate text-xs text-slate-600">{line.productName}</div></div>)}</div>
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs">{[
+                      ["GMV", order.includedInProfit ? money(order.gmvCny) : "未计入"],
+                      ["原始金额", originalMoney(order.currency, order.orderAmountOriginal)],
+                      ["平台 / 履约", `${money(order.platformFeeCny)} / ${money(order.fulfillmentFeeCny)}`],
+                      ["采购 / 物流", `${money(order.productCostCny)} / ${money(order.logisticsCostCny)}`],
+                      ["代发 / 广告", `${money(order.warehouseFulfillmentCostCny)} / ${money(order.netAdCostCny)}`],
+                      ["税务成本", money(order.taxCostCny)],
+                    ].map(([label, value]) => <div key={label}><div className="text-slate-600">{label}</div><div className="mt-0.5 truncate tabular-nums text-slate-300" title={value}>{value}</div></div>)}</div>
+                    <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800 pt-3"><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
+                  </article>;
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProfitPage() {
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [startDate, setStartDate] = useState(() => addDays(new Date().toISOString().slice(0, 10), -89));
@@ -206,6 +429,7 @@ export default function ProfitPage() {
   const [shopId, setShopId] = useState("all");
   const [tab, setTab] = useState<DetailTab>("period");
   const [skuSearch, setSkuSearch] = useState("");
+  const [selectedDailyPeriod, setSelectedDailyPeriod] = useState<ProfitMetricRow | null>(null);
   const [mappingSku, setMappingSku] = useState<ProfitSkuRow | null>(null);
   const [mappingComponents, setMappingComponents] = useState<CostComponentDraft[]>([]);
   const [isMappingSaving, setIsMappingSaving] = useState(false);
@@ -547,7 +771,14 @@ export default function ProfitPage() {
                   <tbody>
                     {periodRows.map((row) => (
                       <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
-                        <td className="px-3 py-2.5 text-slate-200"><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></td>
+                        <td className="px-3 py-2.5 text-slate-200">
+                          {groupBy === "day" ? (
+                            <button type="button" onClick={() => setSelectedDailyPeriod(row)} title="查看当天所有订单" className="group flex w-full items-center justify-between gap-3 text-left">
+                              <span><span className="block font-medium group-hover:text-emerald-300">{row.label}</span><span className="text-xs text-slate-600">取消 {row.cancelledOrders}</span></span>
+                              <ChevronRight className="h-4 w-4 shrink-0 text-slate-600 group-hover:text-emerald-400" />
+                            </button>
+                          ) : <><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></>}
+                        </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td>
                         <MetricCells row={row} />
                       </tr>
@@ -606,6 +837,14 @@ export default function ProfitPage() {
           </section>
         </>
       ) : null}
+
+      {selectedDailyPeriod && (
+        <DailyOrdersDialog
+          day={selectedDailyPeriod}
+          selectedShopId={shopId}
+          onClose={() => setSelectedDailyPeriod(null)}
+        />
+      )}
 
       {mappingSku && data && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="配置成本映射">
