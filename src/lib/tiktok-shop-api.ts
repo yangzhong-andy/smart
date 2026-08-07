@@ -215,14 +215,14 @@ export async function getStatements(
 
 export async function getPayments(
   accessToken: string, shopCipher: string, appKey: string, appSecret: string,
-  params: { start_time?: number; end_time?: number; page_size?: number; page_token?: string } = {}
+  params: { create_time_ge?: number; create_time_lt?: number; page_size?: number; page_token?: string } = {}
 ) {
   const query: Record<string, string> = {
     shop_cipher: shopCipher, sort_field: "create_time",
     page_size: String(params.page_size || 50),
   };
-  if (params.start_time) query.start_time = String(params.start_time);
-  if (params.end_time) query.end_time = String(params.end_time);
+  if (params.create_time_ge) query.create_time_ge = String(params.create_time_ge);
+  if (params.create_time_lt) query.create_time_lt = String(params.create_time_lt);
   if (params.page_token) query.page_token = params.page_token;
   return await callTikTokApi("/finance/202309/payments", accessToken, appKey, appSecret, { method: "GET", query });
 }

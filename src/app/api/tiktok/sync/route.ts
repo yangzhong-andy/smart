@@ -212,15 +212,39 @@ export async function POST(request: NextRequest) {
           try {
             let count = 0;
             let cashFlowCount = 0;
-            let pageToken: string | undefined = undefined;
-            let pageCount = 0;
-            while (pageCount < 10) {
+            const paymentSegmentSeconds = 24 * 60 * 60;
+
+            // The payments endpoint only honours create_time_ge/create_time_lt. Query one
+            // day at a time so a busy shop does not lose newer records behind a page limit.
+            for (let paymentStart = past; paymentStart < now; paymentStart += paymentSegmentSeconds) {
+              const paymentEnd = Math.min(paymentStart + paymentSegmentSeconds, now);
+              let pageToken: string | undefined = undefined;
+              let pageCount = 0;
+              const seenPageTokens = new Set<string>();
+
+              while (pageCount < 100) {
               pageCount++;
               const paysData = await getPayments(accessToken, cipher, appKey, appSecret, {
-                start_time: past, end_time: now, page_size: 50, page_token: pageToken,
+                create_time_ge: paymentStart,
+                create_time_lt: paymentEnd,
+                page_size: 100,
+                page_token: pageToken,
               });
-              const pays = paysData?.payments || [];
-              if (pays.length === 0) break;
+              const pays = Array.isArray(paysData?.payments) ? paysData.payments : [];
+              const nextPageToken = paysData?.next_page_token as string | undefined;
+
+              if (pays.length === 0) {
+                if (!nextPageToken) break;
+                if (pageCount >= 100) {
+                  throw new Error("TikTok returned too many payment pages for one day");
+                }
+                if (seenPageTokens.has(nextPageToken)) {
+                  throw new Error("TikTok returned a repeated payment page token");
+                }
+                seenPageTokens.add(nextPageToken);
+                pageToken = nextPageToken;
+                continue;
+              }
               for (const p of pays) {
                 // 记录更新前的状态
                 const existing = await prisma.tikTokPayment.findUnique({ where: { paymentId: p.id } });
@@ -286,8 +310,16 @@ export async function POST(request: NextRequest) {
                   }
                 }
               }
-              pageToken = paysData?.next_page_token;
-              if (!pageToken) break;
+              if (!nextPageToken) break;
+              if (pageCount >= 100) {
+                throw new Error("TikTok returned too many payment pages for one day");
+              }
+              if (seenPageTokens.has(nextPageToken)) {
+                throw new Error("TikTok returned a repeated payment page token");
+              }
+              seenPageTokens.add(nextPageToken);
+              pageToken = nextPageToken;
+              }
             }
             result.payments = count;
             result.cashFlows = cashFlowCount;
