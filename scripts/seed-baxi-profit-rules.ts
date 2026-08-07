@@ -35,10 +35,19 @@ const globeTiers = [
 }));
 
 const panlianTiers = [
-  { minWeightKg: null, maxWeightKg: 0.5, minInclusive: false, maxInclusive: true, maxLengthCm: 15, maxWidthCm: 10, maxHeightCm: 3, baseFee: 2.5 },
-  { minWeightKg: null, maxWeightKg: 1, minInclusive: false, maxInclusive: true, maxLengthCm: 30, maxWidthCm: 25, maxHeightCm: 3, baseFee: 3 },
-  { minWeightKg: null, maxWeightKg: 3, minInclusive: false, maxInclusive: true, maxLengthCm: 50, maxWidthCm: 40, maxHeightCm: 5, baseFee: 4 },
-];
+  [0, 0.5, 2.5], [0.5, 1, 3], [1, 2, 3.5], [2, 3, 4], [3, 5, 5],
+  [5, 10, 6.5], [10, 15, 13], [15, 20, 13], [20, 25, 18], [25, 30, 18],
+  [30, 40, 30], [40, 50, 30], [50, 60, 35], [60, 70, 45],
+].map(([minWeightKg, maxWeightKg, baseFee]) => ({
+  minWeightKg,
+  maxWeightKg,
+  minInclusive: false,
+  maxInclusive: true,
+  maxLengthCm: null,
+  maxWidthCm: null,
+  maxHeightCm: null,
+  baseFee,
+}));
 
 function date(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
@@ -187,13 +196,13 @@ async function main() {
       notes: "环球盛通：计费重取实重和体积重较大值，体积除数 6000；包材 R$1/单，第二件起 R$0.5/件。",
     });
     await upsertWarehouseRule(db, WAREHOUSES.panlian, "2026-06-03", {
-      pricingMode: "PACKAGE_TIER",
+      pricingMode: "WEIGHT_TIER",
       baseOrderFee: 0,
       additionalUnitFee: 0,
       overweightThresholdKg: null,
       overweightFeePerKg: 0,
       feeTiers: panlianTiers,
-      notes: "磐联云仓：按重量和包装尺寸匹配，小件/中件/大件；超重或超尺寸不自动估价；不收包材费。",
+      notes: "磐联云仓：一件代发按实际重量计费，0<x<=0.5kg 为 R$2.5/票；超 70kg 另议；不收包材费。",
     });
   });
   console.log("3001 profit rules written successfully.");
