@@ -11,6 +11,7 @@ import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
+  ProfitOrderDetailRow,
   ProfitOriginalAmounts,
   ProfitOriginalMetric,
   ProfitReportResponse,
@@ -257,12 +258,16 @@ export async function GET(request: NextRequest) {
     const requestedGroup = searchParams.get("groupBy") as ProfitGroupBy | null;
     const groupBy: ProfitGroupBy = requestedGroup && VALID_GROUPS.has(requestedGroup) ? requestedGroup : "day";
     const selectedShopId = searchParams.get("shopId") || null;
+    const includeOrders = searchParams.get("includeOrders") === "1";
 
     if (!VALID_DATE.test(startDate) || !VALID_DATE.test(endDate) || startDate > endDate) {
       return NextResponse.json({ error: "日期范围无效" }, { status: 400 });
     }
     const rangeDays = Math.round((new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / 86400000) + 1;
     if (rangeDays > 366) return NextResponse.json({ error: "单次查询最多支持 366 天" }, { status: 400 });
+    if (includeOrders && (startDate !== endDate || groupBy !== "day")) {
+      return NextResponse.json({ error: "订单明细仅支持查询单日" }, { status: 400 });
+    }
 
     const allShops = await prisma.tikTokShopSetting.findMany({
       select: { shopId: true, shopName: true, region: true, bankAccountId: true },
@@ -282,7 +287,7 @@ export async function GET(request: NextRequest) {
           ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
           createTime: { gte: queryStart, lt: queryEnd },
         },
-        select: { orderId: true, shopId: true, status: true, totalAmount: true, currency: true, createTime: true, rawData: true },
+        select: { orderId: true, shopId: true, status: true, orderStatus: true, totalAmount: true, currency: true, createTime: true, rawData: true },
         orderBy: { createTime: "asc" },
       }),
       prisma.store.findMany({ select: { id: true, name: true, currency: true, accountId: true } }),
@@ -758,6 +763,7 @@ export async function GET(request: NextRequest) {
     let warehouseMappingMissingIdOrders = 0;
     const warehouseMappingUnmappedIds = new Set<string>();
     let influencerTeamCommissionCny = 0;
+    const orderDetails: ProfitOrderDetailRow[] = [];
     const skusMap = new Map<string, MutableMetric & {
       sellerSku: string;
       internalSku: string | null;
@@ -790,19 +796,72 @@ export async function GET(request: NextRequest) {
       const periodInfo = periodFor(businessDate, groupBy);
       const period = periods.get(periodInfo.id)!;
       const storeMetric = ensureStore(order.shopId);
-
-      if (order.status === "CANCELLED") {
-        addMetric(period, { cancelledOrders: 1 });
-        addMetric(storeMetric, { cancelledOrders: 1 });
-        continue;
-      }
-      if (order.status === "UNPAID" || (order.rawData as any)?.is_sample_order) continue;
-
+      const timeZone = timeZoneForRegion(shop?.region);
       const orderCurrency = order.currency || (order.rawData as any)?.payment?.currency || (shop?.region === "US" ? "USD" : "BRL");
-      const gmvCny = toCny(order.totalAmount, orderCurrency);
       const fallbackLines = resolveOrderLines(order);
       const totalLineValue = fallbackLines.reduce((sum, line) => sum + line.lineValue, 0);
       const totalQty = fallbackLines.reduce((sum, line) => sum + line.qty, 0);
+      const isCancelled = order.status === "CANCELLED";
+      const exclusionReason = isCancelled
+        ? "已取消，不计入利润"
+        : order.status === "UNPAID"
+          ? "未付款，不计入利润"
+          : (order.rawData as any)?.is_sample_order
+            ? "免费样品订单，不计入店铺利润"
+            : null;
+
+      if (isCancelled) {
+        addMetric(period, { cancelledOrders: 1 });
+        addMetric(storeMetric, { cancelledOrders: 1 });
+      }
+      if (exclusionReason) {
+        if (includeOrders) {
+          const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
+          orderDetails.push({
+            orderId: order.orderId,
+            businessDate,
+            createTime: order.createTime.toISOString(),
+            timeZone,
+            shopId: order.shopId,
+            storeName: storeMetric.label,
+            status: order.status || order.orderStatus || "UNKNOWN",
+            includedInProfit: false,
+            exclusionReason,
+            currency: orderCurrency,
+            orderAmountOriginal: round(number(order.totalAmount)),
+            units: totalQty,
+            lines: fallbackLines.map((line) => ({
+              sellerSku: line.sellerSku,
+              internalSku: line.internalSku,
+              productName: line.productName,
+              quantity: line.qty,
+            })),
+            warehouseId: fulfillment.warehouseId,
+            warehouseName: fulfillment.warehouseName,
+            gmvCny: 0,
+            platformFeeCny: 0,
+            fulfillmentFeeCny: 0,
+            productCostCny: 0,
+            logisticsCostCny: 0,
+            warehouseFulfillmentCostCny: 0,
+            netAdCostCny: 0,
+            taxCostCny: 0,
+            contributionProfitCny: 0,
+            margin: 0,
+            originalAmounts: emptyOriginalAmounts(),
+            coverage: {
+              productCost: false,
+              logisticsCost: false,
+              settlement: false,
+              warehouse: false,
+              tax: false,
+            },
+          });
+        }
+        continue;
+      }
+
+      const gmvCny = toCny(order.totalAmount, orderCurrency);
       const financial = financialByOrder.get(order.orderId);
       const settledCny = settlementByOrder.get(order.orderId);
       const hasExactSettlement = financial?.source === "SETTLED" || settledCny != null;
@@ -914,6 +973,13 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      const orderOriginalAmounts = originalAmounts([
+        ["gmv", orderCurrency, number(order.totalAmount)],
+        ["platformFee", feeCurrency, fromCny(platformFeeCny, feeCurrency)],
+        ["fulfillmentFee", feeCurrency, fromCny(fulfillmentFeeCny, feeCurrency)],
+        ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal],
+        ["taxCost", orderCurrency, taxCostOriginal],
+      ]);
       const orderValues: Partial<MutableMetric> = {
         orderCount: 1,
         units: totalQty,
@@ -925,13 +991,7 @@ export async function GET(request: NextRequest) {
         logisticsCostCny: orderLogisticsCost,
         warehouseFulfillmentCostCny: fulfillment.costCny,
         taxCostCny,
-        originalAmounts: originalAmounts([
-          ["gmv", orderCurrency, number(order.totalAmount)],
-          ["platformFee", feeCurrency, fromCny(platformFeeCny, feeCurrency)],
-          ["fulfillmentFee", feeCurrency, fromCny(fulfillmentFeeCny, feeCurrency)],
-          ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal],
-          ["taxCost", orderCurrency, taxCostOriginal],
-        ]),
+        originalAmounts: orderOriginalAmounts,
         productCoveredUnits,
         logisticsCoveredUnits,
         exactSettlementOrders: hasExactSettlement ? 1 : 0,
@@ -940,6 +1000,48 @@ export async function GET(request: NextRequest) {
       };
       addMetric(period, orderValues);
       addMetric(storeMetric, orderValues);
+      if (includeOrders) {
+        orderDetails.push({
+          orderId: order.orderId,
+          businessDate,
+          createTime: order.createTime.toISOString(),
+          timeZone,
+          shopId: order.shopId,
+          storeName: storeMetric.label,
+          status: order.status || order.orderStatus || "UNKNOWN",
+          includedInProfit: true,
+          exclusionReason: null,
+          currency: orderCurrency,
+          orderAmountOriginal: round(number(order.totalAmount)),
+          units: totalQty,
+          lines: fallbackLines.map((line) => ({
+            sellerSku: line.sellerSku,
+            internalSku: line.internalSku,
+            productName: line.productName,
+            quantity: line.qty,
+          })),
+          warehouseId: fulfillment.warehouseId,
+          warehouseName: fulfillment.warehouseName,
+          gmvCny,
+          platformFeeCny,
+          fulfillmentFeeCny,
+          productCostCny: orderProductCost,
+          logisticsCostCny: orderLogisticsCost,
+          warehouseFulfillmentCostCny: fulfillment.costCny,
+          netAdCostCny: 0,
+          taxCostCny,
+          contributionProfitCny: 0,
+          margin: 0,
+          originalAmounts: orderOriginalAmounts,
+          coverage: {
+            productCost: totalQty > 0 && productCoveredUnits >= totalQty,
+            logisticsCost: totalQty > 0 && logisticsCoveredUnits >= totalQty,
+            settlement: hasExactSettlement,
+            warehouse: fulfillment.covered,
+            tax: Boolean(taxRule),
+          },
+        });
+      }
     }
 
     const sampleRows: ProfitSampleRow[] = [];
@@ -1039,6 +1141,24 @@ export async function GET(request: NextRequest) {
         linkedAdCny += spendCny;
         addMetric(ensureStore(linkedShopId), { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
       }
+
+      if (includeOrders) {
+        const eligibleOrders = orderDetails.filter((row) => (
+          row.includedInProfit
+          && row.businessDate === businessDate
+          && (!linkedShopId || row.shopId === linkedShopId)
+        ));
+        const eligibleGmv = eligibleOrders.reduce((sum, row) => sum + row.gmvCny, 0);
+        eligibleOrders.forEach((row) => {
+          const share = eligibleGmv > 0 ? row.gmvCny / eligibleGmv : 1 / Math.max(eligibleOrders.length, 1);
+          row.netAdCostCny += netAdCostCny * share;
+          for (const metric of ["adSpend", "rebate", "netAdCost"] as const) {
+            for (const [currency, value] of Object.entries(adOriginalAmounts[metric])) {
+              row.originalAmounts[metric][currency] = (row.originalAmounts[metric][currency] || 0) + value * share;
+            }
+          }
+        });
+      }
     }
 
     for (const store of storesMap.values()) {
@@ -1075,6 +1195,33 @@ export async function GET(request: NextRequest) {
       mappingSource: sku.mappingSource,
       costComponents: sku.costComponents,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
+    const finalizedOrders = includeOrders
+      ? orderDetails.map((order) => {
+          const contributionProfitCny = order.gmvCny
+            - order.platformFeeCny
+            - order.fulfillmentFeeCny
+            - order.productCostCny
+            - order.logisticsCostCny
+            - order.warehouseFulfillmentCostCny
+            - order.netAdCostCny
+            - order.taxCostCny;
+          return {
+            ...order,
+            orderAmountOriginal: round(order.orderAmountOriginal),
+            gmvCny: round(order.gmvCny),
+            platformFeeCny: round(order.platformFeeCny),
+            fulfillmentFeeCny: round(order.fulfillmentFeeCny),
+            productCostCny: round(order.productCostCny),
+            logisticsCostCny: round(order.logisticsCostCny),
+            warehouseFulfillmentCostCny: round(order.warehouseFulfillmentCostCny),
+            netAdCostCny: round(order.netAdCostCny),
+            taxCostCny: round(order.taxCostCny),
+            contributionProfitCny: round(contributionProfitCny),
+            margin: order.gmvCny > 0 ? round(contributionProfitCny / order.gmvCny * 100, 1) : 0,
+            originalAmounts: roundedOriginalAmounts(order.originalAmounts),
+          } satisfies ProfitOrderDetailRow;
+        }).sort((left, right) => right.createTime.localeCompare(left.createTime))
+      : undefined;
     const summary = finalizeMetric(summaryMutable);
 
     const totalSkuCount = finalizedSkus.length;
@@ -1121,6 +1268,7 @@ export async function GET(request: NextRequest) {
       periods: finalizedPeriods,
       stores: finalizedStores,
       skus: finalizedSkus,
+      orders: finalizedOrders,
       variants: variants.map((variant) => ({
         id: variant.id,
         skuId: variant.skuId,

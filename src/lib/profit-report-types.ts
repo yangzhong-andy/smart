@@ -89,6 +89,49 @@ export type ProfitSampleRow = {
   warehouseCostCovered: boolean;
 };
 
+export type ProfitOrderDetailLine = {
+  sellerSku: string;
+  internalSku: string | null;
+  productName: string;
+  quantity: number;
+};
+
+export type ProfitOrderDetailRow = {
+  orderId: string;
+  businessDate: string;
+  createTime: string;
+  timeZone: string;
+  shopId: string;
+  storeName: string;
+  status: string;
+  includedInProfit: boolean;
+  exclusionReason: string | null;
+  currency: string;
+  orderAmountOriginal: number;
+  units: number;
+  lines: ProfitOrderDetailLine[];
+  warehouseId: string | null;
+  warehouseName: string;
+  gmvCny: number;
+  platformFeeCny: number;
+  fulfillmentFeeCny: number;
+  productCostCny: number;
+  logisticsCostCny: number;
+  warehouseFulfillmentCostCny: number;
+  netAdCostCny: number;
+  taxCostCny: number;
+  contributionProfitCny: number;
+  margin: number;
+  originalAmounts: ProfitOriginalAmounts;
+  coverage: {
+    productCost: boolean;
+    logisticsCost: boolean;
+    settlement: boolean;
+    warehouse: boolean;
+    tax: boolean;
+  };
+};
+
 export type ProfitReportResponse = {
   filters: {
     startDate: string;
@@ -101,6 +144,7 @@ export type ProfitReportResponse = {
   periods: ProfitMetricRow[];
   stores: ProfitStoreRow[];
   skus: ProfitSkuRow[];
+  orders?: ProfitOrderDetailRow[];
   variants: Array<{
     id: string;
     skuId: string;
