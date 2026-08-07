@@ -791,17 +791,21 @@ export async function GET(request: NextRequest) {
         maxHeightCm: 0,
         covered: lines.length > 0,
       });
+      const pricingMode = rule?.pricingMode === "WEIGHT_TIER" || rule?.pricingMode === "PACKAGE_TIER"
+        ? rule.pricingMode
+        : "FLAT_UNIT";
       const volumetricDivisor = Math.max(1, rule?.volumetricDivisor || 6000);
       const volumetricWeightKg = physical.volumeCm3 / volumetricDivisor;
-      const chargeableWeightKg = Math.max(physical.actualWeightKg, volumetricWeightKg);
+      // Panlian's standard tiers are based on actual weight. Only package-tier
+      // quotes should use the greater of actual and volumetric weight.
+      const chargeableWeightKg = pricingMode === "PACKAGE_TIER"
+        ? Math.max(physical.actualWeightKg, volumetricWeightKg)
+        : physical.actualWeightKg;
       const compactHeightCm = physical.maxLengthCm > 0 && physical.maxWidthCm > 0
         ? Math.max(physical.maxHeightCm, physical.volumeCm3 / (physical.maxLengthCm * physical.maxWidthCm))
         : 0;
       const packageDimensions = [physical.maxLengthCm, physical.maxWidthCm, compactHeightCm]
         .sort((left, right) => right - left);
-      const pricingMode = rule?.pricingMode === "WEIGHT_TIER" || rule?.pricingMode === "PACKAGE_TIER"
-        ? rule.pricingMode
-        : "FLAT_UNIT";
       const feeResult = rule
         ? calculateWarehouseFulfillmentFee({
             pricingMode,
@@ -1006,9 +1010,18 @@ export async function GET(request: NextRequest) {
           ),
           fulfillmentFeeCny: toCny(-number(financial.shippingCostAmount), financial.currency),
         };
+        const actualFeeTotalCny = clamp(
+          financialReference.platformFeeCny + financialReference.fulfillmentFeeCny,
+          -gmvCny,
+          gmvCny * 2,
+        );
+        // TikTok's settled transaction stores the tax/fee total but does not
+        // expose the platform-vs-SFP split. Use the SKU-based estimate as the
+        // allocation reference so settled orders keep the same breakdown as
+        // the settlement detail, while retaining the actual total.
         feeBreakdown = allocateActualFeeTotal(
-          clamp(financialReference.platformFeeCny + financialReference.fulfillmentFeeCny, -gmvCny, gmvCny * 2),
-          financialReference,
+          actualFeeTotalCny,
+          estimatedFeeBreakdown || financialReference,
         );
       } else if (settledCny != null) {
         const settledTotal = clamp(gmvCny - settledCny, -gmvCny, gmvCny * 2);
