@@ -1266,14 +1266,7 @@ export async function GET(request: NextRequest) {
     }
     const finalizedOrders = includeOrders
       ? orderDetails.map((order) => {
-          const contributionProfitCny = order.gmvCny
-            - order.platformFeeCny
-            - order.fulfillmentFeeCny
-            - order.productCostCny
-            - order.logisticsCostCny
-            - order.warehouseFulfillmentCostCny
-            - order.netAdCostCny
-            - order.taxCostCny;
+          const contributionProfitCny = order.contributionProfitCny;
           return {
             ...order,
             orderAmountOriginal: round(order.orderAmountOriginal),
