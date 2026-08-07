@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard } from "lucide-react";
+import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard, CalendarDays } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
 import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
@@ -87,6 +87,8 @@ export default function TikTokOrdersPage() {
   const [keyword, setKeyword] = useState("");
   const [skuFilter, setSkuFilter] = useState("");
   const [shippingTypeFilter, setShippingTypeFilter] = useState("");
+  const [orderStartDate, setOrderStartDate] = useState("");
+  const [orderEndDate, setOrderEndDate] = useState("");
   const [filterOptions, setFilterOptions] = useState<{ skus: string[]; shippingTypes: string[] }>({ skus: [], shippingTypes: [] });
   const [shopFilter, setShopFilter] = useState("");
   const [shops, setShops] = useState<{shopId:string; shopName:string}[]>([]);
@@ -121,6 +123,8 @@ export default function TikTokOrdersPage() {
       if (keyword) params.set("keyword", keyword);
       if (skuFilter) params.set("sku", skuFilter);
       if (shippingTypeFilter) params.set("shippingType", shippingTypeFilter);
+      if (orderStartDate) params.set("orderStartDate", orderStartDate);
+      if (orderEndDate) params.set("orderEndDate", orderEndDate);
       const res = await fetch(`/api/tiktok/data?${params}`);
       const d = await res.json();
       setOrders(d.data || []);
@@ -129,7 +133,7 @@ export default function TikTokOrdersPage() {
       toast.error("加载订单失败");
     }
     setLoading(false);
-  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, shopFilter]);
+  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderStartDate, orderEndDate, shopFilter]);
 
 
   // 访问页面自动同步最近1天订单
@@ -244,7 +248,7 @@ export default function TikTokOrdersPage() {
       )}
 
       {/* 筛选 */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(140px,auto)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(220px,2fr)]">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(140px,auto)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(300px,1.4fr)_minmax(220px,2fr)]">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
@@ -275,6 +279,27 @@ export default function TikTokOrdersPage() {
             <option key={type} value={type}>{SHIPPING_TYPE_LABELS[type] || type}</option>
           ))}
         </select>
+        <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
+          <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+          <span className="shrink-0 text-slate-400">下单时间</span>
+          <input
+            type="date"
+            aria-label="下单开始日期"
+            value={orderStartDate}
+            max={orderEndDate || undefined}
+            onChange={(e) => { setOrderStartDate(e.target.value); setPage(1); }}
+            className="min-w-0 flex-1 bg-transparent text-xs text-slate-200 outline-none [color-scheme:dark]"
+          />
+          <span className="text-slate-600">至</span>
+          <input
+            type="date"
+            aria-label="下单结束日期"
+            value={orderEndDate}
+            min={orderStartDate || undefined}
+            onChange={(e) => { setOrderEndDate(e.target.value); setPage(1); }}
+            className="min-w-0 flex-1 bg-transparent text-xs text-slate-200 outline-none [color-scheme:dark]"
+          />
+        </div>
         <input
           type="text"
           placeholder="搜索订单号..."

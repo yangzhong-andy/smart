@@ -5,6 +5,63 @@ import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDate(value: string | null) {
+  if (!value || !DATE_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function nextDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function timeZoneForRegion(region: string | null | undefined) {
+  return region === "US" ? "America/Denver" : "America/Sao_Paulo";
+}
+
+function startOfDateInTimeZone(value: string, timeZone: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const localMidnightAsUtc = new Date(Date.UTC(year, month - 1, day));
+  const offsetAt = (instant: Date) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(instant);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const displayedAsUtc = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      Number(values.hour),
+      Number(values.minute),
+      Number(values.second),
+    );
+    return displayedAsUtc - instant.getTime();
+  };
+
+  // Calculate the timezone offset twice so the date boundary remains correct on DST changes.
+  let instant = new Date(localMidnightAsUtc.getTime() - offsetAt(localMidnightAsUtc));
+  instant = new Date(localMidnightAsUtc.getTime() - offsetAt(instant));
+  return instant;
+}
+
+function orderTimeRange(startDate: string | null, endDate: string | null, timeZone: string) {
+  return {
+    ...(startDate ? { gte: startOfDateInTimeZone(startDate, timeZone) } : {}),
+    ...(endDate ? { lt: startOfDateInTimeZone(nextDate(endDate), timeZone) } : {}),
+  };
+}
+
 /**
  * GET /api/tiktok/data?type=orders|statements|payments|products|summary|orderDetail
  * 查询已同步的 TikTok 数据
@@ -23,7 +80,17 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get("keyword");
     const sku = searchParams.get("sku");
     const shippingType = searchParams.get("shippingType");
+    const orderStartDate = searchParams.get("orderStartDate");
+    const orderEndDate = searchParams.get("orderEndDate");
     const skip = (page - 1) * pageSize;
+
+    if (type === "orders" && (
+      (orderStartDate && !isValidDate(orderStartDate))
+      || (orderEndDate && !isValidDate(orderEndDate))
+      || (orderStartDate && orderEndDate && orderStartDate > orderEndDate)
+    )) {
+      return NextResponse.json({ error: "Invalid order date range" }, { status: 400 });
+    }
 
     const where: any = {};
     if (shopId) where.shopId = shopId;
@@ -45,6 +112,37 @@ export async function GET(request: NextRequest) {
         ...(where.AND || []),
         { rawData: { path: ["shipping_type"], equals: shippingType } },
       ];
+    }
+    if (type === "orders" && (orderStartDate || orderEndDate)) {
+      const dateShops = await prisma.tikTokShopSetting.findMany({
+        where: shopId ? { shopId } : undefined,
+        select: { shopId: true, region: true },
+      });
+      const shopsByTimeZone = new Map<string, string[]>();
+      for (const shop of dateShops) {
+        const timeZone = timeZoneForRegion(shop.region);
+        shopsByTimeZone.set(timeZone, [...(shopsByTimeZone.get(timeZone) || []), shop.shopId]);
+      }
+      const dateConditions = [...shopsByTimeZone.entries()].map(([timeZone, shopIds]) => ({
+        shopId: { in: shopIds },
+        createTime: orderTimeRange(orderStartDate, orderEndDate, timeZone),
+      }));
+      if (!shopId && dateShops.length > 0) {
+        dateConditions.push({
+          shopId: { notIn: dateShops.map((shop) => shop.shopId) },
+          createTime: orderTimeRange(orderStartDate, orderEndDate, "America/Sao_Paulo"),
+        });
+      }
+      if (dateConditions.length === 1 && shopId) {
+        where.createTime = dateConditions[0].createTime;
+      } else if (dateConditions.length > 0) {
+        where.AND = [
+          ...(where.AND || []),
+          { OR: dateConditions },
+        ];
+      } else {
+        where.createTime = orderTimeRange(orderStartDate, orderEndDate, "America/Sao_Paulo");
+      }
     }
 
     // 获取所有已授权店铺列表（用于前端筛选）
