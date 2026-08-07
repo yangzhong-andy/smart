@@ -1404,7 +1404,7 @@ export async function GET(request: NextRequest) {
       + (warehouseCoverage * 0.1)
       + (taxRuleCoverage * 0.1)
       + (adStoreCoverage * 0.1),
-      1,
+      2,
     );
     const warnings: string[] = [];
     if (summary.productCoverage < 95) warnings.push("Some SKU product costs are missing");
