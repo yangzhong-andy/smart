@@ -40,11 +40,14 @@ function number(value: unknown): number {
 
 function round(value: number, digits = 2): number {
   const factor = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * factor) / factor;
+  // Financial values are truncated at the requested precision. The tiny
+  // sign-aware epsilon only neutralizes binary floating-point tails.
+  const epsilon = value >= 0 ? 1e-9 : -1e-9;
+  return Math.trunc((value + epsilon) * factor) / factor;
 }
 
 const ORIGINAL_METRICS: ProfitOriginalMetric[] = [
-  "gmv", "platformFee", "fulfillmentFee", "warehouseFulfillment",
+  "gmv", "platformFee", "fulfillmentFee", "logisticsCost", "warehouseFulfillment",
   "adSpend", "rebate", "netAdCost", "taxCost",
 ];
 
@@ -209,11 +212,11 @@ function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
     originalAmounts: roundedOriginalAmounts(metric.originalAmounts),
     grossProfitCny: round(grossProfitCny),
     contributionProfitCny: round(contributionProfitCny),
-    margin: metric.gmvCny > 0 ? round((contributionProfitCny / metric.gmvCny) * 100, 1) : 0,
+    margin: metric.gmvCny > 0 ? round((contributionProfitCny / metric.gmvCny) * 100, 2) : 0,
     roas: metric.netAdCostCny > 0 ? round(metric.gmvCny / metric.netAdCostCny, 2) : 0,
-    productCoverage: metric.units > 0 ? round((metric.productCoveredUnits / metric.units) * 100, 1) : 100,
-    logisticsCoverage: metric.units > 0 ? round((metric.logisticsCoveredUnits / metric.units) * 100, 1) : 100,
-    settlementCoverage: metric.orderCount > 0 ? round((metric.exactSettlementOrders / metric.orderCount) * 100, 1) : 100,
+    productCoverage: metric.units > 0 ? round((metric.productCoveredUnits / metric.units) * 100, 2) : 100,
+    logisticsCoverage: metric.units > 0 ? round((metric.logisticsCoveredUnits / metric.units) * 100, 2) : 100,
+    settlementCoverage: metric.orderCount > 0 ? round((metric.exactSettlementOrders / metric.orderCount) * 100, 2) : 100,
   };
 }
 
@@ -248,9 +251,8 @@ type ProfitOrderDetailMoneyMetric =
   | "taxCostCny"
   | "contributionProfitCny";
 
-// Keep the sum of displayed order amounts equal to the rounded daily report.
-// The calculation remains unchanged; only unavoidable cent-level display tails
-// are distributed across the orders with the largest remaining fractions.
+// Keep the sum of displayed order amounts equal to the truncated daily report.
+// Only cent-level tails are distributed; no monetary value is rounded up.
 function balanceOrderDetailRounding(
   orders: ProfitOrderDetailRow[],
   metric: ProfitOrderDetailMoneyMetric,
@@ -258,7 +260,7 @@ function balanceOrderDetailRounding(
 ) {
   const includedOrders = orders.filter((order) => order.includedInProfit);
   if (includedOrders.length === 0) return;
-  const toCents = (value: number) => Math.round((number(value) + Number.EPSILON) * 100);
+  const toCents = (value: number) => Math.trunc((number(value) + (number(value) >= 0 ? 1e-9 : -1e-9)) * 100);
   const targetCents = toCents(target);
   const currentCents = includedOrders.reduce((sum, order) => sum + toCents(order[metric]), 0);
   const delta = targetCents - currentCents;
@@ -283,6 +285,23 @@ function parseLineItems(rawData: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
+/**
+ * GMV is the product subtotal only. TikTok's order total is the buyer-paid
+ * amount and may include customer shipping, so it must not be used for GMV.
+ */
+function productAmountOriginal(order: { totalAmount: string | null; rawData: unknown }, lines: Array<{ lineValue: number }>): number {
+  const raw = order.rawData as any;
+  const payment = raw?.payment;
+  for (const value of [payment?.sub_total, payment?.subtotal, payment?.product_subtotal, raw?.product_amount, raw?.product_subtotal]) {
+    const parsed = number(value);
+    if (value != null && Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  const lineTotal = lines.reduce((sum, line) => sum + Math.max(0, number(line.lineValue)), 0);
+  if (lineTotal > 0) return lineTotal;
+  const shipping = number(payment?.shipping_fee ?? raw?.shipping_fee);
+  return Math.max(0, number(order.totalAmount) - Math.max(0, shipping));
+}
+
 function chunks<T>(items: T[], size: number): T[][] {
   const result: T[][] = [];
   for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
@@ -301,12 +320,12 @@ export async function GET(request: NextRequest) {
     const includeOrders = searchParams.get("includeOrders") === "1";
 
     if (!VALID_DATE.test(startDate) || !VALID_DATE.test(endDate) || startDate > endDate) {
-      return NextResponse.json({ error: "日期范围无效" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
     }
     const rangeDays = Math.round((new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / 86400000) + 1;
-    if (rangeDays > 366) return NextResponse.json({ error: "单次查询最多支持 366 天" }, { status: 400 });
+    if (rangeDays > 366) return NextResponse.json({ error: "Date range exceeds 366 days" }, { status: 400 });
     if (includeOrders && (startDate !== endDate || groupBy !== "day")) {
-      return NextResponse.json({ error: "订单明细仅支持查询单日" }, { status: 400 });
+      return NextResponse.json({ error: "Order details support one day only" }, { status: 400 });
     }
 
     const allShops = await prisma.tikTokShopSetting.findMany({
@@ -367,6 +386,7 @@ export async function GET(request: NextRequest) {
         include: {
           outboundBatch: {
             include: {
+              container: { select: { id: true } },
               outboundBatchItems: {
                 select: {
                   variantId: true,
@@ -499,43 +519,95 @@ export async function GET(request: NextRequest) {
       if (cost > 0) purchaseUnitCost.set(variant.id, cost);
     }
 
-    const logisticsByBatch = new Map<string, { items: any[]; costCny: number }>();
+    // Use the same source and formula as "鐗╂祦璐圭敤鍒嗘憡": each container and
+    // cost type is allocated by product volume, then reduced to a per-unit
+    // cost. The stored logistics quote is USD; original amounts are retained
+    // alongside the CNY value for auditability.
+    type LogisticsAllocationGroup = {
+      totalCostCny: number;
+      totalCostOriginalByCurrency: Record<string, number>;
+      items: Map<string, { variantId: string | null; sku: string; qty: number; length: number; width: number; height: number }>;
+    };
+    type LogisticsCostTotal = {
+      costCny: number;
+      qty: number;
+      originalByCurrency: Record<string, number>;
+    };
+    type LogisticsUnitCost = {
+      cny: number;
+      originalByCurrency: Record<string, number>;
+    };
+
+    const logisticsGroups = new Map<string, LogisticsAllocationGroup>();
     for (const cost of logisticsCosts) {
       const batch = cost.outboundBatch;
-      if (!batch) continue;
-      const current = logisticsByBatch.get(batch.id) || { items: batch.outboundBatchItems, costCny: 0 };
-      current.costCny += toCny(cost.amount, cost.currency);
-      logisticsByBatch.set(batch.id, current);
+      const containerId = cost.containerId || batch?.containerId || batch?.container?.id;
+      if (!batch || !containerId) continue;
+      const key = `${containerId}\u0000${cost.costType}`;
+      const group: LogisticsAllocationGroup = logisticsGroups.get(key) || {
+        totalCostCny: 0,
+        totalCostOriginalByCurrency: {},
+        items: new Map<string, { variantId: string | null; sku: string; qty: number; length: number; width: number; height: number }>(),
+      };
+      group.totalCostCny += toCny(cost.amount, cost.currency);
+      const currency = String(cost.currency || "CNY").trim().toUpperCase();
+      group.totalCostOriginalByCurrency[currency] = (group.totalCostOriginalByCurrency[currency] || 0) + number(cost.amount);
+      for (const item of batch.outboundBatchItems) {
+        if (item.qty <= 0) continue;
+        const sku = String(item.sku || "").trim();
+        const itemKey = sku || item.variantId || "unknown";
+        const current = group.items.get(itemKey) || {
+          variantId: item.variantId || null,
+          sku,
+          qty: 0,
+          length: number(item.variant?.lengthCm),
+          width: number(item.variant?.widthCm),
+          height: number(item.variant?.heightCm),
+        };
+        current.qty += item.qty;
+        group.items.set(itemKey, current);
+      }
+      logisticsGroups.set(key, group);
     }
-    const logisticsTotals = new Map<string, { cost: number; qty: number }>();
-    const logisticsSkuTotals = new Map<string, { cost: number; qty: number }>();
-    for (const batch of logisticsByBatch.values()) {
-      const usable = batch.items.filter((item) => item.qty > 0);
-      if (usable.length === 0) continue;
-      const completeDimensions = usable.every((item) => number(item.variant?.lengthCm) > 0 && number(item.variant?.widthCm) > 0 && number(item.variant?.heightCm) > 0);
-      const bases = usable.map((item) => completeDimensions
-        ? number(item.variant?.lengthCm) * number(item.variant?.widthCm) * number(item.variant?.heightCm) * item.qty
-        : item.qty);
-      const totalBasis = bases.reduce((sum, value) => sum + value, 0);
+
+    const logisticsTotals = new Map<string, LogisticsCostTotal>();
+    const logisticsSkuTotals = new Map<string, LogisticsCostTotal>();
+    const addLogisticsTotal = (target: Map<string, LogisticsCostTotal>, key: string, qty: number, allocatedCny: number, originalByCurrency: Record<string, number>) => {
+      if (!key || qty <= 0) return;
+      const current = target.get(key) || { costCny: 0, qty: 0, originalByCurrency: {} };
+      current.costCny += allocatedCny;
+      current.qty += qty;
+      for (const [currency, amount] of Object.entries(originalByCurrency)) {
+        current.originalByCurrency[currency] = (current.originalByCurrency[currency] || 0) + amount;
+      }
+      target.set(key, current);
+    };
+    for (const group of logisticsGroups.values()) {
+      const usable = [...group.items.values()].filter((item) => item.qty > 0);
+      const volumes = usable.map((item) => (item.length * item.width * item.height) / 1_000_000 * item.qty);
+      const totalVolume = volumes.reduce((sum, value) => sum + value, 0);
       usable.forEach((item, index) => {
-        const allocated = totalBasis > 0 ? batch.costCny * (bases[index] / totalBasis) : 0;
-        if (item.variantId) {
-          const current = logisticsTotals.get(item.variantId) || { cost: 0, qty: 0 };
-          current.cost += allocated;
-          current.qty += item.qty;
-          logisticsTotals.set(item.variantId, current);
-        }
-        const skuKey = String(item.sku || "").trim().toLowerCase();
-        if (skuKey) {
-          const current = logisticsSkuTotals.get(skuKey) || { cost: 0, qty: 0 };
-          current.cost += allocated;
-          current.qty += item.qty;
-          logisticsSkuTotals.set(skuKey, current);
-        }
+        const share = totalVolume > 0 ? volumes[index] / totalVolume : 0;
+        const allocatedCny = group.totalCostCny * share;
+        const allocatedOriginalByCurrency = Object.fromEntries(
+          Object.entries(group.totalCostOriginalByCurrency).map(([currency, amount]) => [currency, amount * share]),
+        );
+        addLogisticsTotal(logisticsTotals, item.variantId || "", item.qty, allocatedCny, allocatedOriginalByCurrency);
+        addLogisticsTotal(logisticsSkuTotals, item.sku.toLowerCase(), item.qty, allocatedCny, allocatedOriginalByCurrency);
       });
     }
-    const logisticsUnitByVariant = new Map([...logisticsTotals].filter(([, value]) => value.qty > 0).map(([key, value]) => [key, value.cost / value.qty]));
-    const logisticsUnitBySku = new Map([...logisticsSkuTotals].filter(([, value]) => value.qty > 0).map(([key, value]) => [key, value.cost / value.qty]));
+    const toLogisticsUnitCosts = (totals: Map<string, LogisticsCostTotal>) => new Map<string, LogisticsUnitCost>(
+      [...totals]
+        .filter(([, value]) => value.qty > 0)
+        .map(([key, value]) => [key, {
+          cny: value.costCny / value.qty,
+          originalByCurrency: Object.fromEntries(
+            Object.entries(value.originalByCurrency).map(([currency, amount]) => [currency, amount / value.qty]),
+          ),
+        }]),
+    );
+    const logisticsUnitByVariant = toLogisticsUnitCosts(logisticsTotals);
+    const logisticsUnitBySku = toLogisticsUnitCosts(logisticsSkuTotals);
 
     const financialByOrder = new Map(orderFinancials.map((row) => [row.orderId, row]));
     const sampleCostByOrder = new Map(sampleCostRows.map((row) => [row.orderId, row]));
@@ -590,7 +662,7 @@ export async function GET(request: NextRequest) {
     const resolveOrderLines = (order: (typeof orders)[number]) => {
       const lineItems = parseLineItems(order.rawData);
       const parsedLines = lineItems.map((item) => {
-        const sellerSku = String(item?.seller_sku || "未知 SKU").trim();
+        const sellerSku = String(item?.seller_sku || "鏈煡 SKU").trim();
         const skuKey = sellerSku.toLowerCase();
         const qty = Math.max(1, Math.round(number(item?.quantity) || 1));
         const profitComponents = profitMappingByShopSku.get(`${order.shopId}\u0000${skuKey}`) || [];
@@ -622,23 +694,29 @@ export async function GET(request: NextRequest) {
         const productUnitCost = resolvedComponents.reduce((sum, component) => (
           sum + (purchaseUnitCost.get(component.variant.id) || 0) * component.quantity
         ), 0);
-        const logisticsUnitCost = resolvedComponents.length > 0
-          ? resolvedComponents.reduce((sum, component) => (
-              sum + (
-                logisticsUnitByVariant.get(component.variant.id)
-                || logisticsUnitBySku.get(component.variant.skuId.trim().toLowerCase())
-                || 0
-              ) * component.quantity
-            ), 0)
-          : logisticsUnitBySku.get(skuKey) || 0;
+        const logisticsUnits = resolvedComponents.map((component) => (
+          logisticsUnitByVariant.get(component.variant.id)
+          || logisticsUnitBySku.get(component.variant.skuId.trim().toLowerCase())
+          || null
+        ));
+        const directLogisticsUnit = resolvedComponents.length === 0 ? logisticsUnitBySku.get(skuKey) || null : null;
+        const logisticsUnitDetail = directLogisticsUnit || logisticsUnits.reduce<LogisticsUnitCost>((total, unit, index) => {
+          if (!unit) return total;
+          const quantity = resolvedComponents[index].quantity;
+          total.cny += unit.cny * quantity;
+          for (const [currency, amount] of Object.entries(unit.originalByCurrency)) {
+            total.originalByCurrency[currency] = (total.originalByCurrency[currency] || 0) + amount * quantity;
+          }
+          return total;
+        }, { cny: 0, originalByCurrency: {} as Record<string, number> });
+        const logisticsUnitCost = logisticsUnitDetail.cny;
+        const logisticsOriginalByCurrency = logisticsUnitDetail.originalByCurrency;
         const productCostCovered = resolvedComponents.length > 0 && resolvedComponents.every((component) => (
           (purchaseUnitCost.get(component.variant.id) || 0) > 0
         ));
-        const logisticsCostCovered = resolvedComponents.length > 0 && resolvedComponents.every((component) => (
-          (logisticsUnitByVariant.get(component.variant.id)
-            || logisticsUnitBySku.get(component.variant.skuId.trim().toLowerCase())
-            || 0) > 0
-        ));
+        const logisticsCostCovered = resolvedComponents.length > 0
+          ? logisticsUnits.every(Boolean)
+          : Boolean(directLogisticsUnit);
         const costComponents = resolvedComponents.map((component) => ({
           variantId: component.variant.id,
           skuId: component.variant.skuId,
@@ -674,21 +752,22 @@ export async function GET(request: NextRequest) {
         });
         return {
           sellerSku, skuKey, qty, unitSalePrice, variant, internalSku, mappingStatus, mappingSource, costComponents,
-          lineValue, productUnitCost, logisticsUnitCost, productCostCovered, logisticsCostCovered,
+          lineValue, productUnitCost, logisticsUnitCost, logisticsOriginalByCurrency, productCostCovered, logisticsCostCovered,
           ...physical,
           productName: String(item?.product_name || variant?.product.name || sellerSku),
         };
       });
       return parsedLines.length > 0 ? parsedLines : [{
-        sellerSku: "未知 SKU", skuKey: "未知 sku", qty: Math.max(number((order.rawData as any)?.item_count), 1), variant: undefined,
+        sellerSku: "鏈煡 SKU", skuKey: "鏈煡 sku", qty: Math.max(number((order.rawData as any)?.item_count), 1), variant: undefined,
         internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
         lineValue: 0, unitSalePrice: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
         actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0, covered: false,
-        productName: "未识别商品",
+        logisticsOriginalByCurrency: {},
+        productName: "Unknown product",
       }];
     };
     const fulfillmentForOrder = (order: (typeof orders)[number], lines: ReturnType<typeof resolveOrderLines>, date: string) => {
-      const resolution = resolveWarehouse(order.rawData);
+      const resolution = resolveWarehouse(order.rawData, order.shopId);
       const tiktokWarehouseId = resolution.tiktokWarehouseId;
       const mapping = resolution.mapping;
       const rule = mapping ? activeWarehouseRule(mapping.warehouseId, order.shopId, date) : null;
@@ -755,7 +834,7 @@ export async function GET(request: NextRequest) {
         currency: rule?.currency || null,
         covered: Boolean(mapping && rule && feeResult.covered && (!requiresPhysicalData || physical.covered)),
         warehouseId: mapping?.warehouseId || null,
-        warehouseName: rule?.warehouse.name || (tiktokWarehouseId ? `仓库 ${tiktokWarehouseId}` : "未识别仓库"),
+        warehouseName: rule?.warehouse.name || (tiktokWarehouseId ? `Warehouse ${tiktokWarehouseId}` : "Unknown warehouse"),
         chargeableWeightKg,
         tiktokWarehouseId,
         mappingStatus: resolution.status,
@@ -841,13 +920,14 @@ export async function GET(request: NextRequest) {
       const fallbackLines = resolveOrderLines(order);
       const totalLineValue = fallbackLines.reduce((sum, line) => sum + line.lineValue, 0);
       const totalQty = fallbackLines.reduce((sum, line) => sum + line.qty, 0);
+      const productAmount = productAmountOriginal(order, fallbackLines);
       const isCancelled = order.status === "CANCELLED";
       const exclusionReason = isCancelled
-        ? "已取消，不计入利润"
+        ? "Cancelled order"
         : order.status === "UNPAID"
-          ? "未付款，不计入利润"
+          ? "Unpaid order"
           : (order.rawData as any)?.is_sample_order
-            ? "免费样品订单，不计入店铺利润"
+            ? "鍏嶈垂鏍峰搧璁㈠崟锛屼笉璁″叆搴楅摵鍒╂鼎"
             : null;
 
       if (isCancelled) {
@@ -868,7 +948,7 @@ export async function GET(request: NextRequest) {
             includedInProfit: false,
             exclusionReason,
             currency: orderCurrency,
-            orderAmountOriginal: round(number(order.totalAmount)),
+            orderAmountOriginal: round(productAmount),
             units: totalQty,
             lines: fallbackLines.map((line) => ({
               sellerSku: line.sellerSku,
@@ -876,6 +956,7 @@ export async function GET(request: NextRequest) {
               productName: line.productName,
               quantity: line.qty,
             })),
+            tiktokWarehouseId: fulfillment.tiktokWarehouseId,
             warehouseId: fulfillment.warehouseId,
             warehouseName: fulfillment.warehouseName,
             gmvCny: 0,
@@ -901,7 +982,8 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      const gmvCny = toCny(order.totalAmount, orderCurrency);
+      // GMV is the product subtotal and excludes buyer-paid shipping.
+      const gmvCny = toCny(productAmount, orderCurrency);
       const financial = financialByOrder.get(order.orderId);
       const settledCny = settlementByOrder.get(order.orderId);
       const hasExactSettlement = financial?.source === "SETTLED" || settledCny != null;
@@ -909,7 +991,7 @@ export async function GET(request: NextRequest) {
       const estimatedFeeBreakdown = platformRule
         ? platformRuleCost(
             platformRule,
-            number(order.totalAmount),
+            productAmount,
             gmvCny,
             totalQty,
             fallbackLines.map((line) => ({ unitAmount: line.unitSalePrice, quantity: line.qty })),
@@ -949,11 +1031,12 @@ export async function GET(request: NextRequest) {
       const taxRule = activeShopRule(order.shopId, "TAX", businessDate);
       const influencerRule = activeShopRule(order.shopId, "INFLUENCER_COMMISSION", businessDate);
       const taxCostCny = taxRule ? gmvCny * number(taxRule.ratePercent) / 100 : 0;
-      const taxCostOriginal = taxRule ? number(order.totalAmount) * number(taxRule.ratePercent) / 100 : 0;
+      const taxCostOriginal = taxRule ? productAmount * number(taxRule.ratePercent) / 100 : 0;
       const influencerCommissionCny = influencerRule ? gmvCny * number(influencerRule.ratePercent) / 100 : 0;
       influencerTeamCommissionCny += influencerCommissionCny;
       let orderProductCost = 0;
       let orderLogisticsCost = 0;
+      const orderLogisticsOriginalByCurrency: Record<string, number> = {};
       let productCoveredUnits = 0;
       let logisticsCoveredUnits = 0;
 
@@ -967,10 +1050,16 @@ export async function GET(request: NextRequest) {
         const lineLogisticsCost = line.logisticsUnitCost * line.qty;
         const lineWarehouseCost = fulfillment.costCny * allocation;
         const lineTaxCost = taxCostCny * allocation;
+        for (const [currency, amount] of Object.entries(line.logisticsOriginalByCurrency)) {
+          orderLogisticsOriginalByCurrency[currency] = (orderLogisticsOriginalByCurrency[currency] || 0) + amount * line.qty;
+        }
         const lineOriginalAmounts = originalAmounts([
-          ["gmv", orderCurrency, number(order.totalAmount) * allocation],
+          ["gmv", orderCurrency, productAmount * allocation],
           ["platformFee", feeCurrency, fromCny(linePlatformFee, feeCurrency)],
           ["fulfillmentFee", feeCurrency, fromCny(lineFulfillmentFee, feeCurrency)],
+          ...Object.entries(line.logisticsOriginalByCurrency).map(([currency, amount]) => (
+            ["logisticsCost", currency, amount * line.qty] as [ProfitOriginalMetric, string, number]
+          )),
           ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal * allocation],
           ["taxCost", orderCurrency, taxCostOriginal * allocation],
         ]);
@@ -1014,9 +1103,12 @@ export async function GET(request: NextRequest) {
       }
 
       const orderOriginalAmounts = originalAmounts([
-        ["gmv", orderCurrency, number(order.totalAmount)],
+        ["gmv", orderCurrency, productAmount],
         ["platformFee", feeCurrency, fromCny(platformFeeCny, feeCurrency)],
         ["fulfillmentFee", feeCurrency, fromCny(fulfillmentFeeCny, feeCurrency)],
+        ...Object.entries(orderLogisticsOriginalByCurrency).map(([currency, amount]) => (
+          ["logisticsCost", currency, amount] as [ProfitOriginalMetric, string, number]
+        )),
         ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal],
         ["taxCost", orderCurrency, taxCostOriginal],
       ]);
@@ -1052,7 +1144,7 @@ export async function GET(request: NextRequest) {
           includedInProfit: true,
           exclusionReason: null,
           currency: orderCurrency,
-          orderAmountOriginal: round(number(order.totalAmount)),
+          orderAmountOriginal: round(productAmount),
           units: totalQty,
           lines: fallbackLines.map((line) => ({
             sellerSku: line.sellerSku,
@@ -1060,6 +1152,7 @@ export async function GET(request: NextRequest) {
             productName: line.productName,
             quantity: line.qty,
           })),
+          tiktokWarehouseId: fulfillment.tiktokWarehouseId,
           warehouseId: fulfillment.warehouseId,
           warehouseName: fulfillment.warehouseName,
           gmvCny,
@@ -1188,9 +1281,10 @@ export async function GET(request: NextRequest) {
           && row.businessDate === businessDate
           && (!linkedShopId || row.shopId === linkedShopId)
         ));
-        const eligibleGmv = eligibleOrders.reduce((sum, row) => sum + row.gmvCny, 0);
         eligibleOrders.forEach((row) => {
-          const share = eligibleGmv > 0 ? row.gmvCny / eligibleGmv : 1 / Math.max(eligibleOrders.length, 1);
+          // Advertising is an order-level cost: a five-unit order receives the
+          // same single order share as a one-unit order.
+          const share = 1 / Math.max(eligibleOrders.length, 1);
           row.netAdCostCny += netAdCostCny * share;
           for (const metric of ["adSpend", "rebate", "netAdCost"] as const) {
             for (const [currency, value] of Object.entries(adOriginalAmounts[metric])) {
@@ -1215,7 +1309,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const summaryMutable = emptyMetric("summary", "汇总", startDate, endDate);
+    const summaryMutable = emptyMetric("summary", "Summary", startDate, endDate);
     for (const period of periods.values()) addMetric(summaryMutable, period);
     const finalizedPeriods = [...periods.values()].map(finalizeMetric).sort((a, b) => a.startDate.localeCompare(b.startDate));
     const finalizedStores: ProfitStoreRow[] = [...storesMap.values()].map((store) => ({
@@ -1279,7 +1373,7 @@ export async function GET(request: NextRequest) {
             netAdCostCny: round(order.netAdCostCny),
             taxCostCny: round(order.taxCostCny),
             contributionProfitCny: round(contributionProfitCny),
-            margin: order.gmvCny > 0 ? round(contributionProfitCny / order.gmvCny * 100, 1) : 0,
+            margin: order.gmvCny > 0 ? round(contributionProfitCny / order.gmvCny * 100, 2) : 0,
             originalAmounts: roundedOriginalAmounts(order.originalAmounts),
           } satisfies ProfitOrderDetailRow;
         }).sort((left, right) => right.createTime.localeCompare(left.createTime))
@@ -1289,18 +1383,18 @@ export async function GET(request: NextRequest) {
     const mappedSkuCount = finalizedSkus.filter((sku) => sku.mappingStatus !== "unmapped").length;
     const missingCostSkuCount = finalizedSkus.filter((sku) => sku.productCoverage < 100).length;
     const missingLogisticsSkuCount = finalizedSkus.filter((sku) => sku.logisticsCoverage < 100).length;
-    const adStoreCoverage = totalAdCny > 0 ? round((linkedAdCny / totalAdCny) * 100, 1) : 100;
+    const adStoreCoverage = totalAdCny > 0 ? round((linkedAdCny / totalAdCny) * 100, 2) : 100;
     const platformActualCoverage = summaryMutable.orderCount > 0
-      ? round((summaryMutable.exactSettlementOrders / summaryMutable.orderCount) * 100, 1)
+      ? round((summaryMutable.exactSettlementOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
     const warehouseCoverage = summaryMutable.orderCount > 0
-      ? round((summaryMutable.warehouseCoveredOrders / summaryMutable.orderCount) * 100, 1)
+      ? round((summaryMutable.warehouseCoveredOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
     const warehouseMappingCoverage = summaryMutable.orderCount > 0
-      ? round((warehouseMappingMappedOrders / summaryMutable.orderCount) * 100, 1)
+      ? round((warehouseMappingMappedOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
     const taxRuleCoverage = summaryMutable.orderCount > 0
-      ? round((summaryMutable.taxCoveredOrders / summaryMutable.orderCount) * 100, 1)
+      ? round((summaryMutable.taxCoveredOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
     const score = round(
       (summary.productCoverage * 0.3)
@@ -1313,15 +1407,15 @@ export async function GET(request: NextRequest) {
       1,
     );
     const warnings: string[] = [];
-    if (summary.productCoverage < 95) warnings.push("部分订单 SKU 未关联采购成本，利润暂为预估值");
-    if (summary.logisticsCoverage < 95) warnings.push("部分 SKU 暂无物流分摊成本");
-    if (platformActualCoverage < 80) warnings.push("部分订单尚无逐单结算，当前使用预估平台及履约费");
-    if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} 笔订单没有 warehouse_id，无法判断发货仓库`);
-    if (warehouseMappingUnmappedIds.size > 0) warnings.push(`未配置仓库映射：${[...warehouseMappingUnmappedIds].join("、")}`);
-    if (warehouseCoverage < 100) warnings.push("部分销售订单缺少对应仓库代发费规则");
-    if (taxRuleCoverage < 100) warnings.push("部分销售订单缺少店铺税率规则");
-    if (adStoreCoverage < 95) warnings.push("部分广告消耗未关联到已授权店铺");
-    if (missingCurrencies.size > 0) warnings.push(`缺少汇率：${[...missingCurrencies].join("、")}`);
+    if (summary.productCoverage < 95) warnings.push("Some SKU product costs are missing");
+    if (summary.logisticsCoverage < 95) warnings.push("閮ㄥ垎 SKU 鏆傛棤鐗╂祦鍒嗘憡鎴愭湰");
+    if (platformActualCoverage < 80) warnings.push("Platform actual fees are incomplete");
+    if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} orders have no warehouse_id`);
+    if (warehouseMappingUnmappedIds.size > 0) warnings.push(`Unmapped warehouse IDs: ${[...warehouseMappingUnmappedIds].join(", ")}`);
+    if (warehouseCoverage < 100) warnings.push("閮ㄥ垎閿€鍞鍗曠己灏戝搴斾粨搴撲唬鍙戣垂瑙勫垯");
+    if (taxRuleCoverage < 100) warnings.push("Some stores are missing tax rules");
+    if (adStoreCoverage < 95) warnings.push("Some ad spend is not linked to a store");
+    if (missingCurrencies.size > 0) warnings.push(`Missing exchange rates: ${[...missingCurrencies].join(", ")}`);
 
     const response: ProfitReportResponse = {
       filters: { startDate, endDate, groupBy, shopId: selectedShopId, currency: "CNY" },
@@ -1384,6 +1478,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response);
   } catch (error: any) {
     console.error("[Profit Report]", error);
-    return NextResponse.json({ error: error?.message || "利润报表计算失败" }, { status: 500 });
+    return NextResponse.json({ error: error?.message || "Profit report calculation failed" }, { status: 500 });
   }
 }

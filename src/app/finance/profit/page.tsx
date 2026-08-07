@@ -60,12 +60,20 @@ function addDays(date: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
+function truncate(value: number, digits = 2) {
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** digits;
+  const epsilon = value >= 0 ? 1e-9 : -1e-9;
+  return Math.trunc((value + epsilon) * factor) / factor;
+}
+
 function money(value: number) {
   return new Intl.NumberFormat("zh-CN", {
     style: "currency",
     currency: "CNY",
-    maximumFractionDigits: 0,
-  }).format(Number.isFinite(value) ? value : 0);
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(truncate(value));
 }
 
 function originalMoney(currency: string, amount: number) {
@@ -75,9 +83,9 @@ function originalMoney(currency: string, amount: number) {
       currency,
       currencyDisplay: "code",
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(truncate(amount));
   } catch {
-    return `${currency} ${amount.toFixed(2)}`;
+    return `${currency} ${truncate(amount).toFixed(2)}`;
   }
 }
 
@@ -101,13 +109,13 @@ function CostShare({ value, gmvCny, prefix = "占 GMV" }: { value: number; gmvCn
 }
 
 function compactMoney(value: number) {
-  if (Math.abs(value) >= 1_000_000) return `¥${(value / 1_000_000).toFixed(1)}m`;
-  if (Math.abs(value) >= 10_000) return `¥${(value / 10_000).toFixed(1)}w`;
-  return `¥${Math.round(value).toLocaleString("zh-CN")}`;
+  if (Math.abs(value) >= 1_000_000) return `¥${truncate(value / 1_000_000).toFixed(2)}m`;
+  if (Math.abs(value) >= 10_000) return `¥${truncate(value / 10_000).toFixed(2)}w`;
+  return `¥${truncate(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function percent(value: number) {
-  return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
+  return `${truncate(value).toFixed(2)}%`;
 }
 
 function coverageTone(value: number) {
@@ -160,7 +168,7 @@ function CoverageBar({ label, value, detail }: { label: string; value: number; d
 
 function MetricCells({ row }: { row: ProfitMetricRow }) {
   const originals: ProfitOriginalAmounts = row.originalAmounts || {
-    gmv: {}, platformFee: {}, fulfillmentFee: {}, warehouseFulfillment: {},
+    gmv: {}, platformFee: {}, fulfillmentFee: {}, logisticsCost: {}, warehouseFulfillment: {},
     adSpend: {}, rebate: {}, netAdCost: {}, taxCost: {},
   };
   const platformOriginal = originalSummary(originals.platformFee);
@@ -177,7 +185,7 @@ function MetricCells({ row }: { row: ProfitMetricRow }) {
         <div className="mt-0.5 text-[11px] font-normal text-slate-600">占 GMV {percent(row.gmvCny > 0 ? row.platformFeeCny / row.gmvCny * 100 : 0)} / {percent(row.gmvCny > 0 ? row.fulfillmentFeeCny / row.gmvCny * 100 : 0)}</div>
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300"><div>{money(row.productCostCny)}</div><CostShare value={row.productCostCny} gmvCny={row.gmvCny} /></td>
-      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300"><div>{money(row.logisticsCostCny)}</div><CostShare value={row.logisticsCostCny} gmvCny={row.gmvCny} /></td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-slate-300"><div>{money(row.logisticsCostCny)}</div><OriginalAmount amounts={originals.logisticsCost} /><CostShare value={row.logisticsCostCny} gmvCny={row.gmvCny} /></td>
       <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
         <div>{money(row.warehouseFulfillmentCostCny)}</div>
         <OriginalAmount amounts={originals.warehouseFulfillment} />
@@ -383,8 +391,8 @@ function DailyOrdersDialog({
                         <td className="px-3 py-3 text-right tabular-nums"><div className="text-slate-200">{order.includedInProfit ? money(order.gmvCny) : "未计入"}</div><div className="mt-1 whitespace-nowrap text-[11px] text-slate-600">{originalMoney(order.currency, order.orderAmountOriginal)}</div></td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-slate-300">{money(order.platformFeeCny)} / {money(order.fulfillmentFeeCny)}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.productCostCny)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.logisticsCostCny)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.warehouseFulfillmentCostCny)}</div><div className="mt-1 max-w-[150px] truncate text-[11px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div></td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.logisticsCostCny)}</div><OriginalAmount amounts={order.originalAmounts.logisticsCost} /></td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.warehouseFulfillmentCostCny)}</div><div className="mt-1 max-w-[180px] truncate text-[11px] text-slate-600" title={`${order.warehouseName}${order.tiktokWarehouseId ? ` / TikTok ${order.tiktokWarehouseId}` : ""}`}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="max-w-[180px] truncate text-[10px] text-slate-700" title={`TikTok 仓库编号 ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300"><div>{money(order.netAdCostCny)}</div><OriginalAmount amounts={order.originalAmounts.netAdCost} /></td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300">{money(order.taxCostCny)}</td>
                         <td className={`px-3 py-3 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-1 text-[11px] font-normal text-slate-600">{percent(order.margin)}</div></td>

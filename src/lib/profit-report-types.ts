@@ -4,6 +4,7 @@ export type ProfitOriginalMetric =
   | "gmv"
   | "platformFee"
   | "fulfillmentFee"
+  | "logisticsCost"
   | "warehouseFulfillment"
   | "adSpend"
   | "rebate"
@@ -110,6 +111,7 @@ export type ProfitOrderDetailRow = {
   orderAmountOriginal: number;
   units: number;
   lines: ProfitOrderDetailLine[];
+  tiktokWarehouseId?: string | null;
   warehouseId: string | null;
   warehouseName: string;
   gmvCny: number;
