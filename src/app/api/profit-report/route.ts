@@ -1010,9 +1010,18 @@ export async function GET(request: NextRequest) {
           ),
           fulfillmentFeeCny: toCny(-number(financial.shippingCostAmount), financial.currency),
         };
+        const actualFeeTotalCny = clamp(
+          financialReference.platformFeeCny + financialReference.fulfillmentFeeCny,
+          -gmvCny,
+          gmvCny * 2,
+        );
+        // TikTok's settled transaction stores the tax/fee total but does not
+        // expose the platform-vs-SFP split. Use the SKU-based estimate as the
+        // allocation reference so settled orders keep the same breakdown as
+        // the settlement detail, while retaining the actual total.
         feeBreakdown = allocateActualFeeTotal(
-          clamp(financialReference.platformFeeCny + financialReference.fulfillmentFeeCny, -gmvCny, gmvCny * 2),
-          financialReference,
+          actualFeeTotalCny,
+          estimatedFeeBreakdown || financialReference,
         );
       } else if (settledCny != null) {
         const settledTotal = clamp(gmvCny - settledCny, -gmvCny, gmvCny * 2);

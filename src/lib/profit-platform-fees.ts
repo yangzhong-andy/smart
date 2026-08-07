@@ -44,17 +44,20 @@ export function findProfitPlatformFeeTier(
 }
 
 export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBreakdown {
-  const fulfillmentFeeCny = input.gmvCny * input.fulfillmentRatePercent / 100;
-  const fixedRuleFeeCny = input.convertToCny(
+  // TikTok's settlement groups SFP and per-item charges under service fees.
+  // Keep those charges in the fulfillment column; the platform column is
+  // reserved for the percentage commission only.
+  const sfpFeeCny = input.gmvCny * input.fulfillmentRatePercent / 100;
+  const fixedOrderAndUnitFeeCny = input.convertToCny(
     input.fixedPerOrder + input.fixedPerUnit * input.totalQty,
     input.currency,
   );
 
   if (input.tiers.length === 0) {
     return {
-      platformFeeCny: fixedRuleFeeCny,
-      fulfillmentFeeCny,
-      totalCny: fixedRuleFeeCny + fulfillmentFeeCny,
+      platformFeeCny: 0,
+      fulfillmentFeeCny: sfpFeeCny + fixedOrderAndUnitFeeCny,
+      totalCny: sfpFeeCny + fixedOrderAndUnitFeeCny,
     };
   }
 
@@ -69,16 +72,18 @@ export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBre
     ? orderLines
     : [{ unitAmount: fallbackUnitAmount, quantity: Math.max(0, input.totalQty) }];
   const totalLineAmount = pricedLines.reduce((sum, line) => sum + line.unitAmount * line.quantity, 0);
-  let platformFeeCny = fixedRuleFeeCny;
+  let platformFeeCny = 0;
+  let perItemServiceFeeCny = 0;
   for (const line of pricedLines) {
     const tier = findProfitPlatformFeeTier(line.unitAmount, input.tiers);
     if (!tier) return { platformFeeCny: 0, fulfillmentFeeCny: 0, totalCny: 0 };
     const lineShare = totalLineAmount > 0
       ? (line.unitAmount * line.quantity) / totalLineAmount
       : line.quantity / Math.max(input.totalQty, 1);
-    platformFeeCny += (input.gmvCny * lineShare * tier.platformRatePercent / 100)
-      + input.convertToCny(tier.perUnitFee * line.quantity, tier.currency);
+    platformFeeCny += input.gmvCny * lineShare * tier.platformRatePercent / 100;
+    perItemServiceFeeCny += input.convertToCny(tier.perUnitFee * line.quantity, tier.currency);
   }
+  const fulfillmentFeeCny = sfpFeeCny + fixedOrderAndUnitFeeCny + perItemServiceFeeCny;
   return {
     platformFeeCny,
     fulfillmentFeeCny,
