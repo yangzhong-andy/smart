@@ -777,7 +777,7 @@ export default function ProfitPage() {
                   <thead className="text-xs text-slate-500">
                     <tr className="border-b border-slate-800">
                       <th className="px-3 py-3 text-left font-medium">周期</th>
-                      <th className="px-3 py-3 text-right font-medium">订单 / 销量</th>
+                      <th className="px-3 py-3 text-right font-medium">订单 / 销量 / 均件客单价</th>
                       <th className="px-3 py-3 text-right font-medium">GMV</th>
                       <th className="px-3 py-3 text-right font-medium">平台 / 履约</th>
                       <th className="px-3 py-3 text-right font-medium">采购成本</th>
@@ -800,7 +800,10 @@ export default function ProfitPage() {
                             </button>
                           ) : <><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></>}
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                          <div>{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</div>
+                          <div className="mt-0.5 text-[11px] font-normal text-slate-500">均件客单价 {money(row.units > 0 ? row.gmvCny / row.units : 0)}</div>
+                        </td>
                         <MetricCells row={row} />
                       </tr>
                     ))}

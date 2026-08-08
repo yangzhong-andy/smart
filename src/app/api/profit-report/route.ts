@@ -1424,15 +1424,15 @@ export async function GET(request: NextRequest) {
       2,
     );
     const warnings: string[] = [];
-    if (summary.productCoverage < 95) warnings.push("Some SKU product costs are missing");
-    if (summary.logisticsCoverage < 95) warnings.push("閮ㄥ垎 SKU 鏆傛棤鐗╂祦鍒嗘憡鎴愭湰");
-    if (platformActualCoverage < 80) warnings.push("Platform actual fees are incomplete");
-    if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} orders have no warehouse_id`);
-    if (warehouseMappingUnmappedIds.size > 0) warnings.push(`Unmapped warehouse IDs: ${[...warehouseMappingUnmappedIds].join(", ")}`);
-    if (warehouseCoverage < 100) warnings.push("閮ㄥ垎閿€鍞鍗曠己灏戝搴斾粨搴撲唬鍙戣垂瑙勫垯");
-    if (taxRuleCoverage < 100) warnings.push("Some stores are missing tax rules");
-    if (adStoreCoverage < 95) warnings.push("Some ad spend is not linked to a store");
-    if (missingCurrencies.size > 0) warnings.push(`Missing exchange rates: ${[...missingCurrencies].join(", ")}`);
+    if (summary.productCoverage < 95) warnings.push("部分 SKU 缺少采购成本");
+    if (summary.logisticsCoverage < 95) warnings.push("部分 SKU 暂无物流分摊成本");
+    if (platformActualCoverage < 80) warnings.push("平台实际费用不完整");
+    if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} 个订单缺少仓库编号`);
+    if (warehouseMappingUnmappedIds.size > 0) warnings.push(`未映射仓库编号：${[...warehouseMappingUnmappedIds].join(", ")}`);
+    if (warehouseCoverage < 100) warnings.push("部分销售订单缺少对应仓库代发费用规则");
+    if (taxRuleCoverage < 100) warnings.push("部分店铺缺少税率规则");
+    if (adStoreCoverage < 95) warnings.push("部分广告消耗未关联店铺");
+    if (missingCurrencies.size > 0) warnings.push(`缺少汇率：${[...missingCurrencies].join(", ")}`);
 
     const response: ProfitReportResponse = {
       filters: { startDate, endDate, groupBy, shopId: selectedShopId, currency: "CNY" },
