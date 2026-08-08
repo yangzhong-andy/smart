@@ -306,13 +306,17 @@ function platformProductDiscountOriginal(rawData: unknown): number {
  * GMV is the product subtotal plus TikTok-funded product discounts. Buyer-paid
  * shipping and shipping discounts remain outside GMV.
  */
-function productAmountOriginal(order: { totalAmount: string | null; rawData: unknown }, lines: Array<{ lineValue: number }>): number {
+function productAmountOriginal(
+  order: { totalAmount: string | null; rawData: unknown },
+  lines: Array<{ lineValue: number }>,
+  includePlatformProductDiscount: boolean,
+): number {
   const raw = order.rawData as any;
   const payment = raw?.payment;
   for (const value of [payment?.sub_total, payment?.subtotal, payment?.product_subtotal, raw?.product_amount, raw?.product_subtotal]) {
     const parsed = number(value);
     if (value != null && Number.isFinite(parsed) && parsed >= 0) {
-      return Math.max(0, parsed + platformProductDiscountOriginal(raw));
+      return Math.max(0, parsed + (includePlatformProductDiscount ? platformProductDiscountOriginal(raw) : 0));
     }
   }
   const lineTotal = lines.reduce((sum, line) => sum + Math.max(0, number(line.lineValue)), 0);
@@ -943,7 +947,11 @@ export async function GET(request: NextRequest) {
       const fallbackLines = resolveOrderLines(order);
       const totalLineValue = fallbackLines.reduce((sum, line) => sum + line.lineValue, 0);
       const totalQty = fallbackLines.reduce((sum, line) => sum + line.qty, 0);
-      const productAmount = productAmountOriginal(order, fallbackLines);
+      const productAmount = productAmountOriginal(
+        order,
+        fallbackLines,
+        shop?.region === "BR" && orderCurrency === "BRL",
+      );
       const isCancelled = order.status === "CANCELLED";
       const exclusionReason = isCancelled
         ? "Cancelled order"
