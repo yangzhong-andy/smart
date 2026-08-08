@@ -97,6 +97,14 @@ function originalSummary(amounts: Record<string, number> | undefined) {
     .join(" + ");
 }
 
+function originalAverage(amounts: Record<string, number> | undefined, units: number) {
+  if (units <= 0) return "-";
+  const averages = Object.fromEntries(
+    Object.entries(amounts || {}).map(([currency, amount]) => [currency, amount / units]),
+  );
+  return originalSummary(averages) || "-";
+}
+
 function OriginalAmount({ amounts }: { amounts: Record<string, number> | undefined }) {
   const values = originalSummary(amounts);
   if (!values) return null;
@@ -802,7 +810,7 @@ export default function ProfitPage() {
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
                           <div>{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</div>
-                          <div className="mt-0.5 text-[11px] font-normal text-slate-500">均件客单价 {money(row.units > 0 ? row.gmvCny / row.units : 0)}</div>
+                          <div className="mt-0.5 text-[11px] font-normal text-slate-500">均件客单价 {originalAverage(row.originalAmounts?.gmv, row.units)}</div>
                         </td>
                         <MetricCells row={row} />
                       </tr>
