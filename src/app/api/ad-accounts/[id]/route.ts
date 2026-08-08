@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
-import { ensureAdAccountSchema } from "@/lib/ad-account-schema";
 
 export const dynamic = 'force-dynamic';
 const CACHE_KEY_PREFIX = 'ad-accounts';
@@ -11,8 +10,6 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    await ensureAdAccountSchema();
-
     const account = await prisma.adAccount.findUnique({
       where: { id: params.id },
       include: { agency: true },
@@ -41,8 +38,6 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    await ensureAdAccountSchema();
-
     const body = await request.json();
     const data: Record<string, unknown> = {};
     if (body.agencyName !== undefined) data.agencyName = body.agencyName;
@@ -84,8 +79,6 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    await ensureAdAccountSchema();
-
     await prisma.adAccount.delete({ where: { id: params.id } });
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
     return NextResponse.json({ success: true });
