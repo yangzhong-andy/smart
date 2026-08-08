@@ -8,6 +8,7 @@ import {
   getPayments,
   searchProducts,
 } from "@/lib/tiktok-shop-api";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -246,9 +247,6 @@ export async function POST(request: NextRequest) {
                 continue;
               }
               for (const p of pays) {
-                // 记录更新前的状态
-                const existing = await prisma.tikTokPayment.findUnique({ where: { paymentId: p.id } });
-                const wasNotPaid = !existing || existing.status !== "PAID";
                 const isNowPaid = p.status === "PAID";
 
                 await prisma.tikTokPayment.upsert({
@@ -265,48 +263,67 @@ export async function POST(request: NextRequest) {
                     rawData: p,
                   },
                   update: {
+                    amount: p.amount?.value || null,
+                    currency: p.amount?.currency || null,
+                    settlementAmount: p.settlement_amount?.value || null,
+                    reserveAmount: p.reserve_amount?.value || null,
+                    exchangeRate: p.exchange_rate || null,
                     status: p.status || null,
+                    bankAccount: p.bank_account || null,
+                    createTime: p.create_time ? new Date(p.create_time * 1000) : null,
                     paidTime: p.paid_time ? new Date(p.paid_time * 1000) : null,
                     rawData: p,
                   },
                 });
                 count++;
 
-                // 状态变为PAID时自动生成CashFlow（防重复）
-                if (isNowPaid && wasNotPaid && shop.bankAccountId) {
+                // Keep the generated cash-flow synchronized for every PAID payment.
+                // This also backfills flows after an account is linked and corrects
+                // a changed payment amount without creating duplicates.
+                if (isNowPaid && shop.bankAccountId) {
                   const cashFlowUid = `TIKTOK_PAY_${p.id}`;
-                  const existingCF = await prisma.cashFlow.findFirst({ where: { uid: cashFlowUid } });
-                  if (!existingCF) {
-                    const bankAccount = await prisma.bankAccount.findUnique({ where: { id: shop.bankAccountId } });
-                    if (bankAccount) {
-                      await prisma.cashFlow.create({
-                        data: {
-                          uid: cashFlowUid,
-                          date: p.paid_time ? new Date(p.paid_time * 1000) : new Date(p.create_time * 1000),
-                          summary: `TikTok回款 - ${shop.shopName}`,
-                          category: "回款/店铺回款",
-                          type: "INCOME",
-                          amount: parseFloat(p.amount?.value || "0"),
-                          accountId: shop.bankAccountId,
-                          accountName: bankAccount.name,
-                          currency: p.amount?.currency || "BRL",
-                          status: "CONFIRMED",
-                          relatedId: p.id,
-                          remark: `付款单ID: ${p.id}`,
-                          exchangeRate: 1.3,
-                          platform: "TikTok",
-                          storeId: bankAccount.storeId || null,
-                          storeName: shop.shopName,
-                          accountName: bankAccount.name,
-                          currency: p.amount?.currency || "BRL",
-                          status: "CONFIRMED",
-                          relatedId: p.id,
-                          remark: `付款单ID: ${p.id}`,
-                        },
-                      });
-                      cashFlowCount++;
-                      console.log(`[TikTok CashFlow] ✅ 生成流水: ${shop.shopName} +${p.amount?.value} ${p.amount?.currency}`);
-                    }
+                  const bankAccount = await prisma.bankAccount.findUnique({ where: { id: shop.bankAccountId } });
+                  if (bankAccount) {
+                    const paidDate = p.paid_time
+                      ? new Date(p.paid_time * 1000)
+                      : (p.create_time ? new Date(p.create_time * 1000) : new Date());
+                    await prisma.cashFlow.upsert({
+                      where: { uid: cashFlowUid },
+                      create: {
+                        uid: cashFlowUid,
+                        date: paidDate,
+                        summary: `TikTok回款 - ${shop.shopName}`,
+                        category: "回款/店铺回款",
+                        type: "INCOME",
+                        amount: parseFloat(p.amount?.value || "0"),
+                        accountId: shop.bankAccountId,
+                        accountName: bankAccount.name,
+                        currency: p.amount?.currency || "BRL",
+                        status: "CONFIRMED",
+                        relatedId: p.id,
+                        remark: `付款单ID: ${p.id}`,
+                        exchangeRate: 1.3,
+                        platform: "TikTok",
+                        storeId: bankAccount.storeId || null,
+                        storeName: shop.shopName,
+                      },
+                      update: {
+                        date: paidDate,
+                        summary: `TikTok回款 - ${shop.shopName}`,
+                        amount: parseFloat(p.amount?.value || "0"),
+                        accountId: shop.bankAccountId,
+                        accountName: bankAccount.name,
+                        currency: p.amount?.currency || "BRL",
+                        status: "CONFIRMED",
+                        relatedId: p.id,
+                        remark: `付款单ID: ${p.id}`,
+                        platform: "TikTok",
+                        storeId: bankAccount.storeId || null,
+                        storeName: shop.shopName,
+                      },
+                    });
+                    cashFlowCount++;
+                    console.log(`[TikTok CashFlow] 已同步: ${shop.shopName} +${p.amount?.value} ${p.amount?.currency}`);
                   }
                 }
               }
@@ -376,6 +393,10 @@ export async function POST(request: NextRequest) {
       }
       results.push(result);
     }
+
+    // The accounts page caches the full cash-flow list.  Clear it after a
+    // payment sync so a newly paid or corrected payment is visible immediately.
+    await clearCacheByPrefix("cash-flow");
 
     return NextResponse.json({ success: true, results });
   } catch (error: any) {

@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Wallet, Banknote, TrendingUp, Receipt, ChevronDown,
 import { Pagination } from "@/components/Pagination";
 
 type TabType = "overview" | "payments" | "statements" | "unsettled" | "invoice";
+type FinanceRange = "all" | "week" | "lastWeek" | "month";
 
 type Statement = {
   id: string; statementId: string;
@@ -75,6 +76,7 @@ export default function TikTokFinancePage() {
   const [dateOrdersLoading, setDateOrdersLoading] = useState(false);
   const [statementView, setStatementView] = useState<"statement" | "order">("statement");
   const [paymentStatus, setPaymentStatus] = useState<string>(""); // ""=全部, PAID, FAILED, PROCESSING, RETURNED
+  const [dateRange, setDateRange] = useState<FinanceRange>("all");
 
   useEffect(() => {
     fetch("/api/tiktok/data?type=shops").then(r => r.json()).then(d => {
@@ -86,12 +88,13 @@ export default function TikTokFinancePage() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const url = shopFilter ? `/api/tiktok/data?type=summary&shopId=${shopFilter}` : "/api/tiktok/data?type=summary";
-      const res = await fetch(url);
+      const params = new URLSearchParams({ type: "summary", range: dateRange });
+      if (shopFilter) params.set("shopId", shopFilter);
+      const res = await fetch(`/api/tiktok/data?${params}`);
       const d = await res.json();
       setSummary(d);
     } catch {}
-  }, [shopFilter]);
+  }, [shopFilter, dateRange]);
 
   const fetchData = useCallback(async () => {
     if (tab === "overview" || tab === "invoice" || tab === "unsettled") { setLoading(false); return; }
@@ -226,7 +229,11 @@ export default function TikTokFinancePage() {
         <div className="p-4">
           {/* ===== 财务概览 ===== */}
           {tab === "overview" && (
-            <OverviewTab summary={summary} finance={finance} shops={shops} shopFilter={shopFilter} onGoPayments={() => setTab("payments")} />
+            <OverviewTab
+              summary={summary} finance={finance} shops={shops} shopFilter={shopFilter}
+              dateRange={dateRange} setDateRange={setDateRange}
+              onGoPayments={() => setTab("payments")}
+            />
           )}
 
           {/* ===== 付款 ===== */}
@@ -311,13 +318,14 @@ function DataTable({ loading, data, emptyText, headers, renderRow }: {
 }
 
 // ===== 财务概览组件 =====
-function OverviewTab({ summary, finance, shops, shopFilter, onGoPayments }: {
+function OverviewTab({ summary, finance, shops, shopFilter, dateRange, setDateRange, onGoPayments }: {
   summary: any; finance: any;
   shops: {shopId:string;shopName:string}[];
   shopFilter: string;
+  dateRange: FinanceRange;
+  setDateRange: (range: FinanceRange) => void;
   onGoPayments: () => void;
 }) {
-  const [dateRange, setDateRange] = useState<"week" | "lastWeek" | "month">("week");
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
 
   useEffect(() => {
@@ -328,13 +336,13 @@ function OverviewTab({ summary, finance, shops, shopFilter, onGoPayments }: {
 
   const netIncome = parseFloat(finance.totalNetSales || "0") - parseFloat(finance.totalFees || "0");
   const lastPayment = recentPayments[0];
-  const dateLabels = { week: "本周", lastWeek: "上周", month: "上个月" };
+  const dateLabels = { all: "全部", week: "本周", lastWeek: "上周", month: "上个月" };
 
   return (
     <div className="space-y-6">
       {/* 日期筛选 */}
       <div className="flex gap-1 rounded-lg bg-slate-800 p-1 w-fit">
-        {(["week", "lastWeek", "month"] as const).map(r => (
+        {(["all", "week", "lastWeek", "month"] as const).map(r => (
           <button key={r} onClick={() => setDateRange(r)}
             className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${
               dateRange === r ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-slate-200"
