@@ -1034,10 +1034,10 @@ export default function AdAgenciesPage() {
       toast.error("账户名称是必填项");
       return;
     }
-    const currentBalance = Number(accountForm.currentBalance) || 0;
+    const currentBalance = accountForm.currentBalance.trim() === "" ? 0 : Number(accountForm.currentBalance);
     const creditLimit = Number(accountForm.creditLimit) || 0;
-    if (Number.isNaN(currentBalance) || currentBalance < 0) {
-      toast.error("当前余额需为非负数");
+    if (!Number.isFinite(currentBalance)) {
+      toast.error("当前余额必须为有效数字");
       return;
     }
     if (Number.isNaN(creditLimit) || creditLimit < 0) {
@@ -1116,10 +1116,10 @@ export default function AdAgenciesPage() {
       toast.error("账户名称是必填项");
       return;
     }
-    const currentBalance = Number(accountForm.currentBalance) || 0;
+    const currentBalance = accountForm.currentBalance.trim() === "" ? 0 : Number(accountForm.currentBalance);
     const creditLimit = Number(accountForm.creditLimit) || 0;
-    if (Number.isNaN(currentBalance) || currentBalance < 0) {
-      toast.error("当前余额需为非负数");
+    if (!Number.isFinite(currentBalance)) {
+      toast.error("当前余额必须为有效数字");
       return;
     }
     if (Number.isNaN(creditLimit) || creditLimit < 0) {
