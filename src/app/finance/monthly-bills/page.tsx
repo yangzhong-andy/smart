@@ -391,11 +391,13 @@ export default function MonthlyBillsPage() {
       // 2. 生成广告月账单
       try {
         const [agenciesRes, consumptionsRes] = await Promise.all([
-          fetch("/api/ad-agencies"),
-          fetch("/api/ad-consumptions"),
+          fetch("/api/ad-agencies?page=1&pageSize=500&noCache=true"),
+          fetch("/api/ad-consumptions?page=1&pageSize=5000&noCache=true"),
         ]);
-        const agencies = agenciesRes.ok ? await agenciesRes.json() : [];
-        const consumptions = consumptionsRes.ok ? await consumptionsRes.json() : [];
+        const agenciesPayload = agenciesRes.ok ? await agenciesRes.json() : [];
+        const consumptionsPayload = consumptionsRes.ok ? await consumptionsRes.json() : [];
+        const agencies = Array.isArray(agenciesPayload) ? agenciesPayload : agenciesPayload?.data || [];
+        const consumptions = Array.isArray(consumptionsPayload) ? consumptionsPayload : consumptionsPayload?.data || [];
 
         type AgencyData = { id: string; name: string };
         type ConsumptionData = { id: string; agencyId: string; month: string; amount: number; estimatedRebate: number; currency: string };
