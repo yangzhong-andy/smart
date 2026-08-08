@@ -34,6 +34,7 @@ import { ApprovalStats } from "./components/ApprovalStats";
 import { ApprovalFilters, type ActiveTab, type RequestKindFilter } from "./components/ApprovalFilters";
 import { ApprovalList } from "./components/ApprovalList";
 import { ApprovalDetailDialog } from "./components/ApprovalDetailDialog";
+import type { VoucherViewerState } from "./components/VoucherImage";
 import { broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
 
 function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
@@ -100,7 +101,7 @@ export default function ApprovalCenterPage() {
   const [selectedIncomeRequest, setSelectedIncomeRequest] = useState<IncomeRequest | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isRequestDetailOpen, setIsRequestDetailOpen] = useState(false);
-  const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
+  const [voucherViewModal, setVoucherViewModal] = useState<VoucherViewerState | null>(null);
   const [rejectModal, setRejectModal] = useState<{ open: boolean; type: "bill" | "expense" | "income" | null; id: string | null }>({
     open: false,
     type: null,
@@ -870,4 +871,3 @@ export default function ApprovalCenterPage() {
     </div>
   );
 }
-
