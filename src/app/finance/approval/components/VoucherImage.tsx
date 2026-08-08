@@ -1,105 +1,82 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  RotateCcw,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  X,
+} from "lucide-react";
 
-/**
- * 将各种格式的凭证数据规范化为可渲染的图片 src 字符串数组。
- * 支持：
- *  - JSON 字符串数组: '["data:image/png;base64,xxx"]'
- *  - 单个 data URL: "data:image/png;base64,xxx"
- *  - 裸 base64 字符串（自动补 data URL 前缀）
- *  - 普通 URL
- */
 export function parseVoucher(voucher: unknown): string[] {
   if (!voucher) return [];
 
-  let raw = voucher;
-
-  // 如果是数组，直接取元素
-  if (Array.isArray(raw)) {
-    return raw.map((item) => normalizeImageSrc(String(item)));
+  if (Array.isArray(voucher)) {
+    return voucher
+      .map((item) => normalizeImageSrc(String(item)))
+      .filter(Boolean);
   }
 
-  const str = String(raw).trim();
+  const value = String(voucher).trim();
+  if (!value || value === "[]" || value === "null" || value === "undefined") return [];
 
-  // 空字符串或无效值
-  if (!str || str === "[]" || str === "null" || str === "undefined") return [];
-
-  // 尝试 JSON 解析
-  if (str.startsWith("[")) {
+  if (value.startsWith("[")) {
     try {
-      const parsed = JSON.parse(str);
+      const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) {
-        return parsed.map((item: unknown) => normalizeImageSrc(String(item)));
+        return parsed
+          .map((item: unknown) => normalizeImageSrc(String(item)))
+          .filter(Boolean);
       }
-      return [normalizeImageSrc(String(parsed))];
+      return [normalizeImageSrc(String(parsed))].filter(Boolean);
     } catch {
-      // JSON 解析失败，当作普通字符串处理
+      // Keep the original value when an older record is not valid JSON.
     }
   }
 
-  return [normalizeImageSrc(str)];
+  return [normalizeImageSrc(value)].filter(Boolean);
 }
 
-/**
- * 规范化单个图片 src：裸 base64 → data URL
- */
 function normalizeImageSrc(src: string): string {
-  const trimmed = src.trim();
-
-  // 已经是 data URL
-  if (trimmed.startsWith("data:")) {
-    return trimmed;
+  const value = src.trim();
+  if (!value) return "";
+  if (value.startsWith("data:") || value.startsWith("http") || value.startsWith("/") || value.startsWith("blob:")) {
+    return value;
   }
-
-  // 普通 URL（http/https/相对路径）
-  if (trimmed.startsWith("http") || trimmed.startsWith("/") || trimmed.startsWith("blob:")) {
-    return trimmed;
+  if (/^[A-Za-z0-9+/=\s]+$/.test(value) && value.replace(/\s/g, "").length > 100) {
+    const base64 = value.replace(/\s/g, "");
+    if (base64.startsWith("iVBOR")) return `data:image/png;base64,${base64}`;
+    if (base64.startsWith("/9j/")) return `data:image/jpeg;base64,${base64}`;
+    return `data:image/jpeg;base64,${base64}`;
   }
-
-  // 裸 base64（仅含合法字符且足够长）
-  if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.replace(/\s/g, "").length > 100) {
-    const clean = trimmed.replace(/\s/g, "");
-    // PNG 签名
-    if (clean.startsWith("iVBOR")) return `data:image/png;base64,${clean}`;
-    // JPEG 签名
-    if (clean.startsWith("/9j/")) return `data:image/jpeg;base64,${clean}`;
-    // 默认 jpeg
-    return `data:image/jpeg;base64,${clean}`;
-  }
-
-  return trimmed;
+  return value;
 }
 
 interface VoucherImageProps {
-  /** 凭证数据（字符串、JSON字符串数组、或数组） */
   voucher: unknown;
-  /** 点击图片时回调（用于打开大图） */
-  onView?: (src: string) => void;
-  /** 缩略图尺寸 class */
+  onView?: (src: string, images: string[], index: number) => void;
   thumbClassName?: string;
 }
 
-/**
- * 凭证缩略图网格组件。
- * 显示加载状态、错误兜底、空状态。
- */
 export function VoucherThumbnails({ voucher, onView, thumbClassName }: VoucherImageProps) {
-  const imgs = useMemo(() => parseVoucher(voucher), [voucher]);
+  const images = useMemo(() => parseVoucher(voucher), [voucher]);
 
-  if (imgs.length === 0) {
-    return (
-      <div className="text-xs text-slate-500 italic">暂无凭证</div>
-    );
+  if (images.length === 0) {
+    return <div className="text-xs text-slate-500 italic">No voucher</div>;
   }
 
   return (
     <div className="flex flex-wrap gap-3">
-      {imgs.map((img, i) => (
+      {images.map((src, index) => (
         <VoucherThumb
-          key={i}
-          src={img}
-          index={i}
+          key={`${index}-${src.slice(0, 20)}`}
+          src={src}
+          images={images}
+          index={index}
           onView={onView}
           className={thumbClassName}
         />
@@ -110,250 +87,187 @@ export function VoucherThumbnails({ voucher, onView, thumbClassName }: VoucherIm
 
 interface VoucherThumbProps {
   src: string;
+  images: string[];
   index: number;
-  onView?: (src: string) => void;
+  onView?: (src: string, images: string[], index: number) => void;
   className?: string;
 }
 
-/**
- * 缩略图：使用 Blob URL 渲染（比 data URL 更可靠，避免超长字符串解析问题）
- */
-function VoucherThumb({ src, index, onView, className }: VoucherThumbProps) {
+function VoucherThumb({ src, images, index, onView, className }: VoucherThumbProps) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [renderSrc, setRenderSrc] = useState<string>(src);
-  const [errorMsg, setErrorMsg] = useState<string>("");
+  const [renderSrc, setRenderSrc] = useState(src);
 
-  // 如果是 data URL，转换为 Blob URL 以获得更好的渲染可靠性
   useEffect(() => {
-    let revoked = false;
-    let blobUrl: string | null = null;
-
+    setStatus("loading");
+    setRenderSrc(src);
+    let objectUrl: string | null = null;
     if (src.startsWith("data:")) {
       try {
-        // 解析 data URL: data:image/png;base64,xxxx
         const match = src.match(/^data:([^;]+);base64,(.*)$/);
         if (match) {
-          const mimeType = match[1];
-          const base64Data = match[2];
-          // 转换 base64 → binary
-          const byteChars = atob(base64Data);
-          const byteNumbers = new Array(byteChars.length);
-          for (let j = 0; j < byteChars.length; j++) {
-            byteNumbers[j] = byteChars.charCodeAt(j);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: mimeType });
-          blobUrl = URL.createObjectURL(blob);
-          if (!revoked) {
-            setRenderSrc(blobUrl);
-          }
-        } else {
-          // 非 base64 的 data URL，直接用
-          setRenderSrc(src);
+          const bytes = atob(match[2]);
+          const data = new Uint8Array(bytes.length);
+          for (let i = 0; i < bytes.length; i++) data[i] = bytes.charCodeAt(i);
+          objectUrl = URL.createObjectURL(new Blob([data], { type: match[1] }));
+          setRenderSrc(objectUrl);
         }
-      } catch (e) {
-        // 转换失败，回退到原始 data URL
-        setErrorMsg(`Blob转换失败: ${e instanceof Error ? e.message : String(e)}`);
+      } catch {
         setRenderSrc(src);
       }
-    } else {
-      setRenderSrc(src);
     }
-
     return () => {
-      revoked = true;
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [src]);
 
   return (
-    <div
-      className={`relative group cursor-pointer overflow-hidden rounded-lg border border-slate-600 group-hover:border-primary-400 transition ${
-        className || "h-32 w-32"
-      }`}
-      onClick={() => onView?.(src)}
+    <button
+      type="button"
+      className={`relative group cursor-pointer overflow-hidden rounded-lg border border-slate-600 hover:border-primary-400 transition focus:outline-none focus:ring-2 focus:ring-primary-400 ${className || "h-32 w-32"}`}
+      onClick={() => onView?.(src, images, index)}
+      aria-label={`View voucher ${index + 1}`}
     >
-      {status === "loading" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-800 text-slate-500 text-xs z-10">
-          加载中...
-        </div>
-      )}
-      {status === "error" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-rose-900/30 p-2 text-center z-10">
-          <span className="text-rose-400 text-lg">⚠</span>
-          <span className="text-rose-300 text-[10px] mt-1">加载失败</span>
-          {errorMsg && (
-            <span className="text-slate-500 text-[8px] mt-1 break-all">{errorMsg.slice(0, 40)}</span>
-          )}
-        </div>
-      )}
+      {status === "loading" && <span className="absolute inset-0 flex items-center justify-center bg-slate-800 text-slate-500 text-xs z-10">Loading...</span>}
+      {status === "error" && <span className="absolute inset-0 flex items-center justify-center bg-rose-900/30 text-rose-300 text-xs z-10">Load failed</span>}
       <img
         src={renderSrc}
-        alt={`凭证${index + 1}`}
-        className={`h-full w-full object-cover transition-opacity ${
-          status === "loaded" ? "opacity-100" : "opacity-0"
-        }`}
+        alt={`Voucher ${index + 1}`}
+        className={`h-full w-full object-cover transition-opacity ${status === "loaded" ? "opacity-100" : "opacity-0"}`}
         onLoad={() => setStatus("loaded")}
-        onError={(e) => {
-          setStatus("error");
-          setErrorMsg(`图片onError, src长度=${renderSrc.length}`);
-        }}
+        onError={() => setStatus("error")}
       />
-      {status === "loaded" && (
-        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
-          凭证{index + 1}
-        </div>
+      {status === "loaded" && images.length > 1 && (
+        <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
+          {index + 1}/{images.length}
+        </span>
       )}
-    </div>
+    </button>
   );
 }
 
+export type VoucherViewerState = {
+  images: string[];
+  index: number;
+};
+
 interface VoucherViewerModalProps {
-  src: string | null;
+  viewer: VoucherViewerState | null;
   onClose: () => void;
 }
 
-/**
- * 凭证大图查看弹窗。
- * 直接渲染规范化的图片 src，带加载/错误状态和下载后备。
- */
-export function VoucherViewerModal({ src, onClose }: VoucherViewerModalProps) {
+export function VoucherViewerModal({ viewer, onClose }: VoucherViewerModalProps) {
+  const images = viewer?.images || [];
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [renderSrc, setRenderSrc] = useState<string>("");
+  const [renderSrc, setRenderSrc] = useState("");
   const [rotation, setRotation] = useState(0);
+  const [scale, setScale] = useState(1);
+  const imageSrc = images.length ? normalizeImageSrc(images[currentIndex] || images[0]) : "";
 
-  const imageSrc = src ? normalizeImageSrc(src) : "";
-
-  // 转换为 Blob URL
   useEffect(() => {
+    if (!viewer) return;
+    setCurrentIndex(Math.min(Math.max(viewer.index, 0), Math.max(viewer.images.length - 1, 0)));
     setRotation(0);
-    if (!imageSrc) {
-      setRenderSrc("");
-      return;
-    }
+    setScale(1);
+  }, [viewer]);
 
+  useEffect(() => {
+    if (!viewer) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft") changeImage(-1);
+      if (event.key === "ArrowRight") changeImage(1);
+      if (event.key === "+" || event.key === "=") setScale((value) => Math.min(3, value + 0.25));
+      if (event.key === "-") setScale((value) => Math.max(0.5, value - 0.25));
+      if (event.key.toLowerCase() === "r") {
+        setRotation(0);
+        setScale(1);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
+  useEffect(() => {
+    if (!imageSrc) return;
     setStatus("loading");
-    let revoked = false;
-    let blobUrl: string | null = null;
-
+    setRenderSrc(imageSrc);
+    let objectUrl: string | null = null;
     if (imageSrc.startsWith("data:")) {
       try {
         const match = imageSrc.match(/^data:([^;]+);base64,(.*)$/);
         if (match) {
-          const mimeType = match[1];
-          const base64Data = match[2];
-          const byteChars = atob(base64Data);
-          const byteNumbers = new Array(byteChars.length);
-          for (let j = 0; j < byteChars.length; j++) {
-            byteNumbers[j] = byteChars.charCodeAt(j);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: mimeType });
-          blobUrl = URL.createObjectURL(blob);
-          if (!revoked) setRenderSrc(blobUrl);
-        } else {
-          setRenderSrc(imageSrc);
+          const bytes = atob(match[2]);
+          const data = new Uint8Array(bytes.length);
+          for (let i = 0; i < bytes.length; i++) data[i] = bytes.charCodeAt(i);
+          objectUrl = URL.createObjectURL(new Blob([data], { type: match[1] }));
+          setRenderSrc(objectUrl);
         }
       } catch {
         setRenderSrc(imageSrc);
       }
-    } else {
-      setRenderSrc(imageSrc);
     }
-
     return () => {
-      revoked = true;
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [imageSrc]);
 
-  if (!src) return null;
+  if (!viewer || images.length === 0) return null;
 
-  const handleDownload = () => {
-    const a = document.createElement("a");
-    a.href = renderSrc || imageSrc;
-    a.download = `凭证-${Date.now()}.png`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
+  function changeImage(delta: number) {
+    setCurrentIndex((index) => Math.min(Math.max(index + delta, 0), images.length - 1));
+    setRotation(0);
+    setScale(1);
+  }
+
+  function downloadImage() {
+    const anchor = document.createElement("a");
+    anchor.href = renderSrc || imageSrc;
+    anchor.download = `voucher-${currentIndex + 1}-${Date.now()}.png`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
-      style={{ zIndex: 9999 }}
-      onClick={onClose}
-    >
-      <div
-        className="relative max-w-5xl max-h-[95vh] p-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="absolute top-4 right-4 z-10 flex gap-2">
-          <button
-            onClick={() => setRotation((r) => (r - 90) % 360)}
-            className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
-            title="向左旋转"
-          >↺</button>
-          <button
-            onClick={() => setRotation((r) => (r + 90) % 360)}
-            className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
-            title="向右旋转"
-          >↻</button>
-          <button
-            onClick={onClose}
-            className="text-white text-2xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
-          >✕</button>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative flex max-w-[95vw] max-h-[95vh] items-center justify-center p-14" onClick={(event) => event.stopPropagation()}>
+        <div className="absolute top-3 right-3 z-20 flex gap-2">
+          <IconButton label="Zoom out" disabled={scale <= 0.5} onClick={() => setScale((value) => Math.max(0.5, value - 0.25))}><ZoomOut size={18} /></IconButton>
+          <button type="button" onClick={() => setScale(1)} className="h-10 min-w-10 rounded-full bg-black/70 px-2 text-xs text-white hover:bg-black/90" title="Reset zoom" aria-label="Reset zoom">{Math.round(scale * 100)}%</button>
+          <IconButton label="Zoom in" disabled={scale >= 3} onClick={() => setScale((value) => Math.min(3, value + 0.25))}><ZoomIn size={18} /></IconButton>
+          <IconButton label="Rotate left" onClick={() => setRotation((value) => value - 90)}><RotateCcw size={18} /></IconButton>
+          <IconButton label="Rotate right" onClick={() => setRotation((value) => value + 90)}><RotateCw size={18} /></IconButton>
+          <IconButton label="Reset view" onClick={() => { setRotation(0); setScale(1); }}><RotateCcw size={18} /></IconButton>
+          <IconButton label="Download image" disabled={!renderSrc} onClick={downloadImage}><Download size={18} /></IconButton>
+          <IconButton label="Close" onClick={onClose}><X size={20} /></IconButton>
         </div>
 
-        {status === "loading" && (
-          <div className="flex items-center justify-center w-96 h-64">
-            <div className="text-slate-400 text-sm animate-pulse">图片加载中...</div>
-          </div>
+        {images.length > 1 && (
+          <>
+            <IconButton label="Previous image" disabled={currentIndex === 0} onClick={() => changeImage(-1)} className="absolute left-2 z-20 h-11 w-11"><ChevronLeft size={24} /></IconButton>
+            <IconButton label="Next image" disabled={currentIndex === images.length - 1} onClick={() => changeImage(1)} className="absolute right-2 z-20 h-11 w-11"><ChevronRight size={24} /></IconButton>
+            <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">{currentIndex + 1} / {images.length}</div>
+          </>
         )}
 
-        {status === "error" && (
-          <div className="flex flex-col items-center justify-center gap-3 p-8 bg-rose-500/10 rounded-lg border border-rose-500/30 min-w-96">
-            <div className="text-rose-300 text-lg">❌ 图片加载失败</div>
-            <div className="text-slate-400 text-xs">
-              数据长度: {imageSrc.length} 字符 | 类型:{" "}
-              {imageSrc.startsWith("data:image/png") ? "PNG" : imageSrc.startsWith("data:image/jpeg") ? "JPEG" : imageSrc.startsWith("data:") ? "其他" : "URL"}
-            </div>
-            <div className="text-slate-500 text-[10px] break-all max-w-md max-h-20 overflow-auto bg-slate-900/50 p-2 rounded">
-              {imageSrc.slice(0, 200)}...
-            </div>
-            <button
-              onClick={handleDownload}
-              className="mt-2 px-4 py-1.5 bg-primary-500 hover:bg-primary-600 text-white text-xs rounded transition"
-            >
-              📥 尝试下载查看
-            </button>
-          </div>
-        )}
-
+        {status === "loading" && <div className="flex h-64 w-96 items-center justify-center text-sm text-slate-400">Loading...</div>}
+        {status === "error" && <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-8 text-rose-300">Unable to load image</div>}
         {renderSrc && (
           <img
             src={renderSrc}
-            alt="凭证大图"
-            className={`max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5 transition-opacity transition-transform duration-300 ${
-              status === "loaded" ? "opacity-100" : "opacity-0 absolute"
-            }`}
-            style={{ transform: `rotate(${rotation}deg)` }}
+            alt={`Voucher ${currentIndex + 1}`}
+            className={`max-h-[78vh] max-w-[78vw] rounded-lg bg-white/5 object-contain shadow-2xl transition-opacity duration-200 ${status === "loaded" ? "opacity-100" : "absolute opacity-0"}`}
+            style={{ transform: `rotate(${rotation}deg) scale(${scale})` }}
             onLoad={() => setStatus("loaded")}
             onError={() => setStatus("error")}
           />
         )}
-
-        {status === "loaded" && (
-          <button
-            onClick={handleDownload}
-            className="absolute top-4 left-4 px-3 py-1.5 bg-black/70 hover:bg-black/90 text-white text-xs rounded-full transition z-10"
-          >
-            📥 下载
-          </button>
-        )}
       </div>
     </div>
   );
+}
+
+function IconButton({ label, onClick, disabled, className = "", children }: { label: string; onClick: () => void; disabled?: boolean; className?: string; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-30 ${className}`}>{children}</button>;
 }

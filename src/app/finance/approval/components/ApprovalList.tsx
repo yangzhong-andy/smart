@@ -9,7 +9,7 @@ import { STATUS_COLORS, STATUS_LABELS } from "./types";
 import type { MonthlyBill, BillStatus } from "@/lib/reconciliation-store";
 import type { ExpenseRequest, IncomeRequest, RequestStatus } from "@/lib/expense-income-request-store";
 import type { ActiveTab, RequestKindFilter } from "./ApprovalFilters";
-import { VoucherThumbnails, VoucherViewerModal, parseVoucher } from "./VoucherImage";
+import { VoucherThumbnails, VoucherViewerModal, parseVoucher, type VoucherViewerState } from "./VoucherImage";
 
 interface ApprovalListProps {
   activeTab: ActiveTab;
@@ -55,7 +55,7 @@ function ApprovalListComponent({
 }: ApprovalListProps) {
   const statusColors = STATUS_COLORS;
   const statusLabels = STATUS_LABELS;
-  const [voucherViewSrc, setVoucherViewSrc] = useState<string | null>(null);
+  const [voucherViewState, setVoucherViewState] = useState<VoucherViewerState | null>(null);
 
   if (activeTab === "pending") {
     const isEmpty =
@@ -68,7 +68,6 @@ function ApprovalListComponent({
           <div className="text-slate-400 text-4xl mb-4">✓</div>
           <p className="text-slate-300 font-medium mb-1">暂无待审批项目</p>
           <p className="text-sm text-slate-500">所有审批已处理完毕</p>
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
         </div>
       );
     }
@@ -144,7 +143,7 @@ function ApprovalListComponent({
                           <div className="mb-4">
                             <div className="text-xs text-slate-400 mb-1">{bill.billCategory === "Receivable" ? "收款申请书凭证" : "付款申请书凭证"}</div>
                             <button
-                              onClick={() => setVoucherViewSrc(imgs[0])}
+                              onClick={() => setVoucherViewState({ images: imgs, index: 0 })}
                               className="px-3 py-1.5 rounded border border-primary-500/40 bg-primary-500/10 text-sm text-primary-100 hover:bg-primary-500/20 transition"
                             >
                               📄 查看{bill.billCategory === "Receivable" ? "收款" : "付款"}申请书凭证 ({imgs.length}张)
@@ -257,19 +256,7 @@ function ApprovalListComponent({
                             <VoucherThumbnails
                               voucher={request.voucher}
                               thumbClassName="w-20 h-20"
-                              onView={(src) => {
-                                const modal = document.createElement("div");
-                                modal.className =
-                                  "fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur";
-                                modal.onclick = () => document.body.removeChild(modal);
-                                const img = document.createElement("img");
-                                img.src = src;
-                                img.className =
-                                  "max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl";
-                                img.onclick = (e) => e.stopPropagation();
-                                modal.appendChild(img);
-                                document.body.appendChild(modal);
-                              }}
+                              onView={(_src, images, index) => setVoucherViewState({ images, index })}
                             />
                           </div>
                         )}
@@ -293,7 +280,6 @@ function ApprovalListComponent({
                         </InteractiveButton>
                       </div>
                     </div>
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
                   </div>
                 );
               })}
@@ -366,19 +352,7 @@ function ApprovalListComponent({
                             <VoucherThumbnails
                               voucher={request.voucher}
                               thumbClassName="w-20 h-20"
-                              onView={(src) => {
-                                const modal = document.createElement("div");
-                                modal.className =
-                                  "fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur";
-                                modal.onclick = () => document.body.removeChild(modal);
-                                const img = document.createElement("img");
-                                img.src = src;
-                                img.className =
-                                  "max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl";
-                                img.onclick = (e) => e.stopPropagation();
-                                modal.appendChild(img);
-                                document.body.appendChild(modal);
-                              }}
+                              onView={(_src, images, index) => setVoucherViewState({ images, index })}
                             />
                           </div>
                         )}
@@ -402,14 +376,13 @@ function ApprovalListComponent({
                         </InteractiveButton>
                       </div>
                     </div>
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
                   </div>
                 );
               })}
             </div>
           </div>
         )}
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
+        <VoucherViewerModal viewer={voucherViewState} onClose={() => setVoucherViewState(null)} />
       </div>
     );
   }
@@ -429,7 +402,6 @@ function ApprovalListComponent({
             ? "请调整「账单类型」或「筛选状态」后重试"
             : "所有审批记录将显示在这里"}
         </p>
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
       </div>
     );
   }
@@ -724,14 +696,13 @@ function ApprovalListComponent({
                         </div>
                       </div>
                     </div>
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
                   </div>
                 );
               })}
           </div>
         </div>
       )}
-      <VoucherViewerModal src={voucherViewSrc} onClose={() => setVoucherViewSrc(null)} />
+      <VoucherViewerModal viewer={voucherViewState} onClose={() => setVoucherViewState(null)} />
           </div>
   );
 }

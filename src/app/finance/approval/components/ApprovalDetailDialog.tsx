@@ -6,7 +6,7 @@ import type { MonthlyBill } from "@/lib/reconciliation-store";
 import type { ExpenseRequest, IncomeRequest } from "@/lib/expense-income-request-store";
 import type { RebateReceivable } from "@/lib/rebate-receivable-store";
 import type { RejectModalState } from "./types";
-import { VoucherThumbnails, VoucherViewerModal } from "./VoucherImage";
+import { VoucherThumbnails, VoucherViewerModal, parseVoucher, type VoucherViewerState } from "./VoucherImage";
 
 interface ApprovalDetailDialogProps {
   isDetailModalOpen: boolean;
@@ -22,12 +22,12 @@ interface ApprovalDetailDialogProps {
   rejectSubmitting: boolean;
   onConfirmReject: () => void;
   onCloseReject: () => void;
-  voucherViewModal: string | null;
+  voucherViewModal: VoucherViewerState | null;
   onCloseVoucher: () => void;
   recharges: Array<Record<string, unknown>>;
   consumptions: Array<Record<string, unknown>>;
   rebateReceivables: RebateReceivable[];
-  onVoucherView: (url: string | null) => void;
+  onVoucherView: (viewer: VoucherViewerState | null) => void;
 }
 
 export function ApprovalDetailDialog({
@@ -502,12 +502,9 @@ export function ApprovalDetailDialog({
                                 )}
                               </td>
                               <td className="px-3 py-2 text-center">
-                                {consumption.voucher &&
-                                String(consumption.voucher).length > 10 ? (
-                                  <button
-                                    onClick={() =>
-                                      onVoucherView(String(consumption.voucher) || null)
-                                    }
+                                  {parseVoucher(consumption.voucher).length > 0 ? (
+                                   <button
+                                    onClick={() => onVoucherView({ images: parseVoucher(consumption.voucher), index: 0 })}
                                     className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
                                   >
                                     查看
@@ -533,9 +530,9 @@ export function ApprovalDetailDialog({
                   <div className="bg-slate-800/60 rounded-lg p-4">
                     {(() => {
                       const v = selectedBill.paymentApplicationVoucher;
-                      const voucherUrl = Array.isArray(v) ? v[0] : v;
-                      return voucherUrl && String(voucherUrl).length > 10 ? (
-                        <VoucherThumbnails voucher={voucherUrl} onView={(src) => window.open(src, "_blank")} />
+                      const voucherImages = parseVoucher(v);
+                      return voucherImages.length > 0 ? (
+                        <VoucherThumbnails voucher={voucherImages} onView={(_src, images, index) => onVoucherView({ images, index })} />
                       ) : (
                         <span className="text-slate-500 text-sm">无凭证</span>
                       );
@@ -707,7 +704,7 @@ export function ApprovalDetailDialog({
                       <div className="text-sm font-medium text-slate-300 mb-2">📋 物流账单凭证 - 点击查看大图</div>
                       <VoucherThumbnails
                         voucher={(selectedExpenseRequest as any).voucher}
-                        onView={(src) => onVoucherView(src)}
+                        onView={(_src, images, index) => onVoucherView({ images, index })}
                       />
                     </div>
                   )}
@@ -753,7 +750,7 @@ export function ApprovalDetailDialog({
                       <div className="text-sm font-medium text-slate-300 mb-2">📋 凭证 - 点击查看大图</div>
                       <VoucherThumbnails
                         voucher={(selectedIncomeRequest as any).voucher}
-                        onView={(src) => onVoucherView(src)}
+                        onView={(_src, images, index) => onVoucherView({ images, index })}
                       />
                     </div>
                   )}
@@ -804,7 +801,7 @@ export function ApprovalDetailDialog({
       )}
 
       {/* 凭证查看弹窗 */}
-      <VoucherViewerModal src={voucherViewModal} onClose={onCloseVoucher} />
+      <VoucherViewerModal viewer={voucherViewModal} onClose={onCloseVoucher} />
     </>
   );
 }
