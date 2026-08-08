@@ -62,6 +62,36 @@ function orderTimeRange(startDate: string | null, endDate: string | null, timeZo
   };
 }
 
+function overviewRange(range: string | null, timeZone: string) {
+  if (!range || range === "all") return null;
+  const nowParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(nowParts.map((part) => [part.type, part.value]));
+  const today = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
+  const day = today.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const currentMonday = new Date(today);
+  currentMonday.setUTCDate(today.getUTCDate() + mondayOffset);
+
+  let start = currentMonday;
+  let end = today;
+  if (range === "lastWeek") {
+    start = new Date(currentMonday);
+    start.setUTCDate(start.getUTCDate() - 7);
+    end = new Date(currentMonday);
+    end.setUTCDate(end.getUTCDate() - 1);
+  } else if (range === "month") {
+    start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+  } else if (range !== "week") {
+    return null;
+  }
+
+  const date = (value: Date) => value.toISOString().slice(0, 10);
+  return { startDate: date(start), endDate: date(end) };
+}
+
 /**
  * GET /api/tiktok/data?type=orders|statements|payments|products|summary|orderDetail
  * 查询已同步的 TikTok 数据
@@ -82,6 +112,7 @@ export async function GET(request: NextRequest) {
     const shippingType = searchParams.get("shippingType");
     const orderStartDate = searchParams.get("orderStartDate");
     const orderEndDate = searchParams.get("orderEndDate");
+    const overview = searchParams.get("range");
     const skip = (page - 1) * pageSize;
 
     if (type === "orders" && (
@@ -90,6 +121,9 @@ export async function GET(request: NextRequest) {
       || (orderStartDate && orderEndDate && orderStartDate > orderEndDate)
     )) {
       return NextResponse.json({ error: "Invalid order date range" }, { status: 400 });
+    }
+    if (type === "summary" && overview && !["all", "week", "lastWeek", "month"].includes(overview)) {
+      return NextResponse.json({ error: "Invalid summary range" }, { status: 400 });
     }
 
     const where: any = {};
@@ -191,16 +225,30 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === "summary") {
+      const summaryShop = shopId
+        ? await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { region: true } })
+        : null;
+      const summaryTimeZone = timeZoneForRegion(summaryShop?.region);
+      const overviewDates = overviewRange(overview, summaryTimeZone);
+      const statementWhere: any = shopId ? { shopId } : {};
+      if (overviewDates) statementWhere.statementTime = orderTimeRange(overviewDates.startDate, overviewDates.endDate, summaryTimeZone);
+      const paymentWhere: any = shopId ? { shopId } : {};
+      if (overviewDates) {
+        paymentWhere.OR = [
+          { status: "PAID", paidTime: orderTimeRange(overviewDates.startDate, overviewDates.endDate, summaryTimeZone) },
+          { status: { not: "PAID" }, createTime: orderTimeRange(overviewDates.startDate, overviewDates.endDate, summaryTimeZone) },
+        ];
+      }
       const [orders, statements, payments, products] = await Promise.all([
         prisma.tikTokOrder.count({ where }),
-        prisma.tikTokStatement.count({ where }),
-        prisma.tikTokPayment.count({ where }),
+        prisma.tikTokStatement.count({ where: statementWhere }),
+        prisma.tikTokPayment.count({ where: paymentWhere }),
         prisma.tikTokProduct.count({ where }),
       ]);
 
       // 结算总额
       const stmts = await prisma.tikTokStatement.findMany({
-        where,
+        where: statementWhere,
         select: { netSalesAmount: true, feeAmount: true, settlementAmount: true, currency: true },
       });
       const totalNetSales = stmts.reduce((sum, s) => sum + parseFloat(s.netSalesAmount || "0"), 0);
@@ -209,7 +257,7 @@ export async function GET(request: NextRequest) {
 
       // 回款总额
       const pays = await prisma.tikTokPayment.findMany({
-        where,
+        where: paymentWhere,
         select: { amount: true, status: true },
       });
       const totalPaid = pays.filter((p) => p.status === "PAID").reduce((sum, p) => sum + parseFloat(p.amount || "0"), 0);

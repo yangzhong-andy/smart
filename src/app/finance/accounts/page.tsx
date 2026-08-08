@@ -46,11 +46,11 @@ export default function BankAccountsPage() {
   });
   
   // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }；pageSize 拉取全部用于算余额）
-  const { data: cashFlowData } = useSWR<any[] | { data: any[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000', fetcher, {
+  const { data: cashFlowData } = useSWR<any[] | { data: any[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000&noCache=true', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false, // 优化：关闭重连自动刷新
     keepPreviousData: true,
-    dedupingInterval: 600000 // 10分钟内去重
+    dedupingInterval: 30000 // 30秒内去重，保证同步回款后账户列表及时更新
   });
   
   // 兼容 API 返回 { data, pagination } 或直接数组
