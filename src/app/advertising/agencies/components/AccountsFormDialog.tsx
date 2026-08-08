@@ -182,7 +182,6 @@ export function AccountsFormDialog({
             <input
               type="number"
               step="0.01"
-              min="0"
               value={form.currentBalance}
               onChange={(e) => setForm((f) => ({ ...f, currentBalance: e.target.value }))}
               className="w-full rounded-md border border-white/10 bg-slate-900/50 px-3 py-2 text-slate-100 outline-none input-glow transition-all duration-300"
