@@ -83,7 +83,9 @@ export async function POST(request: NextRequest) {
     await clearCacheByPrefix("monthly-bills");
 
     // 自动生成月账单：检查导入涉及的所有月份+代理商，缺失则自动创建
-    if (created > 0 && adAccountId && agencyId) {
+    // Reconcile the affected months even when every row was a duplicate. This
+    // keeps a missing or stale monthly bill recoverable on a re-import.
+    if (adAccountId && agencyId) {
       try {
         const months = [...new Set(records.map(r => {
           const d = new Date(String(r.date || "").replace(/\x00/g, "").trim());
@@ -118,7 +120,7 @@ export async function POST(request: NextRequest) {
           } else {
             // 没有账单：创建新的
             await prisma.$executeRawUnsafe(
-              `INSERT INTO "MonthlyBill" (id, month, "billCategory", "billType", "agencyId", "agencyName", "totalAmount", currency, "rebateAmount", "netAmount", "consumptionIds", "dueDate", status, "createdBy", notes, "createdAt", "updatedAt") VALUES ($1, $2, 'Payable', '广告', $3, $4, $5, $6, $7, $8, $9, ($2 || '-01')::date + INTERVAL '2 months', 'Draft', $11, $10, NOW(), NOW())`,
+              `INSERT INTO "MonthlyBill" (id, month, "billCategory", "billType", "agencyId", "agencyName", "totalAmount", currency, "rebateAmount", "netAmount", "consumptionIds", "dueDate", status, "createdBy", notes, "createdAt", "updatedAt") VALUES ($1, $2, 'Payable', '广告', $3, $4, $5, $6, $7, $8, $9, ($2 || '-01')::date + INTERVAL '2 months', 'Draft', '系统自动生成', $10, NOW(), NOW())`,
               crypto.randomUUID(), month, agencyId, agencyName,
               Number(row.totalCredit), row.currency || "USD",
               Number(row.totalRebate), netAmount,
@@ -142,7 +144,7 @@ export async function POST(request: NextRequest) {
               );
             } else {
               await prisma.$executeRawUnsafe(
-                `INSERT INTO "MonthlyBill" (id, month, "billCategory", "billType", "agencyId", "agencyName", "totalAmount", currency, "rebateAmount", "rebateRate", "netAmount", "consumptionIds", "dueDate", status, "createdBy", notes, "createdAt", "updatedAt") VALUES ($1, $2, 'Receivable', '广告返点', $3, $4, $5, $6, $7, (SELECT "rebateRate" FROM "AdAgency" WHERE id = $3 LIMIT 1), $8, $9, ($2 || '-01')::date + INTERVAL '2 months', 'Draft', $11, $10, NOW(), NOW())`,
+                `INSERT INTO "MonthlyBill" (id, month, "billCategory", "billType", "agencyId", "agencyName", "totalAmount", currency, "rebateAmount", "rebateRate", "netAmount", "consumptionIds", "dueDate", status, "createdBy", notes, "createdAt", "updatedAt") VALUES ($1, $2, 'Receivable', '广告返点', $3, $4, $5, $6, $7, (SELECT "rebateRate" FROM "AdAgency" WHERE id = $3 LIMIT 1), $8, $9, ($2 || '-01')::date + INTERVAL '2 months', 'Draft', '系统自动生成', $10, NOW(), NOW())`,
                 crypto.randomUUID(), month, agencyId, agencyName,
                 Number(row.totalCredit), row.currency || "USD",
                 Number(row.totalRebate), Number(row.totalRebate),
