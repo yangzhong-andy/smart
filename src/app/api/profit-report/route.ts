@@ -8,6 +8,7 @@ import {
 } from "@/lib/profit-platform-fees";
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
 import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
+import { calculateProfitAdCost } from "@/lib/profit-ad-costs";
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
@@ -1297,12 +1298,17 @@ export async function GET(request: NextRequest) {
       if (selectedShopId && (!ad.storeId || !selectedStoreIds.has(ad.storeId))) continue;
       const businessDate = ad.date.toISOString().slice(0, 10);
       if (businessDate < startDate || businessDate > endDate) continue;
-      const spendOriginal = Math.max(0, number(ad.amount) - number(ad.giftConsumption));
-      const rebateOriginal = Math.max(0, number(ad.estimatedRebate));
-      const netAdCostOriginal = Math.max(0, spendOriginal - rebateOriginal);
+      const adCost = calculateProfitAdCost(
+        number(ad.amount),
+        number(ad.giftConsumption),
+        number(ad.estimatedRebate),
+      );
+      const spendOriginal = adCost.actualSpend;
+      const rebateOriginal = adCost.estimatedRebate;
+      const netAdCostOriginal = adCost.profitCost;
       const spendCny = Math.max(0, toCny(spendOriginal, ad.currency));
       const rebateCny = Math.max(0, toCny(rebateOriginal, ad.currency));
-      const netAdCostCny = Math.max(0, spendCny - rebateCny);
+      const netAdCostCny = Math.max(0, toCny(netAdCostOriginal, ad.currency));
       const adOriginalAmounts = originalAmounts([
         ["adSpend", ad.currency, spendOriginal],
         ["rebate", ad.currency, rebateOriginal],

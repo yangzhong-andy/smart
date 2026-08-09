@@ -495,7 +495,7 @@ export default function ProfitPage() {
       { label: "采购成本", value: data.summary.productCostCny, color: "bg-amber-500" },
       { label: "物流分摊", value: data.summary.logisticsCostCny, color: "bg-cyan-500" },
       { label: "海外仓代发", value: data.summary.warehouseFulfillmentCostCny, color: "bg-violet-500" },
-      { label: "广告净消耗", value: data.summary.netAdCostCny, color: "bg-rose-500" },
+      { label: "广告实际消耗", value: data.summary.netAdCostCny, color: "bg-rose-500" },
       { label: "店铺税务", value: data.summary.taxCostCny, color: "bg-lime-500" },
     ];
   }, [data]);
@@ -577,10 +577,10 @@ export default function ProfitPage() {
     if (!data) return;
     const rows = tab === "store" ? data.stores : tab === "sku" ? filteredSkus : periodRows;
     const headers = tab === "store"
-      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "贡献利润", "利润率"]
+      ? ["店铺", "订单", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告实际消耗", "税务成本", "贡献利润", "利润率"]
       : tab === "sku"
         ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告分摊", "税务成本", "贡献利润", "利润率"]
-        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告净消耗", "税务成本", "贡献利润", "利润率"];
+        : ["周期", "订单", "取消", "销量", "GMV(CNY)", "平台/履约", "采购成本", "物流成本", "海外仓代发", "广告实际消耗", "税务成本", "贡献利润", "利润率"];
     const values = rows.map((row: any) => tab === "store"
         ? [row.label, row.orderCount, row.units, row.gmvCny, `${row.platformFeeCny} / ${row.fulfillmentFeeCny}`, row.productCostCny, row.logisticsCostCny, row.warehouseFulfillmentCostCny, row.netAdCostCny, row.taxCostCny, row.contributionProfitCny, row.margin]
       : tab === "sku"
@@ -710,7 +710,7 @@ export default function ProfitPage() {
             <MetricCard label="平台 / 履约" value={`${money(data.summary.platformFeeCny)} / ${money(data.summary.fulfillmentFeeCny)}`} original={platformFulfillmentOriginal(data.summary.originalAmounts)} detail={`合计 ${money(data.summary.platformCostCny)} · 实际账单 ${percent(data.coverage.platformActual)}`} icon={WalletCards} />
             <MetricCard label="采购 + 物流" value={money(data.summary.productCostCny + data.summary.logisticsCostCny)} detail={`采购 ${percent(data.coverage.productCost)} / 物流 ${percent(data.coverage.logisticsCost)}`} icon={PackageCheck} />
             <MetricCard label="海外仓代发" value={money(data.summary.warehouseFulfillmentCostCny)} detail={`规则覆盖 ${percent(data.coverage.warehouseFulfillment)}`} icon={PackageCheck} />
-            <MetricCard label="广告净消耗" value={money(data.summary.netAdCostCny)} detail={`原币 ${originalSummary(data.summary.originalAmounts?.netAdCost) || "-"} · 返点 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
+            <MetricCard label="广告实际消耗" value={money(data.summary.netAdCostCny)} detail={`原币 ${originalSummary(data.summary.originalAmounts?.netAdCost) || "-"} · 返点参考 ${money(data.summary.rebateCny)}`} icon={BarChart3} />
             <MetricCard label="税务成本" value={money(data.summary.taxCostCny)} detail={`规则覆盖 ${percent(data.coverage.taxRule)}`} icon={WalletCards} />
             <MetricCard label="核算完整度" value={percent(data.coverage.score)} detail={`${data.coverage.mappedSkuCount}/${data.coverage.totalSkuCount} 个 SKU 已映射`} icon={PackageCheck} tone={coverageTone(data.coverage.score)} />
           </section>
@@ -791,7 +791,7 @@ export default function ProfitPage() {
                       <th className="px-3 py-3 text-right font-medium">采购成本</th>
                       <th className="px-3 py-3 text-right font-medium">物流分摊</th>
                       <th className="px-3 py-3 text-right font-medium">海外仓代发</th>
-                      <th className="px-3 py-3 text-right font-medium">广告净消耗</th>
+                      <th className="px-3 py-3 text-right font-medium">广告实际消耗</th>
                       <th className="px-3 py-3 text-right font-medium">税务成本</th>
                       <th className="px-3 py-3 text-right font-medium">贡献利润</th>
                       <th className="px-3 py-3 text-right font-medium">利润率</th>
@@ -824,7 +824,7 @@ export default function ProfitPage() {
               <div className="overflow-x-auto">
                 <table className="min-w-[1500px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告净消耗</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th><th className="px-3 py-3 text-right font-medium">GMV</th><th className="px-3 py-3 text-right font-medium">平台 / 履约</th><th className="px-3 py-3 text-right font-medium">采购成本</th><th className="px-3 py-3 text-right font-medium">物流分摊</th><th className="px-3 py-3 text-right font-medium">海外仓代发</th><th className="px-3 py-3 text-right font-medium">广告实际消耗</th><th className="px-3 py-3 text-right font-medium">税务成本</th><th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
                   <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} /></tr>)}</tbody>
                 </table>
