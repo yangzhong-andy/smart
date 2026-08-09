@@ -9,6 +9,14 @@ import {
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
 import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import { calculateProfitAdCost } from "@/lib/profit-ad-costs";
+import { selectActiveProfitScheme } from "@/lib/profit-scheme-resolution";
+import {
+  buildProfitComponentAmounts,
+  defaultProfitComponents,
+  normalizeCountryCode,
+  validateProfitComponents,
+  type ProfitSchemeComponentInput,
+} from "@/lib/profit-schemes";
 import type {
   ProfitGroupBy,
   ProfitMetricRow,
@@ -23,7 +31,7 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage"> & {
+type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage" | "components"> & {
   productCoveredUnits: number;
   logisticsCoveredUnits: number;
   exactSettlementOrders: number;
@@ -33,6 +41,7 @@ type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfi
 
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_GROUPS = new Set<ProfitGroupBy>(["day", "week", "month"]);
+const GENERIC_PROFIT_COMPONENTS = defaultProfitComponents("UNSET", "GENERIC");
 
 function number(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
@@ -187,11 +196,14 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
   };
 }
 
-function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
+function finalizeMetric(
+  metric: MutableMetric,
+  componentDefinitions: ProfitSchemeComponentInput[] = GENERIC_PROFIT_COMPONENTS,
+): ProfitMetricRow {
   const grossProfitCny = metric.gmvCny - metric.platformCostCny - metric.productCostCny
     - metric.logisticsCostCny - metric.warehouseFulfillmentCostCny;
   const contributionProfitCny = grossProfitCny - metric.netAdCostCny - metric.taxCostCny;
-  return {
+  const result = {
     id: metric.id,
     label: metric.label,
     startDate: metric.startDate,
@@ -218,6 +230,10 @@ function finalizeMetric(metric: MutableMetric): ProfitMetricRow {
     productCoverage: metric.units > 0 ? round((metric.productCoveredUnits / metric.units) * 100, 2) : 100,
     logisticsCoverage: metric.units > 0 ? round((metric.logisticsCoveredUnits / metric.units) * 100, 2) : 100,
     settlementCoverage: metric.orderCount > 0 ? round((metric.exactSettlementOrders / metric.orderCount) * 100, 2) : 100,
+  };
+  return {
+    ...result,
+    components: buildProfitComponentAmounts(result, componentDefinitions),
   };
 }
 
@@ -364,6 +380,7 @@ export async function GET(request: NextRequest) {
     const [
       ordersRaw, stores, variants, skuMappings, profitSkuMappings, purchaseItems, logisticsCosts,
       adConsumptions, statements, accounts, warehouseMappings, warehouseSwitchRules, warehouseRules, shopCostRules, influencers,
+      profitSchemes,
     ] = await Promise.all([
       prisma.tikTokOrder.findMany({
         where: {
@@ -373,7 +390,7 @@ export async function GET(request: NextRequest) {
         select: { orderId: true, shopId: true, status: true, orderStatus: true, totalAmount: true, currency: true, createTime: true, rawData: true },
         orderBy: { createTime: "asc" },
       }),
-      prisma.store.findMany({ select: { id: true, name: true, currency: true, accountId: true } }),
+      prisma.store.findMany({ select: { id: true, name: true, platform: true, country: true, currency: true, accountId: true } }),
       prisma.productVariant.findMany({
         select: {
           id: true,
@@ -471,6 +488,11 @@ export async function GET(request: NextRequest) {
         where: { sampleOrderNumber: { not: null } },
         select: { id: true, accountName: true, sampleOrderNumber: true },
       }),
+      prisma.profitScheme.findMany({
+        where: { status: { in: ["PUBLISHED", "ARCHIVED"] } },
+        include: { components: { orderBy: [{ sortOrder: "asc" }, { code: "asc" }] } },
+        orderBy: { effectiveFrom: "desc" },
+      }),
     ]);
 
     const shopById = new Map(allShops.map((shop) => [shop.shopId, shop]));
@@ -479,6 +501,35 @@ export async function GET(request: NextRequest) {
     const shopByStoreId = new Map<string, string>();
     for (const [shopId, store] of shopStore) if (store) shopByStoreId.set(store.id, shopId);
     const selectedStoreIds = new Set(shops.map((shop) => shopStore.get(shop.shopId)).filter(Boolean).map((store) => store!.id));
+    const schemeComponentsById = new Map<string, ProfitSchemeComponentInput[]>();
+    const invalidProfitSchemeIds = new Set<string>();
+    for (const scheme of profitSchemes) {
+      const validated = validateProfitComponents(scheme.components);
+      if (validated.error) invalidProfitSchemeIds.add(scheme.id);
+      else schemeComponentsById.set(scheme.id, validated.components);
+    }
+    const resolveProfitScheme = (shopId: string, businessDate: string) => {
+      const store = shopStore.get(shopId);
+      const shop = shopById.get(shopId);
+      const fallback = defaultProfitComponents(normalizeCountryCode(store?.country || shop?.region), "TIKTOK");
+      if (!store) return { matched: false, storeId: null, schemeId: null, version: 0, definitions: fallback };
+      const candidates = profitSchemes.filter((scheme) => !scheme.externalShopId || scheme.externalShopId === shopId);
+      const resolution = selectActiveProfitScheme(candidates, store.id, businessDate);
+      if (resolution.status !== "matched") {
+        return { matched: false, storeId: store.id, schemeId: null, version: 0, definitions: fallback };
+      }
+      const definitions = schemeComponentsById.get(resolution.scheme.id);
+      if (!definitions) {
+        return { matched: false, storeId: store.id, schemeId: resolution.scheme.id, version: resolution.scheme.version, definitions: fallback };
+      }
+      return {
+        matched: true,
+        storeId: store.id,
+        schemeId: resolution.scheme.id,
+        version: resolution.scheme.version,
+        definitions,
+      };
+    };
 
     const orders = ordersRaw.filter((order) => {
       if (!order.createTime) return false;
@@ -930,6 +981,8 @@ export async function GET(request: NextRequest) {
     let warehouseMappingMappedOrders = 0;
     let warehouseMappingMissingIdOrders = 0;
     const warehouseMappingUnmappedIds = new Set<string>();
+    let profitSchemeMatchedOrders = 0;
+    const profitSchemeMissingStores = new Set<string>();
     let influencerTeamCommissionCny = 0;
     const orderDetails: ProfitOrderDetailRow[] = [];
     const skusMap = new Map<string, MutableMetric & {
@@ -1025,6 +1078,7 @@ export async function GET(request: NextRequest) {
             contributionProfitCny: 0,
             margin: 0,
             originalAmounts: emptyOriginalAmounts(),
+            components: buildProfitComponentAmounts({}, resolveProfitScheme(order.shopId, businessDate).definitions),
             coverage: {
               productCost: false,
               logisticsCost: false,
@@ -1036,6 +1090,10 @@ export async function GET(request: NextRequest) {
         }
         continue;
       }
+
+      const orderProfitScheme = resolveProfitScheme(order.shopId, businessDate);
+      if (orderProfitScheme.matched) profitSchemeMatchedOrders += 1;
+      else profitSchemeMissingStores.add(storeMetric.label);
 
       // GMV is the product subtotal and excludes buyer-paid shipping.
       const gmvCny = toCny(productAmount, orderCurrency);
@@ -1232,6 +1290,17 @@ export async function GET(request: NextRequest) {
           contributionProfitCny: 0,
           margin: 0,
           originalAmounts: orderOriginalAmounts,
+          components: buildProfitComponentAmounts({
+            gmvCny,
+            platformFeeCny,
+            fulfillmentFeeCny,
+            productCostCny: orderProductCost,
+            logisticsCostCny: orderLogisticsCost,
+            warehouseFulfillmentCostCny: fulfillment.costCny,
+            netAdCostCny: 0,
+            taxCostCny,
+            originalAmounts: orderOriginalAmounts,
+          }, orderProfitScheme.definitions),
           coverage: {
             productCost: totalQty > 0 && productCoveredUnits >= totalQty,
             logisticsCost: totalQty > 0 && logisticsCoveredUnits >= totalQty,
@@ -1382,15 +1451,15 @@ export async function GET(request: NextRequest) {
 
     const summaryMutable = emptyMetric("summary", "Summary", startDate, endDate);
     for (const period of periods.values()) addMetric(summaryMutable, period);
-    const finalizedPeriods = [...periods.values()].map(finalizeMetric).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const finalizedPeriods = [...periods.values()].map((metric) => finalizeMetric(metric)).sort((a, b) => a.startDate.localeCompare(b.startDate));
     const finalizedStores: ProfitStoreRow[] = [...storesMap.values()].map((store) => ({
-      ...finalizeMetric(store),
+      ...finalizeMetric(store, resolveProfitScheme(store.shopId, endDate).definitions),
       shopId: store.shopId,
       storeId: store.storeId,
       currency: store.currency,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
     const finalizedSkus: ProfitSkuRow[] = [...skusMap.values()].map((sku) => ({
-      ...finalizeMetric(sku),
+      ...finalizeMetric(sku, resolveProfitScheme(sku.shopId, endDate).definitions),
       sellerSku: sku.sellerSku,
       internalSku: sku.internalSku,
       productName: sku.productName,
@@ -1432,7 +1501,7 @@ export async function GET(request: NextRequest) {
     const finalizedOrders = includeOrders
       ? orderDetails.map((order) => {
           const contributionProfitCny = order.contributionProfitCny;
-          return {
+          const finalized = {
             ...order,
             orderAmountOriginal: round(order.orderAmountOriginal),
             gmvCny: round(order.gmvCny),
@@ -1446,6 +1515,22 @@ export async function GET(request: NextRequest) {
             contributionProfitCny: round(contributionProfitCny),
             margin: order.gmvCny > 0 ? round(contributionProfitCny / order.gmvCny * 100, 2) : 0,
             originalAmounts: roundedOriginalAmounts(order.originalAmounts),
+          };
+          return {
+            ...finalized,
+            components: buildProfitComponentAmounts({
+              ...finalized,
+              sourceStatus: {
+                GMV: "ACTUAL",
+                PLATFORM_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
+                FULFILLMENT_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
+                PRODUCT_COST: order.coverage.productCost ? "ACTUAL" : "MISSING",
+                LOGISTICS_COST: order.coverage.logisticsCost ? "ACTUAL" : "MISSING",
+                WAREHOUSE_FULFILLMENT: order.coverage.warehouse ? "ESTIMATED" : "MISSING",
+                AD_COST: "ACTUAL",
+                TAX_COST: order.coverage.tax ? "ESTIMATED" : "MISSING",
+              },
+            }, resolveProfitScheme(order.shopId, order.businessDate).definitions),
           } satisfies ProfitOrderDetailRow;
         }).sort((left, right) => right.createTime.localeCompare(left.createTime))
       : undefined;
@@ -1467,6 +1552,9 @@ export async function GET(request: NextRequest) {
     const taxRuleCoverage = summaryMutable.orderCount > 0
       ? round((summaryMutable.taxCoveredOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
+    const profitSchemeCoverage = summaryMutable.orderCount > 0
+      ? round((profitSchemeMatchedOrders / summaryMutable.orderCount) * 100, 2)
+      : 100;
     const score = round(
       (summary.productCoverage * 0.3)
       + (summary.logisticsCoverage * 0.15)
@@ -1486,6 +1574,8 @@ export async function GET(request: NextRequest) {
     if (warehouseCoverage < 100) warnings.push("部分销售订单缺少对应仓库代发费用规则");
     if (taxRuleCoverage < 100) warnings.push("部分店铺缺少税率规则");
     if (adStoreCoverage < 95) warnings.push("部分广告消耗未关联店铺");
+    if (profitSchemeMissingStores.size > 0) warnings.push(`店铺利润方案未绑定：${[...profitSchemeMissingStores].join("、")}`);
+    if (invalidProfitSchemeIds.size > 0) warnings.push(`${invalidProfitSchemeIds.size} 个利润方案字段配置无效`);
     if (missingCurrencies.size > 0) warnings.push(`缺少汇率：${[...missingCurrencies].join(", ")}`);
 
     const response: ProfitReportResponse = {
@@ -1526,6 +1616,9 @@ export async function GET(request: NextRequest) {
         warehouseMappingUnmappedIds: [...warehouseMappingUnmappedIds],
         warehouseFulfillment: warehouseCoverage,
         taxRule: taxRuleCoverage,
+        profitScheme: profitSchemeCoverage,
+        profitSchemeMatchedOrders,
+        profitSchemeMissingStores: [...profitSchemeMissingStores],
       },
       influencerMarketing: {
         sampleOrders: sampleRows.length,
