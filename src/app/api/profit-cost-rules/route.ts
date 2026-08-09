@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
       shops: shops.map((shop) => ({
         id: shop.shopId,
         name: (shop.bankAccountId && storeByAccount.get(shop.bankAccountId)?.name) || shop.shopName,
+        region: shop.region,
         currency: (shop.bankAccountId && storeByAccount.get(shop.bankAccountId)?.currency) || (shop.region === "US" ? "USD" : "BRL"),
       })),
       warehouses,

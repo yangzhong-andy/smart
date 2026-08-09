@@ -7,10 +7,36 @@ import { ArrowLeft, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 type CostRuleData = {
-  shops: Array<{ id: string; name: string; currency: string }>;
+  shops: Array<{ id: string; name: string; region: string; currency: string }>;
   warehouses: Array<{ id: string; code: string; name: string }>;
   shopRules: Array<any>;
   warehouseRules: Array<any>;
+};
+
+type WarehouseSwitchData = {
+  rules: Array<{
+    id: string;
+    platform: string;
+    region: string;
+    shopId: string;
+    externalWarehouseId: string;
+    warehouseId: string;
+    effectiveFrom: string;
+    effectiveOrderId: string | null;
+    notes: string | null;
+    warehouse: { name: string; code: string };
+  }>;
+  mappings: Array<{
+    tiktokWarehouseId: string;
+    tiktokShopId: string | null;
+    warehouseId: string;
+    warehouseName: string;
+  }>;
+  latestWarehouseIds: Array<{
+    shopId: string;
+    externalWarehouseId: string;
+    latestOrderTime: string;
+  }>;
 };
 
 type FeeTierDraft = {
@@ -59,6 +85,7 @@ const costTypeLabel: Record<string, string> = {
 
 export default function ProfitSettingsPage() {
   const { data, error, isLoading, mutate } = useSWR<CostRuleData>("/api/profit-cost-rules", fetcher, { revalidateOnFocus: false });
+  const { data: switchData, error: switchError, mutate: mutateSwitches } = useSWR<WarehouseSwitchData>("/api/profit-warehouse-switches", fetcher, { revalidateOnFocus: false });
   const today = new Date().toISOString().slice(0, 10);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -94,6 +121,14 @@ export default function ProfitSettingsPage() {
     currency: "BRL",
     effectiveFrom: "",
     effectiveTo: "",
+    notes: "",
+  });
+  const [warehouseSwitchForm, setWarehouseSwitchForm] = useState({
+    shopId: "",
+    externalWarehouseId: "",
+    warehouseId: "",
+    effectiveOrderId: "",
+    effectiveDate: today,
     notes: "",
   });
 
@@ -214,6 +249,45 @@ export default function ProfitSettingsPage() {
     toast.success("规则已删除");
   };
 
+  const selectWarehouseSwitchShop = (shopId: string) => {
+    const latestWarehouse = switchData?.latestWarehouseIds.find((item) => item.shopId === shopId);
+    setWarehouseSwitchForm((current) => ({
+      ...current,
+      shopId,
+      externalWarehouseId: latestWarehouse?.externalWarehouseId || "",
+    }));
+  };
+
+  const saveWarehouseSwitch = async () => {
+    if (!warehouseSwitchForm.shopId || !warehouseSwitchForm.warehouseId) return toast.error("请选择店铺和切换后的仓库");
+    if (!warehouseSwitchForm.effectiveOrderId && !warehouseSwitchForm.effectiveDate) return toast.error("请填写首笔新仓订单号或生效日期");
+    setSaving(true);
+    try {
+      const response = await fetch("/api/profit-warehouse-switches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: "TIKTOK", ...warehouseSwitchForm }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "仓库切换记录保存失败");
+      await mutateSwitches();
+      setWarehouseSwitchForm((current) => ({ ...current, externalWarehouseId: body.externalWarehouseId, effectiveOrderId: "", notes: "" }));
+      toast.success("仓库切换记录已保存");
+    } catch (saveError: any) {
+      toast.error(saveError?.message || "仓库切换记录保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteWarehouseSwitch = async (id: string) => {
+    const response = await fetch(`/api/profit-warehouse-switches?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const body = await response.json();
+    if (!response.ok) return toast.error(body?.error || "删除失败");
+    await mutateSwitches();
+    toast.success("切换记录已删除");
+  };
+
   const syncFinancials = async () => {
     if (!shopForm.shopId) return toast.error("请先选择店铺");
     setSyncing(true);
@@ -240,10 +314,11 @@ export default function ProfitSettingsPage() {
           <Link href="/finance/profit" title="返回利润核算" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><ArrowLeft className="h-4 w-4" /></Link>
           <div><h1 className="text-2xl font-semibold">利润成本规则</h1><p className="mt-1 text-xs text-slate-500">按店铺、仓库和生效日期保留历史规则</p></div>
         </div>
-        <button type="button" onClick={() => mutate()} title="刷新" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><RefreshCw className="h-4 w-4" /></button>
+        <button type="button" onClick={() => { void Promise.all([mutate(), mutateSwitches()]); }} title="刷新" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><RefreshCw className="h-4 w-4" /></button>
       </header>
 
       {error && <div className="border-b border-rose-500/30 py-4 text-sm text-rose-300">{error.message}</div>}
+      {switchError && <div className="border-b border-rose-500/30 py-4 text-sm text-rose-300">{switchError.message}</div>}
       {isLoading && <div className="py-16 text-center text-sm text-slate-500">正在加载成本规则...</div>}
 
       {data && <>
@@ -269,6 +344,21 @@ export default function ProfitSettingsPage() {
 
           <RuleTable rows={data.shopRules} shops={data.shops} onDelete={(id) => deleteRule("shop", id)} />
         </section>
+
+        {switchData && <section className="border-b border-slate-800 py-6">
+          <div className="mb-4"><h2 className="text-base font-semibold">仓库切换历史</h2><p className="mt-1 text-xs text-slate-500">按店铺、订单仓库编号和生效时间匹配实际发货仓</p></div>
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <Field label="店铺"><select value={warehouseSwitchForm.shopId} onChange={(event) => selectWarehouseSwitchShop(event.target.value)} className="input"><option value="">请选择</option>{data.shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}</select></Field>
+            <Field label="订单仓库编号"><input list="profit-warehouse-ids" value={warehouseSwitchForm.externalWarehouseId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, externalWarehouseId: event.target.value })} className="input" /></Field>
+            <datalist id="profit-warehouse-ids">{[...new Set([...switchData.latestWarehouseIds.map((item) => item.externalWarehouseId), ...switchData.mappings.map((item) => item.tiktokWarehouseId)])].map((warehouseId) => <option key={warehouseId} value={warehouseId} />)}</datalist>
+            <Field label="切换到"><select value={warehouseSwitchForm.warehouseId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, warehouseId: event.target.value })} className="input"><option value="">请选择</option>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></Field>
+            <Field label="首笔新仓订单号"><input value={warehouseSwitchForm.effectiveOrderId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveOrderId: event.target.value })} className="input" /></Field>
+            <Field label="生效日期（无订单号）"><input type="date" value={warehouseSwitchForm.effectiveDate} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveDate: event.target.value })} className="input" /></Field>
+            <Field label="备注"><input value={warehouseSwitchForm.notes} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, notes: event.target.value })} className="input" /></Field>
+          </div>
+          <button type="button" onClick={saveWarehouseSwitch} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />保存切换记录</button>
+          <WarehouseSwitchTable rows={switchData.rules} shops={data.shops} onDelete={deleteWarehouseSwitch} />
+        </section>}
 
         <section className="py-6">
           <div className="mb-4"><h2 className="text-base font-semibold">海外仓代发规则</h2><p className="mt-1 text-xs text-slate-500">按订单仓库、实物件数、重量、尺寸和生效日期匹配</p></div>
@@ -355,4 +445,50 @@ function WarehouseRuleTable({ rows, shops, onDelete }: { rows: any[]; shops: Cos
         : `基础 ${rule.baseOrderFee} + 首件 ${rule.firstUnitFee} + 续件 ${rule.additionalUnitFee} ${rule.currency}`;
     return <tr key={rule.id} className="border-b border-slate-900"><td className="px-3 py-3 text-slate-300">{rule.warehouse?.name}</td><td className="px-3 py-3 text-slate-400">{rule.shopId ? shops.find((shop) => shop.id === rule.shopId)?.name : "全部店铺"}</td><td className="px-3 py-3 text-slate-300">{feeText}</td><td className="px-3 py-3 text-slate-400">{rule.billingUnit === "INTERNAL_COMPONENT" ? "内部商品件数" : "销售 SKU 件数"}</td><td className="px-3 py-3 text-slate-400">{rule.effectiveFrom} 至 {rule.effectiveTo || "长期"}</td><td className="max-w-[280px] px-3 py-3 text-slate-500"><div className="truncate" title={rule.notes || ""}>{rule.notes || "-"}</div></td><td><button type="button" onClick={() => onDelete(rule.id)} title="删除规则" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button></td></tr>;
   })}</tbody></table></div>;
+}
+
+function warehouseSwitchTime(value: string, region: string) {
+  const timeZone = region === "US" ? "America/Denver" : region === "BR" ? "America/Sao_Paulo" : "UTC";
+  const label = region === "US" ? "美区时间" : region === "BR" ? "巴西时间" : "UTC";
+  return `${new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value))} ${label}`;
+}
+
+function WarehouseSwitchTable({
+  rows,
+  shops,
+  onDelete,
+}: {
+  rows: WarehouseSwitchData["rules"];
+  shops: CostRuleData["shops"];
+  onDelete: (id: string) => void;
+}) {
+  return <div className="mt-5 overflow-x-auto">
+    <table className="w-full min-w-[1000px] text-sm">
+      <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
+        <th className="px-3 py-3 text-left">店铺</th>
+        <th className="px-3 py-3 text-left">订单仓库编号</th>
+        <th className="px-3 py-3 text-left">实际发货仓</th>
+        <th className="px-3 py-3 text-left">生效起点</th>
+        <th className="px-3 py-3 text-left">备注</th>
+        <th className="w-12" />
+      </tr></thead>
+      <tbody>{rows.map((rule) => <tr key={rule.id} className="border-b border-slate-900">
+        <td className="px-3 py-3 text-slate-300">{shops.find((shop) => shop.id === rule.shopId)?.name || rule.shopId}</td>
+        <td className="px-3 py-3 font-mono text-xs text-slate-400">{rule.externalWarehouseId}</td>
+        <td className="px-3 py-3 text-slate-200">{rule.warehouse.name}</td>
+        <td className="px-3 py-3 text-slate-400"><div>{warehouseSwitchTime(rule.effectiveFrom, rule.region)}</div>{rule.effectiveOrderId && <div className="mt-0.5 font-mono text-[11px] text-slate-600">订单 {rule.effectiveOrderId}</div>}</td>
+        <td className="max-w-[280px] px-3 py-3 text-slate-500"><div className="truncate" title={rule.notes || ""}>{rule.notes || "-"}</div></td>
+        <td><button type="button" onClick={() => { if (window.confirm("确认删除这条仓库切换记录？")) onDelete(rule.id); }} title="删除切换记录" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button></td>
+      </tr>)}</tbody>
+    </table>
+  </div>;
 }
