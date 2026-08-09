@@ -119,6 +119,8 @@ model Store {
   inventoryStocks     InventoryStock[]
   logistics           LogisticsTracking[]
   purchaseOrders      PurchaseOrder[]
+  profitSchemes       ProfitScheme[]
+  profitOrderLedgers  ProfitOrderLedger[]
 }
 
 model Influencer {
@@ -2666,6 +2668,115 @@ model InfluencerSampleCost {
 
   @@index([shopId])
   @@index([influencerId])
+}
+
+// Versioned profit configuration for one internal store. Country and platform
+// are snapshots so historical calculations never inherit later store changes.
+model ProfitScheme {
+  id             String                  @id @default(uuid())
+  storeId        String
+  externalShopId String?
+  name           String
+  platform       String
+  countryCode    String
+  currency       String
+  timeZone       String
+  version        Int
+  status         String                  @default("DRAFT")
+  effectiveFrom  DateTime                @db.Date
+  effectiveTo    DateTime?               @db.Date
+  notes          String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  store          Store                   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  components     ProfitSchemeComponent[]
+  orderLedgers   ProfitOrderLedger[]
+
+  @@unique([storeId, version])
+  @@index([platform, countryCode, status])
+  @@index([storeId, status, effectiveFrom])
+  @@index([externalShopId, effectiveFrom])
+}
+
+// A scheme owns its display fields and calculation sources. Labels can be
+// country-specific while category keeps cross-country reporting comparable.
+model ProfitSchemeComponent {
+  id              String                   @id @default(uuid())
+  schemeId        String
+  code            String
+  label           String
+  category        String
+  direction       String
+  calculationMode String                   @default("SOURCE")
+  sourceKey       String?
+  includeInGmv    Boolean                  @default(false)
+  includeInProfit Boolean                  @default(true)
+  required        Boolean                  @default(true)
+  visible         Boolean                  @default(true)
+  sortOrder       Int                      @default(0)
+  config          Json?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  scheme          ProfitScheme             @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  ledgerEntries   ProfitOrderLedgerEntry[]
+
+  @@unique([schemeId, code])
+  @@index([schemeId, sortOrder])
+  @@index([category])
+}
+
+// Immutable calculation revisions for an order. Recalculation creates a new
+// revision and marks the previous one non-current instead of overwriting it.
+model ProfitOrderLedger {
+  id                 String                   @id @default(uuid())
+  platform           String
+  externalShopId     String
+  storeId            String
+  orderId            String
+  businessDate       DateTime                 @db.Date
+  orderCurrency      String
+  exchangeRateCny    Decimal                  @db.Decimal(18, 8)
+  schemeId           String?
+  schemeVersion      Int
+  calculationVersion Int                      @default(1)
+  isCurrent          Boolean                  @default(true)
+  calculationStatus  String                   @default("CALCULATED")
+  inputHash          String?
+  calculatedAt       DateTime                 @default(now())
+  createdAt          DateTime                 @default(now())
+  store              Store                    @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  scheme             ProfitScheme?            @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+  entries            ProfitOrderLedgerEntry[]
+
+  @@unique([platform, externalShopId, orderId, calculationVersion])
+  @@index([storeId, businessDate, isCurrent])
+  @@index([externalShopId, businessDate, isCurrent])
+  @@index([calculationStatus, calculatedAt])
+}
+
+model ProfitOrderLedgerEntry {
+  id                String                 @id @default(uuid())
+  ledgerId          String
+  schemeComponentId String?
+  componentCode     String
+  label             String
+  category          String
+  direction         String
+  amountOriginal    Decimal?               @db.Decimal(18, 4)
+  currency          String?
+  originalAmounts   Json
+  amountCny         Decimal                @db.Decimal(18, 4)
+  sourceStatus      String
+  includeInGmv      Boolean                @default(false)
+  includeInProfit   Boolean                @default(true)
+  metadata          Json?
+  createdAt         DateTime               @default(now())
+  ledger            ProfitOrderLedger      @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  schemeComponent   ProfitSchemeComponent? @relation(fields: [schemeComponentId], references: [id], onDelete: SetNull)
+
+  @@unique([ledgerId, componentCode])
+  @@index([componentCode, category])
+  @@index([schemeComponentId])
 }
 
 model TikTokStockDeduction {

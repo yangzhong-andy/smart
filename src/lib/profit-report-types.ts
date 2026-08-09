@@ -1,3 +1,5 @@
+import type { ProfitComponentAmount } from "@/lib/profit-schemes";
+
 export type ProfitGroupBy = "day" | "week" | "month";
 
 export type ProfitOriginalMetric =
@@ -40,6 +42,7 @@ export type ProfitMetricRow = {
   productCoverage: number;
   logisticsCoverage: number;
   settlementCoverage: number;
+  components: ProfitComponentAmount[];
 };
 
 export type ProfitStoreRow = ProfitMetricRow & {
@@ -128,6 +131,7 @@ export type ProfitOrderDetailRow = {
   contributionProfitCny: number;
   margin: number;
   originalAmounts: ProfitOriginalAmounts;
+  components: ProfitComponentAmount[];
   coverage: {
     productCost: boolean;
     logisticsCost: boolean;
@@ -176,6 +180,9 @@ export type ProfitReportResponse = {
       warehouseMappingUnmappedIds: string[];
       warehouseFulfillment: number;
       taxRule: number;
+      profitScheme: number;
+      profitSchemeMatchedOrders: number;
+      profitSchemeMissingStores: string[];
     };
   influencerMarketing: {
     sampleOrders: number;
