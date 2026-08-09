@@ -4,6 +4,15 @@ export type ProfitWarehouseMapping = {
   warehouseId: string;
 };
 
+export type ProfitWarehouseSwitchRule = {
+  platform: string;
+  region: string;
+  shopId: string;
+  externalWarehouseId: string;
+  warehouseId: string;
+  effectiveFrom: Date | string;
+};
+
 export type WarehouseResolutionStatus = "mapped" | "missing_id" | "unmapped" | "ambiguous";
 
 export type WarehouseResolution = {
@@ -37,7 +46,10 @@ export function extractTikTokWarehouseId(rawData: unknown): string | null {
   );
 }
 
-export function createWarehouseResolver(mappings: ProfitWarehouseMapping[]) {
+export function createWarehouseResolver(
+  mappings: ProfitWarehouseMapping[],
+  switchRules: ProfitWarehouseSwitchRule[] = [],
+) {
   const byTikTokId = new Map<string, ProfitWarehouseMapping[]>();
   for (const mapping of mappings) {
     const tiktokWarehouseId = String(mapping.tiktokWarehouseId ?? "").trim();
@@ -48,10 +60,43 @@ export function createWarehouseResolver(mappings: ProfitWarehouseMapping[]) {
     byTikTokId.set(tiktokWarehouseId, rows);
   }
 
-  return (rawData: unknown, shopId?: string | null): WarehouseResolution => {
+  const normalizedSwitches = switchRules.flatMap((rule) => {
+    const effectiveFrom = new Date(rule.effectiveFrom);
+    const externalWarehouseId = String(rule.externalWarehouseId ?? "").trim();
+    const warehouseId = String(rule.warehouseId ?? "").trim();
+    if (!externalWarehouseId || !warehouseId || Number.isNaN(effectiveFrom.getTime())) return [];
+    return [{ ...rule, externalWarehouseId, warehouseId, effectiveFrom }];
+  }).sort((left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime());
+
+  return (
+    rawData: unknown,
+    shopId?: string | null,
+    orderCreateTime?: Date | string | null,
+    platform = "TIKTOK",
+    region?: string | null,
+  ): WarehouseResolution => {
     const tiktokWarehouseId = extractTikTokWarehouseId(rawData);
     if (!tiktokWarehouseId) {
       return { tiktokWarehouseId: null, warehouseId: null, mapping: null, status: "missing_id" };
+    }
+
+    const orderTime = orderCreateTime ? new Date(orderCreateTime) : null;
+    if (shopId && orderTime && !Number.isNaN(orderTime.getTime())) {
+      const switchRule = normalizedSwitches.find((rule) => (
+        rule.platform === platform
+        && rule.shopId === shopId
+        && rule.externalWarehouseId === tiktokWarehouseId
+        && (!region || rule.region === region)
+        && rule.effectiveFrom.getTime() <= orderTime.getTime()
+      ));
+      if (switchRule) {
+        const mapping = {
+          tiktokWarehouseId,
+          tiktokShopId: shopId,
+          warehouseId: switchRule.warehouseId,
+        };
+        return { tiktokWarehouseId, warehouseId: switchRule.warehouseId, mapping, status: "mapped" };
+      }
     }
 
     const allRows = byTikTokId.get(tiktokWarehouseId) || [];

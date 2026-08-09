@@ -363,7 +363,7 @@ export async function GET(request: NextRequest) {
 
     const [
       ordersRaw, stores, variants, skuMappings, profitSkuMappings, purchaseItems, logisticsCosts,
-      adConsumptions, statements, accounts, warehouseMappings, warehouseRules, shopCostRules, influencers,
+      adConsumptions, statements, accounts, warehouseMappings, warehouseSwitchRules, warehouseRules, shopCostRules, influencers,
     ] = await Promise.all([
       prisma.tikTokOrder.findMany({
         where: {
@@ -434,6 +434,21 @@ export async function GET(request: NextRequest) {
       prisma.bankAccount.findMany({ select: { currency: true, exchangeRate: true } }),
       prisma.tikTokWarehouseMapping.findMany({
         select: { tiktokWarehouseId: true, tiktokShopId: true, warehouseId: true },
+      }),
+      prisma.profitWarehouseSwitchRule.findMany({
+        where: {
+          platform: "TIKTOK",
+          ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
+        },
+        select: {
+          platform: true,
+          region: true,
+          shopId: true,
+          externalWarehouseId: true,
+          warehouseId: true,
+          effectiveFrom: true,
+        },
+        orderBy: { effectiveFrom: "desc" },
       }),
       prisma.warehouseFulfillmentRule.findMany({
         where: { enabled: true },
@@ -640,7 +655,7 @@ export async function GET(request: NextRequest) {
     )));
     // Warehouse selection belongs to the order. A shop may switch fulfillment
     // providers, so never use shopId as the primary warehouse key.
-    const resolveWarehouse = createWarehouseResolver(warehouseMappings);
+    const resolveWarehouse = createWarehouseResolver(warehouseMappings, warehouseSwitchRules);
     const activeShopRule = (shopId: string, costType: string, date: string) => shopCostRules.find((rule) => (
       rule.shopId === shopId
       && rule.costType === costType
@@ -791,7 +806,13 @@ export async function GET(request: NextRequest) {
       }];
     };
     const fulfillmentForOrder = (order: (typeof orders)[number], lines: ReturnType<typeof resolveOrderLines>, date: string) => {
-      const resolution = resolveWarehouse(order.rawData, order.shopId);
+      const resolution = resolveWarehouse(
+        order.rawData,
+        order.shopId,
+        order.createTime,
+        "TIKTOK",
+        shopById.get(order.shopId)?.region,
+      );
       const tiktokWarehouseId = resolution.tiktokWarehouseId;
       const mapping = resolution.mapping;
       const rule = mapping ? activeWarehouseRule(mapping.warehouseId, order.shopId, date) : null;
