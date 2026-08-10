@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAccessToken, getAuthorizedShops } from "@/lib/tiktok-shop-api";
+import { ensureTikTokStoreBinding } from "@/lib/tiktok-shop-binding";
+import { normalizeTikTokRegion } from "@/lib/tiktok-shop-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -45,12 +47,14 @@ export async function GET(request: NextRequest) {
     // 3. 如果获取不到店铺列表
     if (shops.length === 0) {
       const expireAt = new Date(Date.now() + tokenData.accessTokenExpireIn * 1000);
+      const pendingShopId = tokenData.openId || "unknown";
       await prisma.tikTokShopSetting.upsert({
-        where: { shopId: tokenData.openId || "unknown" },
+        where: { shopId: pendingShopId },
         create: {
-          shopId: tokenData.openId || "unknown",
+          shopId: pendingShopId,
           shopName: "TikTok Shop (待获取)",
-          region: "BR",
+          region: "UNSET",
+          regionSource: "PENDING",
           appKey: finalAppKey,
           accessToken: tokenData.accessToken,
           refreshToken: tokenData.refreshToken,
@@ -74,12 +78,32 @@ export async function GET(request: NextRequest) {
     const expireAt = new Date(Date.now() + tokenData.accessTokenExpireIn * 1000);
     for (const shop of shops) {
       console.log(`[TikTok] 存储店铺: ${shop.name} (${shop.id}) appKey=${finalAppKey}`);
+      const existing = await prisma.tikTokShopSetting.findUnique({
+        where: { shopId: shop.id },
+        select: { region: true, regionSource: true, regionVerifiedAt: true, storeId: true, bankAccountId: true },
+      });
+      const authorizedRegion = normalizeTikTokRegion(shop.region);
+      const existingRegion = normalizeTikTokRegion(existing?.region);
+      const region = authorizedRegion || existingRegion || "UNSET";
+      const regionSource = authorizedRegion ? "TIKTOK" : existing?.regionSource || "PENDING";
+      const regionVerifiedAt = authorizedRegion ? new Date() : existing?.regionVerifiedAt || null;
+      const storeId = await ensureTikTokStoreBinding({
+        shopId: shop.id,
+        shopName: shop.name,
+        region,
+        existingStoreId: existing?.storeId,
+        bankAccountId: existing?.bankAccountId,
+        createIfMissing: Boolean(authorizedRegion),
+      });
       await prisma.tikTokShopSetting.upsert({
         where: { shopId: shop.id },
         create: {
           shopId: shop.id,
           shopName: shop.name,
-          region: shop.region || "BR",
+          region,
+          regionSource,
+          regionVerifiedAt,
+          storeId,
           sellerType: shop.seller_type || null,
           shopCipher: shop.cipher || null,
           appKey: finalAppKey,
@@ -91,7 +115,10 @@ export async function GET(request: NextRequest) {
         },
         update: {
           shopName: shop.name,
-          region: shop.region || "BR",
+          region,
+          regionSource,
+          regionVerifiedAt,
+          ...(storeId ? { storeId } : {}),
           sellerType: shop.seller_type || null,
           shopCipher: shop.cipher || null,
           appKey: finalAppKey,

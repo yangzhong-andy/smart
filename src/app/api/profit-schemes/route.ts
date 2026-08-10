@@ -51,23 +51,32 @@ async function storeIdentities() {
       orderBy: [{ country: "asc" }, { platform: "asc" }, { name: "asc" }],
     }),
     prisma.tikTokShopSetting.findMany({
-      select: { shopId: true, shopName: true, region: true, bankAccountId: true, status: true },
+      select: { shopId: true, shopName: true, region: true, bankAccountId: true, storeId: true, status: true },
       orderBy: { shopName: "asc" },
     }),
   ]);
   const tikTokByAccount = new Map(
     tikTokShops.flatMap((shop) => shop.bankAccountId ? [[shop.bankAccountId, shop] as const] : []),
   );
+  const tikTokByStoreId = new Map(
+    tikTokShops.flatMap((shop) => shop.storeId ? [[shop.storeId, shop] as const] : []),
+  );
   const identities = stores.map((store) => {
     const platform = String(store.platform).toUpperCase();
-    const platformShop = platform === "TIKTOK" ? tikTokByAccount.get(store.accountId) || null : null;
+    const platformShop = platform === "TIKTOK"
+      ? tikTokByStoreId.get(store.id) || tikTokByAccount.get(store.accountId) || null
+      : null;
     const countryCode = normalizeCountryCode(store.country || platformShop?.region);
+    const authorizedCountryCode = normalizeCountryCode(platformShop?.region);
     const externalShopId = platformShop?.shopId || null;
     const missingFields = [
       !countryCode || countryCode === "UNSET" ? "国家" : null,
       !platform ? "平台" : null,
       !store.currency ? "币种" : null,
       platform === "TIKTOK" && !externalShopId ? "平台店铺ID" : null,
+      platformShop && authorizedCountryCode !== "UNSET" && authorizedCountryCode !== countryCode
+        ? "授权国家与系统店铺国家不一致"
+        : null,
     ].filter(Boolean) as string[];
     return {
       ...store,

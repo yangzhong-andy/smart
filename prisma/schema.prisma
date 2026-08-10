@@ -121,6 +121,7 @@ model Store {
   purchaseOrders      PurchaseOrder[]
   profitSchemes       ProfitScheme[]
   profitOrderLedgers  ProfitOrderLedger[]
+  tiktokShopSetting   TikTokShopSetting?
 }
 
 model Influencer {
@@ -2312,24 +2313,29 @@ model Payroll {
 
 // TikTok Shop 授权配置
 model TikTokShopSetting {
-  id            String    @id @default(uuid())
-  shopId        String    @unique // TikTok 店铺ID
-  shopName      String // 店铺名称
-  region        String    @default("BR") // 地区
-  sellerType    String? // 卖家类型
-  appKey        String? // 关联的 App Key
-  shopCipher    String? // 店铺密钥（API调用必需）
-  bankAccountId String? // 关联的财务账户(BankAccount.id)
-  accessToken   String? // 访问令牌
-  refreshToken  String? // 刷新令牌
-  tokenExpireAt DateTime? // 令牌过期时间
-  openId        String? // 开放平台用户ID
-  status        String    @default("disconnected") // active/expired/disconnected
-  lastSyncAt    DateTime? // 最后同步时间
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  shopId           String    @unique // TikTok 店铺ID
+  shopName         String // 店铺名称
+  region           String    @default("UNSET") // TikTok站点国家代码；无法识别时不猜测
+  regionSource     String    @default("LEGACY") // TIKTOK/MANUAL/LEGACY/PENDING
+  regionVerifiedAt DateTime?
+  sellerType       String? // 卖家类型
+  appKey           String? // 关联的 App Key
+  shopCipher       String? // 店铺密钥（API调用必需）
+  bankAccountId    String? // 关联的财务账户(BankAccount.id)
+  storeId          String?   @unique // 关联的系统店铺
+  accessToken      String? // 访问令牌
+  refreshToken     String? // 刷新令牌
+  tokenExpireAt    DateTime? // 令牌过期时间
+  openId           String? // 开放平台用户ID
+  status           String    @default("disconnected") // active/expired/disconnected
+  lastSyncAt       DateTime? // 最后同步时间
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  store            Store?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([shopId])
+  @@index([region])
   @@index([status])
 }
 
