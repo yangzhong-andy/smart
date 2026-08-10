@@ -85,6 +85,7 @@ const BRAZIL_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = BASE_COMPONENTS.m
   if (item.code === "GMV") return { ...item, label: "GMV（商品金额 + TikTok商品补贴）" };
   if (item.code === "PLATFORM_FEE") return { ...item, label: "TikTok平台佣金" };
   if (item.code === "FULFILLMENT_FEE") return { ...item, label: "SFP服务费及每件成交费" };
+  if (item.code === "LOGISTICS_COST") return { ...item, label: "头程物流费用" };
   if (item.code === "TAX_COST") return { ...item, label: "店铺主体税务成本" };
   return item;
 });

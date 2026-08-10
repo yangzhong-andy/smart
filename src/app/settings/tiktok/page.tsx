@@ -3,10 +3,18 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, Loader2, ExternalLink, Trash2, Plus, Key, Store } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Trash2, Plus, Key, Store } from "lucide-react";
+import { COUNTRIES } from "@/lib/country-config";
 
 type Shop = {
   id: string; shopId: string; shopName: string; region: string;
+  countryName: string | null; regionSource: string;
+  regionVerifiedAt: string | null;
+  countryStatus: "VERIFIED" | "REVIEW" | "PENDING" | "CONFLICT";
+  expectedCurrency: string | null; observedCurrencies: string[];
+  bindingStatus: "BOUND" | "MISSING" | "CONFLICT";
+  storeId: string | null; storeName: string | null;
+  storeCountry: string | null; storeCurrency: string | null;
   sellerType: string | null; status: string;
   tokenExpireAt: string | null; lastSyncAt: string | null; isExpired: boolean;
 };
@@ -24,6 +32,8 @@ export default function TikTokSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [authorizing, setAuthorizing] = useState(false);
   const [selectedAppKey, setSelectedAppKey] = useState("");
+  const [countrySelections, setCountrySelections] = useState<Record<string, string>>({});
+  const [confirmingShopId, setConfirmingShopId] = useState<string | null>(null);
   const [showAddApp, setShowAddApp] = useState(false);
   const [newApp, setNewApp] = useState({ appKey: "", appSecret: "", appName: "", remark: "" });
 
@@ -54,6 +64,9 @@ export default function TikTokSettingsPage() {
       const statusData = await statusRes.json();
       const appsData = await appsRes.json();
       setShops(statusData.shops || []);
+      setCountrySelections((current) => Object.fromEntries(
+        (statusData.shops || []).map((shop: Shop) => [shop.shopId, current[shop.shopId] || (shop.region !== "UNSET" ? shop.region : "")]),
+      ));
       setApps(appsData.apps || []);
       if (appsData.apps?.length > 0 && !selectedAppKey) {
         setSelectedAppKey(appsData.apps[0].appKey);
@@ -114,6 +127,27 @@ export default function TikTokSettingsPage() {
       toast.success("已断开授权");
       fetchStatus();
     } catch { toast.error("操作失败"); }
+  };
+
+  const handleConfirmCountry = async (shopId: string) => {
+    const region = countrySelections[shopId];
+    if (!region) { toast.error("请选择店铺国家/站点"); return; }
+    setConfirmingShopId(shopId);
+    try {
+      const res = await fetch("/api/tiktok/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shopId, region }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "国家确认失败");
+      toast.success("店铺国家已确认");
+      await fetchStatus();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "国家确认失败");
+    } finally {
+      setConfirmingShopId(null);
+    }
   };
 
   return (
@@ -259,8 +293,17 @@ export default function TikTokSettingsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {shops.map((shop) => (
-              <div key={shop.id} className="flex items-center justify-between rounded-lg border border-slate-700/50 bg-slate-800/40 p-4">
+            {shops.map((shop) => {
+              const identityMeta = shop.countryStatus === "VERIFIED"
+                ? { label: "国家已确认", className: "text-emerald-400", icon: CheckCircle2 }
+                : shop.countryStatus === "CONFLICT"
+                  ? { label: "国家与币种冲突", className: "text-rose-400", icon: XCircle }
+                  : shop.countryStatus === "REVIEW"
+                    ? { label: "历史数据待复核", className: "text-amber-400", icon: AlertTriangle }
+                    : { label: "国家待确认", className: "text-amber-400", icon: AlertTriangle };
+              const IdentityIcon = identityMeta.icon;
+              return (
+              <div key={shop.id} className="flex flex-col gap-4 rounded-lg border border-slate-700/50 bg-slate-800/40 p-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`flex h-10 w-10 items-center justify-center rounded-full ${shop.status === "active" && !shop.isExpired ? "bg-emerald-500/20" : "bg-rose-500/20"}`}>
                     {shop.status === "active" && !shop.isExpired ? <CheckCircle2 className="h-5 w-5 text-emerald-400" /> : <XCircle className="h-5 w-5 text-rose-400" />}
@@ -268,17 +311,58 @@ export default function TikTokSettingsPage() {
                   <div>
                     <div className="text-slate-100 font-medium">{shop.shopName}</div>
                     <div className="text-xs text-slate-400">ID: {shop.shopId} · {shop.region}{shop.sellerType && ` · ${shop.sellerType}`}</div>
+                    <div className={`mt-1 flex items-center gap-1 text-xs ${identityMeta.className}`}>
+                      <IdentityIcon className="h-3.5 w-3.5" />
+                      {identityMeta.label}
+                      {shop.countryName && ` · ${shop.countryName}（${shop.region}）`}
+                      {shop.expectedCurrency && ` · ${shop.expectedCurrency}`}
+                    </div>
+                    {shop.observedCurrencies.length > 0 && (
+                      <div className="mt-0.5 text-xs text-slate-400">订单/结算币种：{shop.observedCurrencies.join("、")}</div>
+                    )}
+                    <div className={`mt-0.5 text-xs ${shop.bindingStatus === "BOUND" ? "text-slate-400" : "text-amber-400"}`}>
+                      {shop.bindingStatus === "BOUND"
+                        ? `系统店铺：${shop.storeName} · ${shop.storeCountry}/${shop.storeCurrency}`
+                        : shop.bindingStatus === "CONFLICT"
+                          ? `系统店铺绑定冲突：${shop.storeName || "未识别"}`
+                          : "尚未绑定系统店铺，确认国家后将自动建立绑定"}
+                    </div>
                     <div className="text-xs text-slate-500 mt-0.5">
                       {shop.status === "active" && !shop.isExpired ? <span className="text-emerald-400">✓ 已连接</span> : <span className="text-rose-400">已断开/过期</span>}
                       {shop.lastSyncAt && ` · 最后同步: ${new Date(shop.lastSyncAt).toLocaleString("zh-CN")}`}
                     </div>
                   </div>
                 </div>
-                <button onClick={() => handleDisconnect(shop.shopId)} className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-100 hover:bg-rose-500/20">
-                  <Trash2 className="h-3.5 w-3.5 inline mr-1" />断开
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(shop.countryStatus !== "VERIFIED" || shop.bindingStatus !== "BOUND") && (
+                    <>
+                      <select
+                        aria-label={`${shop.shopName}国家/站点`}
+                        value={countrySelections[shop.shopId] || ""}
+                        onChange={(event) => setCountrySelections((current) => ({ ...current, [shop.shopId]: event.target.value }))}
+                        className="min-w-36 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200"
+                      >
+                        <option value="">选择国家/站点</option>
+                        {COUNTRIES.filter((country) => country.code !== "GLOBAL").map((country) => (
+                          <option key={country.code} value={country.code}>{country.name}（{country.code}）</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleConfirmCountry(shop.shopId)}
+                        disabled={confirmingShopId === shop.shopId}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {confirmingShopId === shop.shopId ? "确认中..." : "确认国家"}
+                      </button>
+                    </>
+                  )}
+                  <button onClick={() => handleDisconnect(shop.shopId)} className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100 hover:bg-rose-500/20" title="断开TikTok授权">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
