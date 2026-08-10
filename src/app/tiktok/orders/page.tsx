@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard, CalendarDays, TriangleAlert } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
 import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
+import { DELIVERY_ALERT_DAYS } from "@/lib/order-delivery-alert";
 
 type Order = {
   id: string;
@@ -270,7 +271,7 @@ export default function TikTokOrdersPage() {
           }`}
         >
           <TriangleAlert className="h-4 w-4" />
-          运输超10天
+          运输超{DELIVERY_ALERT_DAYS}天
           <span className={`min-w-6 rounded px-1.5 py-0.5 text-center text-xs ${
             deliveryAlertOnly ? "bg-white/20 text-white" : "bg-slate-950/60 text-amber-300"
           }`}>
