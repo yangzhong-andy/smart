@@ -51,8 +51,10 @@ export const PROFIT_SOURCE_KEYS = [
   "gmvCny",
   "platformFeeCny",
   "fulfillmentFeeCny",
+  "smartPromotionFeeCny",
   "productCostCny",
   "logisticsCostCny",
+  "lastMileLogisticsCostCny",
   "warehouseFulfillmentCostCny",
   "netAdCostCny",
   "taxCostCny",
@@ -64,7 +66,9 @@ const SOURCE_ORIGINAL_KEY: Partial<Record<ProfitSourceKey, string>> = {
   gmvCny: "gmv",
   platformFeeCny: "platformFee",
   fulfillmentFeeCny: "fulfillmentFee",
+  smartPromotionFeeCny: "smartPromotionFee",
   logisticsCostCny: "logisticsCost",
+  lastMileLogisticsCostCny: "lastMileLogisticsCost",
   warehouseFulfillmentCostCny: "warehouseFulfillment",
   netAdCostCny: "netAdCost",
   taxCostCny: "taxCost",
@@ -89,6 +93,30 @@ const BRAZIL_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = BASE_COMPONENTS.m
   if (item.code === "TAX_COST") return { ...item, label: "店铺主体税务成本" };
   return item;
 });
+
+const US_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = [
+  component("GMV", "GMV", "REVENUE", "REVENUE", "gmvCny", 10, { includeInGmv: true }),
+  component("PLATFORM_FEE", "平台佣金", "PLATFORM", "COST", "platformFeeCny", 20),
+  component("SMART_PROMOTION_FEE", "智能推广费", "PLATFORM", "COST", "smartPromotionFeeCny", 30),
+  component("PRODUCT_COST", "采购成本", "PRODUCT", "COST", "productCostCny", 40),
+  component("FIRST_MILE_LOGISTICS", "头程物流费用", "LOGISTICS", "COST", "logisticsCostCny", 50),
+  component("LAST_MILE_LOGISTICS", "尾程物流费用", "LOGISTICS", "COST", "lastMileLogisticsCostCny", 60),
+  component("WAREHOUSE_FULFILLMENT", "海外仓代发", "WAREHOUSE", "COST", "warehouseFulfillmentCostCny", 70),
+  component("AD_COST", "广告实际消耗", "MARKETING", "COST", "netAdCostCny", 80),
+];
+
+const MULTI_COUNTRY_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = [
+  component("GMV", "GMV", "REVENUE", "REVENUE", "gmvCny", 10, { includeInGmv: true }),
+  component("PLATFORM_FEE", "平台佣金", "PLATFORM", "COST", "platformFeeCny", 20),
+  component("FULFILLMENT_FEE", "履约服务费", "PLATFORM", "COST", "fulfillmentFeeCny", 30, { required: false }),
+  component("SMART_PROMOTION_FEE", "智能推广费", "PLATFORM", "COST", "smartPromotionFeeCny", 40, { required: false }),
+  component("PRODUCT_COST", "采购成本", "PRODUCT", "COST", "productCostCny", 50),
+  component("FIRST_MILE_LOGISTICS", "头程物流费用", "LOGISTICS", "COST", "logisticsCostCny", 60),
+  component("LAST_MILE_LOGISTICS", "尾程物流费用", "LOGISTICS", "COST", "lastMileLogisticsCostCny", 70, { required: false }),
+  component("WAREHOUSE_FULFILLMENT", "海外仓代发", "WAREHOUSE", "COST", "warehouseFulfillmentCostCny", 80),
+  component("AD_COST", "广告实际消耗", "MARKETING", "COST", "netAdCostCny", 90),
+  component("TAX_COST", "税务成本", "TAX", "COST", "taxCostCny", 100, { required: false }),
+];
 
 function component(
   code: string,
@@ -134,9 +162,14 @@ export function defaultTimeZone(countryCode: string): string {
 }
 
 export function defaultProfitComponents(countryCode: string, platform: string): ProfitSchemeComponentInput[] {
-  const source = countryCode === "BR" && platform.toUpperCase() === "TIKTOK"
+  const normalizedPlatform = platform.toUpperCase();
+  const source = countryCode === "BR" && normalizedPlatform === "TIKTOK"
     ? BRAZIL_TIKTOK_COMPONENTS
-    : BASE_COMPONENTS;
+    : countryCode === "US" && normalizedPlatform === "TIKTOK"
+      ? US_TIKTOK_COMPONENTS
+      : countryCode === "MIXED" && normalizedPlatform === "TIKTOK"
+        ? MULTI_COUNTRY_TIKTOK_COMPONENTS
+        : BASE_COMPONENTS;
   return source.map((item) => ({ ...item, config: item.config ? { ...item.config } : null }));
 }
 
@@ -161,6 +194,9 @@ export function validateProfitComponents(value: unknown): { components: ProfitSc
     if (!PROFIT_COMPONENT_DIRECTIONS.includes(direction)) return { components: [], error: `收支方向无效：${label}` };
     if (!PROFIT_CALCULATION_MODES.includes(calculationMode)) return { components: [], error: `计算方式无效：${label}` };
     if (calculationMode === "SOURCE" && !sourceKey) return { components: [], error: `项目缺少数据来源：${label}` };
+    if (calculationMode === "SOURCE" && !PROFIT_SOURCE_KEYS.includes(sourceKey as ProfitSourceKey)) {
+      return { components: [], error: `项目数据来源无效：${label}` };
+    }
     codes.add(code);
     components.push({
       code,

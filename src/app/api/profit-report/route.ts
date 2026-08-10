@@ -10,9 +10,11 @@ import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fe
 import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import { calculateProfitAdCost } from "@/lib/profit-ad-costs";
 import { tiktokShopProductDiscountOriginal } from "@/lib/profit-gmv";
+import { usTikTokProfitInput } from "@/lib/profit-us-tiktok";
 import { selectActiveProfitScheme } from "@/lib/profit-scheme-resolution";
 import {
   buildProfitComponentAmounts,
+  contributionProfitFromComponents,
   defaultProfitComponents,
   normalizeCountryCode,
   validateProfitComponents,
@@ -58,7 +60,7 @@ function round(value: number, digits = 2): number {
 }
 
 const ORIGINAL_METRICS: ProfitOriginalMetric[] = [
-  "gmv", "platformFee", "fulfillmentFee", "logisticsCost", "warehouseFulfillment",
+  "gmv", "platformFee", "fulfillmentFee", "smartPromotionFee", "logisticsCost", "lastMileLogisticsCost", "warehouseFulfillment",
   "adSpend", "rebate", "netAdCost", "taxCost",
 ];
 
@@ -181,8 +183,10 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
     platformCostCny: 0,
     platformFeeCny: 0,
     fulfillmentFeeCny: 0,
+    smartPromotionFeeCny: 0,
     productCostCny: 0,
     logisticsCostCny: 0,
+    lastMileLogisticsCostCny: 0,
     warehouseFulfillmentCostCny: 0,
     adSpendCny: 0,
     rebateCny: 0,
@@ -202,8 +206,7 @@ function finalizeMetric(
   componentDefinitions: ProfitSchemeComponentInput[] = GENERIC_PROFIT_COMPONENTS,
 ): ProfitMetricRow {
   const grossProfitCny = metric.gmvCny - metric.platformCostCny - metric.productCostCny
-    - metric.logisticsCostCny - metric.warehouseFulfillmentCostCny;
-  const contributionProfitCny = grossProfitCny - metric.netAdCostCny - metric.taxCostCny;
+    - metric.logisticsCostCny - metric.lastMileLogisticsCostCny - metric.warehouseFulfillmentCostCny;
   const result = {
     id: metric.id,
     label: metric.label,
@@ -216,8 +219,10 @@ function finalizeMetric(
     platformCostCny: round(metric.platformCostCny),
     platformFeeCny: round(metric.platformFeeCny),
     fulfillmentFeeCny: round(metric.fulfillmentFeeCny),
+    smartPromotionFeeCny: round(metric.smartPromotionFeeCny),
     productCostCny: round(metric.productCostCny),
     logisticsCostCny: round(metric.logisticsCostCny),
+    lastMileLogisticsCostCny: round(metric.lastMileLogisticsCostCny),
     warehouseFulfillmentCostCny: round(metric.warehouseFulfillmentCostCny),
     adSpendCny: round(metric.adSpendCny),
     rebateCny: round(metric.rebateCny),
@@ -225,16 +230,20 @@ function finalizeMetric(
     taxCostCny: round(metric.taxCostCny),
     originalAmounts: roundedOriginalAmounts(metric.originalAmounts),
     grossProfitCny: round(grossProfitCny),
-    contributionProfitCny: round(contributionProfitCny),
-    margin: metric.gmvCny > 0 ? round((contributionProfitCny / metric.gmvCny) * 100, 2) : 0,
+    contributionProfitCny: 0,
+    margin: 0,
     roas: metric.netAdCostCny > 0 ? round(metric.gmvCny / metric.netAdCostCny, 2) : 0,
     productCoverage: metric.units > 0 ? round((metric.productCoveredUnits / metric.units) * 100, 2) : 100,
     logisticsCoverage: metric.units > 0 ? round((metric.logisticsCoveredUnits / metric.units) * 100, 2) : 100,
     settlementCoverage: metric.orderCount > 0 ? round((metric.exactSettlementOrders / metric.orderCount) * 100, 2) : 100,
   };
+  const components = buildProfitComponentAmounts(result, componentDefinitions);
+  const contributionProfitCny = contributionProfitFromComponents(components);
   return {
     ...result,
-    components: buildProfitComponentAmounts(result, componentDefinitions),
+    contributionProfitCny: round(contributionProfitCny),
+    margin: metric.gmvCny > 0 ? round((contributionProfitCny / metric.gmvCny) * 100, 2) : 0,
+    components,
   };
 }
 
@@ -242,7 +251,7 @@ function addMetric(target: MutableMetric, values: Partial<MutableMetric>) {
   const numericKeys: Array<keyof MutableMetric> = [
     "orderCount", "cancelledOrders", "units", "gmvCny", "platformCostCny", "platformFeeCny",
     "fulfillmentFeeCny", "productCostCny",
-    "logisticsCostCny", "warehouseFulfillmentCostCny", "adSpendCny", "rebateCny", "netAdCostCny",
+    "smartPromotionFeeCny", "logisticsCostCny", "lastMileLogisticsCostCny", "warehouseFulfillmentCostCny", "adSpendCny", "rebateCny", "netAdCostCny",
     "taxCostCny", "productCoveredUnits",
     "logisticsCoveredUnits", "exactSettlementOrders", "warehouseCoveredOrders", "taxCoveredOrders",
   ];
@@ -262,8 +271,10 @@ type ProfitOrderDetailMoneyMetric =
   | "gmvCny"
   | "platformFeeCny"
   | "fulfillmentFeeCny"
+  | "smartPromotionFeeCny"
   | "productCostCny"
   | "logisticsCostCny"
+  | "lastMileLogisticsCostCny"
   | "warehouseFulfillmentCostCny"
   | "netAdCostCny"
   | "taxCostCny"
@@ -341,6 +352,10 @@ export async function GET(request: NextRequest) {
     const requestedGroup = searchParams.get("groupBy") as ProfitGroupBy | null;
     const groupBy: ProfitGroupBy = requestedGroup && VALID_GROUPS.has(requestedGroup) ? requestedGroup : "day";
     const selectedShopId = searchParams.get("shopId") || null;
+    const requestedCountryValue = searchParams.get("countryCode");
+    const requestedCountryCode = requestedCountryValue && requestedCountryValue !== "all"
+      ? normalizeCountryCode(requestedCountryValue)
+      : null;
     const includeOrders = searchParams.get("includeOrders") === "1";
 
     if (!VALID_DATE.test(startDate) || !VALID_DATE.test(endDate) || startDate > endDate) {
@@ -356,8 +371,17 @@ export async function GET(request: NextRequest) {
       select: { shopId: true, shopName: true, region: true, bankAccountId: true },
       orderBy: { shopName: "asc" },
     });
-    const shops = selectedShopId ? allShops.filter((shop) => shop.shopId === selectedShopId) : allShops;
+    const countryShops = requestedCountryCode
+      ? allShops.filter((shop) => normalizeCountryCode(shop.region) === requestedCountryCode)
+      : allShops;
+    const shops = selectedShopId ? countryShops.filter((shop) => shop.shopId === selectedShopId) : countryShops;
+    if (selectedShopId && shops.length === 0) {
+      return NextResponse.json({ error: "Selected shop does not belong to the selected country" }, { status: 400 });
+    }
     const shopIds = shops.map((shop) => shop.shopId);
+    const selectedCountryCodes = [...new Set(shops.map((shop) => normalizeCountryCode(shop.region)).filter((code) => code !== "UNSET"))];
+    const resolvedCountryCode = requestedCountryCode
+      || (selectedCountryCodes.length === 1 ? selectedCountryCodes[0] : "MIXED");
     const queryStart = new Date(`${addDays(startDate, -2)}T00:00:00Z`);
     const queryEnd = new Date(`${addDays(endDate, 3)}T00:00:00Z`);
 
@@ -368,7 +392,7 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       prisma.tikTokOrder.findMany({
         where: {
-          ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
+          shopId: { in: shopIds },
           createTime: { gte: queryStart, lt: queryEnd },
         },
         select: { orderId: true, shopId: true, status: true, orderStatus: true, totalAmount: true, currency: true, createTime: true, rawData: true },
@@ -389,13 +413,13 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.tikTokSkuMapping.findMany({
-        where: selectedShopId ? { tiktokShopId: selectedShopId } : undefined,
+        where: { tiktokShopId: { in: shopIds } },
         select: { tiktokShopId: true, sellerSku: true, variantId: true },
       }),
       prisma.profitSkuMapping.findMany({
         where: {
           platform: "TIKTOK",
-          ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
+          shopId: { in: shopIds },
         },
         select: {
           shopId: true,
@@ -429,7 +453,7 @@ export async function GET(request: NextRequest) {
         select: { storeId: true, storeName: true, date: true, amount: true, currency: true, giftConsumption: true, estimatedRebate: true },
       }),
       prisma.tikTokStatement.findMany({
-        where: selectedShopId ? { shopId: selectedShopId } : undefined,
+        where: { shopId: { in: shopIds } },
         select: { shopId: true, revenueAmount: true, feeAmount: true, shippingCost: true, adjustmentAmount: true },
       }),
       prisma.bankAccount.findMany({ select: { currency: true, exchangeRate: true } }),
@@ -439,7 +463,7 @@ export async function GET(request: NextRequest) {
       prisma.profitWarehouseSwitchRule.findMany({
         where: {
           platform: "TIKTOK",
-          ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
+          shopId: { in: shopIds },
         },
         select: {
           platform: true,
@@ -463,7 +487,7 @@ export async function GET(request: NextRequest) {
         where: {
           platform: "TIKTOK",
           enabled: true,
-          ...(selectedShopId ? { shopId: selectedShopId } : shopIds.length > 0 ? { shopId: { in: shopIds } } : {}),
+          shopId: { in: shopIds },
         },
         include: { platformFeeTiers: { orderBy: { minOrderAmount: "asc" } } },
         orderBy: { effectiveFrom: "desc" },
@@ -514,6 +538,9 @@ export async function GET(request: NextRequest) {
         definitions,
       };
     };
+    const reportComponentDefinitions = selectedShopId
+      ? resolveProfitScheme(selectedShopId, endDate).definitions
+      : defaultProfitComponents(resolvedCountryCode, "TIKTOK");
 
     const orders = ordersRaw.filter((order) => {
       if (!order.createTime) return false;
@@ -961,7 +988,7 @@ export async function GET(request: NextRequest) {
       const period = periodFor(date, groupBy);
       if (!periods.has(period.id)) periods.set(period.id, emptyMetric(period.id, period.label, period.startDate, period.endDate));
     }
-    const storesMap = new Map<string, MutableMetric & { shopId: string; storeId: string | null; currency: string }>();
+    const storesMap = new Map<string, MutableMetric & { shopId: string; storeId: string | null; countryCode: string; currency: string }>();
     let warehouseMappingMappedOrders = 0;
     let warehouseMappingMissingIdOrders = 0;
     const warehouseMappingUnmappedIds = new Set<string>();
@@ -988,6 +1015,7 @@ export async function GET(request: NextRequest) {
           ...emptyMetric(shopId, store?.name || shop?.shopName || shopId, startDate, endDate),
           shopId,
           storeId: store?.id || null,
+          countryCode: normalizeCountryCode(store?.country || shop?.region),
           currency: store?.currency || (shop?.region === "US" ? "USD" : "BRL"),
         });
       }
@@ -1033,6 +1061,7 @@ export async function GET(request: NextRequest) {
             createTime: order.createTime.toISOString(),
             timeZone,
             shopId: order.shopId,
+            countryCode: normalizeCountryCode(storeMetric.countryCode || shop?.region),
             storeName: storeMetric.label,
             status: order.status || order.orderStatus || "UNKNOWN",
             includedInProfit: false,
@@ -1054,8 +1083,10 @@ export async function GET(request: NextRequest) {
             gmvCny: 0,
             platformFeeCny: 0,
             fulfillmentFeeCny: 0,
+            smartPromotionFeeCny: 0,
             productCostCny: 0,
             logisticsCostCny: 0,
+            lastMileLogisticsCostCny: 0,
             warehouseFulfillmentCostCny: 0,
             netAdCostCny: 0,
             taxCostCny: 0,
@@ -1079,11 +1110,20 @@ export async function GET(request: NextRequest) {
       if (orderProfitScheme.matched) profitSchemeMatchedOrders += 1;
       else profitSchemeMissingStores.add(storeMetric.label);
 
-      // GMV is the product subtotal and excludes buyer-paid shipping.
-      const gmvCny = toCny(productAmount, orderCurrency);
+      const orderCountryCode = normalizeCountryCode(storeMetric.countryCode || shop?.region);
       const financial = financialByOrder.get(order.orderId);
       const settledCny = settlementByOrder.get(order.orderId);
       const hasExactSettlement = financial?.source === "SETTLED" || settledCny != null;
+      // US TikTok uses the settlement revenue as GMV when a settled or
+      // estimated transaction exists. It excludes buyer-paid shipping and
+      // keeps refunds/credits in the same auditable order aggregate.
+      const usSettlementInput = orderCountryCode === "US"
+        ? usTikTokProfitInput(financial, productAmount)
+        : null;
+      const gmvOriginal = usSettlementInput?.gmvOriginal ?? productAmount;
+      const useFinancialGmv = Boolean(usSettlementInput && financial && gmvOriginal !== productAmount);
+      const gmvCurrency = useFinancialGmv ? financial?.currency || orderCurrency : orderCurrency;
+      const gmvCny = toCny(gmvOriginal, gmvCurrency);
       const platformRule = activeShopRule(order.shopId, "PLATFORM_FULFILLMENT", businessDate);
       const estimatedFeeBreakdown = platformRule
         ? platformRuleCost(
@@ -1094,8 +1134,22 @@ export async function GET(request: NextRequest) {
             fallbackLines.map((line) => ({ unitAmount: line.unitSalePrice, quantity: line.qty })),
           )
         : null;
-      let feeBreakdown: ProfitFeeBreakdown;
-      if (financial) {
+      let platformFeeCny = 0;
+      let fulfillmentFeeCny = 0;
+      let smartPromotionFeeCny = 0;
+      let lastMileLogisticsCostCny = 0;
+      let platformCostCny = 0;
+      const feeCurrency = financial?.currency || platformRule?.currency || orderCurrency;
+      if (orderCountryCode === "US" && financial) {
+        platformFeeCny = toCny(usSettlementInput?.platformFeeOriginal, financial.currency);
+        smartPromotionFeeCny = toCny(usSettlementInput?.smartPromotionFeeOriginal, financial.currency);
+        // Shipping is the complete settlement Shipping amount. FBT and actual
+        // shipping breakdown fields are not deducted again.
+        lastMileLogisticsCostCny = toCny(usSettlementInput?.lastMileLogisticsOriginal, financial.currency);
+        platformCostCny = platformFeeCny + smartPromotionFeeCny;
+      } else {
+        let feeBreakdown: ProfitFeeBreakdown;
+        if (financial) {
         const financialReference = {
           platformFeeCny: toCny(
             -(number(financial.feeTaxAmount) + number(financial.adjustmentAmount)),
@@ -1112,24 +1166,26 @@ export async function GET(request: NextRequest) {
         // expose the platform-vs-SFP split. Use the SKU-based estimate as the
         // allocation reference so settled orders keep the same breakdown as
         // the settlement detail, while retaining the actual total.
-        feeBreakdown = allocateActualFeeTotal(
-          actualFeeTotalCny,
-          estimatedFeeBreakdown || financialReference,
-        );
-      } else if (settledCny != null) {
-        const settledTotal = clamp(gmvCny - settledCny, -gmvCny, gmvCny * 2);
-        feeBreakdown = allocateActualFeeTotal(
-          settledTotal,
-          estimatedFeeBreakdown || { platformFeeCny: settledTotal, fulfillmentFeeCny: 0 },
-        );
-      } else if (estimatedFeeBreakdown) {
-        feeBreakdown = estimatedFeeBreakdown;
-      } else {
-        const fallbackTotal = gmvCny * (platformRateByShop.get(order.shopId) ?? globalPlatformRate);
-        feeBreakdown = { platformFeeCny: fallbackTotal, fulfillmentFeeCny: 0, totalCny: fallbackTotal };
+          feeBreakdown = allocateActualFeeTotal(
+            actualFeeTotalCny,
+            estimatedFeeBreakdown || financialReference,
+          );
+        } else if (settledCny != null) {
+          const settledTotal = clamp(gmvCny - settledCny, -gmvCny, gmvCny * 2);
+          feeBreakdown = allocateActualFeeTotal(
+            settledTotal,
+            estimatedFeeBreakdown || { platformFeeCny: settledTotal, fulfillmentFeeCny: 0 },
+          );
+        } else if (estimatedFeeBreakdown) {
+          feeBreakdown = estimatedFeeBreakdown;
+        } else {
+          const fallbackTotal = gmvCny * (platformRateByShop.get(order.shopId) ?? globalPlatformRate);
+          feeBreakdown = { platformFeeCny: fallbackTotal, fulfillmentFeeCny: 0, totalCny: fallbackTotal };
+        }
+        platformFeeCny = feeBreakdown.platformFeeCny;
+        fulfillmentFeeCny = feeBreakdown.fulfillmentFeeCny;
+        platformCostCny = feeBreakdown.totalCny;
       }
-      const { platformFeeCny, fulfillmentFeeCny, totalCny: platformCostCny } = feeBreakdown;
-      const feeCurrency = financial?.currency || platformRule?.currency || orderCurrency;
       const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
       if (fulfillment.mappingStatus === "mapped") warehouseMappingMappedOrders += 1;
       else if (fulfillment.mappingStatus === "missing_id") warehouseMappingMissingIdOrders += 1;
@@ -1152,6 +1208,8 @@ export async function GET(request: NextRequest) {
         const linePlatformCost = platformCostCny * allocation;
         const linePlatformFee = platformFeeCny * allocation;
         const lineFulfillmentFee = fulfillmentFeeCny * allocation;
+        const lineSmartPromotionFee = smartPromotionFeeCny * allocation;
+        const lineLastMileLogisticsCost = lastMileLogisticsCostCny * allocation;
         const lineProductCost = line.productUnitCost * line.qty;
         const lineLogisticsCost = line.logisticsUnitCost * line.qty;
         const lineWarehouseCost = fulfillment.costCny * allocation;
@@ -1160,12 +1218,14 @@ export async function GET(request: NextRequest) {
           orderLogisticsOriginalByCurrency[currency] = (orderLogisticsOriginalByCurrency[currency] || 0) + amount * line.qty;
         }
         const lineOriginalAmounts = originalAmounts([
-          ["gmv", orderCurrency, productAmount * allocation],
+          ["gmv", gmvCurrency, gmvOriginal * allocation],
           ["platformFee", feeCurrency, fromCny(linePlatformFee, feeCurrency)],
           ["fulfillmentFee", feeCurrency, fromCny(lineFulfillmentFee, feeCurrency)],
+          ["smartPromotionFee", feeCurrency, fromCny(lineSmartPromotionFee, feeCurrency)],
           ...Object.entries(line.logisticsOriginalByCurrency).map(([currency, amount]) => (
             ["logisticsCost", currency, amount * line.qty] as [ProfitOriginalMetric, string, number]
           )),
+          ["lastMileLogisticsCost", feeCurrency, fromCny(lineLastMileLogisticsCost, feeCurrency)],
           ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal * allocation],
           ["taxCost", orderCurrency, taxCostOriginal * allocation],
         ]);
@@ -1195,8 +1255,10 @@ export async function GET(request: NextRequest) {
           platformCostCny: linePlatformCost,
           platformFeeCny: linePlatformFee,
           fulfillmentFeeCny: lineFulfillmentFee,
+          smartPromotionFeeCny: lineSmartPromotionFee,
           productCostCny: lineProductCost,
           logisticsCostCny: lineLogisticsCost,
+          lastMileLogisticsCostCny: lineLastMileLogisticsCost,
           warehouseFulfillmentCostCny: lineWarehouseCost,
           taxCostCny: lineTaxCost,
           originalAmounts: lineOriginalAmounts,
@@ -1209,12 +1271,14 @@ export async function GET(request: NextRequest) {
       }
 
       const orderOriginalAmounts = originalAmounts([
-        ["gmv", orderCurrency, productAmount],
+        ["gmv", gmvCurrency, gmvOriginal],
         ["platformFee", feeCurrency, fromCny(platformFeeCny, feeCurrency)],
         ["fulfillmentFee", feeCurrency, fromCny(fulfillmentFeeCny, feeCurrency)],
+        ["smartPromotionFee", feeCurrency, fromCny(smartPromotionFeeCny, feeCurrency)],
         ...Object.entries(orderLogisticsOriginalByCurrency).map(([currency, amount]) => (
           ["logisticsCost", currency, amount] as [ProfitOriginalMetric, string, number]
         )),
+        ["lastMileLogisticsCost", feeCurrency, fromCny(lastMileLogisticsCostCny, feeCurrency)],
         ["warehouseFulfillment", fulfillment.currency, fulfillment.costOriginal],
         ["taxCost", orderCurrency, taxCostOriginal],
       ]);
@@ -1225,8 +1289,10 @@ export async function GET(request: NextRequest) {
         platformCostCny,
         platformFeeCny,
         fulfillmentFeeCny,
+        smartPromotionFeeCny,
         productCostCny: orderProductCost,
         logisticsCostCny: orderLogisticsCost,
+        lastMileLogisticsCostCny,
         warehouseFulfillmentCostCny: fulfillment.costCny,
         taxCostCny,
         originalAmounts: orderOriginalAmounts,
@@ -1245,12 +1311,13 @@ export async function GET(request: NextRequest) {
           createTime: order.createTime.toISOString(),
           timeZone,
           shopId: order.shopId,
+          countryCode: orderCountryCode,
           storeName: storeMetric.label,
           status: order.status || order.orderStatus || "UNKNOWN",
           includedInProfit: true,
           exclusionReason: null,
-          currency: orderCurrency,
-          orderAmountOriginal: round(productAmount),
+          currency: gmvCurrency,
+          orderAmountOriginal: round(gmvOriginal),
           units: totalQty,
           lines: fallbackLines.map((line) => ({
             sellerSku: line.sellerSku,
@@ -1266,8 +1333,10 @@ export async function GET(request: NextRequest) {
           gmvCny,
           platformFeeCny,
           fulfillmentFeeCny,
+          smartPromotionFeeCny,
           productCostCny: orderProductCost,
           logisticsCostCny: orderLogisticsCost,
+          lastMileLogisticsCostCny,
           warehouseFulfillmentCostCny: fulfillment.costCny,
           netAdCostCny: 0,
           taxCostCny,
@@ -1278,8 +1347,10 @@ export async function GET(request: NextRequest) {
             gmvCny,
             platformFeeCny,
             fulfillmentFeeCny,
+            smartPromotionFeeCny,
             productCostCny: orderProductCost,
             logisticsCostCny: orderLogisticsCost,
+            lastMileLogisticsCostCny,
             warehouseFulfillmentCostCny: fulfillment.costCny,
             netAdCostCny: 0,
             taxCostCny,
@@ -1368,8 +1439,9 @@ export async function GET(request: NextRequest) {
 
     let totalAdCny = 0;
     let linkedAdCny = 0;
+    const hasShopScope = Boolean(selectedShopId || requestedCountryCode);
     for (const ad of adConsumptions) {
-      if (selectedShopId && (!ad.storeId || !selectedStoreIds.has(ad.storeId))) continue;
+      if (hasShopScope && (!ad.storeId || !selectedStoreIds.has(ad.storeId))) continue;
       const businessDate = ad.date.toISOString().slice(0, 10);
       if (businessDate < startDate || businessDate > endDate) continue;
       const adCost = calculateProfitAdCost(
@@ -1394,7 +1466,7 @@ export async function GET(request: NextRequest) {
       if (period) addMetric(period, { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
 
       const linkedShopId = ad.storeId ? shopByStoreId.get(ad.storeId) : undefined;
-      if (linkedShopId && (!selectedShopId || linkedShopId === selectedShopId)) {
+      if (linkedShopId && shopIds.includes(linkedShopId) && (!selectedShopId || linkedShopId === selectedShopId)) {
         linkedAdCny += spendCny;
         addMetric(ensureStore(linkedShopId), { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
       }
@@ -1435,11 +1507,12 @@ export async function GET(request: NextRequest) {
 
     const summaryMutable = emptyMetric("summary", "Summary", startDate, endDate);
     for (const period of periods.values()) addMetric(summaryMutable, period);
-    const finalizedPeriods = [...periods.values()].map((metric) => finalizeMetric(metric)).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const finalizedPeriods = [...periods.values()].map((metric) => finalizeMetric(metric, reportComponentDefinitions)).sort((a, b) => a.startDate.localeCompare(b.startDate));
     const finalizedStores: ProfitStoreRow[] = [...storesMap.values()].map((store) => ({
       ...finalizeMetric(store, resolveProfitScheme(store.shopId, endDate).definitions),
       shopId: store.shopId,
       storeId: store.storeId,
+      countryCode: store.countryCode,
       currency: store.currency,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
     const finalizedSkus: ProfitSkuRow[] = [...skusMap.values()].map((sku) => ({
@@ -1454,14 +1527,16 @@ export async function GET(request: NextRequest) {
       costComponents: sku.costComponents,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
 
-    const summary = finalizeMetric(summaryMutable);
+    const summary = finalizeMetric(summaryMutable, reportComponentDefinitions);
     if (includeOrders) {
       const moneyMetrics: ProfitOrderDetailMoneyMetric[] = [
         "gmvCny",
         "platformFeeCny",
         "fulfillmentFeeCny",
+        "smartPromotionFeeCny",
         "productCostCny",
         "logisticsCostCny",
+        "lastMileLogisticsCostCny",
         "warehouseFulfillmentCostCny",
         "netAdCostCny",
         "taxCostCny",
@@ -1471,14 +1546,10 @@ export async function GET(request: NextRequest) {
       }
       for (const order of orderDetails) {
         if (!order.includedInProfit) continue;
-        order.contributionProfitCny = order.gmvCny
-          - order.platformFeeCny
-          - order.fulfillmentFeeCny
-          - order.productCostCny
-          - order.logisticsCostCny
-          - order.warehouseFulfillmentCostCny
-          - order.netAdCostCny
-          - order.taxCostCny;
+        order.contributionProfitCny = contributionProfitFromComponents(buildProfitComponentAmounts({
+          ...order,
+          originalAmounts: order.originalAmounts,
+        }, resolveProfitScheme(order.shopId, order.businessDate).definitions));
       }
       balanceOrderDetailRounding(orderDetails, "contributionProfitCny", summary.contributionProfitCny);
     }
@@ -1491,8 +1562,10 @@ export async function GET(request: NextRequest) {
             gmvCny: round(order.gmvCny),
             platformFeeCny: round(order.platformFeeCny),
             fulfillmentFeeCny: round(order.fulfillmentFeeCny),
+            smartPromotionFeeCny: round(order.smartPromotionFeeCny),
             productCostCny: round(order.productCostCny),
             logisticsCostCny: round(order.logisticsCostCny),
+            lastMileLogisticsCostCny: round(order.lastMileLogisticsCostCny),
             warehouseFulfillmentCostCny: round(order.warehouseFulfillmentCostCny),
             netAdCostCny: round(order.netAdCostCny),
             taxCostCny: round(order.taxCostCny),
@@ -1508,8 +1581,11 @@ export async function GET(request: NextRequest) {
                 GMV: "ACTUAL",
                 PLATFORM_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
                 FULFILLMENT_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
+                SMART_PROMOTION_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
                 PRODUCT_COST: order.coverage.productCost ? "ACTUAL" : "MISSING",
                 LOGISTICS_COST: order.coverage.logisticsCost ? "ACTUAL" : "MISSING",
+                FIRST_MILE_LOGISTICS: order.coverage.logisticsCost ? "ACTUAL" : "MISSING",
+                LAST_MILE_LOGISTICS: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
                 WAREHOUSE_FULFILLMENT: order.coverage.warehouse ? "ESTIMATED" : "MISSING",
                 AD_COST: "ACTUAL",
                 TAX_COST: order.coverage.tax ? "ESTIMATED" : "MISSING",
@@ -1533,7 +1609,8 @@ export async function GET(request: NextRequest) {
     const warehouseMappingCoverage = summaryMutable.orderCount > 0
       ? round((warehouseMappingMappedOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
-    const taxRuleCoverage = summaryMutable.orderCount > 0
+    const requiresTaxRule = reportComponentDefinitions.some((component) => component.code === "TAX_COST" && component.required);
+    const taxRuleCoverage = requiresTaxRule && summaryMutable.orderCount > 0
       ? round((summaryMutable.taxCoveredOrders / summaryMutable.orderCount) * 100, 2)
       : 100;
     const profitSchemeCoverage = summaryMutable.orderCount > 0
@@ -1556,14 +1633,22 @@ export async function GET(request: NextRequest) {
     if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} 个订单缺少仓库编号`);
     if (warehouseMappingUnmappedIds.size > 0) warnings.push(`未映射仓库编号：${[...warehouseMappingUnmappedIds].join(", ")}`);
     if (warehouseCoverage < 100) warnings.push("部分销售订单缺少对应仓库代发费用规则");
-    if (taxRuleCoverage < 100) warnings.push("部分店铺缺少税率规则");
+    if (requiresTaxRule && taxRuleCoverage < 100) warnings.push("部分店铺缺少税率规则");
     if (adStoreCoverage < 95) warnings.push("部分广告消耗未关联店铺");
     if (profitSchemeMissingStores.size > 0) warnings.push(`店铺利润方案未绑定：${[...profitSchemeMissingStores].join("、")}`);
     if (invalidProfitSchemeIds.size > 0) warnings.push(`${invalidProfitSchemeIds.size} 个利润方案字段配置无效`);
     if (missingCurrencies.size > 0) warnings.push(`缺少汇率：${[...missingCurrencies].join(", ")}`);
 
     const response: ProfitReportResponse = {
-      filters: { startDate, endDate, groupBy, shopId: selectedShopId, currency: "CNY" },
+      filters: {
+        startDate,
+        endDate,
+        groupBy,
+        shopId: selectedShopId,
+        countryCode: requestedCountryCode,
+        resolvedCountryCode,
+        currency: "CNY",
+      },
       summary,
       periods: finalizedPeriods,
       stores: finalizedStores,
@@ -1581,6 +1666,9 @@ export async function GET(request: NextRequest) {
         region: shop.region,
         currency: shopStore.get(shop.shopId)?.currency || (shop.region === "US" ? "USD" : "BRL"),
       })),
+      countries: [...new Set(allShops.map((shop) => normalizeCountryCode(shop.region)).filter((code) => code !== "UNSET"))]
+        .sort()
+        .map((code) => ({ code, name: code === "US" ? "美国" : code === "BR" ? "巴西" : code })),
       coverage: {
         score,
         productCost: summary.productCoverage,

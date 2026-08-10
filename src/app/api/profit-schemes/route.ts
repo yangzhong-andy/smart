@@ -140,14 +140,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = String(body?.action || "").trim();
 
-    if (action === "bootstrapBrazilTikTok") {
+    if (action === "bootstrapBrazilTikTok" || action === "bootstrapTikTok") {
       const { identities } = await storeIdentities();
+      const requestedCountryCode = action === "bootstrapBrazilTikTok"
+        ? "BR"
+        : normalizeCountryCode(body?.countryCode);
+      if (["UNSET", "MIXED"].includes(requestedCountryCode)) {
+        return NextResponse.json({ error: "初始化利润方案时必须指定国家" }, { status: 400 });
+      }
       const requestedStoreIds = Array.isArray(body?.storeIds)
         ? new Set(body.storeIds.map((value: unknown) => String(value)))
         : null;
       const candidates = identities.filter((identity) => (
         identity.platform === "TIKTOK"
-        && identity.countryCode === "BR"
+        && identity.countryCode === requestedCountryCode
         && identity.externalShopId
         && identity.identityStatus === "COMPLETE"
         && (!requestedStoreIds || requestedStoreIds.has(identity.id))
@@ -160,7 +166,7 @@ export async function POST(request: NextRequest) {
           data: {
             storeId: identity.id,
             externalShopId: identity.externalShopId,
-            name: `${identity.name} 巴西 TikTok 利润方案`,
+            name: `${identity.name} ${requestedCountryCode === "BR" ? "巴西" : requestedCountryCode === "US" ? "美国" : requestedCountryCode} TikTok 利润方案`,
             platform: identity.platform,
             countryCode: identity.countryCode,
             currency: identity.currency,
@@ -168,7 +174,7 @@ export async function POST(request: NextRequest) {
             version: 1,
             status: "PUBLISHED",
             effectiveFrom: new Date("1970-01-01T00:00:00.000Z"),
-            notes: "由现有巴西利润核算规则初始化；不改变当前计算结果",
+            notes: `${requestedCountryCode} TikTok 默认利润方案初始化`,
             components: {
               create: defaultProfitComponents(identity.countryCode, identity.platform).map((component) => ({
                 ...component,
