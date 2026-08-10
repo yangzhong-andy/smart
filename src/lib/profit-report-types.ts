@@ -6,7 +6,9 @@ export type ProfitOriginalMetric =
   | "gmv"
   | "platformFee"
   | "fulfillmentFee"
+  | "smartPromotionFee"
   | "logisticsCost"
+  | "lastMileLogisticsCost"
   | "warehouseFulfillment"
   | "adSpend"
   | "rebate"
@@ -27,8 +29,10 @@ export type ProfitMetricRow = {
   platformCostCny: number;
   platformFeeCny: number;
   fulfillmentFeeCny: number;
+  smartPromotionFeeCny: number;
   productCostCny: number;
   logisticsCostCny: number;
+  lastMileLogisticsCostCny: number;
   warehouseFulfillmentCostCny: number;
   adSpendCny: number;
   rebateCny: number;
@@ -47,6 +51,7 @@ export type ProfitMetricRow = {
 
 export type ProfitStoreRow = ProfitMetricRow & {
   shopId: string;
+  countryCode: string;
   storeId: string | null;
   currency: string;
 };
@@ -109,6 +114,7 @@ export type ProfitOrderDetailRow = {
   createTime: string;
   timeZone: string;
   shopId: string;
+  countryCode: string;
   storeName: string;
   status: string;
   includedInProfit: boolean;
@@ -123,8 +129,10 @@ export type ProfitOrderDetailRow = {
   gmvCny: number;
   platformFeeCny: number;
   fulfillmentFeeCny: number;
+  smartPromotionFeeCny: number;
   productCostCny: number;
   logisticsCostCny: number;
+  lastMileLogisticsCostCny: number;
   warehouseFulfillmentCostCny: number;
   netAdCostCny: number;
   taxCostCny: number;
@@ -147,6 +155,8 @@ export type ProfitReportResponse = {
     endDate: string;
     groupBy: ProfitGroupBy;
     shopId: string | null;
+    countryCode: string | null;
+    resolvedCountryCode: string;
     currency: "CNY";
   };
   summary: ProfitMetricRow;
@@ -161,6 +171,7 @@ export type ProfitReportResponse = {
     unitCostCny: number;
   }>;
   shops: Array<{ id: string; name: string; region: string; currency: string }>;
+  countries: Array<{ code: string; name: string }>;
   coverage: {
     score: number;
     productCost: number;
