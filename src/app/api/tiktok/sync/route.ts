@@ -9,6 +9,7 @@ import {
   searchProducts,
 } from "@/lib/tiktok-shop-api";
 import { clearCacheByPrefix } from "@/lib/redis";
+import { syncTikTokProfitFinancials } from "@/lib/tiktok-profit-financial-sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -206,6 +207,23 @@ export async function POST(request: NextRequest) {
             }
             result.statements = count;
           } catch (e: any) { result.statementsError = e.message; }
+
+          // Persist statement transactions separately from the statement
+          // summary. The checkpointed sync is idempotent and supplies exact
+          // order-level fees for country-specific profit rules.
+          try {
+            const financial = await syncTikTokProfitFinancials(shop.shopId, {
+              days: syncDays,
+              maxStatements: Math.min(10, Math.max(1, syncDays + 2)),
+              includeUnsettled: dataType === "all",
+            });
+            result.statementTransactions = financial.syncedTransactions;
+            result.settledOrders = financial.settledOrders;
+            result.pendingSettlementStatements = financial.pendingStatements;
+            result.failedSettlementStatements = financial.failedStatements;
+          } catch (e: any) {
+            result.statementTransactionsError = e.message;
+          }
         }
 
         // 同步回款
