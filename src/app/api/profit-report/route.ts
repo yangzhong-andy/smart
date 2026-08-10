@@ -1551,7 +1551,7 @@ export async function GET(request: NextRequest) {
     );
     const warnings: string[] = [];
     if (summary.productCoverage < 95) warnings.push("部分 SKU 缺少采购成本");
-    if (summary.logisticsCoverage < 95) warnings.push("部分 SKU 暂无物流分摊成本");
+    if (summary.logisticsCoverage < 95) warnings.push("部分 SKU 暂无头程物流费用");
     if (platformActualCoverage < 80) warnings.push("平台实际费用不完整");
     if (warehouseMappingMissingIdOrders > 0) warnings.push(`${warehouseMappingMissingIdOrders} 个订单缺少仓库编号`);
     if (warehouseMappingUnmappedIds.size > 0) warnings.push(`未映射仓库编号：${[...warehouseMappingUnmappedIds].join(", ")}`);
