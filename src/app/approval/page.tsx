@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
-import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText, FileImage } from "lucide-react";
+import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText, FileImage, History } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import { approvePurchaseOrder, type PurchaseOrder } from "@/lib/purchase-orders-store";
 import { approvePurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
@@ -20,6 +20,27 @@ const formatDate = (dateString?: string) => {
   }
 };
 
+const formatDateTime = (dateString?: string) => {
+  if (!dateString) return "-";
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return dateString;
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+
+function getContractApprovalResult(contract: PurchaseContract): "通过" | "拒绝" {
+  if (contract.approvalResult === "通过" || contract.approvalResult === "拒绝") {
+    return contract.approvalResult;
+  }
+  return contract.status === "已取消" ? "拒绝" : "通过";
+}
+
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
 // 当前登录用户显示名（用于预填审批人）
@@ -32,11 +53,12 @@ function getCurrentApproverName(session: { user?: { name?: string | null; email?
 export default function ApprovalPage() {
   const { data: session } = useSession();
   const [tab, setTab] = useState<"orders" | "contracts">("orders");
+  const [contractView, setContractView] = useState<"pending" | "history">("pending");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [selectedContract, setSelectedContract] = useState<PurchaseContract | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
+  const [contractModalMode, setContractModalMode] = useState<"approval" | "history" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [approvalForm, setApprovalForm] = useState({
     result: "通过" as "通过" | "拒绝",
@@ -50,18 +72,24 @@ export default function ApprovalPage() {
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
   const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
-    "/api/purchase-contracts?page=1&pageSize=500",
+    "/api/purchase-contracts?page=1&pageSize=500&noCache=true",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
   const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
-  const contractsData = Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? []);
+  const contractsData: PurchaseContract[] = Array.isArray(contractsDataRaw)
+    ? contractsDataRaw
+    : (contractsDataRaw?.data ?? []);
   const orders = useMemo(
     () => ordersData.filter((o: PurchaseOrder) => o.status === "待审批"),
     [ordersData]
   );
   const pendingContracts = useMemo(
     () => contractsData.filter((c: PurchaseContract) => c.status === "待审批"),
+    [contractsData]
+  );
+  const contractHistory = useMemo(
+    () => contractsData.filter((c: PurchaseContract) => Boolean(c.approvedAt)),
     [contractsData]
   );
 
@@ -96,15 +124,33 @@ export default function ApprovalPage() {
     return result;
   }, [pendingContracts, searchKeyword]);
 
+  const filteredContractHistory = useMemo(() => {
+    let result = [...contractHistory];
+    if (searchKeyword.trim()) {
+      const keyword = searchKeyword.toLowerCase();
+      result = result.filter((contract) =>
+        contract.contractNumber.toLowerCase().includes(keyword) ||
+        contract.supplierName.toLowerCase().includes(keyword) ||
+        (contract.sku && contract.sku.toLowerCase().includes(keyword)) ||
+        (contract.approvedBy && contract.approvedBy.toLowerCase().includes(keyword)) ||
+        (contract.approvalNotes && contract.approvalNotes.toLowerCase().includes(keyword))
+      );
+    }
+    result.sort((left, right) => new Date(right.approvedAt || 0).getTime() - new Date(left.approvedAt || 0).getTime());
+    return result;
+  }, [contractHistory, searchKeyword]);
+
   // 统计信息
   const stats = useMemo(() => {
     return {
       total: filteredOrders.length,
       totalQuantity: filteredOrders.reduce((sum, o) => sum + o.quantity, 0),
       contractTotal: filteredContracts.length,
-      contractAmount: filteredContracts.reduce((sum, c) => sum + (c.totalAmount ?? 0), 0)
+      contractAmount: filteredContracts.reduce((sum, c) => sum + (c.totalAmount ?? 0), 0),
+      contractApproved: contractHistory.filter((contract) => getContractApprovalResult(contract) === "通过").length,
+      contractRejected: contractHistory.filter((contract) => getContractApprovalResult(contract) === "拒绝").length,
     };
-  }, [filteredOrders, filteredContracts]);
+  }, [filteredOrders, filteredContracts, contractHistory]);
 
   // 打开审批模态框（审批人预填当前登录用户）
   const handleOpenModal = (order: PurchaseOrder) => {
@@ -158,7 +204,12 @@ export default function ApprovalPage() {
       notes: "",
       approvedBy: getCurrentApproverName(session)
     });
-    setIsContractModalOpen(true);
+    setContractModalMode("approval");
+  };
+
+  const handleOpenContractHistory = (contract: PurchaseContract) => {
+    setSelectedContract(contract);
+    setContractModalMode("history");
   };
 
   const handleContractSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -183,7 +234,7 @@ export default function ApprovalPage() {
       if (success) {
         toast.success(`合同审批${approvalForm.result === "通过" ? "通过" : "已拒绝"}`);
         mutateContracts();
-        setIsContractModalOpen(false);
+        setContractModalMode(null);
         setSelectedContract(null);
         setApprovalForm({ result: "通过", notes: "", approvedBy: "" });
       } else {
@@ -227,12 +278,50 @@ export default function ApprovalPage() {
         </button>
       </div>
 
+      {tab === "contracts" && (
+        <div className="inline-flex w-fit rounded-md border border-slate-700 bg-slate-900 p-1">
+          <button
+            type="button"
+            onClick={() => setContractView("pending")}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              contractView === "pending"
+                ? "rounded bg-slate-700 text-white"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            待审批
+          </button>
+          <button
+            type="button"
+            onClick={() => setContractView("history")}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              contractView === "history"
+                ? "rounded bg-slate-700 text-white"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            审批历史
+          </button>
+        </div>
+      )}
+
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="待审批订单" value={stats.total} icon={FileCheck} />
-        <StatCard title="订单总数量" value={stats.totalQuantity} icon={CheckCircle2} />
-        <StatCard title="待审批合同" value={stats.contractTotal} icon={FileText} />
-        <StatCard title="合同总金额" value={`¥${stats.contractAmount.toLocaleString("zh-CN")}`} icon={FileText} />
+        {tab === "orders" ? (
+          <>
+            <StatCard title="待审批订单" value={stats.total} icon={FileCheck} />
+            <StatCard title="订单总数量" value={stats.totalQuantity} icon={CheckCircle2} />
+            <StatCard title="待审批合同" value={stats.contractTotal} icon={FileText} />
+            <StatCard title="合同总金额" value={`¥${stats.contractAmount.toLocaleString("zh-CN")}`} icon={FileText} />
+          </>
+        ) : (
+          <>
+            <StatCard title="待审批合同" value={stats.contractTotal} icon={FileText} />
+            <StatCard title="待审批金额" value={`¥${stats.contractAmount.toLocaleString("zh-CN")}`} icon={FileText} />
+            <StatCard title="审批通过" value={stats.contractApproved} icon={CheckCircle2} />
+            <StatCard title="审批拒绝" value={stats.contractRejected} icon={XCircle} />
+          </>
+        )}
       </div>
 
       {/* 搜索 */}
@@ -240,7 +329,11 @@ export default function ApprovalPage() {
         <SearchBar
           value={searchKeyword}
           onChange={setSearchKeyword}
-          placeholder={tab === "orders" ? "搜索订单编号、SKU、产品名称..." : "搜索合同编号、供应商、SKU..."}
+          placeholder={tab === "orders"
+            ? "搜索订单编号、SKU、产品名称..."
+            : contractView === "history"
+              ? "搜索合同编号、供应商、SKU、审批人或备注..."
+              : "搜索合同编号、供应商、SKU..."}
         />
       </div>
 
@@ -323,14 +416,14 @@ export default function ApprovalPage() {
       )}
 
       {/* 合同审批列表 */}
-      {tab === "contracts" && filteredContracts.length === 0 && (
+      {tab === "contracts" && contractView === "pending" && filteredContracts.length === 0 && (
         <EmptyState
           icon={FileText}
           title="暂无待审批合同"
           description="采购在「采购合同」中新建的合同会出现在这里，由公司主管审批"
         />
       )}
-      {tab === "contracts" && filteredContracts.length > 0 && (
+      {tab === "contracts" && contractView === "pending" && filteredContracts.length > 0 && (
         <div className="space-y-3">
           {filteredContracts.map((contract) => (
             <div
@@ -407,6 +500,74 @@ export default function ApprovalPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === "contracts" && contractView === "history" && filteredContractHistory.length === 0 && (
+        <EmptyState
+          icon={History}
+          title="暂无合同审批历史"
+          description="审批通过或拒绝的合同会保留在这里"
+        />
+      )}
+      {tab === "contracts" && contractView === "history" && filteredContractHistory.length > 0 && (
+        <div className="overflow-hidden rounded-md border border-slate-800 bg-slate-900/40">
+          <div className="overflow-x-auto">
+            <table className="min-w-[1040px] w-full text-sm">
+              <thead className="border-b border-slate-800 bg-slate-900 text-xs text-slate-400">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">合同 / 供应商</th>
+                  <th className="px-4 py-3 text-right font-medium">合同金额</th>
+                  <th className="px-4 py-3 text-center font-medium">审批结果</th>
+                  <th className="px-4 py-3 text-left font-medium">审批人</th>
+                  <th className="px-4 py-3 text-left font-medium">审批时间</th>
+                  <th className="px-4 py-3 text-left font-medium">审批备注</th>
+                  <th className="w-16 px-4 py-3 text-center font-medium">详情</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {filteredContractHistory.map((contract) => {
+                  const result = getContractApprovalResult(contract);
+                  return (
+                    <tr key={contract.id} className="hover:bg-slate-800/40">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-100">{contract.contractNumber}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{contract.supplierName}</div>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-200">
+                        ¥{Number(contract.totalAmount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                          result === "通过"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-rose-500/15 text-rose-300"
+                        }`}>
+                          {result === "通过" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+                          {result}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{contract.approvedBy || "-"}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-300">{formatDateTime(contract.approvedAt)}</td>
+                      <td className="max-w-[280px] px-4 py-3 text-slate-400">
+                        <div className="truncate" title={contract.approvalNotes || ""}>{contract.approvalNotes || "-"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenContractHistory(contract)}
+                          title="查看合同审批详情"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-400 hover:bg-slate-700 hover:text-white"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -522,17 +683,19 @@ export default function ApprovalPage() {
       )}
 
       {/* 合同审批模态框 */}
-      {isContractModalOpen && selectedContract && (
+      {contractModalMode && selectedContract && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">合同审批</h2>
+                <h2 className="text-xl font-semibold text-slate-100">
+                  {contractModalMode === "history" ? "合同审批记录" : "合同审批"}
+                </h2>
                 <p className="text-sm text-slate-400 mt-1">{selectedContract.contractNumber}</p>
               </div>
               <button
                 onClick={() => {
-                  setIsContractModalOpen(false);
+                  setContractModalMode(null);
                   setSelectedContract(null);
                 }}
                 className="text-slate-400 hover:text-slate-200"
@@ -638,6 +801,44 @@ export default function ApprovalPage() {
                 );
               })()}
             </div>
+            {contractModalMode === "history" ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 rounded-md border border-slate-700 bg-slate-800/40 p-4 text-sm sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs text-slate-500">审批结果</div>
+                    <div className={`mt-1 font-medium ${
+                      getContractApprovalResult(selectedContract) === "通过" ? "text-emerald-300" : "text-rose-300"
+                    }`}>
+                      {getContractApprovalResult(selectedContract)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">审批人</div>
+                    <div className="mt-1 text-slate-200">{selectedContract.approvedBy || "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">审批时间</div>
+                    <div className="mt-1 text-slate-200">{formatDateTime(selectedContract.approvedAt)}</div>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <div className="text-xs text-slate-500">审批备注</div>
+                    <div className="mt-1 whitespace-pre-wrap text-slate-300">{selectedContract.approvalNotes || "无"}</div>
+                  </div>
+                </div>
+                <div className="flex justify-end border-t border-slate-800 pt-4">
+                  <ActionButton
+                    type="button"
+                    onClick={() => {
+                      setContractModalMode(null);
+                      setSelectedContract(null);
+                    }}
+                    variant="secondary"
+                  >
+                    关闭
+                  </ActionButton>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleContractSubmit} className="space-y-4">
               <label className="block space-y-1">
                 <span className="text-sm text-slate-300">审批结果 *</span>
@@ -676,7 +877,7 @@ export default function ApprovalPage() {
                 <ActionButton
                   type="button"
                   onClick={() => {
-                    setIsContractModalOpen(false);
+                    setContractModalMode(null);
                     setSelectedContract(null);
                   }}
                   variant="secondary"
@@ -688,6 +889,7 @@ export default function ApprovalPage() {
                 </ActionButton>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

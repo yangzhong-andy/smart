@@ -90,6 +90,7 @@ export async function POST(
         status: newStatus,
         approvedBy,
         approvedAt: new Date(),
+        approvalResult: result,
         approvalNotes: notes || null
       },
       include: {
@@ -137,6 +138,7 @@ export async function POST(
       relatedOrderNumbers: updated.relatedOrderNumbers || [],
       approvedBy: updated.approvedBy ?? undefined,
       approvedAt: updated.approvedAt?.toISOString() ?? undefined,
+      approvalResult: updated.approvalResult === '拒绝' ? '拒绝' : '通过',
       approvalNotes: updated.approvalNotes ?? undefined,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),

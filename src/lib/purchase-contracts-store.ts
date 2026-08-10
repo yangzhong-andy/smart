@@ -26,6 +26,7 @@ export type PurchaseContract = {
   contractVoucher?: string | string[]; // 合同凭证（支持多图，Base64或URL）
   approvedBy?: string; // 审批人（主管）
   approvedAt?: string; // 审批时间（ISO）
+  approvalResult?: "通过" | "拒绝"; // 审批结果
   approvalNotes?: string; // 审批备注
   createdAt: string; // 创建时间
   updatedAt: string; // 更新时间
