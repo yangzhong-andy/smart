@@ -207,8 +207,8 @@ export async function getStatements(
     shop_cipher: shopCipher, sort_field: "statement_time",
     page_size: String(params.page_size || 50),
   };
-  if (params.start_time) query.start_time = String(params.start_time);
-  if (params.end_time) query.end_time = String(params.end_time);
+  if (params.start_time) query.statement_time_ge = String(params.start_time);
+  if (params.end_time) query.statement_time_lt = String(params.end_time);
   if (params.page_token) query.page_token = params.page_token;
   return await callTikTokApi("/finance/202309/statements", accessToken, appKey, appSecret, { method: "GET", query });
 }
