@@ -9,6 +9,7 @@ import {
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
 import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import { calculateProfitAdCost } from "@/lib/profit-ad-costs";
+import { tiktokShopProductDiscountOriginal } from "@/lib/profit-gmv";
 import { selectActiveProfitScheme } from "@/lib/profit-scheme-resolution";
 import {
   buildProfitComponentAmounts,
@@ -302,23 +303,6 @@ function parseLineItems(rawData: unknown): any[] {
   return Array.isArray(value) ? value : [];
 }
 
-/** TikTok's product discount is funded by the platform and is included in settlement GMV. */
-function platformProductDiscountOriginal(rawData: unknown): number {
-  const payment = rawData && typeof rawData === "object" ? (rawData as any).payment : null;
-  let zeroValue = 0;
-  let foundValue = false;
-  for (const value of [payment?.platform_discount, payment?.payment_platform_discount]) {
-    if (value == null) continue;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) continue;
-    const discount = Math.abs(parsed);
-    if (discount > 0) return discount;
-    if (!foundValue) zeroValue = discount;
-    foundValue = true;
-  }
-  return zeroValue;
-}
-
 /**
  * GMV is the product subtotal plus TikTok-funded product discounts. Buyer-paid
  * shipping and shipping discounts remain outside GMV.
@@ -333,7 +317,7 @@ function productAmountOriginal(
   for (const value of [payment?.sub_total, payment?.subtotal, payment?.product_subtotal, raw?.product_amount, raw?.product_subtotal]) {
     const parsed = number(value);
     if (value != null && Number.isFinite(parsed) && parsed >= 0) {
-      return Math.max(0, parsed + (includePlatformProductDiscount ? platformProductDiscountOriginal(raw) : 0));
+      return Math.max(0, parsed + (includePlatformProductDiscount ? tiktokShopProductDiscountOriginal(raw) : 0));
     }
   }
   const lineTotal = lines.reduce((sum, line) => sum + Math.max(0, number(line.lineValue)), 0);
