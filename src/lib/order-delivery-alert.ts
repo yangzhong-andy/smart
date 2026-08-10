@@ -1,4 +1,4 @@
-export const DELIVERY_ALERT_DAYS = 10;
+export const DELIVERY_ALERT_DAYS = 8;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
