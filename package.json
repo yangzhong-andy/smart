@@ -35,6 +35,7 @@
     "dedupe:tail-expenses": "npx ts-node scripts/dedupe-pending-tail-expenses.ts",
     "backfill:contract-variants": "npx tsx scripts/backfill-contract-item-variant-links.ts",
     "remediate:inventory": "npx tsx scripts/remediate-inventory-and-contract-skus.ts",
+    "backfill:tiktok-settlements": "npx tsx scripts/backfill-tiktok-settlements.ts",
     "fix:brush-stock": "npx tsx scripts/fix-brush-stock-targets.ts",
     "move:brush-sea": "npx tsx scripts/move-brush-stock-to-sea-transit.ts",
     "clear:domestic-stock": "npx tsx scripts/clear-domestic-warehouse-stock.ts"

@@ -2637,24 +2637,84 @@ model WarehouseFulfillmentFeeTier {
 // Per-order financial snapshot from TikTok statement transactions. Settled
 // snapshots replace estimates while preserving the order-level calculation.
 model TikTokOrderFinancial {
-  id                 String    @id @default(uuid())
-  orderId            String    @unique
-  shopId             String
-  orderCreateTime    DateTime?
-  currency           String    @default("BRL")
-  revenueAmount      Decimal   @default(0) @db.Decimal(18, 4)
-  feeTaxAmount       Decimal   @default(0) @db.Decimal(18, 4)
-  shippingCostAmount Decimal   @default(0) @db.Decimal(18, 4)
-  adjustmentAmount   Decimal   @default(0) @db.Decimal(18, 4)
-  settlementAmount   Decimal   @default(0) @db.Decimal(18, 4)
-  source             String    @default("ESTIMATED")
-  statementIds       String[]  @default([])
-  syncedAt           DateTime  @default(now())
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                      String    @id @default(uuid())
+  orderId                 String    @unique
+  shopId                  String
+  orderCreateTime         DateTime?
+  currency                String    @default("BRL")
+  revenueAmount           Decimal   @default(0) @db.Decimal(18, 4)
+  feeTaxAmount            Decimal   @default(0) @db.Decimal(18, 4)
+  referralFeeAmount       Decimal   @default(0) @db.Decimal(18, 4)
+  smartPromotionFeeAmount Decimal   @default(0) @db.Decimal(18, 4)
+  shippingCostAmount      Decimal   @default(0) @db.Decimal(18, 4)
+  actualShippingFeeAmount Decimal   @default(0) @db.Decimal(18, 4)
+  fbtFulfillmentFeeAmount Decimal   @default(0) @db.Decimal(18, 4)
+  adjustmentAmount        Decimal   @default(0) @db.Decimal(18, 4)
+  settlementAmount        Decimal   @default(0) @db.Decimal(18, 4)
+  transactionCount        Int       @default(0)
+  source                  String    @default("ESTIMATED")
+  statementIds            String[]  @default([])
+  syncedAt                DateTime  @default(now())
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   @@index([shopId, orderCreateTime])
   @@index([source, syncedAt])
+}
+
+// Auditable platform settlement rows. Platform adapters preserve the raw
+// payload here, then rebuild the order-level financial snapshot above.
+model PlatformSettlementTransaction {
+  id                      String    @id @default(uuid())
+  platform                String
+  externalShopId          String
+  externalStatementId     String
+  externalTransactionId   String
+  orderId                 String
+  orderCreateTime         DateTime?
+  transactionType         String?
+  currency                String
+  revenueAmount           Decimal   @default(0) @db.Decimal(18, 4)
+  feeTaxAmount            Decimal   @default(0) @db.Decimal(18, 4)
+  referralFeeAmount       Decimal   @default(0) @db.Decimal(18, 4)
+  smartPromotionFeeAmount Decimal   @default(0) @db.Decimal(18, 4)
+  shippingCostAmount      Decimal   @default(0) @db.Decimal(18, 4)
+  actualShippingFeeAmount Decimal   @default(0) @db.Decimal(18, 4)
+  fbtFulfillmentFeeAmount Decimal   @default(0) @db.Decimal(18, 4)
+  adjustmentAmount        Decimal   @default(0) @db.Decimal(18, 4)
+  settlementAmount        Decimal   @default(0) @db.Decimal(18, 4)
+  rawData                 Json
+  syncedAt                DateTime  @default(now())
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([platform, externalShopId, externalTransactionId])
+  @@index([platform, externalShopId, externalStatementId])
+  @@index([platform, externalShopId, orderId])
+  @@index([orderCreateTime])
+}
+
+// One checkpoint per platform statement makes a large historical backfill
+// resumable without duplicating transactions or skipping empty statements.
+model PlatformSettlementSyncState {
+  id                  String    @id @default(uuid())
+  platform            String
+  externalShopId      String
+  externalStatementId String
+  status              String    @default("PENDING")
+  expectedCount       Int?
+  syncedCount         Int       @default(0)
+  attemptCount        Int       @default(0)
+  lastError           String?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  lastSyncedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([platform, externalShopId, externalStatementId])
+  @@index([platform, externalShopId, status])
+  @@index([lastSyncedAt])
 }
 
 // Optional attribution and manually entered costs for TikTok sample orders.
