@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
           tailPeriodDays: true, deliveryDate: true, status: true,
           contractVoucher: true,
           totalPaid: true, totalOwed: true, approvedBy: true, approvedAt: true,
+          approvalResult: true, approvalNotes: true,
           createdAt: true, updatedAt: true,
           _count: { select: { items: true, deliveryOrders: true } },
           items: {
@@ -158,6 +159,8 @@ export async function GET(request: NextRequest) {
         totalOwed: Number(c.totalOwed),
         approvedBy: c.approvedBy || undefined,
         approvedAt: c.approvedAt?.toISOString(),
+        approvalResult: c.approvalResult === '拒绝' ? '拒绝' : c.approvalResult === '通过' ? '通过' : undefined,
+        approvalNotes: c.approvalNotes || undefined,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
         itemCount: c._count.items,

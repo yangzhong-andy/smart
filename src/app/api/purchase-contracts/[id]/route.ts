@@ -103,6 +103,7 @@ export async function GET(
       relatedOrderNumbers: contract.relatedOrderNumbers || [],
       approvedBy: contract.approvedBy ?? undefined,
       approvedAt: contract.approvedAt?.toISOString() ?? undefined,
+      approvalResult: contract.approvalResult === '拒绝' ? '拒绝' : contract.approvalResult === '通过' ? '通过' : undefined,
       approvalNotes: contract.approvalNotes ?? undefined,
       createdAt: contract.createdAt.toISOString(),
       updatedAt: contract.updatedAt.toISOString(),
