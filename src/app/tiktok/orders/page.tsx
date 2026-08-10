@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard, CalendarDays } from "lucide-react";
+import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard, CalendarDays, TriangleAlert } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
 import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 
@@ -27,6 +27,8 @@ type Order = {
   buyerAddress: string | null;
   paymentMethod: string | null;
   payment: any;
+  deliveryAlert: boolean;
+  deliveryAlertAgeDays: number | null;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -89,6 +91,8 @@ export default function TikTokOrdersPage() {
   const [shippingTypeFilter, setShippingTypeFilter] = useState("");
   const [orderStartDate, setOrderStartDate] = useState("");
   const [orderEndDate, setOrderEndDate] = useState("");
+  const [deliveryAlertOnly, setDeliveryAlertOnly] = useState(false);
+  const [deliveryAlertCount, setDeliveryAlertCount] = useState(0);
   const [filterOptions, setFilterOptions] = useState<{ skus: string[]; shippingTypes: string[] }>({ skus: [], shippingTypes: [] });
   const [shopFilter, setShopFilter] = useState("");
   const [shops, setShops] = useState<{shopId:string; shopName:string}[]>([]);
@@ -125,15 +129,17 @@ export default function TikTokOrdersPage() {
       if (shippingTypeFilter) params.set("shippingType", shippingTypeFilter);
       if (orderStartDate) params.set("orderStartDate", orderStartDate);
       if (orderEndDate) params.set("orderEndDate", orderEndDate);
+      if (deliveryAlertOnly) params.set("deliveryAlert", "1");
       const res = await fetch(`/api/tiktok/data?${params}`);
       const d = await res.json();
       setOrders(d.data || []);
       setTotal(d.total || 0);
+      setDeliveryAlertCount(d.deliveryAlertCount || 0);
     } catch {
       toast.error("加载订单失败");
     }
     setLoading(false);
-  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderStartDate, orderEndDate, shopFilter]);
+  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderStartDate, orderEndDate, shopFilter, deliveryAlertOnly]);
 
 
   // 访问页面自动同步最近1天订单
@@ -218,40 +224,66 @@ export default function TikTokOrdersPage() {
         </div>
       </div>
 
-      {/* 店铺标签切换（多店铺时显示） */}
-      {shops.length > 1 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {shops.map(s => (
+      {/* 店铺标签与物流预警 */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        {shops.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {shops.map(s => (
+              <button
+                key={s.shopId}
+                onClick={() => { setShopFilter(s.shopId); setPage(1); }}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  shopFilter === s.shopId
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                {s.shopName}
+              </button>
+            ))}
             <button
-              key={s.shopId}
-              onClick={() => { setShopFilter(s.shopId); setPage(1); }}
+              onClick={() => { setShopFilter(""); setPage(1); }}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                shopFilter === s.shopId
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                shopFilter === ""
+                  ? "bg-slate-600 text-white"
+                  : "bg-slate-800/50 text-slate-400 hover:bg-slate-700"
               }`}
             >
-              {s.shopName}
+              全部
             </button>
-          ))}
-          <button
-            onClick={() => { setShopFilter(""); setPage(1); }}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-              shopFilter === ""
-                ? "bg-slate-600 text-white"
-                : "bg-slate-800/50 text-slate-400 hover:bg-slate-700"
-            }`}
-          >
-            全部
-          </button>
-        </div>
-      )}
+          </div>
+        )}
+        <button
+          type="button"
+          aria-pressed={deliveryAlertOnly}
+          onClick={() => {
+            setDeliveryAlertOnly((current) => !current);
+            setStatusFilter("");
+            setPage(1);
+          }}
+          className={`ml-auto flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            deliveryAlertOnly
+              ? "border-rose-500 bg-rose-600 text-white"
+              : deliveryAlertCount > 0
+                ? "border-amber-500/60 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                : "border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-700"
+          }`}
+        >
+          <TriangleAlert className="h-4 w-4" />
+          运输超10天
+          <span className={`min-w-6 rounded px-1.5 py-0.5 text-center text-xs ${
+            deliveryAlertOnly ? "bg-white/20 text-white" : "bg-slate-950/60 text-amber-300"
+          }`}>
+            {deliveryAlertCount}
+          </span>
+        </button>
+      </div>
 
       {/* 筛选 */}
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(140px,auto)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(300px,1.4fr)_minmax(220px,2fr)]">
         <select
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          onChange={(e) => { setStatusFilter(e.target.value); setDeliveryAlertOnly(false); setPage(1); }}
           className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200"
         >
           <option value="">全部状态</option>
@@ -341,7 +373,7 @@ export default function TikTokOrdersPage() {
                     <tr
                       key={o.orderId}
                       onClick={() => setExpanded(expanded === o.orderId ? null : o.orderId)}
-                      className="border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer"
+                      className={`border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer ${o.deliveryAlert ? "bg-amber-950/20" : ""}`}
                     >
                       <td className="px-4 py-3">
                         {expanded === o.orderId
@@ -362,9 +394,17 @@ export default function TikTokOrdersPage() {
                         {o.lineItems?.length || 0}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-block rounded border px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[o.status || ""] || "text-slate-400 bg-slate-500/10 border-slate-500/30"}`}>
-                          {STATUS_LABELS[o.status || ""] || o.status}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`inline-block rounded border px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[o.status || ""] || "text-slate-400 bg-slate-500/10 border-slate-500/30"}`}>
+                            {STATUS_LABELS[o.status || ""] || o.status}
+                          </span>
+                          {o.deliveryAlert && (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-300">
+                              <TriangleAlert className="h-3 w-3" />
+                              下单 {o.deliveryAlertAgeDays} 天未送达
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-400">{(o.status === "UNPAID" || o.status === "CANCELLED") ? "-" : (SHIPPING_TYPE_LABELS[o.shippingType || ""] || o.shippingType || "-")}</td>
                       <td className="px-4 py-3 text-xs text-slate-400">{(o.status === "UNPAID" || o.status === "CANCELLED") ? "-" : ((o as any).deliveryOptionName || "-")}</td>
