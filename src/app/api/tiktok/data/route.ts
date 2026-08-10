@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
 import { Prisma } from "@prisma/client";
+import {
+  deliveryAlertAgeDays,
+  deliveryAlertCutoff,
+  isDeliveryOverdue,
+} from "@/lib/order-delivery-alert";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +117,7 @@ export async function GET(request: NextRequest) {
     const shippingType = searchParams.get("shippingType");
     const orderStartDate = searchParams.get("orderStartDate");
     const orderEndDate = searchParams.get("orderEndDate");
+    const deliveryAlert = searchParams.get("deliveryAlert") === "1";
     const overview = searchParams.get("range");
     const skip = (page - 1) * pageSize;
 
@@ -128,7 +134,7 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (shopId) where.shopId = shopId;
-    if (status) where.status = status;
+    if (status && !deliveryAlert) where.status = status;
     if (keyword && type === "orders") {
       where.OR = [
         { orderId: { contains: keyword, mode: "insensitive" } },
@@ -177,6 +183,14 @@ export async function GET(request: NextRequest) {
       } else {
         where.createTime = orderTimeRange(orderStartDate, orderEndDate, "America/Sao_Paulo");
       }
+    }
+    const requestNow = new Date();
+    const deliveryAlertCondition: Prisma.TikTokOrderWhereInput = {
+      status: "IN_TRANSIT",
+      createTime: { lt: deliveryAlertCutoff(requestNow) },
+    };
+    if (type === "orders" && deliveryAlert) {
+      where.AND = [...(where.AND || []), deliveryAlertCondition];
     }
 
     // 获取所有已授权店铺列表（用于前端筛选）
@@ -305,7 +319,11 @@ export async function GET(request: NextRequest) {
       const shopMap = new Map(allShops.map(s => [s.shopId, s.shopName]));
       const shopRegionMap = new Map(allShops.map(s => [s.shopId, s.region]));
 
-      const [data, total] = await Promise.all([
+      const deliveryAlertScope: Prisma.TikTokOrderWhereInput = {
+        ...(shopId ? { shopId } : {}),
+        ...deliveryAlertCondition,
+      };
+      const [data, total, deliveryAlertCount] = await Promise.all([
         prisma.tikTokOrder.findMany({
           where,
           orderBy: { createTime: "desc" },
@@ -313,6 +331,7 @@ export async function GET(request: NextRequest) {
           take: pageSize,
         }),
         prisma.tikTokOrder.count({ where }),
+        prisma.tikTokOrder.count({ where: deliveryAlertScope }),
       ]);
 
       // 从 rawData 提取完整字段
@@ -367,10 +386,12 @@ export async function GET(request: NextRequest) {
           // 支付明细
           payment: raw?.payment,
           isSampleOrder: raw?.is_sample_order === true,
+          deliveryAlert: isDeliveryOverdue(o.status, o.createTime, requestNow),
+          deliveryAlertAgeDays: deliveryAlertAgeDays(o.createTime, requestNow),
         };
       });
 
-      return NextResponse.json({ data: enriched, total, page, pageSize });
+      return NextResponse.json({ data: enriched, total, page, pageSize, deliveryAlertCount });
     }
 
     if (type === "statements") {
