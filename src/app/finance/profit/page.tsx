@@ -236,6 +236,29 @@ function groupOriginal(components: ProfitComponentAmount[]) {
   return values.some((value) => value !== "-") ? values.join(" / ") : "";
 }
 
+function OrderComponentAmounts({ components }: { components: ProfitComponentAmount[] }) {
+  return (
+    <div
+      className="grid gap-x-3"
+      style={{ gridTemplateColumns: `repeat(${Math.max(components.length, 1)}, minmax(0, 1fr))` }}
+    >
+      {components.map((component) => {
+        const original = originalSummary(component.originalAmounts);
+        return (
+          <div key={component.code} className="min-w-0 tabular-nums">
+            <div className="whitespace-nowrap text-slate-300">{money(component.amountCny)}</div>
+            {original && (
+              <div className="mt-0.5 whitespace-nowrap text-[10px] font-normal text-slate-600">
+                {original}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MetricCells({ row, groups }: { row: ProfitMetricRow; groups: ProfitComponentGroup[] }) {
   return (
     <>
@@ -476,11 +499,9 @@ function DailyOrdersDialog({
                         <div className="grid grid-cols-4 gap-x-3 gap-y-2">
                           {orderComponentGroups.map((group) => {
                             const components = componentsForGroup(order, group);
-                            const original = groupOriginal(components);
                             return <div key={group.key} className="min-w-0 border-l border-slate-800 pl-2 first:border-l-0 first:pl-0">
                               <div className="truncate text-[10px] text-slate-600" title={group.label}>{group.label}</div>
-                              <div className="mt-0.5 tabular-nums text-slate-300">{order.includedInProfit ? components.map((component) => <div key={component.code} className="whitespace-nowrap">{money(component.amountCny)}</div>) : group.key === "GMV" ? "未计入" : money(0)}</div>
-                              {original && <div className="mt-0.5 break-words text-[10px] tabular-nums text-slate-600">{original}</div>}
+                              <div className="mt-0.5">{order.includedInProfit ? <OrderComponentAmounts components={components} /> : <div className="tabular-nums text-slate-300">{group.key === "GMV" ? "未计入" : money(0)}</div>}</div>
                               {group.key === "WAREHOUSE_FULFILLMENT" && <><div className="mt-0.5 truncate text-[10px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="truncate text-[9px] text-slate-700" title={`TikTok ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}</>}
                             </div>;
                           })}
@@ -504,9 +525,7 @@ function DailyOrdersDialog({
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs">
                       {orderComponentGroups.map((group) => {
                         const components = componentsForGroup(order, group);
-                        const value = components.map((component) => money(component.amountCny)).join(" / ");
-                        const original = groupOriginal(components);
-                        return <div key={group.key}><div className="text-slate-600">{group.label}</div><div className="mt-0.5 whitespace-pre-line tabular-nums text-slate-300" title={value}>{order.includedInProfit ? value : group.key === "GMV" ? "未计入" : money(0)}{original ? `\n${original}` : ""}</div></div>;
+                        return <div key={group.key}><div className="text-slate-600">{group.label}</div><div className="mt-0.5">{order.includedInProfit ? <OrderComponentAmounts components={components} /> : <div className="tabular-nums text-slate-300">{group.key === "GMV" ? "未计入" : money(0)}</div>}</div></div>;
                       })}
                     </div>
                     <div className="mt-3 flex items-start justify-between gap-3 border-t border-slate-800 pt-3"><div><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>{orderSettlementStatus(order)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
