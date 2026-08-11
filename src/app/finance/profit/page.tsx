@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import useSWR from "swr";
 import { toast } from "sonner";
@@ -406,7 +407,7 @@ function DailyOrdersDialog({
   }), { units: 0, internalUnits: 0, gmvCny: 0, contributionProfitCny: 0 });
   const cancelledOrders = filteredOrders.filter((order) => order.status === "CANCELLED").length;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/75 p-0 md:p-5" role="dialog" aria-modal="true" aria-label={`${day.label}订单明细`}>
       <div className="flex min-h-0 w-full max-w-[1800px] flex-col overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl md:rounded-md">
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 px-4 py-4 md:px-6">
@@ -516,7 +517,8 @@ function DailyOrdersDialog({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
