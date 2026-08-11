@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { toast } from "sonner";
 import type { BankAccount } from "./types";
 import type { CashFlowLike } from "./types";
 
@@ -66,6 +67,7 @@ export function AccountFlowDialog({ open, account, flows, allFlows, bankAccounts
   const [transferPage, setTransferPage] = useState<number>(1);
   const [voucherView, setVoucherView] = useState<string | null>(null);
   const [voucherRotation, setVoucherRotation] = useState(0);
+  const [voucherLoadingKey, setVoucherLoadingKey] = useState<string | null>(null);
 
   // 筛选后的正常收支
   const normalCategories = useMemo(() => {
@@ -133,9 +135,43 @@ export function AccountFlowDialog({ open, account, flows, allFlows, bankAccounts
     return result;
   };
 
-  const renderVoucherCell = (voucherData: any) => {
+  const loadVoucher = async (flow: CashFlowLike, kind: "payment" | "transfer") => {
+    const key = `${flow.id}:${kind}`;
+    setVoucherLoadingKey(key);
+    try {
+      const response = await fetch(`/api/cash-flow/${flow.id}/vouchers`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "凭证加载失败");
+      const images = parseVoucher(kind === "payment" ? body.paymentVoucher : body.transferVoucher);
+      if (images.length > 0) openVoucher(images[0]);
+      else toast.error("该流水没有可查看的凭证");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "凭证加载失败");
+    } finally {
+      setVoucherLoadingKey((current) => current === key ? null : current);
+    }
+  };
+
+  const renderVoucherCell = (flow: CashFlowLike, kind: "payment" | "transfer") => {
+    const voucherData = kind === "payment"
+      ? (flow.paymentVoucher || flow.voucher)
+      : flow.transferVoucher;
     const imgs = parseVoucher(voucherData);
-    if (imgs.length === 0) return <span className="text-slate-600 text-xs">-</span>;
+    const hasVoucher = imgs.length > 0 || (kind === "payment" ? flow.hasPaymentVoucher : flow.hasTransferVoucher);
+    if (!hasVoucher) return <span className="text-slate-600 text-xs">-</span>;
+    if (imgs.length === 0) {
+      const key = `${flow.id}:${kind}`;
+      return (
+        <button
+          type="button"
+          disabled={voucherLoadingKey === key}
+          onClick={() => void loadVoucher(flow, kind)}
+          className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:border-primary-400 hover:text-primary-300 disabled:opacity-50"
+        >
+          {voucherLoadingKey === key ? "加载中..." : "查看"}
+        </button>
+      );
+    }
     return (
       <div className="flex items-center justify-center gap-1">
         {imgs.slice(0, 2).map((v, i) => (
@@ -228,8 +264,8 @@ export function AccountFlowDialog({ open, account, flows, allFlows, bankAccounts
                             </span>
                           </td>
                           <td className="px-3 py-2 text-xs text-slate-400 whitespace-nowrap">{flow.businessNumber || "-"}</td>
-                          <td className="px-3 py-2 text-center whitespace-nowrap">{renderVoucherCell(flow.paymentVoucher)}</td>
-                          <td className="px-3 py-2 text-center whitespace-nowrap">{renderVoucherCell(flow.transferVoucher)}</td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">{renderVoucherCell(flow, "payment")}</td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">{renderVoucherCell(flow, "transfer")}</td>
                         </tr>
                       ))}
                     </tbody>
