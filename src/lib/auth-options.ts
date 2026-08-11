@@ -3,6 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import { AUTH_SECRET } from '@/lib/auth-secret'
+import { AUTH_COOKIE_NAMES, AUTH_COOKIE_SECURE } from '@/lib/auth-cookies'
 
 // 检查 NEXTAUTH_SECRET 是否配置
 if (!process.env.NEXTAUTH_SECRET) {
@@ -10,6 +11,32 @@ if (!process.env.NEXTAUTH_SECRET) {
 }
 
 export const authOptions: NextAuthOptions = {
+  cookies: {
+    sessionToken: {
+      name: AUTH_COOKIE_NAMES.sessionToken,
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: AUTH_COOKIE_SECURE },
+    },
+    callbackUrl: {
+      name: AUTH_COOKIE_NAMES.callbackUrl,
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: AUTH_COOKIE_SECURE },
+    },
+    csrfToken: {
+      name: AUTH_COOKIE_NAMES.csrfToken,
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: AUTH_COOKIE_SECURE },
+    },
+    pkceCodeVerifier: {
+      name: AUTH_COOKIE_NAMES.pkceCodeVerifier,
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: AUTH_COOKIE_SECURE, maxAge: 15 * 60 },
+    },
+    state: {
+      name: AUTH_COOKIE_NAMES.state,
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: AUTH_COOKIE_SECURE, maxAge: 15 * 60 },
+    },
+    nonce: {
+      name: AUTH_COOKIE_NAMES.nonce,
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: AUTH_COOKIE_SECURE },
+    },
+  },
   providers: [
     CredentialsProvider({
       name: 'Credentials',

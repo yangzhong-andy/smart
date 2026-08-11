@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { AUTH_SECRET } from "@/lib/auth-secret";
+import { AUTH_COOKIE_NAMES } from "@/lib/auth-cookies";
 
 /**
  * 黑名单：路径包含以下任意字符串时直接返回 404
@@ -65,13 +66,17 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/") && !PUBLIC_API_PATHS.some((path) => pathname === path || pathname.startsWith(path))) {
     if (request.method === "OPTIONS") return NextResponse.next();
 
-    const customToken = request.cookies.get("token")?.value ||
+    const customToken = request.cookies.get(AUTH_COOKIE_NAMES.customToken)?.value ||
       (request.headers.get("authorization")?.startsWith("Bearer ")
         ? request.headers.get("authorization")!.slice(7).trim()
         : null);
     if (customToken && await isValidCustomToken(customToken)) return NextResponse.next();
 
-    const nextAuthToken = await getToken({ req: request, secret: AUTH_SECRET });
+    const nextAuthToken = await getToken({
+      req: request,
+      secret: AUTH_SECRET,
+      cookieName: AUTH_COOKIE_NAMES.sessionToken,
+    });
     if (nextAuthToken?.id || nextAuthToken?.sub) return NextResponse.next();
 
     return NextResponse.json({ error: "未登录或登录已过期" }, { status: 401 });
