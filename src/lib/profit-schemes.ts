@@ -52,6 +52,7 @@ export const PROFIT_SOURCE_KEYS = [
   "platformFeeCny",
   "fulfillmentFeeCny",
   "smartPromotionFeeCny",
+  "affiliateCommissionCny",
   "productCostCny",
   "logisticsCostCny",
   "lastMileLogisticsCostCny",
@@ -67,6 +68,7 @@ const SOURCE_ORIGINAL_KEY: Partial<Record<ProfitSourceKey, string>> = {
   platformFeeCny: "platformFee",
   fulfillmentFeeCny: "fulfillmentFee",
   smartPromotionFeeCny: "smartPromotionFee",
+  affiliateCommissionCny: "affiliateCommission",
   logisticsCostCny: "logisticsCost",
   lastMileLogisticsCostCny: "lastMileLogisticsCost",
   warehouseFulfillmentCostCny: "warehouseFulfillment",
@@ -92,7 +94,15 @@ const BRAZIL_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = BASE_COMPONENTS.m
   if (item.code === "LOGISTICS_COST") return { ...item, label: "头程物流费用" };
   if (item.code === "TAX_COST") return { ...item, label: "店铺主体税务成本" };
   return item;
-});
+}).concat(component(
+  "AFFILIATE_COMMISSION",
+  "达人佣金",
+  "MARKETING",
+  "COST",
+  "affiliateCommissionCny",
+  90,
+  { includeInProfit: false, required: false },
+));
 
 const US_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = [
   component("GMV", "GMV", "REVENUE", "REVENUE", "gmvCny", 10, { includeInGmv: true }),

@@ -7,6 +7,7 @@ export type ProfitOriginalMetric =
   | "platformFee"
   | "fulfillmentFee"
   | "smartPromotionFee"
+  | "affiliateCommission"
   | "logisticsCost"
   | "lastMileLogisticsCost"
   | "warehouseFulfillment"
@@ -33,6 +34,7 @@ export type ProfitMetricRow = {
   platformFeeCny: number;
   fulfillmentFeeCny: number;
   smartPromotionFeeCny: number;
+  affiliateCommissionCny: number;
   productCostCny: number;
   logisticsCostCny: number;
   lastMileLogisticsCostCny: number;
@@ -136,6 +138,7 @@ export type ProfitOrderDetailRow = {
   platformFeeCny: number;
   fulfillmentFeeCny: number;
   smartPromotionFeeCny: number;
+  affiliateCommissionCny: number;
   productCostCny: number;
   logisticsCostCny: number;
   lastMileLogisticsCostCny: number;
@@ -146,10 +149,20 @@ export type ProfitOrderDetailRow = {
   margin: number;
   originalAmounts: ProfitOriginalAmounts;
   components: ProfitComponentAmount[];
+  settlementInfo: {
+    status: "UNSETTLED" | "PENDING" | "PARTIAL" | "PAID";
+    amountOriginal: number | null;
+    currency: string | null;
+    statementIds: string[];
+    paymentIds: string[];
+    paidAt: string | null;
+  };
   coverage: {
     productCost: boolean;
     logisticsCost: boolean;
     settlement: boolean;
+    platformRule: boolean;
+    affiliateCommission: boolean;
     warehouse: boolean;
     tax: boolean;
   };

@@ -290,10 +290,33 @@ function orderCoverageWarnings(order: ProfitOrderDetailRow) {
   const warnings: string[] = [];
   if (!order.coverage.productCost) warnings.push("缺采购成本");
   if (!order.coverage.logisticsCost) warnings.push("缺头程物流费用");
-  if (!order.coverage.settlement) warnings.push("平台费为预估");
+  if (order.countryCode === "BR" && !order.coverage.platformRule) warnings.push("缺平台/履约规则");
+  if (order.countryCode !== "BR" && !order.coverage.settlement) warnings.push("平台费为预估");
   if (!order.coverage.warehouse) warnings.push("缺代发规则");
   if (order.components.some((component) => component.code === "TAX_COST") && !order.coverage.tax) warnings.push("缺税率规则");
   return warnings;
+}
+
+function orderSettlementStatus(order: ProfitOrderDetailRow) {
+  const labels = {
+    UNSETTLED: "未结算",
+    PENDING: "已结算待回款",
+    PARTIAL: "部分回款",
+    PAID: "已回款",
+  } as const;
+  const tones = {
+    UNSETTLED: "bg-slate-500/10 text-slate-400",
+    PENDING: "bg-amber-500/10 text-amber-300",
+    PARTIAL: "bg-sky-500/10 text-sky-300",
+    PAID: "bg-emerald-500/10 text-emerald-300",
+  } as const;
+  const info = order.settlementInfo;
+  const relationTitle = `结算单 ${info.statementIds.join(", ")}${info.paymentIds.length > 0 ? `；回款单 ${info.paymentIds.join(", ")}` : ""}`;
+  return <div className="mt-2 space-y-1">
+    <span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] ${tones[info.status]}`}>{labels[info.status]}</span>
+    {info.amountOriginal != null && info.currency && <div className="text-[11px] tabular-nums text-slate-400">结算 {originalMoney(info.currency, info.amountOriginal)}</div>}
+    {info.statementIds.length > 0 && <div className="max-w-[190px] truncate text-[10px] text-slate-600" title={relationTitle}>结算单 {info.statementIds[0]}</div>}
+  </div>;
 }
 
 function DailyOrdersDialog({
@@ -438,7 +461,7 @@ function DailyOrdersDialog({
                           return <td key={group.key} className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-slate-300"><div>{order.includedInProfit ? components.map((component) => money(component.amountCny)).join(" / ") : group.key === "GMV" ? "未计入" : money(0)}</div>{original && <div className="mt-1 text-[11px] text-slate-600">{original}</div>}{group.key === "WAREHOUSE_FULFILLMENT" && <><div className="mt-1 max-w-[180px] truncate text-[11px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="max-w-[180px] truncate text-[10px] text-slate-700">TikTok {order.tiktokWarehouseId}</div>}</>}</td>;
                         })}
                         <td className={`px-3 py-3 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-1 text-[11px] font-normal text-slate-600">{percent(order.margin)}</div></td>
-                        <td className="max-w-[190px] px-3 py-3">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">完整</span> : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>}</td>
+                        <td className="max-w-[210px] px-3 py-3">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>}{orderSettlementStatus(order)}</td>
                       </tr>;
                     })}
                   </tbody>
@@ -459,7 +482,7 @@ function DailyOrdersDialog({
                         return <div key={group.key}><div className="text-slate-600">{group.label}</div><div className="mt-0.5 whitespace-pre-line tabular-nums text-slate-300" title={value}>{order.includedInProfit ? value : group.key === "GMV" ? "未计入" : money(0)}{original ? `\n${original}` : ""}</div></div>;
                       })}
                     </div>
-                    <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800 pt-3"><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
+                    <div className="mt-3 flex items-start justify-between gap-3 border-t border-slate-800 pt-3"><div><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>{orderSettlementStatus(order)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
                   </article>;
                 })}
               </div>

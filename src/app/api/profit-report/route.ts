@@ -4,6 +4,7 @@ import { fetchExchangeRates, getRateToCNY } from "@/lib/exchange";
 import {
   allocateActualFeeTotal,
   calculateEstimatedProfitFees,
+  roundProfitFee,
   type ProfitFeeBreakdown,
 } from "@/lib/profit-platform-fees";
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
@@ -60,7 +61,7 @@ function round(value: number, digits = 2): number {
 }
 
 const ORIGINAL_METRICS: ProfitOriginalMetric[] = [
-  "gmv", "platformFee", "fulfillmentFee", "smartPromotionFee", "logisticsCost", "lastMileLogisticsCost", "warehouseFulfillment",
+  "gmv", "platformFee", "fulfillmentFee", "smartPromotionFee", "affiliateCommission", "logisticsCost", "lastMileLogisticsCost", "warehouseFulfillment",
   "adSpend", "rebate", "netAdCost", "taxCost",
 ];
 
@@ -84,7 +85,9 @@ function roundedOriginalAmounts(values: ProfitOriginalAmounts): ProfitOriginalAm
   const result = emptyOriginalAmounts();
   for (const metric of ORIGINAL_METRICS) {
     for (const [currency, value] of Object.entries(values[metric] || {})) {
-      result[metric][currency] = round(value);
+      result[metric][currency] = metric === "platformFee" || metric === "fulfillmentFee"
+        ? roundProfitFee(value)
+        : round(value);
     }
   }
   return result;
@@ -185,6 +188,7 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
     platformFeeCny: 0,
     fulfillmentFeeCny: 0,
     smartPromotionFeeCny: 0,
+    affiliateCommissionCny: 0,
     productCostCny: 0,
     logisticsCostCny: 0,
     lastMileLogisticsCostCny: 0,
@@ -219,9 +223,10 @@ function finalizeMetric(
     internalUnits: metric.internalUnits,
     gmvCny: round(metric.gmvCny),
     platformCostCny: round(metric.platformCostCny),
-    platformFeeCny: round(metric.platformFeeCny),
-    fulfillmentFeeCny: round(metric.fulfillmentFeeCny),
+    platformFeeCny: roundProfitFee(metric.platformFeeCny),
+    fulfillmentFeeCny: roundProfitFee(metric.fulfillmentFeeCny),
     smartPromotionFeeCny: round(metric.smartPromotionFeeCny),
+    affiliateCommissionCny: round(metric.affiliateCommissionCny),
     productCostCny: round(metric.productCostCny),
     logisticsCostCny: round(metric.logisticsCostCny),
     lastMileLogisticsCostCny: round(metric.lastMileLogisticsCostCny),
@@ -253,7 +258,7 @@ function addMetric(target: MutableMetric, values: Partial<MutableMetric>) {
   const numericKeys: Array<keyof MutableMetric> = [
     "orderCount", "cancelledOrders", "units", "internalUnits", "gmvCny", "platformCostCny", "platformFeeCny",
     "fulfillmentFeeCny", "productCostCny",
-    "smartPromotionFeeCny", "logisticsCostCny", "lastMileLogisticsCostCny", "warehouseFulfillmentCostCny", "adSpendCny", "rebateCny", "netAdCostCny",
+    "smartPromotionFeeCny", "affiliateCommissionCny", "logisticsCostCny", "lastMileLogisticsCostCny", "warehouseFulfillmentCostCny", "adSpendCny", "rebateCny", "netAdCostCny",
     "taxCostCny", "productCoveredUnits",
     "logisticsCoveredUnits", "exactSettlementOrders", "warehouseCoveredOrders", "taxCoveredOrders",
   ];
@@ -274,6 +279,7 @@ type ProfitOrderDetailMoneyMetric =
   | "platformFeeCny"
   | "fulfillmentFeeCny"
   | "smartPromotionFeeCny"
+  | "affiliateCommissionCny"
   | "productCostCny"
   | "logisticsCostCny"
   | "lastMileLogisticsCostCny"
@@ -282,8 +288,8 @@ type ProfitOrderDetailMoneyMetric =
   | "taxCostCny"
   | "contributionProfitCny";
 
-// Keep the sum of displayed order amounts equal to the truncated daily report.
-// Only cent-level tails are distributed; no monetary value is rounded up.
+// Keep the sum of displayed order amounts equal to the daily report. Platform
+// and fulfillment fees use commercial rounding; existing metrics stay truncated.
 function balanceOrderDetailRounding(
   orders: ProfitOrderDetailRow[],
   metric: ProfitOrderDetailMoneyMetric,
@@ -291,7 +297,10 @@ function balanceOrderDetailRounding(
 ) {
   const includedOrders = orders.filter((order) => order.includedInProfit);
   if (includedOrders.length === 0) return;
-  const toCents = (value: number) => Math.trunc((number(value) + (number(value) >= 0 ? 1e-9 : -1e-9)) * 100);
+  const usesCommercialRounding = metric === "platformFeeCny" || metric === "fulfillmentFeeCny";
+  const toCents = (value: number) => usesCommercialRounding
+    ? Math.trunc(roundProfitFee(number(value)) * 100)
+    : Math.trunc((number(value) + (number(value) >= 0 ? 1e-9 : -1e-9)) * 100);
   const targetCents = toCents(target);
   const currentCents = includedOrders.reduce((sum, order) => sum + toCents(order[metric]), 0);
   const delta = targetCents - currentCents;
@@ -518,10 +527,24 @@ export async function GET(request: NextRequest) {
       if (validated.error) invalidProfitSchemeIds.add(scheme.id);
       else schemeComponentsById.set(scheme.id, validated.components);
     }
+    const withRequiredInformationalComponents = (
+      countryCode: string,
+      definitions: ProfitSchemeComponentInput[],
+    ) => {
+      if (countryCode !== "BR" || definitions.some((item) => item.code === "AFFILIATE_COMMISSION")) {
+        return definitions;
+      }
+      const affiliate = defaultProfitComponents("BR", "TIKTOK")
+        .find((item) => item.code === "AFFILIATE_COMMISSION");
+      return affiliate
+        ? [...definitions, affiliate].sort((left, right) => left.sortOrder - right.sortOrder)
+        : definitions;
+    };
     const resolveProfitScheme = (shopId: string, businessDate: string) => {
       const store = shopStore.get(shopId);
       const shop = shopById.get(shopId);
-      const fallback = defaultProfitComponents(normalizeCountryCode(store?.country || shop?.region), "TIKTOK");
+      const countryCode = normalizeCountryCode(store?.country || shop?.region);
+      const fallback = defaultProfitComponents(countryCode, "TIKTOK");
       if (!store) return { matched: false, storeId: null, schemeId: null, version: 0, definitions: fallback };
       const candidates = profitSchemes.filter((scheme) => !scheme.externalShopId || scheme.externalShopId === shopId);
       const resolution = selectActiveProfitScheme(candidates, store.id, businessDate);
@@ -537,7 +560,7 @@ export async function GET(request: NextRequest) {
         storeId: store.id,
         schemeId: resolution.scheme.id,
         version: resolution.scheme.version,
-        definitions,
+        definitions: withRequiredInformationalComponents(countryCode, definitions),
       };
     };
     const reportComponentDefinitions = selectedShopId
@@ -551,13 +574,36 @@ export async function GET(request: NextRequest) {
       return businessDate >= startDate && businessDate <= endDate;
     });
     const orderIds = orders.map((order) => order.orderId);
-    const [orderFinancials, sampleCostRows] = await Promise.all([
+    const [orderFinancials, sampleCostRows, orderSettlementTransactions] = await Promise.all([
       prisma.tikTokOrderFinancial.findMany({ where: { orderId: { in: orderIds } } }),
       prisma.influencerSampleCost.findMany({
         where: { orderId: { in: orderIds } },
         include: { influencer: { select: { id: true, accountName: true } } },
       }),
+      prisma.platformSettlementTransaction.findMany({
+        where: { platform: "TIKTOK", orderId: { in: orderIds } },
+        select: { orderId: true, currency: true, rawData: true },
+      }),
     ]);
+    const linkedStatementIds = [...new Set(orderFinancials.flatMap((row) => row.statementIds))];
+    const linkedStatements = linkedStatementIds.length > 0
+      ? await prisma.tikTokStatement.findMany({
+          where: { statementId: { in: linkedStatementIds } },
+          select: {
+            statementId: true,
+            paymentId: true,
+            paymentStatus: true,
+            paymentTime: true,
+          },
+        })
+      : [];
+    const linkedPaymentIds = [...new Set(linkedStatements.flatMap((row) => row.paymentId ? [row.paymentId] : []))];
+    const linkedPayments = linkedPaymentIds.length > 0
+      ? await prisma.tikTokPayment.findMany({
+          where: { paymentId: { in: linkedPaymentIds } },
+          select: { paymentId: true, status: true, paidTime: true },
+        })
+      : [];
 
     const externalRates = await fetchExchangeRates().catch(() => null);
     const rateTotals = new Map<string, { total: number; count: number }>();
@@ -713,6 +759,63 @@ export async function GET(request: NextRequest) {
     const logisticsUnitBySku = toLogisticsUnitCosts(logisticsSkuTotals);
 
     const financialByOrder = new Map(orderFinancials.map((row) => [row.orderId, row]));
+    const affiliateCommissionByOrder = new Map<string, Record<string, number>>();
+    const affiliateSettlementOrders = new Set<string>();
+    for (const transaction of orderSettlementTransactions) {
+      affiliateSettlementOrders.add(transaction.orderId);
+      const raw = transaction.rawData as any;
+      const commissionCost = -number(raw?.fee_tax_breakdown?.fee?.affiliate_commission_amount);
+      if (Math.abs(commissionCost) < 0.000001) continue;
+      const currency = String(transaction.currency || "BRL").trim().toUpperCase();
+      const current = affiliateCommissionByOrder.get(transaction.orderId) || {};
+      current[currency] = (current[currency] || 0) + commissionCost;
+      affiliateCommissionByOrder.set(transaction.orderId, current);
+    }
+    const settlementStatementById = new Map(linkedStatements.map((row) => [row.statementId, row]));
+    const settlementPaymentById = new Map(linkedPayments.map((row) => [row.paymentId, row]));
+    const settlementInfoForOrder = (orderId: string) => {
+      const financial = financialByOrder.get(orderId);
+      if (!financial || financial.source !== "SETTLED") {
+        return {
+          status: "UNSETTLED" as const,
+          amountOriginal: null,
+          currency: null,
+          statementIds: [] as string[],
+          paymentIds: [] as string[],
+          paidAt: null,
+        };
+      }
+      const statementIds = financial.statementIds;
+      const statementRows = statementIds.flatMap((id) => {
+        const statement = settlementStatementById.get(id);
+        return statement ? [statement] : [];
+      });
+      const paymentIds = [...new Set(statementRows.flatMap((row) => row.paymentId ? [row.paymentId] : []))];
+      const paidStatementIds = new Set(statementRows.flatMap((row) => {
+        const payment = row.paymentId ? settlementPaymentById.get(row.paymentId) : null;
+        return row.paymentStatus === "PAID" || payment?.status === "PAID" ? [row.statementId] : [];
+      }));
+      const paidDates = statementRows.flatMap((row) => {
+        const payment = row.paymentId ? settlementPaymentById.get(row.paymentId) : null;
+        const paidAt = payment?.paidTime || row.paymentTime;
+        return paidAt ? [paidAt] : [];
+      });
+      const status = statementIds.length > 0 && statementIds.every((id) => paidStatementIds.has(id))
+        ? "PAID" as const
+        : paidStatementIds.size > 0
+          ? "PARTIAL" as const
+          : "PENDING" as const;
+      return {
+        status,
+        amountOriginal: number(financial.settlementAmount),
+        currency: financial.currency,
+        statementIds,
+        paymentIds,
+        paidAt: paidDates.length > 0
+          ? new Date(Math.max(...paidDates.map((date) => date.getTime()))).toISOString()
+          : null,
+      };
+    };
     const sampleCostByOrder = new Map(sampleCostRows.map((row) => [row.orderId, row]));
     const influencerBySampleOrder = new Map(influencers.flatMap((influencer) => (
       influencer.sampleOrderNumber ? [[influencer.sampleOrderNumber, influencer] as const] : []
@@ -1092,6 +1195,7 @@ export async function GET(request: NextRequest) {
             platformFeeCny: 0,
             fulfillmentFeeCny: 0,
             smartPromotionFeeCny: 0,
+            affiliateCommissionCny: 0,
             productCostCny: 0,
             logisticsCostCny: 0,
             lastMileLogisticsCostCny: 0,
@@ -1102,10 +1206,13 @@ export async function GET(request: NextRequest) {
             margin: 0,
             originalAmounts: emptyOriginalAmounts(),
             components: buildProfitComponentAmounts({}, resolveProfitScheme(order.shopId, businessDate).definitions),
+            settlementInfo: settlementInfoForOrder(order.orderId),
             coverage: {
               productCost: false,
               logisticsCost: false,
               settlement: false,
+              platformRule: false,
+              affiliateCommission: false,
               warehouse: false,
               tax: false,
             },
@@ -1157,23 +1264,23 @@ export async function GET(request: NextRequest) {
         platformCostCny = platformFeeCny + smartPromotionFeeCny;
       } else {
         let feeBreakdown: ProfitFeeBreakdown;
-        if (financial) {
-        const financialReference = {
-          platformFeeCny: toCny(
-            -(number(financial.feeTaxAmount) + number(financial.adjustmentAmount)),
-            financial.currency,
-          ),
-          fulfillmentFeeCny: toCny(-number(financial.shippingCostAmount), financial.currency),
-        };
-        const actualFeeTotalCny = clamp(
-          financialReference.platformFeeCny + financialReference.fulfillmentFeeCny,
-          -gmvCny,
-          gmvCny * 2,
-        );
-        // TikTok's settled transaction stores the tax/fee total but does not
-        // expose the platform-vs-SFP split. Use the SKU-based estimate as the
-        // allocation reference so settled orders keep the same breakdown as
-        // the settlement detail, while retaining the actual total.
+        if (orderCountryCode === "BR") {
+          // Brazil uses the fixed SKU-tier business rule. The settlement fee
+          // total can include affiliate commission and must not overwrite it.
+          feeBreakdown = estimatedFeeBreakdown || { platformFeeCny: 0, fulfillmentFeeCny: 0, totalCny: 0 };
+        } else if (financial) {
+          const financialReference = {
+            platformFeeCny: toCny(
+              -(number(financial.feeTaxAmount) + number(financial.adjustmentAmount)),
+              financial.currency,
+            ),
+            fulfillmentFeeCny: toCny(-number(financial.shippingCostAmount), financial.currency),
+          };
+          const actualFeeTotalCny = clamp(
+            financialReference.platformFeeCny + financialReference.fulfillmentFeeCny,
+            -gmvCny,
+            gmvCny * 2,
+          );
           feeBreakdown = allocateActualFeeTotal(
             actualFeeTotalCny,
             estimatedFeeBreakdown || financialReference,
@@ -1192,7 +1299,11 @@ export async function GET(request: NextRequest) {
         }
         platformFeeCny = feeBreakdown.platformFeeCny;
         fulfillmentFeeCny = feeBreakdown.fulfillmentFeeCny;
-        platformCostCny = feeBreakdown.totalCny;
+        if (orderCountryCode === "BR") {
+          platformFeeCny = toCny(roundProfitFee(fromCny(platformFeeCny, feeCurrency)), feeCurrency);
+          fulfillmentFeeCny = toCny(roundProfitFee(fromCny(fulfillmentFeeCny, feeCurrency)), feeCurrency);
+        }
+        platformCostCny = platformFeeCny + fulfillmentFeeCny;
       }
       const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
       if (fulfillment.mappingStatus === "mapped") warehouseMappingMappedOrders += 1;
@@ -1202,6 +1313,9 @@ export async function GET(request: NextRequest) {
       const influencerRule = activeShopRule(order.shopId, "INFLUENCER_COMMISSION", businessDate);
       const taxCostCny = taxRule ? gmvCny * number(taxRule.ratePercent) / 100 : 0;
       const taxCostOriginal = taxRule ? productAmount * number(taxRule.ratePercent) / 100 : 0;
+      const affiliateOriginalByCurrency = affiliateCommissionByOrder.get(order.orderId) || {};
+      const affiliateCommissionCny = Object.entries(affiliateOriginalByCurrency)
+        .reduce((sum, [currency, amount]) => sum + toCny(amount, currency), 0);
       const influencerCommissionCny = influencerRule ? gmvCny * number(influencerRule.ratePercent) / 100 : 0;
       influencerTeamCommissionCny += influencerCommissionCny;
       let orderProductCost = 0;
@@ -1217,6 +1331,7 @@ export async function GET(request: NextRequest) {
         const linePlatformFee = platformFeeCny * allocation;
         const lineFulfillmentFee = fulfillmentFeeCny * allocation;
         const lineSmartPromotionFee = smartPromotionFeeCny * allocation;
+        const lineAffiliateCommission = affiliateCommissionCny * allocation;
         const lineLastMileLogisticsCost = lastMileLogisticsCostCny * allocation;
         const lineProductCost = line.productUnitCost * line.qty;
         const lineLogisticsCost = line.logisticsUnitCost * line.qty;
@@ -1230,6 +1345,9 @@ export async function GET(request: NextRequest) {
           ["platformFee", feeCurrency, fromCny(linePlatformFee, feeCurrency)],
           ["fulfillmentFee", feeCurrency, fromCny(lineFulfillmentFee, feeCurrency)],
           ["smartPromotionFee", feeCurrency, fromCny(lineSmartPromotionFee, feeCurrency)],
+          ...Object.entries(affiliateOriginalByCurrency).map(([currency, amount]) => (
+            ["affiliateCommission", currency, amount * allocation] as [ProfitOriginalMetric, string, number]
+          )),
           ...Object.entries(line.logisticsOriginalByCurrency).map(([currency, amount]) => (
             ["logisticsCost", currency, amount * line.qty] as [ProfitOriginalMetric, string, number]
           )),
@@ -1265,6 +1383,7 @@ export async function GET(request: NextRequest) {
           platformFeeCny: linePlatformFee,
           fulfillmentFeeCny: lineFulfillmentFee,
           smartPromotionFeeCny: lineSmartPromotionFee,
+          affiliateCommissionCny: lineAffiliateCommission,
           productCostCny: lineProductCost,
           logisticsCostCny: lineLogisticsCost,
           lastMileLogisticsCostCny: lineLastMileLogisticsCost,
@@ -1284,6 +1403,9 @@ export async function GET(request: NextRequest) {
         ["platformFee", feeCurrency, fromCny(platformFeeCny, feeCurrency)],
         ["fulfillmentFee", feeCurrency, fromCny(fulfillmentFeeCny, feeCurrency)],
         ["smartPromotionFee", feeCurrency, fromCny(smartPromotionFeeCny, feeCurrency)],
+        ...Object.entries(affiliateOriginalByCurrency).map(([currency, amount]) => (
+          ["affiliateCommission", currency, amount] as [ProfitOriginalMetric, string, number]
+        )),
         ...Object.entries(orderLogisticsOriginalByCurrency).map(([currency, amount]) => (
           ["logisticsCost", currency, amount] as [ProfitOriginalMetric, string, number]
         )),
@@ -1300,6 +1422,7 @@ export async function GET(request: NextRequest) {
         platformFeeCny,
         fulfillmentFeeCny,
         smartPromotionFeeCny,
+        affiliateCommissionCny,
         productCostCny: orderProductCost,
         logisticsCostCny: orderLogisticsCost,
         lastMileLogisticsCostCny,
@@ -1345,6 +1468,7 @@ export async function GET(request: NextRequest) {
           platformFeeCny,
           fulfillmentFeeCny,
           smartPromotionFeeCny,
+          affiliateCommissionCny,
           productCostCny: orderProductCost,
           logisticsCostCny: orderLogisticsCost,
           lastMileLogisticsCostCny,
@@ -1359,6 +1483,7 @@ export async function GET(request: NextRequest) {
             platformFeeCny,
             fulfillmentFeeCny,
             smartPromotionFeeCny,
+            affiliateCommissionCny,
             productCostCny: orderProductCost,
             logisticsCostCny: orderLogisticsCost,
             lastMileLogisticsCostCny,
@@ -1367,10 +1492,13 @@ export async function GET(request: NextRequest) {
             taxCostCny,
             originalAmounts: orderOriginalAmounts,
           }, orderProfitScheme.definitions),
+          settlementInfo: settlementInfoForOrder(order.orderId),
           coverage: {
             productCost: totalQty > 0 && productCoveredUnits >= totalQty,
             logisticsCost: totalQty > 0 && logisticsCoveredUnits >= totalQty,
             settlement: hasExactSettlement,
+            platformRule: Boolean(platformRule),
+            affiliateCommission: affiliateSettlementOrders.has(order.orderId),
             warehouse: fulfillment.covered,
             tax: Boolean(taxRule),
           },
@@ -1545,6 +1673,7 @@ export async function GET(request: NextRequest) {
         "platformFeeCny",
         "fulfillmentFeeCny",
         "smartPromotionFeeCny",
+        "affiliateCommissionCny",
         "productCostCny",
         "logisticsCostCny",
         "lastMileLogisticsCostCny",
@@ -1571,9 +1700,10 @@ export async function GET(request: NextRequest) {
             ...order,
             orderAmountOriginal: round(order.orderAmountOriginal),
             gmvCny: round(order.gmvCny),
-            platformFeeCny: round(order.platformFeeCny),
-            fulfillmentFeeCny: round(order.fulfillmentFeeCny),
+            platformFeeCny: roundProfitFee(order.platformFeeCny),
+            fulfillmentFeeCny: roundProfitFee(order.fulfillmentFeeCny),
             smartPromotionFeeCny: round(order.smartPromotionFeeCny),
+            affiliateCommissionCny: round(order.affiliateCommissionCny),
             productCostCny: round(order.productCostCny),
             logisticsCostCny: round(order.logisticsCostCny),
             lastMileLogisticsCostCny: round(order.lastMileLogisticsCostCny),
@@ -1590,9 +1720,14 @@ export async function GET(request: NextRequest) {
               ...finalized,
               sourceStatus: {
                 GMV: "ACTUAL",
-                PLATFORM_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
-                FULFILLMENT_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
+                PLATFORM_FEE: order.countryCode === "BR"
+                  ? order.coverage.platformRule ? "ACTUAL" : "MISSING"
+                  : order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
+                FULFILLMENT_FEE: order.countryCode === "BR"
+                  ? order.coverage.platformRule ? "ACTUAL" : "MISSING"
+                  : order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
                 SMART_PROMOTION_FEE: order.coverage.settlement ? "ACTUAL" : "ESTIMATED",
+                AFFILIATE_COMMISSION: order.coverage.affiliateCommission ? "ACTUAL" : "MISSING",
                 PRODUCT_COST: order.coverage.productCost ? "ACTUAL" : "MISSING",
                 LOGISTICS_COST: order.coverage.logisticsCost ? "ACTUAL" : "MISSING",
                 FIRST_MILE_LOGISTICS: order.coverage.logisticsCost ? "ACTUAL" : "MISSING",

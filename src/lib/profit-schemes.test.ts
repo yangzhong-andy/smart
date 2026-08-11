@@ -17,6 +17,9 @@ test("provides Brazil TikTok labels without changing source keys", () => {
   const components = defaultProfitComponents("BR", "TIKTOK");
   assert.match(components.find((item) => item.code === "GMV")?.label || "", /TikTok商品补贴/);
   assert.equal(components.find((item) => item.code === "GMV")?.sourceKey, "gmvCny");
+  const affiliate = components.find((item) => item.code === "AFFILIATE_COMMISSION");
+  assert.equal(affiliate?.sourceKey, "affiliateCommissionCny");
+  assert.equal(affiliate?.includeInProfit, false);
 });
 
 test("provides the independent US TikTok profit fields", () => {
@@ -52,6 +55,7 @@ test("builds dynamic amounts and contribution profit from source fields", () => 
     warehouseFulfillmentCostCny: 2,
     netAdCostCny: 8,
     taxCostCny: 4,
+    affiliateCommissionCny: 17,
   }, definitions);
   assert.equal(contributionProfitFromComponents(amounts), 45);
 });
