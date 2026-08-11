@@ -208,6 +208,42 @@ type ProfitComponentGroup = {
   components: ProfitComponentAmount[];
 };
 
+type OrderComponentSection = {
+  key: string;
+  label: string;
+  groups: ProfitComponentGroup[];
+  frameClass: string;
+  labelClass: string;
+};
+
+const ORDER_COMPONENT_SECTION_STYLES = {
+  REVENUE_PLATFORM: {
+    label: "收入与平台",
+    frameClass: "border-emerald-500/25 bg-emerald-500/[0.04]",
+    labelClass: "text-emerald-300",
+  },
+  PRODUCT_LOGISTICS: {
+    label: "商品与物流",
+    frameClass: "border-sky-500/25 bg-sky-500/[0.04]",
+    labelClass: "text-sky-300",
+  },
+  AD_WAREHOUSE: {
+    label: "广告与仓配",
+    frameClass: "border-amber-500/25 bg-amber-500/[0.04]",
+    labelClass: "text-amber-300",
+  },
+  AFFILIATE_TAX: {
+    label: "达人与税务",
+    frameClass: "border-rose-500/25 bg-rose-500/[0.04]",
+    labelClass: "text-rose-300",
+  },
+  OTHER: {
+    label: "其他核算",
+    frameClass: "border-slate-700 bg-slate-900/30",
+    labelClass: "text-slate-400",
+  },
+} as const;
+
 function groupProfitComponents(components: ProfitComponentAmount[]): ProfitComponentGroup[] {
   const groups: ProfitComponentGroup[] = [];
   for (const component of components.filter((item) => item.visible)) {
@@ -224,6 +260,41 @@ function groupProfitComponents(components: ProfitComponentAmount[]): ProfitCompo
     });
   }
   return groups;
+}
+
+function orderComponentSectionKey(group: ProfitComponentGroup) {
+  const codes = new Set(group.components.map((component) => component.code));
+  const categories = new Set(group.components.map((component) => component.category));
+  if (codes.has("GMV") || categories.has("REVENUE") || categories.has("PLATFORM")) return "REVENUE_PLATFORM";
+  if (categories.has("PRODUCT") || categories.has("LOGISTICS")) return "PRODUCT_LOGISTICS";
+  if (codes.has("AFFILIATE_COMMISSION") || categories.has("TAX")) return "AFFILIATE_TAX";
+  if (codes.has("AD_COST") || categories.has("WAREHOUSE") || categories.has("MARKETING")) return "AD_WAREHOUSE";
+  return "OTHER";
+}
+
+function orderComponentPriority(group: ProfitComponentGroup) {
+  const codes = new Set(group.components.map((component) => component.code));
+  if (codes.has("GMV")) return 10;
+  if (group.components.some((component) => component.category === "PLATFORM")) return 20;
+  if (codes.has("PRODUCT_COST")) return 30;
+  if (codes.has("LOGISTICS_COST") || codes.has("FIRST_MILE_LOGISTICS")) return 40;
+  if (codes.has("LAST_MILE_LOGISTICS")) return 50;
+  if (codes.has("AD_COST")) return 60;
+  if (codes.has("WAREHOUSE_FULFILLMENT")) return 70;
+  if (codes.has("AFFILIATE_COMMISSION")) return 80;
+  if (codes.has("TAX_COST")) return 90;
+  return 100;
+}
+
+function groupOrderComponentsForDisplay(groups: ProfitComponentGroup[]): OrderComponentSection[] {
+  const sectionKeys = ["REVENUE_PLATFORM", "PRODUCT_LOGISTICS", "AD_WAREHOUSE", "AFFILIATE_TAX", "OTHER"] as const;
+  return sectionKeys.flatMap((key) => {
+    const sectionGroups = groups
+      .filter((group) => orderComponentSectionKey(group) === key)
+      .sort((left, right) => orderComponentPriority(left) - orderComponentPriority(right));
+    if (sectionGroups.length === 0) return [];
+    return [{ key, groups: sectionGroups, ...ORDER_COMPONENT_SECTION_STYLES[key] }];
+  });
 }
 
 function componentsForGroup(row: ProfitMetricRow | ProfitOrderDetailRow, group: ProfitComponentGroup) {
@@ -246,15 +317,56 @@ function OrderComponentAmounts({ components }: { components: ProfitComponentAmou
         const original = originalSummary(component.originalAmounts);
         return (
           <div key={component.code} className="min-w-0 tabular-nums">
-            <div className="whitespace-nowrap text-slate-300">{money(component.amountCny)}</div>
+            <div className="whitespace-nowrap font-medium text-slate-200">{money(component.amountCny)}</div>
             {original && (
-              <div className="mt-0.5 whitespace-nowrap text-[10px] font-normal text-slate-600">
+              <div className="mt-0.5 whitespace-nowrap text-[10px] font-normal text-slate-500">
                 {original}
               </div>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function OrderComponentSections({
+  order,
+  sections,
+  desktop = false,
+}: {
+  order: ProfitOrderDetailRow;
+  sections: OrderComponentSection[];
+  desktop?: boolean;
+}) {
+  return (
+    <div className={desktop ? "grid grid-cols-4 gap-2" : "grid gap-2 sm:grid-cols-2"}>
+      {sections.map((section) => (
+        <section key={section.key} className={`min-w-0 rounded-md border p-2 ${section.frameClass}`}>
+          <div className={`mb-1.5 text-[10px] font-semibold ${section.labelClass}`}>{section.label}</div>
+          <div className="divide-y divide-slate-800/80">
+            {section.groups.map((group) => {
+              const components = componentsForGroup(order, group);
+              return (
+                <div key={group.key} className="min-w-0 py-1.5 first:pt-0 last:pb-0">
+                  <div className={`break-words text-[10px] leading-4 ${section.labelClass}`} title={group.label}>{group.label}</div>
+                  <div className="mt-0.5">
+                    {order.includedInProfit
+                      ? <OrderComponentAmounts components={components} />
+                      : <div className="tabular-nums text-slate-300">{group.key === "GMV" ? "未计入" : money(0)}</div>}
+                  </div>
+                  {group.key === "WAREHOUSE_FULFILLMENT" && (
+                    <>
+                      <div className="mt-1 break-words text-[10px] leading-4 text-slate-500" title={order.warehouseName}>{order.warehouseName}</div>
+                      {order.tiktokWarehouseId && <div className="break-all text-[9px] text-slate-600" title={`TikTok ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
@@ -403,6 +515,10 @@ function DailyOrdersDialog({
     () => groupProfitComponents(data?.summary.components || []),
     [data?.summary.components],
   );
+  const orderComponentSections = useMemo(
+    () => groupOrderComponentsForDisplay(orderComponentGroups),
+    [orderComponentGroups],
+  );
   const availableStores = useMemo(() => {
     const values = new Map<string, string>();
     orders.forEach((order) => values.set(order.shopId, order.storeName));
@@ -473,8 +589,8 @@ function DailyOrdersDialog({
             <>
               <div className="hidden xl:block" data-testid="profit-order-desktop-list">
                 <div className="sticky top-0 z-10 grid grid-cols-[0.85fr_0.9fr_1.5fr_3.9fr_1fr] border-b border-slate-800 bg-slate-950 text-[11px] text-slate-500">
-                  <div className="px-3 py-3 font-medium">订单 / 时间</div>
                   <div className="px-3 py-3 font-medium">店铺 / 状态</div>
+                  <div className="px-3 py-3 font-medium">订单 / 时间</div>
                   <div className="px-3 py-3 font-medium">SKU / 商品</div>
                   <div className="px-3 py-3 font-medium">核算金额（销售件 / 实物件：每项均显示人民币及原币）</div>
                   <div className="px-3 py-3 font-medium">利润 / 状态</div>
@@ -484,28 +600,19 @@ function DailyOrdersDialog({
                     const coverageWarnings = orderCoverageWarnings(order);
                     return <article key={order.orderId} className={`grid grid-cols-[0.85fr_0.9fr_1.5fr_3.9fr_1fr] items-start text-xs ${order.includedInProfit ? "hover:bg-slate-900/60" : "bg-slate-900/30 text-slate-500"}`}>
                       <div className="min-w-0 px-3 py-3">
-                        <div className="break-all font-medium tabular-nums text-slate-200">{order.orderId}</div>
-                        <div className="mt-1 text-[11px] text-slate-500">{orderCreatedAt(order)}</div>
-                      </div>
-                      <div className="min-w-0 px-3 py-3">
                         <div className="break-words text-slate-300">{order.storeName}</div>
                         <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span>
+                      </div>
+                      <div className="min-w-0 px-3 py-3">
+                        <div className="break-all font-medium tabular-nums text-slate-200">{order.orderId}</div>
+                        <div className="mt-1 text-[11px] text-slate-500">{orderCreatedAt(order)}</div>
                       </div>
                       <div className="min-w-0 px-3 py-3">
                         {order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-[11px] text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[10px] text-slate-600">内部 {line.internalSku}</div>}</div>)}
                       </div>
                       <div className="min-w-0 px-3 py-3">
                         <div className="mb-2 text-[11px] text-slate-500">销售件 / 实物件 <span className="ml-1 font-medium tabular-nums text-slate-300">{order.units} / {order.internalUnits}</span></div>
-                        <div className="grid grid-cols-4 gap-x-3 gap-y-2">
-                          {orderComponentGroups.map((group) => {
-                            const components = componentsForGroup(order, group);
-                            return <div key={group.key} className="min-w-0 border-l border-slate-800 pl-2 first:border-l-0 first:pl-0">
-                              <div className="truncate text-[10px] text-slate-600" title={group.label}>{group.label}</div>
-                              <div className="mt-0.5">{order.includedInProfit ? <OrderComponentAmounts components={components} /> : <div className="tabular-nums text-slate-300">{group.key === "GMV" ? "未计入" : money(0)}</div>}</div>
-                              {group.key === "WAREHOUSE_FULFILLMENT" && <><div className="mt-0.5 truncate text-[10px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="truncate text-[9px] text-slate-700" title={`TikTok ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}</>}
-                            </div>;
-                          })}
-                        </div>
+                        <OrderComponentSections order={order} sections={orderComponentSections} desktop />
                       </div>
                       <div className="min-w-0 px-3 py-3">
                         <div className={`font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-0.5 text-[11px] font-normal text-slate-500">贡献利润 {percent(order.margin)}</div></div>
@@ -520,13 +627,10 @@ function DailyOrdersDialog({
                 {filteredOrders.map((order) => {
                   const coverageWarnings = orderCoverageWarnings(order);
                   return <article key={order.orderId} className="px-4 py-4">
-                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-semibold text-slate-200">{order.orderId}</div><div className="mt-1 truncate text-xs text-slate-500">{order.storeName} · {orderCreatedAt(order)}</div></div><span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></div>
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-semibold text-slate-200">{order.storeName}</div><div className="mt-1 break-all text-xs tabular-nums text-slate-500">{order.orderId} · {orderCreatedAt(order)}</div></div><span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></div>
                     <div className="mt-3 space-y-2">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`}><div className="text-sm text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-xs text-slate-600">{line.productName}</div></div>)}</div>
-                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs">
-                      {orderComponentGroups.map((group) => {
-                        const components = componentsForGroup(order, group);
-                        return <div key={group.key}><div className="text-slate-600">{group.label}</div><div className="mt-0.5">{order.includedInProfit ? <OrderComponentAmounts components={components} /> : <div className="tabular-nums text-slate-300">{group.key === "GMV" ? "未计入" : money(0)}</div>}</div></div>;
-                      })}
+                    <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
+                      <OrderComponentSections order={order} sections={orderComponentSections} />
                     </div>
                     <div className="mt-3 flex items-start justify-between gap-3 border-t border-slate-800 pt-3"><div><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>{orderSettlementStatus(order)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
                   </article>;
