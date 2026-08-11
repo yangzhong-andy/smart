@@ -12,6 +12,8 @@ interface PaginationProps {
   onPageSizeChange: (size: number) => void;
   /** 自定义每页条数选项，默认 [20, 30, 50, 100] */
   pageSizeOptions?: number[];
+  /** 是否提供“全部”选项；服务端分页页面应关闭。 */
+  showAllOption?: boolean;
 }
 
 /**
@@ -20,7 +22,7 @@ interface PaginationProps {
  *   <Pagination total={filtered.length} page={page} pageSize={pageSize}
  *     onPageChange={setPage} onPageSizeChange={setPageSize} />
  */
-export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChange, pageSizeOptions }: PaginationProps) {
+export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChange, pageSizeOptions, showAllOption = true }: PaginationProps) {
   const options = pageSizeOptions || PAGE_SIZE_OPTIONS;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -45,7 +47,7 @@ export function Pagination({ total, page, pageSize, onPageChange, onPageSizeChan
           {options.map((s) => (
             <option key={s} value={s}>{s}条/页</option>
           ))}
-          <option value={999999}>全部</option>
+          {showAllOption && <option value={999999}>全部</option>}
         </select>
       </div>
       {totalPages > 1 && (

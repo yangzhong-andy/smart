@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { CashFlowType, CashFlowStatus } from "@prisma/client";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 import { requireApiUser } from "@/lib/api-auth";
+import { summarizeCashFlows } from "@/lib/cash-flow-summary";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = 'force-dynamic';
 
@@ -19,52 +21,123 @@ const TYPE_MAP: Record<string, CashFlowType> = {
 const CACHE_TTL = 120; // 2分钟（资金流高频）
 const CACHE_KEY_PREFIX = 'cash-flow';
 
+const STATUS_MAP: Record<string, CashFlowStatus> = {
+  pending: CashFlowStatus.PENDING,
+  PENDING: CashFlowStatus.PENDING,
+  confirmed: CashFlowStatus.CONFIRMED,
+  CONFIRMED: CashFlowStatus.CONFIRMED,
+};
+
+const INTERNAL_CATEGORIES = ["内部划拨", "换汇"];
+
+function validDate(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function buildWhere(searchParams: URLSearchParams): Prisma.CashFlowWhereInput {
+  const accountId = searchParams.get("accountId");
+  const type = searchParams.get("type");
+  const status = searchParams.get("status");
+  const currency = searchParams.get("currency");
+  const category = searchParams.get("category");
+  const subCategory = searchParams.get("subCategory");
+  const businessNumber = searchParams.get("businessNumber");
+  const keyword = String(searchParams.get("search") || "").trim();
+  const startDate = searchParams.get("startDate");
+  const endDate = searchParams.get("endDate");
+  const and: Prisma.CashFlowWhereInput[] = [];
+
+  if (searchParams.get("excludeInternal") === "true") {
+    and.push({ category: { notIn: INTERNAL_CATEGORIES } });
+  }
+  if (accountId) and.push({ accountId });
+  if (type && TYPE_MAP[type]) and.push({ type: TYPE_MAP[type] });
+  if (status && STATUS_MAP[status]) and.push({ status: STATUS_MAP[status] });
+  if (currency) and.push({ currency });
+  if (businessNumber) and.push({ businessNumber });
+
+  if (subCategory) {
+    and.push({ category: subCategory });
+  } else if (category) {
+    and.push({
+      OR: [
+        { category },
+        { category: { startsWith: `${category}/` } },
+      ],
+    });
+  }
+
+  if (validDate(startDate) || validDate(endDate)) {
+    and.push({
+      date: {
+        ...(validDate(startDate) ? { gte: new Date(`${startDate}T00:00:00.000Z`) } : {}),
+        ...(validDate(endDate) ? { lte: new Date(`${endDate}T23:59:59.999Z`) } : {}),
+      },
+    });
+  }
+
+  if (keyword) {
+    const textSearch: Prisma.CashFlowWhereInput[] = [
+      { summary: { contains: keyword, mode: "insensitive" } },
+      { remark: { contains: keyword, mode: "insensitive" } },
+      { accountName: { contains: keyword, mode: "insensitive" } },
+      { businessNumber: { contains: keyword, mode: "insensitive" } },
+      { category: { contains: keyword, mode: "insensitive" } },
+    ];
+    const numeric = Number(keyword.replace(/,/g, ""));
+    if (Number.isFinite(numeric)) {
+      textSearch.push({ amount: numeric }, { amount: -numeric });
+    }
+    and.push({ OR: textSearch });
+  }
+
+  return and.length ? { AND: and } : {};
+}
+
+function toSummaryRows(rows: Array<{
+  type: CashFlowType;
+  amount: unknown;
+  currency: string;
+  exchangeRate: unknown;
+  account: { exchangeRate: unknown };
+}>) {
+  return rows.map((row) => ({
+    type: row.type,
+    amount: row.amount as any,
+    currency: row.currency,
+    exchangeRate: row.exchangeRate as any,
+    accountExchangeRate: row.account.exchangeRate as any,
+  }));
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireApiUser(request);
   if (auth.response) return auth.response;
 
   try {
     const { searchParams } = new URL(request.url);
-    const accountId = searchParams.get("accountId");
-    const type = searchParams.get("type");
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
-    const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
+    const pageSize = Math.min(10000, Math.max(1, parseInt(searchParams.get("pageSize") || "20") || 20));
     const noCache = searchParams.get("noCache") === "true";
+    const includeVouchers = searchParams.get("includeVouchers") !== "false";
+    const includeSummary = searchParams.get("includeSummary") === "true";
+    const includeBalances = searchParams.get("includeBalances") === "true";
+    const where = buildWhere(searchParams);
 
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
-      accountId || 'all',
-      type || 'all',
-      startDate || 'all',
-      endDate || 'all',
-      String(page),
-      String(pageSize)
+      searchParams.toString(),
     );
 
     // 尝试从缓存获取（仅第一页且非大分页，避免缓存超大 payload 导致超时）
-    if (!noCache && page === 1 && pageSize <= 500 && !accountId && !type && !startDate && !endDate) {
+    if (!noCache && page === 1 && pageSize <= 500) {
       const cached = await getCache<any>(cacheKey);
       if (cached) {
         return NextResponse.json(cached);
       }
     }
 
-    const where: any = {};
-    if (accountId) where.accountId = accountId;
-    if (type) where.type = type;
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
-    }
-
-    // 默认仅在小分页时返回凭证字段，避免缓存体积过大；
-    // 但当显式传入 noCache=true（例如流水明细使用 SWR 全量拉取并不走 Redis 缓存）时，
-    // 仍然返回付款凭证/转账凭证，保证前端能展示图片。
-    const includeVoucher = true;
     const [flows, total] = await prisma.$transaction([
       prisma.cashFlow.findMany({
         where,
@@ -74,17 +147,36 @@ export async function GET(request: NextRequest) {
           exchangeRate: true, platform: true, storeId: true, storeName: true,
           summary: true, category: true, remark: true, status: true,
           isReversal: true, reversedById: true,
-          ...(includeVoucher ? { voucher: true, paymentVoucher: true, transferVoucher: true } : {}),
+          ...(includeVouchers ? { voucher: true, paymentVoucher: true, transferVoucher: true } : {}),
           createdAt: true, updatedAt: true,
         },
-        orderBy: { date: 'desc' },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.cashFlow.count({ where }),
     ]);
 
-    const response = {
+    const flowIds = flows.map((flow) => flow.id);
+    const [paymentVoucherRows, transferVoucherRows] = !includeVouchers && flowIds.length
+      ? await Promise.all([
+          prisma.cashFlow.findMany({
+            where: {
+              id: { in: flowIds },
+              OR: [{ paymentVoucher: { not: null } }, { voucher: { not: null } }],
+            },
+            select: { id: true },
+          }),
+          prisma.cashFlow.findMany({
+            where: { id: { in: flowIds }, transferVoucher: { not: null } },
+            select: { id: true },
+          }),
+        ])
+      : [[], []];
+    const paymentVoucherIds = new Set(paymentVoucherRows.map((flow) => flow.id));
+    const transferVoucherIds = new Set(transferVoucherRows.map((flow) => flow.id));
+
+    const response: Record<string, any> = {
       data: flows.map((f: any) => ({
         id: f.id,
         uid: f.uid || undefined,
@@ -108,19 +200,61 @@ export async function GET(request: NextRequest) {
         notes: f.remark || undefined,
         isReversal: f.isReversal,
         reversedById: f.reversedById || undefined,
-        ...(includeVoucher ? {
+        ...(includeVouchers ? {
           voucher: f.voucher || undefined,
           paymentVoucher: f.paymentVoucher || undefined,
           transferVoucher: f.transferVoucher || undefined,
-        } : {}),
+        } : {
+          hasPaymentVoucher: paymentVoucherIds.has(f.id),
+          hasTransferVoucher: transferVoucherIds.has(f.id),
+        }),
         createdAt: f.createdAt.toISOString(),
         updatedAt: f.updatedAt.toISOString(),
       })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 
+    if (includeSummary || includeBalances) {
+      const now = new Date();
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      const summarySelect = {
+        type: true,
+        amount: true,
+        currency: true,
+        exchangeRate: true,
+        account: { select: { exchangeRate: true } },
+      } as const;
+
+      const [summaryRows, monthRows, balanceRows] = await Promise.all([
+        includeSummary ? prisma.cashFlow.findMany({ where, select: summarySelect }) : Promise.resolve([]),
+        includeSummary ? prisma.cashFlow.findMany({
+          where: {
+            category: { notIn: INTERNAL_CATEGORIES },
+            date: { gte: monthStart, lt: nextMonth },
+          },
+          select: summarySelect,
+        }) : Promise.resolve([]),
+        includeBalances ? prisma.cashFlow.groupBy({
+          by: ["accountId"],
+          where: { status: CashFlowStatus.CONFIRMED },
+          _sum: { amount: true },
+        }) : Promise.resolve([]),
+      ]);
+
+      if (includeSummary) {
+        response.summary = summarizeCashFlows(toSummaryRows(summaryRows));
+        response.monthSummary = summarizeCashFlows(toSummaryRows(monthRows));
+      }
+      if (includeBalances) {
+        response.accountBalanceDeltas = Object.fromEntries(
+          balanceRows.map((row) => [row.accountId, Number(row._sum.amount || 0)]),
+        );
+      }
+    }
+
     // 设置缓存（仅第一页、非大分页且无筛选时，避免缓存过大）
-    if (!noCache && page === 1 && pageSize <= 500 && !accountId && !type && !startDate && !endDate) {
+    if (!noCache && page === 1 && pageSize <= 500) {
       await setCache(cacheKey, response, CACHE_TTL);
     }
 
