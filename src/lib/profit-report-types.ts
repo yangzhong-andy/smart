@@ -107,6 +107,7 @@ export type ProfitOrderDetailLine = {
   sellerSku: string;
   internalSku: string | null;
   productName: string;
+  imageUrl: string | null;
   quantity: number;
   /** TikTok frontend selling price, kept in the order currency. */
   unitPriceOriginal: number | null;
