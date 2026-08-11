@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateEstimatedProfitFees } from "./profit-platform-fees";
+import { calculateEstimatedProfitFees, roundProfitFee } from "./profit-platform-fees";
 
 const tiers = [
   {
@@ -22,6 +22,18 @@ const tiers = [
     currency: "BRL",
   },
 ];
+
+test("rounds platform and fulfillment fees to two decimals", () => {
+  assert.equal(roundProfitFee(28.242), 28.24);
+  assert.equal(roundProfitFee(28.245), 28.25);
+  assert.equal(roundProfitFee(-28.245), -28.25);
+});
+
+test("order 585345496811538276 uses the fixed Brazil fee formula", () => {
+  const result = calculate(170.7, 3, [{ unitAmount: 56.9, quantity: 3 }]);
+  assert.equal(roundProfitFee(result.platformFeeCny), 10.24);
+  assert.equal(roundProfitFee(result.fulfillmentFeeCny), 28.24);
+});
 
 function calculate(orderAmount: number, totalQty: number, orderLines?: Array<{ unitAmount: number; quantity: number }>) {
   return calculateEstimatedProfitFees({

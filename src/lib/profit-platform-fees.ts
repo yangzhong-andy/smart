@@ -14,6 +14,12 @@ export type ProfitFeeBreakdown = {
   totalCny: number;
 };
 
+export function roundProfitFee(value: number, digits = 2): number {
+  const factor = 10 ** digits;
+  const sign = value < 0 ? -1 : 1;
+  return sign * Math.round((Math.abs(value) + Number.EPSILON) * factor) / factor;
+}
+
 type EstimateInput = {
   orderAmount: number;
   gmvCny: number;
