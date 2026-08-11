@@ -11,6 +11,7 @@ import {
   CalendarDays,
   ChevronRight,
   Download,
+  ImageIcon,
   Loader2,
   PackageCheck,
   Plus,
@@ -371,6 +372,27 @@ function OrderComponentSections({
   );
 }
 
+function ProductThumbnail({
+  imageUrl,
+  productName,
+}: Pick<ProfitOrderDetailRow["lines"][number], "imageUrl" | "productName">) {
+  const src = imageUrl ? `/api/tiktok/image-proxy?url=${encodeURIComponent(imageUrl)}` : null;
+  return (
+    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-700 bg-slate-900 text-slate-600">
+      <ImageIcon className="h-4 w-4" aria-hidden="true" />
+      {src && (
+        <img
+          src={src}
+          alt={`${productName} 商品图`}
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => { event.currentTarget.style.display = "none"; }}
+        />
+      )}
+    </div>
+  );
+}
+
 function MetricCells({ row, groups }: { row: ProfitMetricRow; groups: ProfitComponentGroup[] }) {
   return (
     <>
@@ -464,6 +486,25 @@ function orderSettlementStatus(order: ProfitOrderDetailRow) {
     {info.amountOriginal != null && info.currency && <div className="text-[11px] tabular-nums text-slate-400">结算 {originalMoney(info.currency, info.amountOriginal)}</div>}
     {info.statementIds.length > 0 && <div className="max-w-[190px] truncate text-[10px] text-slate-600" title={relationTitle}>结算单 {info.statementIds[0]}</div>}
   </div>;
+}
+
+function OrderProfitPanel({ order, coverageWarnings }: { order: ProfitOrderDetailRow; coverageWarnings: string[] }) {
+  const positive = order.contributionProfitCny >= 0;
+  return (
+    <div className={`flex h-full min-h-0 flex-col justify-between rounded-md border p-2.5 ${positive ? "border-emerald-500/20 bg-emerald-500/[0.04]" : "border-rose-500/20 bg-rose-500/[0.04]"}`}>
+      <div>
+        <div className="text-[10px] font-medium text-slate-500">贡献利润</div>
+        <div className={`mt-1 text-base font-semibold tabular-nums ${positive ? "text-emerald-300" : "text-rose-300"}`}>{money(order.contributionProfitCny)}</div>
+        <div className="mt-1 text-[11px] tabular-nums text-slate-400">利润率 {percent(order.margin)}</div>
+      </div>
+      <div className="mt-3 border-t border-slate-800/80 pt-2">
+        {coverageWarnings.length === 0
+          ? <span className="inline-flex rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300">核算完整</span>
+          : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">{warning}</span>)}</div>}
+        {orderSettlementStatus(order)}
+      </div>
+    </div>
+  );
 }
 
 function DailyOrdersDialog({
@@ -588,7 +629,7 @@ function DailyOrdersDialog({
           {!isLoading && !error && filteredOrders.length > 0 && (
             <>
               <div className="hidden xl:block" data-testid="profit-order-desktop-list">
-                <div className="sticky top-0 z-10 grid grid-cols-[0.85fr_0.9fr_1.5fr_3.9fr_1fr] border-b border-slate-800 bg-slate-950 text-[11px] text-slate-500">
+                <div className="sticky top-0 z-10 grid grid-cols-[0.8fr_0.95fr_1.7fr_4.2fr_1.2fr] border-b border-slate-800 bg-slate-950 text-[11px] text-slate-500">
                   <div className="px-3 py-3 font-medium">店铺 / 状态</div>
                   <div className="px-3 py-3 font-medium">订单 / 时间</div>
                   <div className="px-3 py-3 font-medium">SKU / 商品</div>
@@ -598,26 +639,23 @@ function DailyOrdersDialog({
                 <div className="divide-y divide-slate-900">
                   {filteredOrders.map((order) => {
                     const coverageWarnings = orderCoverageWarnings(order);
-                    return <article key={order.orderId} className={`grid grid-cols-[0.85fr_0.9fr_1.5fr_3.9fr_1fr] items-start text-xs ${order.includedInProfit ? "hover:bg-slate-900/60" : "bg-slate-900/30 text-slate-500"}`}>
-                      <div className="min-w-0 px-3 py-3">
+                    return <article key={order.orderId} className={`grid grid-cols-[0.8fr_0.95fr_1.7fr_4.2fr_1.2fr] items-stretch text-xs ${order.includedInProfit ? "hover:bg-slate-900/60" : "bg-slate-900/30 text-slate-500"}`}>
+                      <div className="flex min-w-0 flex-col justify-center px-3 py-3">
                         <div className="break-words text-slate-300">{order.storeName}</div>
-                        <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span>
+                        <span className={`mt-1 inline-flex w-fit rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span>
                       </div>
-                      <div className="min-w-0 px-3 py-3">
+                      <div className="flex min-w-0 flex-col justify-center px-3 py-3">
                         <div className="break-all font-medium tabular-nums text-slate-200">{order.orderId}</div>
                         <div className="mt-1 text-[11px] text-slate-500">{orderCreatedAt(order)}</div>
                       </div>
-                      <div className="min-w-0 px-3 py-3">
-                        {order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-[11px] text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[10px] text-slate-600">内部 {line.internalSku}</div>}</div>)}
+                      <div className="flex min-w-0 flex-col justify-center px-3 py-3">
+                        {order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 flex min-w-0 items-center gap-2.5 last:mb-0"><ProductThumbnail imageUrl={line.imageUrl} productName={line.productName} /><div className="min-w-0 flex-1"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-[11px] text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="break-words text-[10px] text-slate-600">内部 {line.internalSku}</div>}</div></div>)}
                       </div>
                       <div className="min-w-0 px-3 py-3">
                         <div className="mb-2 text-[11px] text-slate-500">销售件 / 实物件 <span className="ml-1 font-medium tabular-nums text-slate-300">{order.units} / {order.internalUnits}</span></div>
                         <OrderComponentSections order={order} sections={orderComponentSections} desktop />
                       </div>
-                      <div className="min-w-0 px-3 py-3">
-                        <div className={`font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-0.5 text-[11px] font-normal text-slate-500">贡献利润 {percent(order.margin)}</div></div>
-                        <div className="mt-2">{coverageWarnings.length === 0 ? <span className="text-[11px] text-emerald-300">核算完整</span> : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">{warning}</span>)}</div>}{orderSettlementStatus(order)}</div>
-                      </div>
+                      <div className="min-w-0 px-3 py-3"><OrderProfitPanel order={order} coverageWarnings={coverageWarnings} /></div>
                     </article>;
                   })}
                 </div>
@@ -628,11 +666,11 @@ function DailyOrdersDialog({
                   const coverageWarnings = orderCoverageWarnings(order);
                   return <article key={order.orderId} className="px-4 py-4">
                     <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-semibold text-slate-200">{order.storeName}</div><div className="mt-1 break-all text-xs tabular-nums text-slate-500">{order.orderId} · {orderCreatedAt(order)}</div></div><span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></div>
-                    <div className="mt-3 space-y-2">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`}><div className="text-sm text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-xs text-slate-600">{line.productName}</div></div>)}</div>
+                    <div className="mt-3 space-y-2">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="flex min-w-0 items-center gap-3"><ProductThumbnail imageUrl={line.imageUrl} productName={line.productName} /><div className="min-w-0 flex-1"><div className="text-sm text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-xs text-slate-600">{line.productName}</div>{line.internalSku && <div className="break-words text-[10px] text-slate-600">内部 {line.internalSku}</div>}</div></div>)}</div>
                     <div className="mt-3 border-t border-slate-800 pt-3 text-xs">
                       <OrderComponentSections order={order} sections={orderComponentSections} />
                     </div>
-                    <div className="mt-3 flex items-start justify-between gap-3 border-t border-slate-800 pt-3"><div><div className="flex flex-wrap gap-1">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>{orderSettlementStatus(order)}</div><div className={`shrink-0 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="text-[11px] font-normal text-slate-600">贡献利润 {percent(order.margin)}</div></div></div>
+                    <div className="mt-3 border-t border-slate-800 pt-3"><OrderProfitPanel order={order} coverageWarnings={coverageWarnings} /></div>
                   </article>;
                 })}
               </div>

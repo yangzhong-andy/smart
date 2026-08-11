@@ -935,6 +935,8 @@ export async function GET(request: NextRequest) {
         const internalSku = costComponents.length > 0
           ? costComponents.map((component) => `${component.quantity > 1 ? `${component.quantity}x` : ""}${component.skuId}`).join(" + ")
           : null;
+        const tiktokImage = typeof item?.sku_image === "string" ? item.sku_image.trim() : "";
+        const imageUrl = tiktokImage || null;
         const physical = resolvedComponents.reduce((total, component) => {
           const dimensions = [
             number(component.variant.lengthCm),
@@ -964,6 +966,7 @@ export async function GET(request: NextRequest) {
           sellerSku, skuKey, qty, internalUnitFactor, unitSalePrice, variant, internalSku, mappingStatus, mappingSource, costComponents,
           lineValue, productUnitCost, logisticsUnitCost, logisticsOriginalByCurrency, productCostCovered, logisticsCostCovered,
           ...physical,
+          imageUrl,
           productName: String(item?.product_name || variant?.product.name || sellerSku),
         };
       });
@@ -973,6 +976,7 @@ export async function GET(request: NextRequest) {
         lineValue: 0, unitSalePrice: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
         actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0, covered: false,
         logisticsOriginalByCurrency: {},
+        imageUrl: null,
         productName: "Unknown product",
       }];
     };
@@ -1184,6 +1188,7 @@ export async function GET(request: NextRequest) {
               sellerSku: line.sellerSku,
               internalSku: line.internalSku,
               productName: line.productName,
+              imageUrl: line.imageUrl,
               quantity: line.qty,
               unitPriceOriginal: line.unitSalePrice > 0 ? round(line.unitSalePrice) : null,
               lineAmountOriginal: line.lineValue > 0 ? round(line.lineValue) : null,
@@ -1457,6 +1462,7 @@ export async function GET(request: NextRequest) {
             sellerSku: line.sellerSku,
             internalSku: line.internalSku,
             productName: line.productName,
+            imageUrl: line.imageUrl,
             quantity: line.qty,
             unitPriceOriginal: line.unitSalePrice > 0 ? round(line.unitSalePrice) : null,
             lineAmountOriginal: line.lineValue > 0 ? round(line.lineValue) : null,
