@@ -179,6 +179,7 @@ function emptyMetric(id: string, label: string, startDate: string, endDate: stri
     orderCount: 0,
     cancelledOrders: 0,
     units: 0,
+    internalUnits: 0,
     gmvCny: 0,
     platformCostCny: 0,
     platformFeeCny: 0,
@@ -215,6 +216,7 @@ function finalizeMetric(
     orderCount: metric.orderCount,
     cancelledOrders: metric.cancelledOrders,
     units: metric.units,
+    internalUnits: metric.internalUnits,
     gmvCny: round(metric.gmvCny),
     platformCostCny: round(metric.platformCostCny),
     platformFeeCny: round(metric.platformFeeCny),
@@ -249,7 +251,7 @@ function finalizeMetric(
 
 function addMetric(target: MutableMetric, values: Partial<MutableMetric>) {
   const numericKeys: Array<keyof MutableMetric> = [
-    "orderCount", "cancelledOrders", "units", "gmvCny", "platformCostCny", "platformFeeCny",
+    "orderCount", "cancelledOrders", "units", "internalUnits", "gmvCny", "platformCostCny", "platformFeeCny",
     "fulfillmentFeeCny", "productCostCny",
     "smartPromotionFeeCny", "logisticsCostCny", "lastMileLogisticsCostCny", "warehouseFulfillmentCostCny", "adSpendCny", "rebateCny", "netAdCostCny",
     "taxCostCny", "productCoveredUnits",
@@ -823,6 +825,10 @@ export async function GET(request: NextRequest) {
           skuId: component.variant.skuId,
           quantity: component.quantity,
         }));
+        const internalUnitFactor = Math.max(
+          1,
+          costComponents.reduce((sum, component) => sum + component.quantity, 0),
+        );
         const internalSku = costComponents.length > 0
           ? costComponents.map((component) => `${component.quantity > 1 ? `${component.quantity}x` : ""}${component.skuId}`).join(" + ")
           : null;
@@ -852,7 +858,7 @@ export async function GET(request: NextRequest) {
           covered: resolvedComponents.length > 0,
         });
         return {
-          sellerSku, skuKey, qty, unitSalePrice, variant, internalSku, mappingStatus, mappingSource, costComponents,
+          sellerSku, skuKey, qty, internalUnitFactor, unitSalePrice, variant, internalSku, mappingStatus, mappingSource, costComponents,
           lineValue, productUnitCost, logisticsUnitCost, logisticsOriginalByCurrency, productCostCovered, logisticsCostCovered,
           ...physical,
           productName: String(item?.product_name || variant?.product.name || sellerSku),
@@ -860,7 +866,7 @@ export async function GET(request: NextRequest) {
       });
       return parsedLines.length > 0 ? parsedLines : [{
         sellerSku: "鏈煡 SKU", skuKey: "鏈煡 sku", qty: Math.max(number((order.rawData as any)?.item_count), 1), variant: undefined,
-        internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
+        internalUnitFactor: 1, internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
         lineValue: 0, unitSalePrice: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
         actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0, covered: false,
         logisticsOriginalByCurrency: {},
@@ -1034,6 +1040,7 @@ export async function GET(request: NextRequest) {
       const fallbackLines = resolveOrderLines(order);
       const totalLineValue = fallbackLines.reduce((sum, line) => sum + line.lineValue, 0);
       const totalQty = fallbackLines.reduce((sum, line) => sum + line.qty, 0);
+      const totalInternalQty = fallbackLines.reduce((sum, line) => sum + line.qty * line.internalUnitFactor, 0);
       const productAmount = productAmountOriginal(
         order,
         fallbackLines,
@@ -1069,6 +1076,7 @@ export async function GET(request: NextRequest) {
             currency: orderCurrency,
             orderAmountOriginal: round(productAmount),
             units: totalQty,
+            internalUnits: totalInternalQty,
             lines: fallbackLines.map((line) => ({
               sellerSku: line.sellerSku,
               internalSku: line.internalSku,
@@ -1251,6 +1259,7 @@ export async function GET(request: NextRequest) {
         addMetric(skusMap.get(skuMapKey)!, {
           orderCount: 1,
           units: line.qty,
+          internalUnits: line.qty * line.internalUnitFactor,
           gmvCny: lineGmv,
           platformCostCny: linePlatformCost,
           platformFeeCny: linePlatformFee,
@@ -1285,6 +1294,7 @@ export async function GET(request: NextRequest) {
       const orderValues: Partial<MutableMetric> = {
         orderCount: 1,
         units: totalQty,
+        internalUnits: totalInternalQty,
         gmvCny,
         platformCostCny,
         platformFeeCny,
@@ -1319,6 +1329,7 @@ export async function GET(request: NextRequest) {
           currency: gmvCurrency,
           orderAmountOriginal: round(gmvOriginal),
           units: totalQty,
+          internalUnits: totalInternalQty,
           lines: fallbackLines.map((line) => ({
             sellerSku: line.sellerSku,
             internalSku: line.internalSku,

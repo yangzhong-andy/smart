@@ -24,7 +24,10 @@ export type ProfitMetricRow = {
   endDate: string;
   orderCount: number;
   cancelledOrders: number;
+  /** TikTok seller SKU quantity. A bundle counts as one sold unit. */
   units: number;
+  /** Physical component quantity after bundle SKU mappings are expanded. */
+  internalUnits: number;
   gmvCny: number;
   platformCostCny: number;
   platformFeeCny: number;
@@ -121,7 +124,10 @@ export type ProfitOrderDetailRow = {
   exclusionReason: string | null;
   currency: string;
   orderAmountOriginal: number;
+  /** TikTok seller SKU quantity. */
   units: number;
+  /** Physical component quantity after bundle SKU mappings are expanded. */
+  internalUnits: number;
   lines: ProfitOrderDetailLine[];
   tiktokWarehouseId?: string | null;
   warehouseId: string | null;

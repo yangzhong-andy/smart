@@ -364,9 +364,10 @@ function DailyOrdersDialog({
   const filteredValidOrders = filteredOrders.filter((order) => order.includedInProfit);
   const totals = filteredValidOrders.reduce((result, order) => ({
     units: result.units + order.units,
+    internalUnits: result.internalUnits + order.internalUnits,
     gmvCny: result.gmvCny + order.gmvCny,
     contributionProfitCny: result.contributionProfitCny + order.contributionProfitCny,
-  }), { units: 0, gmvCny: 0, contributionProfitCny: 0 });
+  }), { units: 0, internalUnits: 0, gmvCny: 0, contributionProfitCny: 0 });
   const cancelledOrders = filteredOrders.filter((order) => order.status === "CANCELLED").length;
 
   return (
@@ -381,12 +382,13 @@ function DailyOrdersDialog({
         </div>
 
         <div className="shrink-0 border-b border-slate-800 px-4 py-3 md:px-6">
-          <div className="grid divide-y divide-slate-800 border-b border-slate-800 pb-3 sm:grid-cols-5 sm:divide-x sm:divide-y-0">
+          <div className="grid divide-y divide-slate-800 border-b border-slate-800 pb-3 sm:grid-cols-6 sm:divide-x sm:divide-y-0">
             {[
               ["当前订单", filteredOrders.length.toLocaleString()],
               ["计入核算", filteredValidOrders.length.toLocaleString()],
               ["取消订单", cancelledOrders.toLocaleString()],
-              ["销量", totals.units.toLocaleString()],
+              ["销售件数", totals.units.toLocaleString()],
+              ["实物件数", totals.internalUnits.toLocaleString()],
               ["GMV / 贡献利润", `${money(totals.gmvCny)} / ${money(totals.contributionProfitCny)}`],
             ].map(([label, value]) => <div key={label} className="min-w-0 px-3 py-2 first:pl-0 sm:py-0"><div className="text-[11px] text-slate-500">{label}</div><div className="mt-1 truncate text-sm font-semibold tabular-nums text-slate-200" title={value}>{value}</div></div>)}
           </div>
@@ -416,7 +418,7 @@ function DailyOrdersDialog({
                       <th className="px-3 py-3 text-left font-medium">订单 / 时间</th>
                       <th className="px-3 py-3 text-left font-medium">店铺 / 状态</th>
                       <th className="px-3 py-3 text-left font-medium">SKU / 商品</th>
-                      <th className="px-3 py-3 text-right font-medium">件数</th>
+                      <th className="px-3 py-3 text-right font-medium">销售件 / 实物件</th>
                       {orderComponentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}
                       <th className="px-3 py-3 text-right font-medium">贡献利润</th>
                       <th className="px-3 py-3 text-left font-medium">核算状态</th>
@@ -429,7 +431,7 @@ function DailyOrdersDialog({
                         <td className="px-3 py-3"><div className="font-medium text-slate-200">{order.orderId}</div><div className="mt-1 text-xs text-slate-500">{orderCreatedAt(order)}</div></td>
                         <td className="px-3 py-3"><div className="max-w-[180px] truncate text-slate-300" title={order.storeName}>{order.storeName}</div><span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></td>
                         <td className="max-w-[320px] px-3 py-3">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-xs text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[11px] text-slate-600">内部 {line.internalSku}</div>}</div>)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{order.units}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{order.units} / {order.internalUnits}</td>
                         {orderComponentGroups.map((group) => {
                           const components = componentsForGroup(order, group);
                           const original = groupOriginal(components);
@@ -608,15 +610,15 @@ export default function ProfitPage() {
       componentsForGroup(row, group).map((component) => component.amountCny).join(" / ")
     ));
     const headers = tab === "store"
-      ? ["店铺", "订单", "销量", ...componentHeaders, "贡献利润", "利润率"]
+      ? ["店铺", "订单", "销售件数", "实物件数", ...componentHeaders, "贡献利润", "利润率"]
       : tab === "sku"
-        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销量", ...componentHeaders, "贡献利润", "利润率"]
-        : ["周期", "订单", "取消", "销量", ...componentHeaders, "贡献利润", "利润率"];
+        ? ["店铺", "Seller SKU", "内部SKU", "商品", "销售件数", "实物件数", ...componentHeaders, "贡献利润", "利润率"]
+        : ["周期", "订单", "取消", "销售件数", "实物件数", ...componentHeaders, "贡献利润", "利润率"];
     const values = rows.map((row: any) => tab === "store"
-        ? [row.label, row.orderCount, row.units, ...componentValues(row), row.contributionProfitCny, row.margin]
+        ? [row.label, row.orderCount, row.units, row.internalUnits, ...componentValues(row), row.contributionProfitCny, row.margin]
       : tab === "sku"
-        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, ...componentValues(row), row.contributionProfitCny, row.margin]
-        : [row.label, row.orderCount, row.cancelledOrders, row.units, ...componentValues(row), row.contributionProfitCny, row.margin]);
+        ? [row.storeName, row.sellerSku, row.internalSku || "", row.productName, row.units, row.internalUnits, ...componentValues(row), row.contributionProfitCny, row.margin]
+        : [row.label, row.orderCount, row.cancelledOrders, row.units, row.internalUnits, ...componentValues(row), row.contributionProfitCny, row.margin]);
     const csv = [headers, ...values].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -762,7 +764,7 @@ export default function ProfitPage() {
                   value={components.map((component) => money(component.amountCny)).join(" / ")}
                   original={original || undefined}
                   detail={isRevenue
-                    ? `${data.summary.orderCount.toLocaleString()} 单 / ${data.summary.units.toLocaleString()} 件`
+                    ? `${data.summary.orderCount.toLocaleString()} 单 / ${data.summary.units.toLocaleString()} 销售件 / ${data.summary.internalUnits.toLocaleString()} 实物件`
                     : `占 GMV ${percent(data.summary.gmvCny > 0 ? total / data.summary.gmvCny * 100 : 0)}${group.key === "PLATFORM" ? ` · 实际账单 ${percent(data.coverage.platformActual)}` : ""}`}
                   icon={isRevenue ? ShoppingCart : group.key === "AD_COST" ? BarChart3 : group.key === "PLATFORM" ? WalletCards : PackageCheck}
                 />
@@ -842,7 +844,7 @@ export default function ProfitPage() {
                   <thead className="text-xs text-slate-500">
                     <tr className="border-b border-slate-800">
                       <th className="px-3 py-3 text-left font-medium">周期</th>
-                      <th className="px-3 py-3 text-right font-medium">订单 / 销量 / 均件客单价</th>
+                      <th className="px-3 py-3 text-right font-medium">订单 / 销售件 / 实物件 / 均件客单价</th>
                       {componentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}
                       <th className="px-3 py-3 text-right font-medium">贡献利润</th>
                       <th className="px-3 py-3 text-right font-medium">利润率</th>
@@ -860,7 +862,7 @@ export default function ProfitPage() {
                           ) : <><div>{row.label}</div><div className="text-xs text-slate-600">取消 {row.cancelledOrders}</div></>}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
-                          <div>{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</div>
+                          <div>{row.orderCount.toLocaleString()} / {row.units.toLocaleString()} / {row.internalUnits.toLocaleString()}</div>
                           <div className="mt-0.5 text-[11px] font-normal text-slate-500">均件客单价 {originalAverage(row.originalAmounts?.gmv, row.units)}</div>
                         </td>
                           <MetricCells row={row} groups={componentGroups} />
@@ -875,9 +877,9 @@ export default function ProfitPage() {
               <div className="overflow-x-auto">
                 <table className="min-w-[1500px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销量</th>{componentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}<th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">订单 / 销售件 / 实物件</th>{componentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}<th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
-                  <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()}</td><MetricCells row={row} groups={componentGroups} /></tr>)}</tbody>
+                  <tbody>{data.stores.map((row) => <tr key={row.shopId} className="border-b border-slate-900 hover:bg-slate-900/60"><td className="px-3 py-2.5"><div className="font-medium text-slate-200">{row.label}</div><div className="text-xs text-slate-600">{row.currency}</div></td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.orderCount.toLocaleString()} / {row.units.toLocaleString()} / {row.internalUnits.toLocaleString()}</td><MetricCells row={row} groups={componentGroups} /></tr>)}</tbody>
                 </table>
               </div>
             )}
@@ -886,11 +888,11 @@ export default function ProfitPage() {
               <div className="overflow-x-auto">
                 <table className="min-w-[1650px] w-full text-sm">
                   <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
-                    <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销量</th>{componentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}<th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
+                    <th className="px-3 py-3 text-left font-medium">SKU / 商品</th><th className="px-3 py-3 text-left font-medium">店铺</th><th className="px-3 py-3 text-right font-medium">销售件 / 实物件</th>{componentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}<th className="px-3 py-3 text-right font-medium">贡献利润</th><th className="px-3 py-3 text-right font-medium">利润率</th>
                   </tr></thead>
                   <tbody>{filteredSkus.map((row: ProfitSkuRow) => <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                     <td className="max-w-[320px] px-3 py-2.5"><div className="flex items-center gap-2"><span className="font-medium text-slate-200">{row.sellerSku}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${row.mappingStatus === "unmapped" ? "bg-rose-500/15 text-rose-300" : "bg-emerald-500/15 text-emerald-300"}`}>{row.mappingStatus === "unmapped" ? "待映射" : "已映射"}</span><button type="button" onClick={() => openCostMapping(row)} title="配置成本映射" className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-slate-200"><Settings2 className="h-4 w-4" /></button></div><div className="mt-0.5 truncate text-xs text-slate-500" title={row.productName}>{row.productName}</div>{row.internalSku && <div className="text-[11px] text-slate-600">内部 {row.internalSku}</div>}</td>
-                    <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()}</td><MetricCells row={row} groups={componentGroups} />
+                    <td className="px-3 py-2.5 text-slate-400">{row.storeName}</td><td className="px-3 py-2.5 text-right tabular-nums text-slate-300">{row.units.toLocaleString()} / {row.internalUnits.toLocaleString()}</td><MetricCells row={row} groups={componentGroups} />
                   </tr>)}</tbody>
                 </table>
                 {filteredSkus.length === 0 && <div className="py-12 text-center text-sm text-slate-500">没有匹配的 SKU</div>}
