@@ -1151,11 +1151,11 @@ export async function GET(request: NextRequest) {
       );
       const isCancelled = order.status === "CANCELLED";
       const exclusionReason = isCancelled
-        ? "Cancelled order"
+        ? "已取消订单，不计入店铺利润"
         : order.status === "UNPAID"
-          ? "Unpaid order"
+          ? "未付款订单，不计入店铺利润"
           : (order.rawData as any)?.is_sample_order
-            ? "鍏嶈垂鏍峰搧璁㈠崟锛屼笉璁″叆搴楅摵鍒╂鼎"
+            ? "达人免费样品订单，不计入店铺利润"
             : null;
 
       if (isCancelled) {
