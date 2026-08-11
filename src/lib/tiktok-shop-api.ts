@@ -1,5 +1,6 @@
 import { createHmac } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { normalizeTikTokTokenLifetime } from "@/lib/tiktok-token-expiry";
 
 const BASE_URL = "https://open-api.tiktokglobalshop.com";
 const AUTH_URL = "https://auth.tiktok-shops.com";
@@ -67,8 +68,8 @@ export async function getAccessToken(authCode: string, appKey: string, appSecret
   return {
     accessToken: data.data.access_token,
     refreshToken: data.data.refresh_token,
-    accessTokenExpireIn: data.data.access_token_expire_in,
-    refreshTokenExpireIn: data.data.refresh_token_expire_in,
+    accessTokenExpireIn: normalizeTikTokTokenLifetime(data.data.access_token_expire_in),
+    refreshTokenExpireIn: normalizeTikTokTokenLifetime(data.data.refresh_token_expire_in),
     openId: data.data.open_id,
   };
 }
@@ -88,8 +89,8 @@ export async function refreshAccessToken(refreshToken: string, appKey: string, a
   return {
     accessToken: data.data.access_token,
     refreshToken: data.data.refresh_token,
-    accessTokenExpireIn: data.data.access_token_expire_in,
-    refreshTokenExpireIn: data.data.refresh_token_expire_in,
+    accessTokenExpireIn: normalizeTikTokTokenLifetime(data.data.access_token_expire_in),
+    refreshTokenExpireIn: normalizeTikTokTokenLifetime(data.data.refresh_token_expire_in),
     openId: data.data.open_id,
   };
 }
