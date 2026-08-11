@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 import { AUTH_SECRET } from '@/lib/auth-secret'
+import { AUTH_COOKIE_NAMES, AUTH_COOKIE_SECURE } from '@/lib/auth-cookies'
 
 // 简单内存限流：IP -> { count, firstAttempt }
 const loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
@@ -147,9 +148,9 @@ export async function POST(request: NextRequest) {
     });
 
     // 设置HttpOnly cookie，前端通过JS无法读取，更安全
-    response.cookies.set('token', token, {
+    response.cookies.set(AUTH_COOKIE_NAMES.customToken, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: AUTH_COOKIE_SECURE,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7, // 7天
       path: '/',

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import * as jwt from "jsonwebtoken";
 import { authOptions } from "@/lib/auth-options";
+import { AUTH_COOKIE_NAMES } from "@/lib/auth-cookies";
 import { AUTH_SECRET } from "@/lib/auth-secret";
 import { prisma } from "@/lib/prisma";
 
@@ -87,7 +88,7 @@ export async function getApiUser(request: NextRequest): Promise<ApiUser | null> 
     const bearer = getBearerToken(request);
     if (bearer) return await userFromJwt(bearer);
 
-    const cookieToken = request.cookies.get("token")?.value;
+    const cookieToken = request.cookies.get(AUTH_COOKIE_NAMES.customToken)?.value;
     if (cookieToken) {
       const user = await userFromJwt(cookieToken);
       if (user) return user;

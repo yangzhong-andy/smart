@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { getToken } from "next-auth/jwt";
 import { AUTH_SECRET } from "@/lib/auth-secret";
+import { AUTH_COOKIE_NAMES } from "@/lib/auth-cookies";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -18,7 +19,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 1）优先验证自定义 JWT cookie（如果你以后在前端设置了 token cookie）
-  const cookieToken = request.cookies.get("token")?.value;
+  const cookieToken = request.cookies.get(AUTH_COOKIE_NAMES.customToken)?.value;
   if (cookieToken) {
     try {
       jwt.verify(cookieToken, AUTH_SECRET);
@@ -32,6 +33,7 @@ export async function middleware(request: NextRequest) {
   const nextAuthToken = await getToken({
     req: request as any,
     secret: AUTH_SECRET,
+    cookieName: AUTH_COOKIE_NAMES.sessionToken,
   });
 
   if (nextAuthToken) {
