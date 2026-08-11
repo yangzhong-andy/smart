@@ -440,48 +440,61 @@ function DailyOrdersDialog({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {isLoading && <div className="flex h-56 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />正在核算当天订单...</div>}
           {error && !isLoading && <div className="flex h-56 flex-col items-center justify-center gap-3 text-sm text-rose-300"><span>{error.message || "订单明细加载失败"}</span><button type="button" onClick={() => mutate()} className="h-9 rounded-md border border-slate-700 px-3 text-slate-300 hover:bg-slate-800">重试</button></div>}
           {!isLoading && !error && filteredOrders.length === 0 && <div className="flex h-56 items-center justify-center text-sm text-slate-500">没有匹配的订单</div>}
 
           {!isLoading && !error && filteredOrders.length > 0 && (
             <>
-              <div className="hidden md:block">
-                <table className="w-full min-w-[2050px] text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-950 text-xs text-slate-500">
-                    <tr className="border-b border-slate-800">
-                      <th className="px-3 py-3 text-left font-medium">订单 / 时间</th>
-                      <th className="px-3 py-3 text-left font-medium">店铺 / 状态</th>
-                      <th className="px-3 py-3 text-left font-medium">SKU / 商品</th>
-                      <th className="px-3 py-3 text-right font-medium">销售件 / 实物件</th>
-                      {orderComponentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}
-                      <th className="px-3 py-3 text-right font-medium">贡献利润</th>
-                      <th className="px-3 py-3 text-left font-medium">核算状态</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOrders.map((order) => {
-                      const coverageWarnings = orderCoverageWarnings(order);
-                      return <tr key={order.orderId} className={`border-b border-slate-900 align-top ${order.includedInProfit ? "hover:bg-slate-900/60" : "bg-slate-900/30 text-slate-500"}`}>
-                        <td className="px-3 py-3"><div className="font-medium text-slate-200">{order.orderId}</div><div className="mt-1 text-xs text-slate-500">{orderCreatedAt(order)}</div></td>
-                        <td className="px-3 py-3"><div className="max-w-[180px] truncate text-slate-300" title={order.storeName}>{order.storeName}</div><span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span></td>
-                        <td className="max-w-[320px] px-3 py-3">{order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-xs text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[11px] text-slate-600">内部 {line.internalSku}</div>}</div>)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums text-slate-300">{order.units} / {order.internalUnits}</td>
-                        {orderComponentGroups.map((group) => {
-                          const components = componentsForGroup(order, group);
-                          const original = groupOriginal(components);
-                          return <td key={group.key} className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-slate-300"><div>{order.includedInProfit ? components.map((component) => money(component.amountCny)).join(" / ") : group.key === "GMV" ? "未计入" : money(0)}</div>{original && <div className="mt-1 text-[11px] text-slate-600">{original}</div>}{group.key === "WAREHOUSE_FULFILLMENT" && <><div className="mt-1 max-w-[180px] truncate text-[11px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="max-w-[180px] truncate text-[10px] text-slate-700">TikTok {order.tiktokWarehouseId}</div>}</>}</td>;
-                        })}
-                        <td className={`px-3 py-3 text-right font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-1 text-[11px] font-normal text-slate-600">{percent(order.margin)}</div></td>
-                        <td className="max-w-[210px] px-3 py-3">{coverageWarnings.length === 0 ? <span className="text-xs text-emerald-300">核算完整</span> : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">{warning}</span>)}</div>}{orderSettlementStatus(order)}</td>
-                      </tr>;
-                    })}
-                  </tbody>
-                </table>
+              <div className="hidden xl:block" data-testid="profit-order-desktop-list">
+                <div className="sticky top-0 z-10 grid grid-cols-[0.85fr_0.9fr_1.5fr_3.9fr_1fr] border-b border-slate-800 bg-slate-950 text-[11px] text-slate-500">
+                  <div className="px-3 py-3 font-medium">订单 / 时间</div>
+                  <div className="px-3 py-3 font-medium">店铺 / 状态</div>
+                  <div className="px-3 py-3 font-medium">SKU / 商品</div>
+                  <div className="px-3 py-3 font-medium">核算金额（销售件 / 实物件：每项均显示人民币及原币）</div>
+                  <div className="px-3 py-3 font-medium">利润 / 状态</div>
+                </div>
+                <div className="divide-y divide-slate-900">
+                  {filteredOrders.map((order) => {
+                    const coverageWarnings = orderCoverageWarnings(order);
+                    return <article key={order.orderId} className={`grid grid-cols-[0.85fr_0.9fr_1.5fr_3.9fr_1fr] items-start text-xs ${order.includedInProfit ? "hover:bg-slate-900/60" : "bg-slate-900/30 text-slate-500"}`}>
+                      <div className="min-w-0 px-3 py-3">
+                        <div className="break-all font-medium tabular-nums text-slate-200">{order.orderId}</div>
+                        <div className="mt-1 text-[11px] text-slate-500">{orderCreatedAt(order)}</div>
+                      </div>
+                      <div className="min-w-0 px-3 py-3">
+                        <div className="break-words text-slate-300">{order.storeName}</div>
+                        <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${orderStatusTone(order.status)}`}>{orderStatusLabel(order.status)}</span>
+                      </div>
+                      <div className="min-w-0 px-3 py-3">
+                        {order.lines.map((line, index) => <div key={`${line.sellerSku}-${index}`} className="mb-2 last:mb-0"><div className="font-medium text-slate-300">{line.sellerSku} × {line.quantity}</div>{line.unitPriceOriginal != null && <div className="text-[11px] tabular-nums text-emerald-300">前端售价 {originalMoney(order.currency, line.unitPriceOriginal)} / 件{line.quantity > 1 && line.lineAmountOriginal != null ? ` · 小计 ${originalMoney(order.currency, line.lineAmountOriginal)}` : ""}</div>}<div className="truncate text-[11px] text-slate-500" title={line.productName}>{line.productName}</div>{line.internalSku && <div className="text-[10px] text-slate-600">内部 {line.internalSku}</div>}</div>)}
+                      </div>
+                      <div className="min-w-0 px-3 py-3">
+                        <div className="mb-2 text-[11px] text-slate-500">销售件 / 实物件 <span className="ml-1 font-medium tabular-nums text-slate-300">{order.units} / {order.internalUnits}</span></div>
+                        <div className="grid grid-cols-4 gap-x-3 gap-y-2">
+                          {orderComponentGroups.map((group) => {
+                            const components = componentsForGroup(order, group);
+                            const original = groupOriginal(components);
+                            return <div key={group.key} className="min-w-0 border-l border-slate-800 pl-2 first:border-l-0 first:pl-0">
+                              <div className="truncate text-[10px] text-slate-600" title={group.label}>{group.label}</div>
+                              <div className="mt-0.5 tabular-nums text-slate-300">{order.includedInProfit ? components.map((component) => <div key={component.code} className="whitespace-nowrap">{money(component.amountCny)}</div>) : group.key === "GMV" ? "未计入" : money(0)}</div>
+                              {original && <div className="mt-0.5 break-words text-[10px] tabular-nums text-slate-600">{original}</div>}
+                              {group.key === "WAREHOUSE_FULFILLMENT" && <><div className="mt-0.5 truncate text-[10px] text-slate-600" title={order.warehouseName}>{order.warehouseName}</div>{order.tiktokWarehouseId && <div className="truncate text-[9px] text-slate-700" title={`TikTok ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}</>}
+                            </div>;
+                          })}
+                        </div>
+                      </div>
+                      <div className="min-w-0 px-3 py-3">
+                        <div className={`font-semibold tabular-nums ${order.contributionProfitCny >= 0 ? "text-emerald-300" : "text-rose-300"}`}><div>{money(order.contributionProfitCny)}</div><div className="mt-0.5 text-[11px] font-normal text-slate-500">贡献利润 {percent(order.margin)}</div></div>
+                        <div className="mt-2">{coverageWarnings.length === 0 ? <span className="text-[11px] text-emerald-300">核算完整</span> : <div className="flex flex-wrap gap-1">{coverageWarnings.map((warning) => <span key={warning} className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">{warning}</span>)}</div>}{orderSettlementStatus(order)}</div>
+                      </div>
+                    </article>;
+                  })}
+                </div>
               </div>
 
-              <div className="divide-y divide-slate-800 md:hidden">
+              <div className="divide-y divide-slate-800 xl:hidden">
                 {filteredOrders.map((order) => {
                   const coverageWarnings = orderCoverageWarnings(order);
                   return <article key={order.orderId} className="px-4 py-4">
