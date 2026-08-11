@@ -46,7 +46,11 @@ export default function BankAccountsPage() {
   });
   
   // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }；pageSize 拉取全部用于算余额）
-  const { data: cashFlowData } = useSWR<any[] | { data: any[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000&noCache=true', fetcher, {
+  const { data: cashFlowData } = useSWR<any[] | {
+    data: any[];
+    pagination: unknown;
+    accountBalanceDeltas?: Record<string, number>;
+  }>('/api/cash-flow?page=1&pageSize=5000&noCache=true&includeVouchers=false&includeBalances=true', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false, // 优化：关闭重连自动刷新
     keepPreviousData: true,
@@ -56,6 +60,9 @@ export default function BankAccountsPage() {
   // 兼容 API 返回 { data, pagination } 或直接数组
   const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
   const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+  const accountBalanceDeltas = Array.isArray(cashFlowData)
+    ? undefined
+    : cashFlowData?.accountBalanceDeltas;
   // 统一流水 status / type 为小写，兼容 API 返回的枚举值（INCOME/EXPENSE/TRANSFER、CONFIRMED 等）
   const cashFlowList = useMemo(
     () =>
@@ -103,8 +110,19 @@ export default function BankAccountsPage() {
       }
     });
 
-    // 遍历所有流水记录，更新账户余额（含冲销记录，冲销金额为反向）
-    if (cashFlowList.length > 0) {
+    // 优先使用服务端对全部已确认流水的汇总，避免余额依赖列表分页数量。
+    if (accountBalanceDeltas) {
+      updatedAccounts.forEach((account) => {
+        const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
+        if (account.accountCategory !== "PRIMARY" || !hasChildren) {
+          const newBalance = (account.initialCapital || 0) + (accountBalanceDeltas[account.id] || 0);
+          account.originalBalance = newBalance;
+          account.rmbBalance = account.currency === "RMB" || account.currency === "CNY"
+            ? newBalance
+            : newBalance * (account.exchangeRate || 1);
+        }
+      });
+    } else if (cashFlowList.length > 0) {
       cashFlowList.forEach((flow) => {
         if (flow.status === "confirmed" && flow.accountId) {
           const account = updatedAccounts.find((a) => a.id === flow.accountId);
@@ -148,7 +166,7 @@ export default function BankAccountsPage() {
     });
     
     return updatedAccounts;
-  }, [accountsListRaw, cashFlowList]);
+  }, [accountsListRaw, accountBalanceDeltas, cashFlowList]);
   
   const [stores, setStores] = useState<Store[]>([]);
   const storesList = Array.isArray(stores) ? stores : [];

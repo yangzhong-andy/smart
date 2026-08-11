@@ -34,5 +34,7 @@ export type CashFlowLike = {
   voucher?: string;
   paymentVoucher?: string;
   transferVoucher?: string;
+  hasPaymentVoucher?: boolean;
+  hasTransferVoucher?: boolean;
   createdAt: string;
 };
