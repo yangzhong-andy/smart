@@ -101,7 +101,7 @@ const BRAZIL_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = BASE_COMPONENTS.m
   "COST",
   "affiliateCommissionCny",
   90,
-  { includeInProfit: false, required: false },
+  { includeInProfit: true, required: false },
 ));
 
 const US_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = [
