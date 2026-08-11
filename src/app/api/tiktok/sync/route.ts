@@ -10,6 +10,8 @@ import {
 } from "@/lib/tiktok-shop-api";
 import { clearCacheByPrefix } from "@/lib/redis";
 import { syncTikTokProfitFinancials } from "@/lib/tiktok-profit-financial-sync";
+import { fetchExchangeRates } from "@/lib/exchange";
+import { resolveCashFlowExchangeRateToCny } from "@/lib/cash-flow-exchange-rate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,6 +36,13 @@ export async function POST(request: NextRequest) {
     if (shops.length === 0) {
       return NextResponse.json({ error: "没有已授权的店铺" }, { status: 400 });
     }
+
+    const liveExchangeRates = dataType === "all" || dataType === "payments"
+      ? await fetchExchangeRates().catch((error) => {
+          console.error("[TikTok CashFlow] 实时汇率获取失败，将使用账户汇率:", error);
+          return null;
+        })
+      : null;
 
     // 获取所有 App 配置
     const appConfigs = await prisma.tikTokAppConfig.findMany();
@@ -302,6 +311,14 @@ export async function POST(request: NextRequest) {
                   const cashFlowUid = `TIKTOK_PAY_${p.id}`;
                   const bankAccount = await prisma.bankAccount.findUnique({ where: { id: shop.bankAccountId } });
                   if (bankAccount) {
+                    const paymentCurrency = String(
+                      p.amount?.currency || bankAccount.currency || "BRL",
+                    ).toUpperCase();
+                    const cashFlowExchangeRate = resolveCashFlowExchangeRateToCny(
+                      paymentCurrency,
+                      liveExchangeRates?.rates,
+                      bankAccount.exchangeRate,
+                    );
                     const paidDate = p.paid_time
                       ? new Date(p.paid_time * 1000)
                       : (p.create_time ? new Date(p.create_time * 1000) : new Date());
@@ -316,11 +333,11 @@ export async function POST(request: NextRequest) {
                         amount: parseFloat(p.amount?.value || "0"),
                         accountId: shop.bankAccountId,
                         accountName: bankAccount.name,
-                        currency: p.amount?.currency || "BRL",
+                        currency: paymentCurrency,
                         status: "CONFIRMED",
                         relatedId: p.id,
                         remark: `付款单ID: ${p.id}`,
-                        exchangeRate: 1.3,
+                        exchangeRate: cashFlowExchangeRate,
                         platform: "TikTok",
                         storeId: bankAccount.storeId || null,
                         storeName: shop.shopName,
@@ -331,10 +348,11 @@ export async function POST(request: NextRequest) {
                         amount: parseFloat(p.amount?.value || "0"),
                         accountId: shop.bankAccountId,
                         accountName: bankAccount.name,
-                        currency: p.amount?.currency || "BRL",
+                        currency: paymentCurrency,
                         status: "CONFIRMED",
                         relatedId: p.id,
                         remark: `付款单ID: ${p.id}`,
+                        exchangeRate: cashFlowExchangeRate,
                         platform: "TikTok",
                         storeId: bankAccount.storeId || null,
                         storeName: shop.shopName,
