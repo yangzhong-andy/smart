@@ -18,7 +18,8 @@ import MoneyDisplay from "@/components/ui/MoneyDisplay";
 import ImageUploader from "@/components/ImageUploader";
 import DateInput from "@/components/DateInput";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
-import { Pagination, usePaginationState, paginate } from "@/components/Pagination";
+import { Pagination, usePaginationState } from "@/components/Pagination";
+import type { CashFlowSummary } from "@/lib/cash-flow-summary";
 
 export type CashFlow = {
   id: string;
@@ -41,11 +42,26 @@ export type CashFlow = {
   voucher?: string; // 旧凭证（兼容）
   paymentVoucher?: string; // 付款凭证（发起付款时，JSON 或多图）
   transferVoucher?: string; // 转账成功凭证（财务打款后）
+  hasPaymentVoucher?: boolean;
+  hasTransferVoucher?: boolean;
   createdAt: string;
 };
 
+type CashFlowListResponse = {
+  data: CashFlow[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+  summary?: CashFlowSummary;
+  monthSummary?: CashFlowSummary;
+  accountBalanceDeltas?: Record<string, number>;
+};
+
 // SWR fetcher
-const fetcher = (url: string) => fetch(url).then(res => res.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error || `请求失败 (${response.status})`);
+  return data;
+};
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -87,26 +103,177 @@ const flowDateKey = (dateStr: string): string => {
   return (dateStr || "").slice(0, 10);
 };
 
-// 流水列表 API（带 noCache 避免多系统/Redis 缓存导致凭证不刷新）
-const CASH_FLOW_LIST_KEY = '/api/cash-flow?page=1&pageSize=2000&noCache=true';
+const EMPTY_SUMMARY: CashFlowSummary = {
+  totalIncome: 0,
+  totalExpense: 0,
+  netIncome: 0,
+  transactionCount: 0,
+  incomeCount: 0,
+  expenseCount: 0,
+  incomeByCurrency: {},
+  expenseByCurrency: {},
+};
+
+function activeDateRange(options: {
+  quickFilter: string;
+  filterYear: string;
+  filterMonth: string;
+  filterDateFrom: string;
+  filterDateTo: string;
+}): { startDate: string; endDate: string } {
+  const today = new Date();
+  let startDate = options.filterDateFrom;
+  let endDate = options.filterDateTo;
+
+  switch (options.quickFilter) {
+    case "today":
+      startDate = endDate = toLocalDateKey(today);
+      break;
+    case "yesterday": {
+      const date = new Date(today);
+      date.setDate(date.getDate() - 1);
+      startDate = endDate = toLocalDateKey(date);
+      break;
+    }
+    case "thisWeek": {
+      const date = new Date(today);
+      date.setDate(today.getDate() - today.getDay());
+      startDate = toLocalDateKey(date);
+      endDate = toLocalDateKey(today);
+      break;
+    }
+    case "lastWeek": {
+      const lastWeekEnd = new Date(today);
+      lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
+      const lastWeekStart = new Date(lastWeekEnd);
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
+      startDate = toLocalDateKey(lastWeekStart);
+      endDate = toLocalDateKey(lastWeekEnd);
+      break;
+    }
+    case "thisMonth":
+      startDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+      endDate = toLocalDateKey(today);
+      break;
+    case "lastMonth": {
+      startDate = toLocalDateKey(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+      endDate = toLocalDateKey(new Date(today.getFullYear(), today.getMonth(), 0));
+      break;
+    }
+    case "thisQuarter": {
+      const quarter = Math.floor(today.getMonth() / 3);
+      startDate = `${today.getFullYear()}-${String(quarter * 3 + 1).padStart(2, "0")}-01`;
+      endDate = toLocalDateKey(today);
+      break;
+    }
+    case "thisYear":
+      startDate = `${today.getFullYear()}-01-01`;
+      endDate = toLocalDateKey(today);
+      break;
+    case "lastYear":
+      startDate = `${today.getFullYear() - 1}-01-01`;
+      endDate = `${today.getFullYear() - 1}-12-31`;
+      break;
+    default:
+      if (options.filterMonth) {
+        const [year, month] = options.filterMonth.split("-").map(Number);
+        startDate = `${options.filterMonth}-01`;
+        endDate = toLocalDateKey(new Date(year, month, 0));
+      } else if (options.filterYear) {
+        startDate = `${options.filterYear}-01-01`;
+        endDate = `${options.filterYear}-12-31`;
+      }
+  }
+
+  return { startDate, endDate };
+}
+
+function voucherImages(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw.trim() || raw.trim() === "null") return [];
+  const value = raw.trim();
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === "string" && item.length > 10);
+    if (typeof parsed === "string" && parsed.length > 10) return [parsed];
+  } catch {
+    // Legacy rows may store one data URL directly instead of JSON.
+  }
+  return value.length > 10 ? [value] : [];
+}
 
 export default function CashFlowPage() {
   const { confirm, confirmDialog } = useSystemConfirm();
-  // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }，需取 data；pageSize 拉取全部）
-  const { data: cashFlowData, isLoading: cashFlowLoading } = useSWR<CashFlow[] | { data: any[]; pagination: unknown }>(CASH_FLOW_LIST_KEY, fetcher, {
+  const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
+  const [relatedFlows, setRelatedFlows] = useState<{ open: boolean; businessNumber: string; flows: any[] }>({ open: false, businessNumber: "", flows: [] });
+  const [editBN, setEditBN] = useState<string | null>(null);
+  const [filterCurrency, setFilterCurrency] = useState<string>("all");
+  const { page: pgPage, pageSize: pgPageSize, setPage: setPgPage, setPageSize: setPgPageSize } = usePaginationState(20);
+  const [filterPaymentType, setFilterPaymentType] = useState<string>("all");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterSubCategory, setFilterSubCategory] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [filterYear, setFilterYear] = useState<string>("");
+  const [filterMonth, setFilterMonth] = useState<string>("");
+  const [quickFilter, setQuickFilter] = useState<string>("");
+  const [searchKeyword, setSearchKeyword] = useState<string>("");
+  const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
+  const [voucherRotation, setVoucherRotation] = useState(0);
+  const [voucherViewLabel, setVoucherViewLabel] = useState<string>("凭证");
+  const [currentVoucherIndex, setCurrentVoucherIndex] = useState(0);
+  const [voucherLoadingKey, setVoucherLoadingKey] = useState<string | null>(null);
+  const [supplementVoucherFlow, setSupplementVoucherFlow] = useState<CashFlow | null>(null);
+  const [supplementPaymentVoucher, setSupplementPaymentVoucher] = useState<string | string[]>("");
+  const [supplementTransferVoucher, setSupplementTransferVoucher] = useState<string | string[]>("");
+
+  const dateRange = useMemo(() => activeDateRange({
+    quickFilter,
+    filterYear,
+    filterMonth,
+    filterDateFrom,
+    filterDateTo,
+  }), [quickFilter, filterYear, filterMonth, filterDateFrom, filterDateTo]);
+
+  const cashFlowFilterParams = useMemo(() => {
+    const query = new URLSearchParams({
+      noCache: "true",
+      includeVouchers: "false",
+      excludeInternal: "true",
+    });
+    if (filterCurrency !== "all") query.set("currency", filterCurrency);
+    if (filterPaymentType !== "all") query.set("type", filterPaymentType);
+    if (filterStatus !== "all") query.set("status", filterStatus);
+    if (filterCategory !== "all") query.set("category", filterCategory);
+    if (filterSubCategory !== "all") query.set("subCategory", filterSubCategory);
+    if (dateRange.startDate) query.set("startDate", dateRange.startDate);
+    if (dateRange.endDate) query.set("endDate", dateRange.endDate);
+    if (searchKeyword.trim()) query.set("search", searchKeyword.trim());
+    return query;
+  }, [filterCurrency, filterPaymentType, filterStatus, filterCategory, filterSubCategory, dateRange, searchKeyword]);
+
+  const cashFlowListKey = useMemo(() => {
+    const query = new URLSearchParams(cashFlowFilterParams);
+    query.set("page", String(pgPage));
+    query.set("pageSize", String(pgPageSize));
+    query.set("includeSummary", "true");
+    query.set("includeBalances", "true");
+    return `/api/cash-flow?${query.toString()}`;
+  }, [cashFlowFilterParams, pgPage, pgPageSize]);
+
+  const { data: cashFlowData, mutate: refreshCashFlows } = useSWR<CashFlowListResponse>(cashFlowListKey, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    // 避免刷新时先渲染旧缓存（如先显示 3 条再补齐）
     keepPreviousData: false,
     dedupingInterval: 2000
   });
 
   // 兼容 API 返回 { data, pagination } 或直接数组；并统一 description->summary、flowStatus->status、type（API 返回 INCOME/EXPENSE/TRANSFER 和 CONFIRMED/PENDING，需转小写）
   const cashFlowListRaw = useMemo(() => {
-    const list = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+    const list = cashFlowData?.data ?? [];
     return list.map((f: any) => {
       const typeStr = String(f.type ?? "").toLowerCase();
-      const type = (typeStr === "income" || typeStr === "expense" || typeStr === "transfer" ? typeStr : "expense") as "income" | "expense" | "transfer";
+      const type = (typeStr === "income" ? "income" : "expense") as "income" | "expense";
       return {
         ...f,
         summary: f.summary ?? f.description,
@@ -124,7 +291,7 @@ export default function CashFlowPage() {
     dedupingInterval: 600000
   });
   // 店铺列表（供下拉关联店铺使用）
-  const { data: storesData } = useSWR<any[]>('/api/stores?page=1&pageSize=500', fetcher, {
+  const { data: storesData } = useSWR<any[] | { data: any[]; pagination: unknown }>('/api/stores?page=1&pageSize=500', fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     keepPreviousData: true,
@@ -134,11 +301,10 @@ export default function CashFlowPage() {
 
   const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
 
-  // 基于 API 数据和流水重新计算余额（与账户列表页面保持一致）
-  const { data: fullFlowData } = useSWR("/api/cash-flow?page=1&pageSize=5000&noCache=true", fetcher, { revalidateOnFocus: false, dedupingInterval: 300000 });
-  const fullFlowList = useMemo(() => Array.isArray(fullFlowData) ? fullFlowData : (fullFlowData?.data ?? []), [fullFlowData]);
+  // The API returns signed, confirmed deltas without transferring full rows.
   const accounts = useMemo(() => {
     if (!accountsListRaw.length) return [];
+    const balanceDeltas = cashFlowData?.accountBalanceDeltas || {};
 
     // 重置所有账户的余额，从 initialCapital 开始重新计算（从流水记录重新计算）
     let updatedAccounts = accountsListRaw.map((acc) => {
@@ -166,33 +332,15 @@ export default function CashFlowPage() {
       }
     });
 
-    // 遍历所有流水记录，更新账户余额（在 initialCapital 基础上累加）
-    if (fullFlowList.length > 0) {
-      fullFlowList.forEach((flow) => {
-        if ((flow.status ?? (flow as any).flowStatus) === "confirmed" && flow.accountId) {
-          const account = updatedAccounts.find((a) => a.id === flow.accountId);
-          if (account) {
-            const hasChildren = updatedAccounts.some((a) => a.parentId === account.id);
-            
-            // 如果账户不是主账户，或者主账户没有子账户，则直接更新余额
-            if (account.accountCategory !== "PRIMARY" || !hasChildren) {
-              // 直接使用 flow.amount，因为：
-              // - 收入类型：amount 是正数
-              // - 支出类型：amount 是负数（包括划拨转出）
-              // 不需要 Math.abs，直接相加即可
-              // 注意：originalBalance 已经包含了 initialCapital，所以直接累加流水即可
-              const change = Number(flow.amount);
-              const newBalance = account.originalBalance + change;
-              
-              account.originalBalance = newBalance;
-              account.rmbBalance = account.currency === "RMB"
-                ? newBalance
-                : newBalance * (account.exchangeRate || 1);
-            }
-          }
-        }
-      });
-    }
+    updatedAccounts.forEach((account) => {
+      const hasChildren = updatedAccounts.some((item) => item.parentId === account.id);
+      if (account.accountCategory === "PRIMARY" && hasChildren) return;
+      const newBalance = Number(account.initialCapital || 0) + Number(balanceDeltas[account.id] || 0);
+      account.originalBalance = newBalance;
+      account.rmbBalance = account.currency === "CNY" || account.currency === "RMB"
+        ? newBalance
+        : newBalance * (account.exchangeRate || 1);
+    });
     
     // 重新计算所有主账户的余额（汇总子账户，如果有子账户的话）
     updatedAccounts = updatedAccounts.map((acc) => {
@@ -211,36 +359,59 @@ export default function CashFlowPage() {
     });
     
     return updatedAccounts;
-  }, [accountsListRaw, cashFlowListRaw]);
+  }, [accountsListRaw, cashFlowData?.accountBalanceDeltas]);
 
-  const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
-  const [relatedFlows, setRelatedFlows] = useState<{ open: boolean; businessNumber: string; flows: any[] }>({ open: false, businessNumber: "", flows: [] });
-  const [editBN, setEditBN] = useState<string | null>(null); // 编辑单号: flowId
-  const [filterCurrency, setFilterCurrency] = useState<string>("all");
-  const { page: pgPage, pageSize: pgPageSize, setPage: setPgPage, setPageSize: setPgPageSize } = usePaginationState(20);
-  const [filterPaymentType, setFilterPaymentType] = useState<string>("all");
-  const [filterCategory, setFilterCategory] = useState<string>("all");
-  const [filterSubCategory, setFilterSubCategory] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
-  const [filterDateTo, setFilterDateTo] = useState<string>("");
-  const [filterYear, setFilterYear] = useState<string>("");
-  const [filterMonth, setFilterMonth] = useState<string>("");
-  const [quickFilter, setQuickFilter] = useState<string>("");
-  const [searchKeyword, setSearchKeyword] = useState<string>("");
-  const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
-  const [voucherRotation, setVoucherRotation] = useState(0);
-  const [voucherViewLabel, setVoucherViewLabel] = useState<string>("凭证");
-  const [currentVoucherIndex, setCurrentVoucherIndex] = useState(0);
-  const [supplementVoucherFlow, setSupplementVoucherFlow] = useState<CashFlow | null>(null);
-  const [supplementPaymentVoucher, setSupplementPaymentVoucher] = useState<string | string[]>("");
-  const [supplementTransferVoucher, setSupplementTransferVoucher] = useState<string | string[]>("");
+  useEffect(() => {
+    setPgPage(1);
+  }, [filterCurrency, filterPaymentType, filterCategory, filterSubCategory, filterStatus, dateRange, searchKeyword, setPgPage]);
 
   // 数据已通过 SWR 加载，余额计算在账户页面处理
 
   // 余额计算已在账户页面通过 SWR 处理，无需在此更新
 
   const [isSavingFlow, setIsSavingFlow] = useState(false);
+
+  const handleViewVoucher = async (flowId: string, kind: "payment" | "transfer") => {
+    const loadingKey = `${flowId}:${kind}`;
+    setVoucherLoadingKey(loadingKey);
+    try {
+      const data = await fetcher(`/api/cash-flow/${flowId}/vouchers`);
+      const images = voucherImages(kind === "payment" ? data.paymentVoucher : data.transferVoucher);
+      if (!images.length) {
+        toast.info("该流水没有可查看的凭证");
+        await refreshCashFlows();
+        return;
+      }
+      setVoucherViewModal(JSON.stringify(images));
+      setVoucherRotation(0);
+      setVoucherViewLabel(kind === "payment" ? "发起付款凭证" : "转账成功凭证");
+      setCurrentVoucherIndex(0);
+    } catch (error: any) {
+      toast.error(error?.message || "凭证读取失败");
+    } finally {
+      setVoucherLoadingKey(null);
+    }
+  };
+
+  const handleOpenRelatedFlows = async (businessNumber: string) => {
+    try {
+      const query = new URLSearchParams({
+        businessNumber,
+        page: "1",
+        pageSize: "200",
+        noCache: "true",
+        includeVouchers: "false",
+      });
+      const response = await fetcher(`/api/cash-flow?${query.toString()}`) as CashFlowListResponse;
+      if (response.data.length <= 1) {
+        toast.info("该单号下只有当前这笔流水");
+        return;
+      }
+      setRelatedFlows({ open: true, businessNumber, flows: response.data });
+    } catch (error: any) {
+      toast.error(error?.message || "关联流水读取失败");
+    }
+  };
 
   const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number, warehouseId?: string) => {
     // 防止重复提交
@@ -263,7 +434,7 @@ export default function CashFlowPage() {
         throw new Error(errorMessage);
       }
       
-      await swrMutate(CASH_FLOW_LIST_KEY); // 重新获取流水列表
+      await refreshCashFlows(); // 重新获取当前分页和统计
       await swrMutate('/api/accounts?page=1&pageSize=500'); // 重新获取账户列表，更新余额显示
       
       // 如果是广告充值，更新广告账户余额（包括返点）
@@ -357,7 +528,7 @@ export default function CashFlowPage() {
         throw new Error(error.error || '冲销失败');
       }
       
-      await swrMutate(CASH_FLOW_LIST_KEY); // 重新获取流水列表
+      await refreshCashFlows(); // 重新获取当前分页和统计
       await swrMutate('/api/accounts?page=1&pageSize=500'); // 重新获取账户列表，更新余额显示
       toast.success("冲销成功！已生成红字反冲记录。");
     } catch (error: any) {
@@ -391,7 +562,7 @@ export default function CashFlowPage() {
         const err = await res.json();
         throw new Error(err.error || "保存失败");
       }
-      await swrMutate(CASH_FLOW_LIST_KEY);
+      await refreshCashFlows();
       toast.success("凭证已保存");
       setSupplementVoucherFlow(null);
       setSupplementPaymentVoucher("");
@@ -559,101 +730,32 @@ export default function CashFlowPage() {
     });
   }, [cashFlowListRaw, filterCurrency, filterPaymentType, filterCategory, filterSubCategory, filterStatus, filterDateFrom, filterDateTo, filterYear, filterMonth, quickFilter, searchKeyword]);
 
-  const thisMonth = new Date().getMonth();
-  const thisYear = new Date().getFullYear();
-  const thisMonthFlow = cashFlowListRaw.filter((f) => {
-    const d = new Date(f.date);
-    return d.getMonth() === thisMonth && d.getFullYear() === thisYear && f.category !== "内部划拨" && f.category !== "换汇";
-  });
-  // 本月支出净值（含冲销，支出为负、冲销为正，相加后取绝对值）
-  const thisMonthExpense = Math.abs(thisMonthFlow.filter((f) => f.type === "expense").reduce((sum, f) => sum + Number(f.amount), 0));
-
-  // 按货币统计当月总收入，并折算成人民币
-  const thisMonthIncomeByCurrency = useMemo(() => {
-    const incomeFlows = thisMonthFlow.filter((f) => f.type === "income");
-    const stats: Record<string, { original: number; rmb: number; currency: string }> = {};
-    
-    incomeFlows.forEach((flow) => {
-      const curr = flow.currency;
-      const amount = Number(flow.amount); // 带符号，冲销为负会抵减
-      
-      if (!stats[curr]) {
-        stats[curr] = { original: 0, rmb: 0, currency: curr };
-      }
-      
-      stats[curr].original += amount;
-      
-      const account = accounts.find((a) => a.id === flow.accountId);
-      const flowRate = Number(flow.exchangeRate); const exchangeRate = (flowRate && flowRate > 0 && flowRate !== 1) ? flowRate : (account?.exchangeRate || (curr === "RMB" ? 1 : 7.25));
-      stats[curr].rmb += curr === "RMB" ? amount : amount * exchangeRate;
-    });
-    
-    return Object.values(stats).filter((stat) => stat.original > 0);
-  }, [thisMonthFlow, accounts]);
-
-  // 计算总收入（人民币）
-  const thisMonthIncomeRMB = useMemo(() => {
-    return thisMonthIncomeByCurrency.reduce((sum, stat) => sum + stat.rmb, 0);
-  }, [thisMonthIncomeByCurrency]);
-
-  // 基于筛选后数据的统计（按货币分组，含冲销按净值）
-  const filteredStats = useMemo(() => {
-    const income = sortedFlow.filter(f => f.type === "income");
-    const expense = sortedFlow.filter(f => f.type === "expense");
-    
-    const incomeByCurrency: Record<string, { original: number; rmb: number }> = {};
-    income.forEach((f) => {
-      const curr = f.currency || "RMB";
-      const amount = Number(f.amount);
-      const account = accounts.find(a => a.id === f.accountId);
-      const flowRate = Number(f.exchangeRate); const exchangeRate = (flowRate && flowRate > 0 && flowRate !== 1) ? flowRate : (account?.exchangeRate || (curr === "RMB" ? 1 : 7.25));
-      
-      if (!incomeByCurrency[curr]) {
-        incomeByCurrency[curr] = { original: 0, rmb: 0 };
-      }
-      incomeByCurrency[curr].original += amount;
-      incomeByCurrency[curr].rmb += curr === "RMB" ? amount : amount * exchangeRate;
-    });
-    
-    // 按货币统计支出
-    const expenseByCurrency: Record<string, { original: number; rmb: number }> = {};
-    expense.forEach((f) => {
-      const curr = f.currency || "RMB";
-      const amount = Number(f.amount); // 支出为负，冲销为正，相加为净值
-      const account = accounts.find(a => a.id === f.accountId);
-      const flowRate = Number(f.exchangeRate); const exchangeRate = (flowRate && flowRate > 0 && flowRate !== 1) ? flowRate : (account?.exchangeRate || (curr === "RMB" ? 1 : 7.25));
-      
-      if (!expenseByCurrency[curr]) {
-        expenseByCurrency[curr] = { original: 0, rmb: 0 };
-      }
-      expenseByCurrency[curr].original += amount;
-      expenseByCurrency[curr].rmb += curr === "RMB" ? amount : amount * exchangeRate;
-    });
-    
-    const totalIncome = Object.values(incomeByCurrency).reduce((sum, stat) => sum + stat.rmb, 0);
-    // 支出在系统中为负数，totalExpense 为负值（如 -4500）；净收入 = 总收入 + totalExpense = 总收入 - 支出绝对值
-    const totalExpense = Object.values(expenseByCurrency).reduce((sum, stat) => sum + stat.rmb, 0);
-    
-    return {
-      totalIncome,
-      totalExpense,
-      netIncome: totalIncome + totalExpense,
-      transactionCount: sortedFlow.length,
-      incomeCount: income.length,
-      expenseCount: expense.length,
-      incomeByCurrency,
-      expenseByCurrency
-    };
-  }, [sortedFlow, accounts]);
+  const filteredStats = cashFlowData?.summary || EMPTY_SUMMARY;
+  const monthSummary = cashFlowData?.monthSummary || EMPTY_SUMMARY;
+  const thisMonthIncomeByCurrency = Object.entries(monthSummary.incomeByCurrency)
+    .map(([currencyCode, value]) => ({ ...value, currency: currencyCode }))
+    .filter((value) => value.original > 0);
+  const thisMonthIncomeRMB = monthSummary.totalIncome;
 
   // 数据导出功能
-  const handleExportData = () => {
-    if (sortedFlow.length === 0) {
+  const handleExportData = async () => {
+    let exportFlows: CashFlow[] = [];
+    try {
+      const query = new URLSearchParams(cashFlowFilterParams);
+      query.set("page", "1");
+      query.set("pageSize", "10000");
+      const response = await fetcher(`/api/cash-flow?${query.toString()}`) as CashFlowListResponse;
+      exportFlows = response.data || [];
+    } catch (error: any) {
+      toast.error(error?.message || "导出数据读取失败");
+      return;
+    }
+    if (exportFlows.length === 0) {
       toast.error("没有数据可导出");
       return;
     }
 
-    const csvData = sortedFlow.map((flow) => {
+    const csvData = exportFlows.map((flow) => {
       const account = accounts.find(a => a.id === flow.accountId);
       return {
         业务ID: flow.uid || flow.id,
@@ -742,7 +844,7 @@ export default function CashFlowPage() {
       toast.success(`已删除 ${result.deletedCount} 条流水记录，账户余额已重置为初始资金`);
       
       // 刷新数据
-      swrMutate(CASH_FLOW_LIST_KEY);
+      refreshCashFlows();
       swrMutate('/api/accounts?page=1&pageSize=500');
     } catch (error: any) {
       console.error('Failed to clear cash flows:', error);
@@ -1337,7 +1439,7 @@ export default function CashFlowPage() {
                   </td>
                 </tr>
               )}
-              {paginate(sortedFlow, pgPage, pgPageSize).map((flow) => (
+              {sortedFlow.map((flow) => (
                 <tr
                   key={flow.id}
                   className={`hover:bg-slate-800/40 ${flow.isReversal ? "opacity-60 bg-rose-500/5" : ""}`}
@@ -1379,7 +1481,7 @@ export default function CashFlowPage() {
                             const err = await res.json().catch(() => ({}));
                             throw new Error(err.error || "失败");
                           }
-                          swrMutate(CASH_FLOW_LIST_KEY);
+                          refreshCashFlows();
                           toast.success("平台已更新");
                         } catch (e: any) {
                           toast.error(e?.message || "更新平台失败");
@@ -1405,7 +1507,7 @@ export default function CashFlowPage() {
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ id: flow.id, storeId: val, storeName: store?.name || "" }),
                           });
-                          mutate("cash-flow");
+                          refreshCashFlows();
                         } catch {}
                       }}
                       className="w-full rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-xs text-slate-300 cursor-pointer hover:border-slate-500"
@@ -1456,21 +1558,11 @@ export default function CashFlowPage() {
                           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                             {flow.businessNumber && <span className="text-slate-500">单号:</span>}
                               <button
-                                onClick={() => {
-                                  const related = cashFlowListRaw.filter(f => f.businessNumber === flow.businessNumber);
-                                  if (related.length > 1) {
-                                    setRelatedFlows({ open: true, businessNumber: flow.businessNumber, flows: related });
-                                  } else {
-                                    toast.info("该单号下只有当前这笔流水");
-                                  }
-                                }}
+                                onClick={() => flow.businessNumber && handleOpenRelatedFlows(flow.businessNumber)}
                                 className="text-primary-400 hover:text-primary-300 underline cursor-pointer"
                                 title="点击查看关联流水（同合同/合并打款）"
                               >
                                 {flow.businessNumber}
-                                {flow.businessNumber && cashFlowListRaw.filter(f => f.businessNumber === flow.businessNumber).length > 1 && (
-                                  <span className="ml-1 text-amber-400">({cashFlowListRaw.filter(f => f.businessNumber === flow.businessNumber).length}笔)</span>
-                                )}
                               </button>
                               {editBN === flow.id ? (
                                 <span className="flex items-center gap-0.5 ml-1">
@@ -1494,7 +1586,7 @@ export default function CashFlowPage() {
                                             body: JSON.stringify({ businessNumber: val || null }),
                                           });
                                           toast.success(val ? "单号已更新" : "单号已清除");
-                                          swrMutate("/api/cash-flow?page=1&pageSize=2000");
+                                          refreshCashFlows();
                                         } catch { toast.error("更新失败"); }
                                       }
                                       setEditBN(null);
@@ -1590,72 +1682,28 @@ export default function CashFlowPage() {
                     {flow.remark && flow.remark !== flow.summary ? flow.remark : "-"}
                   </td>
                   <td className="px-2 py-1.5 text-center">
-                    {(() => {
-                      const rawPay = flow.paymentVoucher;
-                      const payV = typeof rawPay === "string" && rawPay.trim() && rawPay !== "null" ? rawPay.trim() : "";
-                      let payData: string | string[] | null = null;
-                      if (payV) {
-                        try {
-                          const p = JSON.parse(payV);
-                          payData = Array.isArray(p) ? p : typeof p === "string" ? p : payV;
-                        } catch {
-                          payData = payV;
-                        }
-                      }
-                      const hasPay = payData && (typeof payData === "string" ? payData.length > 10 : payData.length > 0);
-                      if (hasPay) {
-                        const count = Array.isArray(payData) ? payData.length : 1;
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setVoucherViewModal(JSON.stringify(payData));
-                              setVoucherRotation(0); setVoucherViewLabel("发起付款凭证");
-                              setCurrentVoucherIndex(0);
-                            }}
-                            className="px-2 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-xs text-amber-200 hover:bg-amber-500/20 transition"
-                            title={`发起付款凭证 ${count}张`}
-                          >
-                            {count > 1 ? `${count}张` : "查看"}
-                          </button>
-                        );
-                      }
-                      return <span className="text-slate-500 text-xs">-</span>;
-                    })()}
+                    {flow.hasPaymentVoucher ? (
+                      <button
+                        type="button"
+                        disabled={voucherLoadingKey === `${flow.id}:payment`}
+                        onClick={() => handleViewVoucher(flow.id, "payment")}
+                        className="px-2 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-xs text-amber-200 hover:bg-amber-500/20 transition disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {voucherLoadingKey === `${flow.id}:payment` ? "加载中" : "查看"}
+                      </button>
+                    ) : <span className="text-slate-500 text-xs">-</span>}
                   </td>
                   <td className="px-2 py-1.5 text-center">
-                    {(() => {
-                      const rawTr = flow.transferVoucher;
-                      const trV = typeof rawTr === "string" && rawTr.trim() && rawTr !== "null" ? rawTr.trim() : "";
-                      let trData: string | string[] | null = null;
-                      if (trV) {
-                        try {
-                          const p = JSON.parse(trV);
-                          trData = Array.isArray(p) ? p : typeof p === "string" ? p : trV;
-                        } catch {
-                          trData = trV;
-                        }
-                      }
-                      const hasTr = trData && (typeof trData === "string" ? trData.length > 10 : trData.length > 0);
-                      if (hasTr) {
-                        const count = Array.isArray(trData) ? trData.length : 1;
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setVoucherViewModal(JSON.stringify(trData));
-                              setVoucherRotation(0); setVoucherViewLabel("转账成功凭证");
-                              setCurrentVoucherIndex(0);
-                            }}
-                            className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-200 hover:bg-emerald-500/20 transition"
-                            title={`转账成功凭证 ${count}张`}
-                          >
-                            {count > 1 ? `${count}张` : "查看"}
-                          </button>
-                        );
-                      }
-                      return <span className="text-slate-500 text-xs">-</span>;
-                    })()}
+                    {flow.hasTransferVoucher ? (
+                      <button
+                        type="button"
+                        disabled={voucherLoadingKey === `${flow.id}:transfer`}
+                        onClick={() => handleViewVoucher(flow.id, "transfer")}
+                        className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-200 hover:bg-emerald-500/20 transition disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {voucherLoadingKey === `${flow.id}:transfer` ? "加载中" : "查看"}
+                      </button>
+                    ) : <span className="text-slate-500 text-xs">-</span>}
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-1 items-center">
@@ -1689,7 +1737,14 @@ export default function CashFlowPage() {
               ))}
             </tbody>
           </table>
-          <Pagination total={sortedFlow.length} page={pgPage} pageSize={pgPageSize} onPageChange={setPgPage} onPageSizeChange={setPgPageSize} />
+          <Pagination
+            total={cashFlowData?.pagination.total || 0}
+            page={pgPage}
+            pageSize={pgPageSize}
+            onPageChange={setPgPage}
+            onPageSizeChange={setPgPageSize}
+            showAllOption={false}
+          />
         </div>
       </section>
 
