@@ -11,7 +11,7 @@ import {
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
-import { Truck, Search, X, Download, Eye, Package, PackageCheck, Wallet } from "lucide-react";
+import { Truck, Search, X, Download, Eye, Package, PackageCheck, ReceiptText, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
@@ -726,6 +726,14 @@ export default function DeliveryOrdersPage() {
                       <td className="px-4 py-3 text-slate-400 text-xs">{formatDate(order.createdAt)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <Link
+                            href={`/finance/export-tax?deliveryOrderId=${encodeURIComponent(order.id)}`}
+                            className="inline-flex items-center gap-1 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 transition-colors whitespace-nowrap"
+                            title="选择本拿货单的货品发起出口申报、开票和退税"
+                          >
+                            <ReceiptText className="h-3 w-3" />
+                            出口退税
+                          </Link>
                           {canInbound(order.status) && (
                             <button
                               type="button"
