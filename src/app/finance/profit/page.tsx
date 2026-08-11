@@ -47,6 +47,17 @@ import type { ProfitComponentAmount } from "@/lib/profit-schemes";
 
 type DetailTab = "period" | "store" | "sku" | "coverage";
 type CostComponentDraft = { variantId: string; quantity: number };
+type DailyOrderSelection = Pick<ProfitMetricRow, "label" | "startDate">;
+type ProfitOrderSearchResult = {
+  orderId: string;
+  shopId: string;
+  shopName: string;
+  countryCode: string;
+  businessDate: string | null;
+  createTime: string | null;
+  status: string;
+  currency: string | null;
+};
 
 const fetcher = async (url: string): Promise<ProfitReportResponse> => {
   const response = await fetch(url);
@@ -323,14 +334,16 @@ function DailyOrdersDialog({
   day,
   selectedCountryCode,
   selectedShopId,
+  initialSearch = "",
   onClose,
 }: {
-  day: ProfitMetricRow;
+  day: DailyOrderSelection;
   selectedCountryCode: string;
   selectedShopId: string;
+  initialSearch?: string;
   onClose: () => void;
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [detailShopId, setDetailShopId] = useState("all");
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -503,7 +516,11 @@ export default function ProfitPage() {
   const [shopId, setShopId] = useState("all");
   const [tab, setTab] = useState<DetailTab>("period");
   const [skuSearch, setSkuSearch] = useState("");
-  const [selectedDailyPeriod, setSelectedDailyPeriod] = useState<ProfitMetricRow | null>(null);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderSearchResults, setOrderSearchResults] = useState<ProfitOrderSearchResult[] | null>(null);
+  const [isOrderSearching, setIsOrderSearching] = useState(false);
+  const [selectedOrderSearch, setSelectedOrderSearch] = useState("");
+  const [selectedDailyPeriod, setSelectedDailyPeriod] = useState<DailyOrderSelection | null>(null);
   const [mappingSku, setMappingSku] = useState<ProfitSkuRow | null>(null);
   const [mappingComponents, setMappingComponents] = useState<CostComponentDraft[]>([]);
   const [isMappingSaving, setIsMappingSaving] = useState(false);
@@ -555,6 +572,48 @@ export default function ProfitPage() {
   const setPreset = (days: number) => {
     setEndDate(today);
     setStartDate(addDays(today, 1 - days));
+  };
+
+  const openSearchedOrder = (result: ProfitOrderSearchResult) => {
+    if (!result.businessDate) {
+      toast.error("该订单缺少下单时间，暂时无法打开利润明细");
+      return;
+    }
+    setSelectedOrderSearch(result.orderId);
+    setSelectedDailyPeriod({
+      label: `${result.businessDate.slice(5, 7)}月${result.businessDate.slice(8, 10)}日`,
+      startDate: result.businessDate,
+    });
+    setOrderSearchResults(null);
+  };
+
+  const searchProfitOrders = async () => {
+    const keyword = orderSearch.trim();
+    if (keyword.length < 4) {
+      toast.error("订单号至少输入 4 位");
+      return;
+    }
+    setIsOrderSearching(true);
+    try {
+      const params = new URLSearchParams({ q: keyword });
+      if (countryCode !== "all") params.set("countryCode", countryCode);
+      if (shopId !== "all") params.set("shopId", shopId);
+      const response = await fetch(`/api/profit-order-search?${params.toString()}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "订单搜索失败");
+      const results = (body?.results || []) as ProfitOrderSearchResult[];
+      const exact = results.find((result) => result.orderId === keyword);
+      if (exact) {
+        openSearchedOrder(exact);
+      } else {
+        setOrderSearchResults(results);
+      }
+    } catch (searchError: any) {
+      toast.error(searchError?.message || "订单搜索失败");
+      setOrderSearchResults(null);
+    } finally {
+      setIsOrderSearching(false);
+    }
   };
 
   const openCostMapping = (row: ProfitSkuRow) => {
@@ -662,27 +721,62 @@ export default function ProfitPage() {
             {data?.generatedAt && <span>更新 {new Date(data.generatedAt).toLocaleString("zh-CN", { hour12: false })}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/advertising/influencer-costs" title="达人营销核算" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><Users className="h-4 w-4" /></Link>
-          <Link href="/finance/profit/settings" title="成本规则" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><Settings2 className="h-4 w-4" /></Link>
-          <button
-            type="button"
-            onClick={() => mutate()}
-            disabled={isValidating}
-            title="刷新报表"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:items-center">
+          <form
+            className="relative w-full sm:w-80"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void searchProfitOrders();
+            }}
           >
-            <RefreshCw className={`h-4 w-4 ${isValidating ? "animate-spin" : ""}`} />
-          </button>
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={!data || tab === "coverage"}
-            title="导出当前明细"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
-          >
-            <Download className="h-4 w-4" />
-          </button>
+            <input
+              value={orderSearch}
+              onChange={(event) => {
+                setOrderSearch(event.target.value);
+                setOrderSearchResults(null);
+              }}
+              placeholder="搜索订单号"
+              aria-label="搜索利润订单"
+              className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 pl-3 pr-10 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-emerald-500"
+            />
+            <button type="submit" disabled={isOrderSearching} title="搜索订单" className="absolute right-0 top-0 inline-flex h-9 w-9 items-center justify-center text-slate-400 hover:text-emerald-300 disabled:opacity-50">
+              {isOrderSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            </button>
+            {orderSearchResults && (
+              <div className="absolute right-0 top-11 z-40 max-h-80 w-full overflow-y-auto rounded-md border border-slate-700 bg-slate-950 py-1 shadow-2xl">
+                {orderSearchResults.length === 0 ? (
+                  <div className="px-3 py-5 text-center text-sm text-slate-500">没有找到匹配的订单</div>
+                ) : orderSearchResults.map((result) => (
+                  <button key={result.orderId} type="button" onClick={() => openSearchedOrder(result)} className="flex w-full items-center justify-between gap-3 border-b border-slate-800 px-3 py-2.5 text-left last:border-b-0 hover:bg-slate-900">
+                    <span className="min-w-0"><span className="block truncate text-sm font-medium text-slate-200">{result.orderId}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{result.shopName} · {result.businessDate || "日期缺失"}</span></span>
+                    <span className="shrink-0 text-[11px] text-slate-500">{orderStatusLabel(result.status)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </form>
+          <div className="flex items-center gap-2">
+            <Link href="/advertising/influencer-costs" title="达人营销核算" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><Users className="h-4 w-4" /></Link>
+            <Link href="/finance/profit/settings" title="成本规则" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"><Settings2 className="h-4 w-4" /></Link>
+            <button
+              type="button"
+              onClick={() => mutate()}
+              disabled={isValidating}
+              title="刷新报表"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${isValidating ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={!data || tab === "coverage"}
+              title="导出当前明细"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -878,7 +972,7 @@ export default function ProfitPage() {
                       <tr key={row.id} className="border-b border-slate-900 hover:bg-slate-900/60">
                         <td className="px-3 py-2.5 text-slate-200">
                           {groupBy === "day" ? (
-                            <button type="button" onClick={() => setSelectedDailyPeriod(row)} title="查看当天所有订单" className="group flex w-full items-center justify-between gap-3 text-left">
+                            <button type="button" onClick={() => { setSelectedOrderSearch(""); setSelectedDailyPeriod(row); }} title="查看当天所有订单" className="group flex w-full items-center justify-between gap-3 text-left">
                               <span><span className="block font-medium group-hover:text-emerald-300">{row.label}</span><span className="text-xs text-slate-600">取消 {row.cancelledOrders}</span></span>
                               <ChevronRight className="h-4 w-4 shrink-0 text-slate-600 group-hover:text-emerald-400" />
                             </button>
@@ -948,10 +1042,15 @@ export default function ProfitPage() {
 
       {selectedDailyPeriod && (
         <DailyOrdersDialog
+          key={`${selectedDailyPeriod.startDate}-${selectedOrderSearch}`}
           day={selectedDailyPeriod}
           selectedCountryCode={countryCode}
           selectedShopId={shopId}
-          onClose={() => setSelectedDailyPeriod(null)}
+          initialSearch={selectedOrderSearch}
+          onClose={() => {
+            setSelectedDailyPeriod(null);
+            setSelectedOrderSearch("");
+          }}
         />
       )}
 
