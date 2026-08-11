@@ -84,6 +84,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "月账单管理", href: "/finance/monthly-bills" },
       { label: "对账中心", href: "/finance/reconciliation" },
       { label: "流水明细", href: "/finance/cash-flow" },
+      { label: "出口退税管理", href: "/finance/export-tax" },
       { label: "精细利润核算", href: "/finance/profit" },
       { label: "账户列表", href: "/finance/accounts" },
       { label: "内部划拨", href: "/finance/transfer" },

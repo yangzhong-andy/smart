@@ -504,6 +504,91 @@ model DeliveryOrder {
   contract               PurchaseContract    @relation(fields: [contractId], references: [id])
   inventoryLogs          InventoryLog[]
   pendingInbound         PendingInbound?
+  exportTaxCases         ExportTaxCase[]
+}
+
+model ExportTaxCase {
+  id                       String              @id @default(uuid())
+  caseNumber               String              @unique
+  deliveryOrderId          String
+  deliveryNumber           String
+  contractId               String
+  contractNumber           String
+  supplierId               String?
+  supplierName             String
+  exporterId               String?
+  exporterName             String?
+  destinationCountry       String?
+  status                   String              @default("DRAFT")
+  declarationCurrency      String              @default("CNY")
+  declarationAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  customsDeclarationNumber String?
+  declarationDate          DateTime?
+  declarationVouchers      Json?
+  invoiceStatus            String              @default("PENDING")
+  invoiceCurrency          String              @default("CNY")
+  invoiceAmount            Decimal             @default(0) @db.Decimal(18, 2)
+  invoiceNumber            String?
+  invoiceDate              DateTime?
+  invoiceReceivedDate      DateTime?
+  invoiceVouchers          Json?
+  taxPointStatus           String              @default("PENDING")
+  taxPointRate             Decimal?            @db.Decimal(8, 4)
+  taxPointAmount           Decimal             @default(0) @db.Decimal(18, 2)
+  taxPointPaidAmount       Decimal             @default(0) @db.Decimal(18, 2)
+  taxPointPaidDate         DateTime?
+  taxPointVouchers         Json?
+  refundStatus             String              @default("PENDING")
+  refundCurrency           String              @default("CNY")
+  refundRate               Decimal?            @db.Decimal(8, 4)
+  refundClaimAmount        Decimal             @default(0) @db.Decimal(18, 2)
+  refundReceivedAmount     Decimal             @default(0) @db.Decimal(18, 2)
+  refundApplicationDate    DateTime?
+  refundReceivedDate       DateTime?
+  refundVouchers           Json?
+  notes                    String?
+  createdBy                String              @default("系统")
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  deliveryOrder            DeliveryOrder       @relation(fields: [deliveryOrderId], references: [id])
+  items                    ExportTaxCaseItem[]
+
+  @@index([deliveryOrderId])
+  @@index([contractId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([declarationDate])
+  @@index([createdAt])
+}
+
+model ExportTaxCaseItem {
+  id                    String        @id @default(uuid())
+  caseId                String
+  contractItemId        String
+  sku                   String
+  skuName               String?
+  spec                  String?
+  qty                   Int
+  needsInvoice          Boolean       @default(true)
+  needsTaxRefund        Boolean       @default(true)
+  purchaseUnitPrice     Decimal       @default(0) @db.Decimal(18, 4)
+  purchaseAmount        Decimal       @default(0) @db.Decimal(18, 2)
+  declarationUnitPrice  Decimal       @default(0) @db.Decimal(18, 4)
+  declarationAmount     Decimal       @default(0) @db.Decimal(18, 2)
+  invoiceUnitPrice      Decimal?      @db.Decimal(18, 4)
+  invoiceAmount         Decimal       @default(0) @db.Decimal(18, 2)
+  taxRate               Decimal?      @db.Decimal(8, 4)
+  refundRate            Decimal?      @db.Decimal(8, 4)
+  estimatedRefundAmount Decimal       @default(0) @db.Decimal(18, 2)
+  hsCode                String?
+  customsName           String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  exportTaxCase         ExportTaxCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([contractItemId])
+  @@index([sku])
 }
 
 model PendingInbound {
