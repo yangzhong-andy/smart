@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import {
-  getExpenseRequests,
+  getActiveTailExpenseRequests,
   findActiveTailExpenseRequestForDeliveryOrder,
-  type ExpenseRequest,
+  type TailExpenseRequest,
 } from "@/lib/expense-income-request-store";
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
@@ -74,12 +74,12 @@ export default function DeliveryOrdersPage() {
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
   /** 用于判断尾款是否已发起付款申请（与采购合同页逻辑一致） */
-  const { data: expenseRequestsData, isLoading: expenseRequestsLoading } = useSWR(
+  const { data: expenseRequestsData, isLoading: expenseRequestsLoading } = useSWR<TailExpenseRequest[]>(
     "procurement-delivery-expense-requests",
-    () => getExpenseRequests(false),
+    getActiveTailExpenseRequests,
     { revalidateOnFocus: true, dedupingInterval: 30000, revalidateIfStale: false }
   );
-  const expenseRequests: ExpenseRequest[] = Array.isArray(expenseRequestsData) ? expenseRequestsData : [];
+  const expenseRequests: TailExpenseRequest[] = Array.isArray(expenseRequestsData) ? expenseRequestsData : [];
   const deliveryOrders = (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[];
   const contracts = (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[];
   const warehouses = (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[];

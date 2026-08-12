@@ -18,9 +18,34 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const storeId = searchParams.get("storeId");
     const departmentId = searchParams.get("departmentId");
+    const compact = searchParams.get("compact");
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "20");
     const noCache = searchParams.get("noCache") === "true";
+
+    // Procurement pages only need to know whether a delivery order already
+    // has an active tail-payment request. Keep this response deliberately
+    // small: do not load vouchers, remarks, payee details, or amounts.
+    if (compact === "tail-status") {
+      const activeStatuses = ["Pending_Approval", "Approved", "Paid"];
+      const rows = await prisma.expenseRequest.findMany({
+        where: {
+          relatedId: { not: null },
+          status: { in: activeStatuses },
+          OR: [
+            { category: "采购/采购尾款" },
+            { summary: { contains: "采购尾款" } },
+          ],
+        },
+        select: { id: true, relatedId: true, status: true, summary: true },
+        orderBy: { createdAt: "desc" },
+        take: Math.min(Math.max(pageSize, 1), 1000),
+      });
+      return NextResponse.json({
+        data: rows,
+        pagination: { page: 1, pageSize: rows.length, total: rows.length, totalPages: 1 },
+      });
+    }
 
     // 生成缓存键
     const cacheKey = generateCacheKey(

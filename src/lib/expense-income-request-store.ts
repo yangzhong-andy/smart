@@ -65,6 +65,8 @@ export type ExpenseRequest = {
   containerIds?: string[]; // 关联柜子ID列表（海外仓卸柜费）
 };
 
+export type TailExpenseRequest = Pick<ExpenseRequest, "id" | "relatedId" | "status" | "summary">;
+
 export type IncomeRequest = {
   id: string;
   uid?: string; // 全局唯一业务ID
@@ -115,6 +117,19 @@ export async function getExpenseRequests(noCache = false): Promise<ExpenseReques
     return Array.isArray(json) ? json : (json?.data ?? []);
   } catch (error) {
     console.error('Error fetching expense requests:', error);
+    return [];
+  }
+}
+
+/** Lightweight tail-payment status list for procurement tables. */
+export async function getActiveTailExpenseRequests(): Promise<TailExpenseRequest[]> {
+  try {
+    const response = await fetch("/api/expense-requests?compact=tail-status&pageSize=1000", fetchNoStore);
+    if (!response.ok) throw new Error("Failed to fetch tail-payment statuses");
+    const json = await response.json();
+    return Array.isArray(json) ? json : (json?.data ?? []);
+  } catch (error) {
+    console.error("Error fetching tail-payment statuses:", error);
     return [];
   }
 }
@@ -275,9 +290,9 @@ export async function updateIncomeRequest(id: string, updates: Partial<IncomeReq
  * 被退回（Rejected）或草稿不计入，可重新发起。
  */
 export function findActiveTailExpenseRequestForDeliveryOrder(
-  requests: ExpenseRequest[],
+  requests: TailExpenseRequest[],
   deliveryOrderId: string
-): ExpenseRequest | undefined {
+): TailExpenseRequest | undefined {
   return requests.find(
     (r) =>
       r.relatedId === deliveryOrderId &&
