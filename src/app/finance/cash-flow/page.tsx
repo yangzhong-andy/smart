@@ -227,6 +227,11 @@ export default function CashFlowPage() {
   const [supplementPaymentVoucher, setSupplementPaymentVoucher] = useState<string | string[]>("");
   const [supplementTransferVoucher, setSupplementTransferVoucher] = useState<string | string[]>("");
 
+  useEffect(() => {
+    const linkedSearch = new URLSearchParams(window.location.search).get("search")?.trim();
+    if (linkedSearch) setSearchKeyword(linkedSearch);
+  }, []);
+
   const dateRange = useMemo(() => activeDateRange({
     quickFilter,
     filterYear,
