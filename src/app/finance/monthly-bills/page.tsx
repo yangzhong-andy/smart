@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import useSWR, { mutate } from "swr";
 import { FileText, Plus, Search, Eye, TrendingUp, Zap, Wallet } from "lucide-react";
 import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui";
-import { getMonthlyBills, saveMonthlyBills, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { getMonthlyBills, saveMonthlyBills, getMonthlyBillPaymentAmount, getMonthlyBillSettledAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { procurementPaymentCoverageLabel } from "@/lib/procurement-payment-coverage";
 import { formatCurrency } from "@/lib/currency-utils";
 import Link from "next/link";
@@ -843,13 +843,23 @@ export default function MonthlyBillsPage() {
                     <td className="px-4 py-3 text-right font-medium">
                       {(() => {
                         if (bill.billType === "工厂订单") {
-                          // 工厂订单：显示已付和未付
+                          // 定金也是已付款的一部分，结清金额需包含尾款实付和定金抵扣。
                           const payable = getMonthlyBillPaymentAmount(bill);
-                          const paid = bill.actualPaidAmount ?? (bill.status === "Paid" ? Math.max(0, bill.totalAmount - (bill.offsetAmount || 0)) : 0);
+                          const paid = getMonthlyBillSettledAmount(bill);
                           const unpaid = bill.status === "Paid" ? 0 : payable;
                           return (
                             <div className="space-y-0.5">
                               <div className="text-emerald-300">{formatCurrency(paid, bill.currency, "expense")}</div>
+                              {(bill.actualPaidAmount || 0) > 0 && (
+                                <div className="text-[10px] text-emerald-400">
+                                  尾款实付 {formatCurrency(bill.actualPaidAmount || 0, bill.currency, "expense")}
+                                </div>
+                              )}
+                              {(bill.depositDeductionAmount || 0) > 0 && (
+                                <div className="text-[10px] text-cyan-300">
+                                  定金抵扣 {formatCurrency(bill.depositDeductionAmount || 0, bill.currency, "expense")}
+                                </div>
+                              )}
                               {unpaid > 0.01 && (
                                 <div className="text-rose-400 text-xs">{formatCurrency(unpaid, bill.currency, "expense")}</div>
                               )}

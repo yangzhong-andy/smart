@@ -81,6 +81,27 @@ export function getMonthlyBillPaymentAmount(
     : Number(bill.totalAmount || 0);
 }
 
+/** Amount already covered by cash payments and deposit deductions. */
+export function getMonthlyBillSettledAmount(
+  bill: Pick<
+    MonthlyBill,
+    "billType" | "status" | "totalAmount" | "offsetAmount" | "actualPaidAmount" | "depositDeductionAmount"
+  >
+): number {
+  if (bill.billType !== "工厂订单") {
+    return bill.status === "Paid" ? Number(bill.totalAmount || 0) : 0;
+  }
+
+  const actualPaid = Number(bill.actualPaidAmount || 0);
+  const depositDeduction = Number(bill.depositDeductionAmount || 0);
+  const covered = actualPaid + depositDeduction;
+  if (covered > 0) return Math.min(Number(bill.totalAmount || 0), covered);
+
+  return bill.status === "Paid"
+    ? Math.max(0, Number(bill.totalAmount || 0) - Number(bill.offsetAmount || 0))
+    : 0;
+}
+
 /**
  * 获取所有月账单
  */
