@@ -11,7 +11,7 @@ import {
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
-import { Truck, Search, X, Download, Eye, Package, PackageCheck, ReceiptText, Wallet } from "lucide-react";
+import { Truck, Search, X, Download, Eye, Package, PackageCheck, Receipt, ReceiptText, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
@@ -788,6 +788,16 @@ export default function DeliveryOrdersPage() {
                               已付款
                             </span>
                           )}
+                          {actualTailPaid > 0 ? (
+                            <Link
+                              href={`/finance/cash-flow?search=${encodeURIComponent(order.deliveryNumber)}`}
+                              className="inline-flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100 hover:bg-sky-500/20 transition-colors whitespace-nowrap"
+                              title="查看该拿货单关联的实际付款流水"
+                            >
+                              <Receipt className="h-3 w-3" />
+                              查看流水
+                            </Link>
+                          ) : null}
                           <Link
                             href={`/procurement/purchase-orders`}
                             className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"
