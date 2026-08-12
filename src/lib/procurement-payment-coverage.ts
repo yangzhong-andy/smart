@@ -143,3 +143,51 @@ export function calculateProcurementActualPaidAmount(
   );
   return paidCents / 100;
 }
+
+export type DeliveryOrderPaymentBreakdown = {
+  actualPaidAmount: number;
+  settlementCoverageAmount: number;
+  depositDeductionAmount: number;
+};
+
+export function calculateDeliveryOrderPaymentBreakdown(
+  deliveryOrderId: string,
+  deliveryNumber: string,
+  storedTailPaidAmount: unknown,
+  payableAmount: unknown,
+  requests: PurchasePaymentRequestSummary[],
+  depositPaidAmount: unknown,
+  isFinalDeliveryOrder: boolean,
+  currency = "CNY"
+): DeliveryOrderPaymentBreakdown {
+  const paidFromRequests =
+    calculateProcurementActualPaidAmount(
+      [deliveryOrderId],
+      [deliveryNumber],
+      requests,
+      currency
+    );
+  const actualPaidAmount = Math.max(
+    0,
+    paidFromRequests ?? (Number(storedTailPaidAmount) || 0)
+  );
+  const payable = Math.max(0, Number(payableAmount) || 0);
+  const depositDeductionAmount = isFinalDeliveryOrder
+    ? Math.min(
+        Math.max(0, payable - actualPaidAmount),
+        Math.max(0, Number(depositPaidAmount) || 0)
+      )
+    : 0;
+  const settlementCoverageAmount = Math.min(
+    payable,
+    actualPaidAmount + depositDeductionAmount
+  );
+
+  return {
+    actualPaidAmount,
+    settlementCoverageAmount:
+      Math.round(settlementCoverageAmount * 100) / 100,
+    depositDeductionAmount:
+      Math.round(depositDeductionAmount * 100) / 100,
+  };
+}

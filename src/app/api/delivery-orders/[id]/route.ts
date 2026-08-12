@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { autoGenerateSupplierBills } from '@/lib/auto-generate-bills';
 import { clearCacheByPrefix } from '@/lib/redis'
 import { DeliveryOrderStatus } from '@prisma/client'
+import { calculateDeliveryOrderPaymentBreakdown } from '@/lib/procurement-payment-coverage'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,7 @@ export async function GET(
   try {
     const order = await prisma.deliveryOrder.findUnique({
       where: { id: params.id },
-      include: { contract: true }
+      include: { contract: { include: { deliveryOrders: { select: { id: true, createdAt: true } } } } }
     })
 
     if (!order) {
@@ -43,6 +44,35 @@ export async function GET(
         { status: 404 }
       )
     }
+
+    const purchaseTailRequests = await prisma.expenseRequest.findMany({
+      where: {
+        status: 'Paid',
+        OR: [
+          { relatedId: order.id },
+          { summary: { contains: order.deliveryNumber } },
+        ],
+      },
+      select: {
+        id: true, relatedId: true, status: true, summary: true, category: true,
+        amount: true, currency: true, businessNumber: true,
+      },
+    })
+    const finalOrder = order.contract.pickedQty >= order.contract.totalQty
+      ? [...order.contract.deliveryOrders].sort((a, b) => {
+          const byTime = b.createdAt.getTime() - a.createdAt.getTime()
+          return byTime || b.id.localeCompare(a.id)
+        })[0]
+      : undefined
+    const payment = calculateDeliveryOrderPaymentBreakdown(
+      order.id,
+      order.deliveryNumber,
+      order.tailPaid,
+      order.tailAmount,
+      purchaseTailRequests.map((item) => ({ ...item, amount: Number(item.amount) })),
+      order.contract.depositPaid,
+      finalOrder?.id === order.id
+    )
 
     return NextResponse.json({
       id: order.id,
@@ -55,7 +85,10 @@ export async function GET(
       shippedDate: order.shippedDate?.toISOString() || undefined,
       status: STATUS_MAP_DB_TO_FRONT[order.status],
       tailAmount: Number(order.tailAmount),
-      tailPaid: Number(order.tailPaid),
+      tailPaid: payment.actualPaidAmount,
+      settlementCoverage: payment.settlementCoverageAmount,
+      actualTailPaid: payment.actualPaidAmount,
+      depositDeduction: payment.depositDeductionAmount,
       tailDueDate: order.tailDueDate?.toISOString() || undefined,
       createdAt: order.createdAt.toISOString(),
       updatedAt: order.updatedAt.toISOString()

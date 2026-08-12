@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildProcurementPaymentCoverage,
+  calculateDeliveryOrderPaymentBreakdown,
   calculateProcurementActualPaidAmount,
   extractDeliveryNumbers,
   parseRelatedIds,
@@ -97,5 +98,76 @@ test("unrelated and rejected requests do not block the bill", () => {
       },
     ]),
     undefined
+  );
+});
+
+test("delivery order payment breakdown separates actual payment from deposit deduction", () => {
+  const breakdown = calculateDeliveryOrderPaymentBreakdown(
+    "order-1",
+    "DO-1775542858881",
+    62382.4,
+    62382.4,
+    [
+      {
+        id: "request-1",
+        relatedId: null,
+        status: "Paid",
+        summary: "purchase tail - DO-1775542858881",
+        amount: 42382.4,
+        currency: "CNY",
+      },
+    ],
+    20000,
+    true
+  );
+
+  assert.deepEqual(breakdown, {
+    actualPaidAmount: 42382.4,
+    settlementCoverageAmount: 62382.4,
+    depositDeductionAmount: 20000,
+  });
+});
+
+test("delivery order payment breakdown does not invent a deduction above payable", () => {
+  const breakdown = calculateDeliveryOrderPaymentBreakdown(
+    "order-1",
+    "DO-1",
+    148749.96,
+    143787.2,
+    [
+      {
+        id: "request-1",
+        relatedId: "order-1",
+        status: "Paid",
+        summary: "purchase tail - DO-1",
+        amount: 143787.2,
+        currency: "CNY",
+      },
+    ],
+    20000,
+    false
+  );
+
+  assert.equal(breakdown.actualPaidAmount, 143787.2);
+  assert.equal(breakdown.depositDeductionAmount, 0);
+  assert.equal(breakdown.settlementCoverageAmount, 143787.2);
+});
+
+test("delivery order payment breakdown falls back to stored actual payment", () => {
+  assert.deepEqual(
+    calculateDeliveryOrderPaymentBreakdown(
+      "order-1",
+      "DO-1",
+      100,
+      120,
+      [],
+      20,
+      true
+    ),
+    {
+      actualPaidAmount: 100,
+      settlementCoverageAmount: 120,
+      depositDeductionAmount: 20,
+    }
   );
 });

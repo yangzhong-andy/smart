@@ -134,7 +134,7 @@ export default function DeliveryOrdersPage() {
       // 简单处理：直接用 tailAmount
       return sum + (o.tailAmount || 0);
     }, 0);
-    const totalTailPaid = deliveryOrders.reduce((sum, o) => sum + (o.tailPaid || 0), 0);
+    const totalTailPaid = deliveryOrders.reduce((sum, o) => sum + (o.actualTailPaid || o.tailPaid || 0), 0);
 
     return {
       totalCount,
@@ -238,7 +238,8 @@ export default function DeliveryOrdersPage() {
       "数量",
       "状态",
       "尾款金额",
-      "已付尾款",
+      "实际尾款付款",
+      "定金抵扣",
       "尾款到期日",
       "国内物流单号",
       "发货日期",
@@ -255,7 +256,8 @@ export default function DeliveryOrdersPage() {
         String(order.qty),
         order.status,
         String(formatCurrency(order.tailAmount || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
-        String(formatCurrency(order.tailPaid || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
+        String(formatCurrency(order.actualTailPaid || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
+        String(formatCurrency(order.depositDeduction || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
         order.tailDueDate || "-",
         order.domesticTrackingNumber || "-",
         order.shippedDate || "-",
@@ -324,7 +326,7 @@ export default function DeliveryOrdersPage() {
       return;
     }
     const displayTail = computeDeliveryOrderTailAmount(contract, order);
-    const tailRemaining = Math.max(0, displayTail - (Number(order.tailPaid) || 0));
+    const tailRemaining = Math.max(0, displayTail - (Number(order.settlementCoverage ?? order.tailPaid) || 0));
     const defaultAmt = Math.round(tailRemaining * 100) / 100;
     setPayTailAmountInput(defaultAmt > 0 ? String(defaultAmt) : "");
     setPayTailConfirmOrder(order);
@@ -336,11 +338,11 @@ export default function DeliveryOrdersPage() {
     const contract = contracts.find((c) => c.id === order.contractId);
     if (!contract) return null;
     const displayTail = computeDeliveryOrderTailAmount(contract, order);
-    const tailRemaining = Math.max(0, displayTail - (Number(order.tailPaid) || 0));
+    const tailRemaining = Math.max(0, displayTail - (Number(order.settlementCoverage ?? order.tailPaid) || 0));
     const othersUnpaidCount = deliveryOrders.filter((o) => {
       if (o.contractId !== contract.id || o.id === order.id) return false;
       const dt = computeDeliveryOrderTailAmount(contract, o);
-      return dt - (Number(o.tailPaid) || 0) > 1e-6;
+      return dt - (Number(o.settlementCoverage ?? o.tailPaid) || 0) > 1e-6;
     }).length;
     const depositPaid = Number(contract.depositPaid) || 0;
     const depositAmount = Number(contract.depositAmount) || 0;
@@ -573,7 +575,7 @@ export default function DeliveryOrdersPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">拿货数量（按变体）</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">状态</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">尾款金额</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">已付尾款</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">实际付款 / 定金抵扣</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">尾款到期日</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">物流单号</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">创建时间</th>
@@ -596,7 +598,10 @@ export default function DeliveryOrdersPage() {
                   const displayTailAmount = contract
                     ? computeDeliveryOrderTailAmount(contract, order)
                     : order.tailAmount;
-                  const isTailPaid = (order.tailPaid || 0) >= displayTailAmount;
+                  const settlementCoverage = Number(order.settlementCoverage ?? order.tailPaid) || 0;
+                  const isTailPaid = settlementCoverage >= displayTailAmount;
+                  const actualTailPaid = Number(order.actualTailPaid) || 0;
+                  const depositDeduction = Number(order.depositDeduction) || 0;
                   const activeTailReq = findActiveTailExpenseRequestForDeliveryOrder(expenseRequests, order.id);
 
                   return (
@@ -711,11 +716,16 @@ export default function DeliveryOrdersPage() {
                         <MoneyDisplay amount={displayTailAmount} currency="CNY" variant="highlight" />
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {isTailPaid ? (
-                          <span className="text-emerald-300">{formatCurrency(order.tailPaid, "CNY", "expense")}</span>
-                        ) : (
-                          <span className="text-amber-300">{formatCurrency(order.tailPaid || 0, "CNY", "expense")}</span>
-                        )}
+                        <div className="space-y-0.5 whitespace-nowrap">
+                          <div className={isTailPaid ? "text-emerald-300" : "text-amber-300"}>
+                            {formatCurrency(actualTailPaid, "CNY", "expense")}
+                          </div>
+                          {depositDeduction > 0 ? (
+                            <div className="text-xs text-cyan-300">
+                              抵扣 {formatCurrency(depositDeduction, "CNY", "expense")}
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-400 text-xs">
                         {order.tailDueDate ? formatDate(order.tailDueDate) : "-"}
@@ -1011,8 +1021,8 @@ export default function DeliveryOrdersPage() {
                   </span>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <span className="text-slate-400">本单已付尾款</span>
-                  <span>{formatCurrency(payTailDialogInfo.order.tailPaid || 0, "CNY", "expense")}</span>
+                  <span className="text-slate-400">本单实际尾款付款</span>
+                  <span>{formatCurrency(payTailDialogInfo.order.actualTailPaid || 0, "CNY", "expense")}</span>
                 </div>
                 <div className="flex justify-between gap-2 border-t border-slate-700/80 pt-1.5">
                   <span className="text-slate-400">本单剩余应付</span>

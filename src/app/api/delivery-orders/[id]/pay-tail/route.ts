@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST - 财务工作台对「采购尾款」支出申请执行付款后，同步更新拿货单已付尾款与合同已付总额
- * body: { amount: number }
+ * body: { expenseRequestId: string }
  */
 export async function POST(
   request: NextRequest,
@@ -24,9 +24,9 @@ export async function POST(
 
     const { id: deliveryOrderId } = await params;
     const body = await request.json();
-    const amount = Number(body?.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ error: "金额无效" }, { status: 400 });
+    const expenseRequestId = String(body?.expenseRequestId || "").trim();
+    if (!expenseRequestId) {
+      return NextResponse.json({ error: "缺少付款申请编号" }, { status: 400 });
     }
 
     const order = await prisma.deliveryOrder.findUnique({
@@ -37,9 +37,58 @@ export async function POST(
       return NextResponse.json({ error: "拿货单不存在" }, { status: 404 });
     }
 
-    const newTailPaid = Number(order.tailPaid) + amount;
+    const paidRequest = await prisma.expenseRequest.findUnique({
+      where: { id: expenseRequestId },
+      select: { id: true, relatedId: true, status: true, category: true, summary: true },
+    });
+    const isPaidPurchaseTail = Boolean(
+      paidRequest &&
+      paidRequest.status === "Paid" &&
+      paidRequest.relatedId === deliveryOrderId &&
+      (paidRequest.category === "采购/采购尾款" || paidRequest.summary.includes("采购尾款"))
+    );
+    if (!isPaidPurchaseTail) {
+      return NextResponse.json({ error: "付款申请未支付或未关联该拿货单" }, { status: 409 });
+    }
+
+    const paidRequests = await prisma.expenseRequest.findMany({
+      where: {
+        status: "Paid",
+        currency: "CNY",
+        AND: [
+          {
+            OR: [
+              { category: "采购/采购尾款" },
+              { summary: { contains: "采购尾款" } },
+            ],
+          },
+          {
+            OR: [
+              { relatedId: deliveryOrderId },
+              { summary: { contains: order.deliveryNumber } },
+            ],
+          },
+        ],
+      },
+      select: { amount: true },
+    });
+    const newTailPaid = paidRequests.reduce(
+      (sum, item) => sum + Math.round(Math.abs(Number(item.amount)) * 100),
+      0
+    ) / 100;
     const contract = order.contract;
-    const newTotalPaid = Number(contract.totalPaid) + amount;
+    const contractOrders = await prisma.deliveryOrder.findMany({
+      where: { contractId: contract.id },
+      select: { id: true, tailPaid: true },
+    });
+    const actualContractTailPaid = contractOrders.reduce(
+      (sum, item) =>
+        sum + Math.round(
+          (item.id === deliveryOrderId ? newTailPaid : Number(item.tailPaid)) * 100
+        ),
+      0
+    ) / 100;
+    const newTotalPaid = Number(contract.depositPaid) + actualContractTailPaid;
     const totalAmount = Number(contract.totalAmount);
     const newStatus =
       newTotalPaid >= totalAmount
@@ -76,6 +125,7 @@ export async function POST(
       contractId: order.contractId,
       tailPaid: newTailPaid,
       totalPaid: newTotalPaid,
+      idempotent: Math.abs(newTailPaid - Number(order.tailPaid)) < 0.005,
     });
   } catch (e) {
     console.error("pay-tail error:", e);

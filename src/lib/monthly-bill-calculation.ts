@@ -16,6 +16,8 @@ export type SupplierBillOrder = {
   qty: number;
   tailAmount: unknown;
   tailPaid: unknown;
+  depositDeduction?: unknown;
+  settlementCoverage?: unknown;
   tailDueDate: Date | string | null;
   createdAt: Date | string;
   status?: string | null;
@@ -111,6 +113,10 @@ export function calculateSupplierBillGroups(
 
     const grossCents = Math.max(0, toCents(order.tailAmount));
     const paidCents = Math.max(0, Math.min(grossCents, toCents(order.tailPaid)));
+    const explicitDepositCents = Math.max(
+      0,
+      Math.min(grossCents - paidCents, toCents(order.depositDeduction))
+    );
     group.orderIds.push(order.id);
     group.orderCount += 1;
     group.quantity += Math.max(0, Number(order.qty) || 0);
@@ -123,7 +129,9 @@ export function calculateSupplierBillGroups(
       tailPaidAmount: fromCents(paidCents),
     });
 
-    if (finalOrderByContract.get(order.contractId)?.id === order.id) {
+    if (explicitDepositCents > 0) {
+      group.depositCents += explicitDepositCents;
+    } else if (finalOrderByContract.get(order.contractId)?.id === order.id) {
       const orderUnpaidCents = Math.max(0, grossCents - paidCents);
       group.depositCents += Math.min(
         orderUnpaidCents,

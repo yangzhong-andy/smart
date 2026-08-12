@@ -30,7 +30,7 @@ type RebateReceivableLike = {
   writeoffRecords: Array<{ id: string; consumptionDate?: string; writeoffAmount: number; remainingBalance: number; createdAt: string }>;
   adjustments: Array<{ id: string; amount: number; reason: string; adjustedBy: string; adjustedAt: string; balanceBefore: number; balanceAfter: number }>;
 };
-type DeliveryOrderLike = { id: string; deliveryNumber?: string; contractId?: string; qty?: number; shippedDate?: string; createdAt?: string; tailAmount?: number; tailPaid?: number; status?: string };
+type DeliveryOrderLike = { id: string; deliveryNumber?: string; contractId?: string; qty?: number; shippedDate?: string; createdAt?: string; tailAmount?: number; tailPaid?: number; actualTailPaid?: number; depositDeduction?: number; settlementCoverage?: number; status?: string };
 type PurchaseContractLike = { id: string; contractNumber?: string; supplierId?: string; sku?: string };
 
 interface ReconciliationDetailDialogProps {
@@ -298,7 +298,7 @@ export function ReconciliationDetailDialog({
               ordersByContract.get(contract.id)!.orders.push(order);
             });
             const totalTailAmount = supplierDeliveryOrders.reduce(
-              (sum: number, order: DeliveryOrderLike) => sum + ((order.tailAmount || 0) - (order.tailPaid || 0)),
+              (sum: number, order: DeliveryOrderLike) => sum + ((order.tailAmount || 0) - (order.settlementCoverage ?? order.tailPaid ?? 0)),
               0
             );
             return (
@@ -314,7 +314,8 @@ export function ReconciliationDetailDialog({
                         <th className="px-3 py-2 text-right text-slate-300">数量</th>
                         <th className="px-3 py-2 text-left text-slate-300">发货日期</th>
                         <th className="px-3 py-2 text-right text-slate-300">尾款金额</th>
-                        <th className="px-3 py-2 text-right text-slate-300">已付尾款</th>
+                        <th className="px-3 py-2 text-right text-slate-300">实际付款</th>
+                        <th className="px-3 py-2 text-right text-slate-300">定金抵扣</th>
                         <th className="px-3 py-2 text-right text-slate-300">未付尾款</th>
                         <th className="px-3 py-2 text-left text-slate-300">状态</th>
                       </tr>
@@ -335,9 +336,10 @@ export function ReconciliationDetailDialog({
                               {order.shippedDate ? new Date(order.shippedDate).toLocaleDateString("zh-CN") : order.createdAt ? new Date(order.createdAt).toLocaleDateString("zh-CN") : "-"}
                             </td>
                             <td className="px-3 py-2 text-right text-slate-200">{formatCurrency(order.tailAmount || 0, selectedBill.currency, "expense")}</td>
-                            <td className="px-3 py-2 text-right text-emerald-300">{formatCurrency(order.tailPaid || 0, selectedBill.currency, "expense")}</td>
+                            <td className="px-3 py-2 text-right text-emerald-300">{formatCurrency(order.actualTailPaid || 0, selectedBill.currency, "expense")}</td>
+                            <td className="px-3 py-2 text-right text-cyan-300">{formatCurrency(order.depositDeduction || 0, selectedBill.currency, "expense")}</td>
                             <td className="px-3 py-2 text-right text-rose-300 font-medium">
-                              {formatCurrency((order.tailAmount || 0) - (order.tailPaid || 0), selectedBill.currency, "expense")}
+                              {formatCurrency((order.tailAmount || 0) - (order.settlementCoverage ?? order.tailPaid ?? 0), selectedBill.currency, "expense")}
                             </td>
                             <td className="px-3 py-2">
                               <span className={`px-2 py-1 rounded text-xs ${
@@ -353,7 +355,7 @@ export function ReconciliationDetailDialog({
                     </tbody>
                     <tfoot className="bg-slate-800/80">
                       <tr>
-                        <td colSpan={7} className="px-3 py-2 text-right text-slate-300 font-medium">未付尾款合计：</td>
+                        <td colSpan={8} className="px-3 py-2 text-right text-slate-300 font-medium">未付尾款合计：</td>
                         <td className="px-3 py-2 text-right text-rose-300 font-bold">{formatCurrency(totalTailAmount, selectedBill.currency, "expense")}</td>
                         <td></td>
                       </tr>
