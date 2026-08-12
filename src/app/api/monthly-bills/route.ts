@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
+import {
+  buildProcurementPaymentCoverage,
+  calculateProcurementActualPaidAmount,
+  extractDeliveryNumbers,
+  parseRelatedIds,
+} from "@/lib/procurement-payment-coverage";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +27,7 @@ export async function GET(request: NextRequest) {
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
+      "procurement-payment-coverage-v2",
       status || 'all',
       billCategory || 'all',
       month || 'all',
@@ -67,15 +74,36 @@ export async function GET(request: NextRequest) {
       prisma.monthlyBill.count({ where }),
     ]);
 
-    const parseIds = (raw: string | null): string[] => {
-      if (!raw) return [];
-      try {
-        const arr = JSON.parse(raw);
-        return Array.isArray(arr) ? arr : [];
-      } catch {
-        return raw.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    };
+    const deliveryOrderIds = Array.from(
+      new Set(
+        bills
+          .filter((bill) => bill.billType === "工厂订单")
+          .flatMap((bill) => parseRelatedIds(bill.consumptionIds))
+      )
+    );
+    const hasFactoryBills = bills.some((bill) => bill.billType === "工厂订单");
+    const purchaseRequests = hasFactoryBills
+      ? await prisma.expenseRequest.findMany({
+          where: {
+            status: { in: ["Pending_Approval", "Approved", "Paid"] },
+            OR: [
+              { category: "采购/采购尾款" },
+              { summary: { contains: "采购尾款" } },
+            ],
+          },
+          select: {
+            id: true,
+            relatedId: true,
+            status: true,
+            summary: true,
+            category: true,
+            amount: true,
+            currency: true,
+            businessNumber: true,
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
 
     const parseJsonField = (raw: string | null): string | string[] | undefined => {
       if (!raw) return undefined;
@@ -111,8 +139,30 @@ export async function GET(request: NextRequest) {
         offsetAmount: b.offsetAmount ? Number(b.offsetAmount) : 0,
         rebateRate: b.rebateRate ? Number(b.rebateRate) : undefined,
         netAmount: Number(b.netAmount),
-        consumptionIds: parseIds(b.consumptionIds),
-        rechargeIds: parseIds(b.rechargeIds),
+        consumptionIds: parseRelatedIds(b.consumptionIds),
+        rechargeIds: parseRelatedIds(b.rechargeIds),
+        procurementPaymentCoverage:
+          b.billType === "工厂订单"
+            ? buildProcurementPaymentCoverage(
+                parseRelatedIds(b.consumptionIds),
+                purchaseRequests.map((request) => ({
+                  ...request,
+                  amount: Number(request.amount),
+                }))
+              )
+            : undefined,
+        actualPaidAmount:
+          b.billType === "工厂订单"
+            ? calculateProcurementActualPaidAmount(
+                parseRelatedIds(b.consumptionIds),
+                extractDeliveryNumbers(b.notes),
+                purchaseRequests.map((request) => ({
+                  ...request,
+                  amount: Number(request.amount),
+                })),
+                b.currency
+              )
+            : undefined,
         status: b.status,
         createdBy: b.createdBy,
         createdAt: b.createdAt.toISOString(),

@@ -37,6 +37,7 @@ import { getDeliveryOrders, type DeliveryOrder } from "@/lib/delivery-orders-sto
 import { getPurchaseContracts, type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { createPaymentNotification, markNotificationAsRead, findNotificationsByRelated } from "@/lib/notification-store";
 import { broadcastFinanceSwrInvalidate } from "@/lib/finance-swr-sync";
+import { procurementPaymentCoverageLabel } from "@/lib/procurement-payment-coverage";
 
 // 数据均通过 useSWR 异步拉取，无大循环/同步请求，不阻塞侧栏加载与点击
 function getCurrentUserDisplayName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
@@ -106,6 +107,7 @@ export default function ReconciliationPage() {
     billId: null
   });
   const [paymentApplicationVoucher, setPaymentApplicationVoucher] = useState<string | string[]>("");
+  const [isSubmitApprovalSubmitting, setIsSubmitApprovalSubmitting] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title?: string;
@@ -358,13 +360,31 @@ export default function ReconciliationPage() {
 
   // 部门同事提交给财务审批
   const handleSubmitForApproval = (billId: string) => {
+    const bill = bills.find((item) => item.id === billId);
+    if (bill?.procurementPaymentCoverage?.blocked) {
+      toast.error(
+        `${procurementPaymentCoverageLabel(bill.procurementPaymentCoverage)}，请勿从月账单重复提交`,
+        { duration: 5000 }
+      );
+      return;
+    }
     // 打开提交审批模态框，让用户上传付款申请书凭证
     setSubmitApprovalModal({ open: true, billId });
     setPaymentApplicationVoucher(""); // 重置凭证
   };
 
-  const handleConfirmSubmitApproval = () => {
+  const handleConfirmSubmitApproval = async () => {
     if (!submitApprovalModal.billId) return;
+    const selected = bills.find((item) => item.id === submitApprovalModal.billId);
+    if (selected?.procurementPaymentCoverage?.blocked) {
+      toast.error(
+        `${procurementPaymentCoverageLabel(selected.procurementPaymentCoverage)}，请勿从月账单重复提交`,
+        { duration: 5000 }
+      );
+      setSubmitApprovalModal({ open: false, billId: null });
+      setPaymentApplicationVoucher("");
+      return;
+    }
     
     // 验证是否上传了凭证
     const voucherValue = Array.isArray(paymentApplicationVoucher)
@@ -379,28 +399,39 @@ export default function ReconciliationPage() {
       return;
     }
 
-    (async () => {
+    setIsSubmitApprovalSubmitting(true);
+    try {
       const billId = submitApprovalModal.billId!;
       const now = new Date().toISOString();
+      await updateMonthlyBill(billId, {
+        status: "Pending_Finance_Review" as BillStatus,
+        submittedToFinanceAt: now,
+        paymentApplicationVoucher,
+      });
       const updatedBills = bills.map((b) =>
         b.id === billId
           ? { ...b, status: "Pending_Finance_Review" as BillStatus, submittedToFinanceAt: now, paymentApplicationVoucher }
           : b
       );
       mutate("monthly-bills", updatedBills, false);
-      await updateMonthlyBill(billId, {
-        status: "Pending_Finance_Review" as BillStatus,
-        submittedToFinanceAt: now,
-        paymentApplicationVoucher,
-      });
       mutate("monthly-bills");
-    })();
-    setSubmitApprovalModal({ open: false, billId: null });
-    setPaymentApplicationVoucher("");
-    toast.success("已提交给财务审批（已上传付款申请书凭证）", {
-      icon: "✅",
-      duration: 3000,
-    });
+      setSubmitApprovalModal({ open: false, billId: null });
+      setPaymentApplicationVoucher("");
+      toast.success("已提交给财务审批（已上传付款申请书凭证）", {
+        icon: "✅",
+        duration: 3000,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "提交失败，请刷新后重试";
+      toast.error(message, { duration: 5000 });
+      await mutate("monthly-bills");
+      if (message.includes("拿货单") || message.includes("已进入审批")) {
+        setSubmitApprovalModal({ open: false, billId: null });
+        setPaymentApplicationVoucher("");
+      }
+    } finally {
+      setIsSubmitApprovalSubmitting(false);
+    }
   };
 
   // 财务审批通过，提交给主管审批
@@ -1327,6 +1358,15 @@ export default function ReconciliationPage() {
                   </div>
                 );
               })()}
+              {(() => {
+                const coverage = bills.find((b) => b.id === submitApprovalModal.billId)?.procurementPaymentCoverage;
+                if (!coverage?.blocked) return null;
+                return (
+                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+                    {procurementPaymentCoverageLabel(coverage)}，本账单不能再次提交财务。
+                  </div>
+                );
+              })()}
               <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
                 <div className="text-sm text-amber-200">
                   提交给财务审批前，请上传申请书凭证。提交后将无法修改。
@@ -1358,9 +1398,13 @@ export default function ReconciliationPage() {
                 </button>
                 <button
                   onClick={handleConfirmSubmitApproval}
-                  className="px-4 py-2 rounded-md bg-amber-500 text-white hover:bg-amber-600"
+                  disabled={
+                    isSubmitApprovalSubmitting ||
+                    Boolean(bills.find((b) => b.id === submitApprovalModal.billId)?.procurementPaymentCoverage?.blocked)
+                  }
+                  className="px-4 py-2 rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                 >
-                  确认提交给财务
+                  {isSubmitApprovalSubmitting ? "正在提交..." : "确认提交给财务"}
                 </button>
               </div>
             </div>

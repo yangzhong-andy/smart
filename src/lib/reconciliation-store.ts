@@ -67,6 +67,8 @@ export type MonthlyBill = {
   
   // 备注
   notes?: string; // 备注信息
+  procurementPaymentCoverage?: import("./procurement-payment-coverage").ProcurementPaymentCoverage;
+  actualPaidAmount?: number;
 };
 
 /** Amount that should actually move through the cashier for this bill. */
@@ -202,7 +204,8 @@ export async function updateMonthlyBill(id: string, bill: Partial<MonthlyBill>):
       body: JSON.stringify(bill),
     });
     if (!response.ok) {
-      throw new Error("Failed to update monthly bill");
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to update monthly bill");
     }
     const updated = await response.json();
     // 转换日期字段为字符串
