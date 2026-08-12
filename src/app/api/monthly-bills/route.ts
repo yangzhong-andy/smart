@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
-      "procurement-payment-coverage-v2",
+      "procurement-payment-coverage-v3",
       status || 'all',
       billCategory || 'all',
       month || 'all',
@@ -118,7 +118,20 @@ export async function GET(request: NextRequest) {
     };
 
     const response = {
-      data: bills.map(b => ({
+      data: bills.map(b => {
+        const actualPaidAmount =
+          b.billType === "工厂订单"
+            ? calculateProcurementActualPaidAmount(
+                parseRelatedIds(b.consumptionIds),
+                extractDeliveryNumbers(b.notes),
+                purchaseRequests.map((request) => ({
+                  ...request,
+                  amount: Number(request.amount),
+                })),
+                b.currency
+              )
+            : undefined;
+        return ({
         id: b.id,
         uid: b.uid || undefined,
         month: b.month,
@@ -151,17 +164,10 @@ export async function GET(request: NextRequest) {
                 }))
               )
             : undefined,
-        actualPaidAmount:
+        actualPaidAmount,
+        depositDeductionAmount:
           b.billType === "工厂订单"
-            ? calculateProcurementActualPaidAmount(
-                parseRelatedIds(b.consumptionIds),
-                extractDeliveryNumbers(b.notes),
-                purchaseRequests.map((request) => ({
-                  ...request,
-                  amount: Number(request.amount),
-                })),
-                b.currency
-              )
+            ? Math.max(0, Number(b.offsetAmount || 0) - Number(actualPaidAmount || 0))
             : undefined,
         status: b.status,
         createdBy: b.createdBy,
@@ -186,7 +192,7 @@ export async function GET(request: NextRequest) {
         paymentVoucherNumber: b.paymentVoucherNumber || undefined,
         paymentRemarks: b.paymentRemarks || undefined,
         notes: b.notes || undefined,
-      })),
+      }); }),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 

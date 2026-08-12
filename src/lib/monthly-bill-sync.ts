@@ -36,7 +36,7 @@ const isSystemGenerated = (bill: { createdBy: string; notes: string | null }) =>
 
 export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
   const result = emptyResult();
-  const [orders, existingBills] = await Promise.all([
+  const [orders, existingBills, paidPurchaseRequests] = await Promise.all([
     prisma.deliveryOrder.findMany({
       include: { contract: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -44,6 +44,25 @@ export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
     prisma.monthlyBill.findMany({
       where: { billType: "工厂订单", billCategory: "Payable" },
       orderBy: { createdAt: "asc" },
+    }),
+    prisma.expenseRequest.findMany({
+      where: {
+        status: "Paid",
+        relatedId: { not: null },
+        OR: [
+          { category: "采购/采购尾款" },
+          { summary: { contains: "采购尾款" } },
+        ],
+      },
+      select: {
+        relatedId: true,
+        paidAt: true,
+        paidBy: true,
+        paymentFlowId: true,
+        financeAccountId: true,
+        financeAccountName: true,
+      },
+      orderBy: [{ paidAt: "desc" }, { updatedAt: "desc" }],
     }),
   ]);
   const settledOrderIds = new Set(
@@ -96,6 +115,11 @@ export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
           `${line.deliveryNumber}（${line.quantity}件，货值 CNY ${line.grossAmount.toFixed(2)}，已付 CNY ${line.tailPaidAmount.toFixed(2)}）`
       ),
     ].join("\n");
+    const groupPayments = paidPurchaseRequests.filter(
+      (request) => request.relatedId && group.orderIds.includes(request.relatedId)
+    );
+    const latestPayment = groupPayments[0];
+    const fullyCovered = group.payableAmount <= 0.005;
     const data = {
       supplierName: group.supplierName,
       totalAmount: group.grossAmount,
@@ -104,6 +128,18 @@ export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
       offsetAmount: group.tailPaidAmount + group.depositDeduction,
       consumptionIds: JSON.stringify(group.orderIds),
       notes,
+      ...(fullyCovered
+        ? {
+            status: "Paid",
+            paidAt: latestPayment?.paidAt || new Date(),
+            paidBy: latestPayment?.paidBy || "系统（拿货单付款同步）",
+            paymentFlowId: latestPayment?.paymentFlowId || null,
+            paymentAccountId: latestPayment?.financeAccountId || null,
+            paymentAccountName: latestPayment?.financeAccountName || null,
+            paymentMethod: "拿货单付款",
+            paymentRemarks: "系统根据已支付的拿货单付款申请自动结清",
+          }
+        : {}),
       updatedAt: new Date(),
     };
 
@@ -113,7 +149,7 @@ export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
     if (draft) {
       await prisma.monthlyBill.update({ where: { id: draft.id }, data });
       result.updated += 1;
-    } else if (group.payableAmount > 0) {
+    } else if (group.payableAmount > 0 || fullyCovered) {
       await prisma.monthlyBill.create({
         data: {
           month: group.month,
@@ -127,9 +163,16 @@ export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
           netAmount: group.payableAmount,
           offsetAmount: group.tailPaidAmount + group.depositDeduction,
           consumptionIds: JSON.stringify(group.orderIds),
-          status: "Draft",
+          status: fullyCovered ? "Paid" : "Draft",
           createdBy: "系统（拿货自动生成）",
           notes,
+          paidAt: fullyCovered ? latestPayment?.paidAt || new Date() : null,
+          paidBy: fullyCovered ? latestPayment?.paidBy || "系统（拿货单付款同步）" : null,
+          paymentFlowId: fullyCovered ? latestPayment?.paymentFlowId || null : null,
+          paymentAccountId: fullyCovered ? latestPayment?.financeAccountId || null : null,
+          paymentAccountName: fullyCovered ? latestPayment?.financeAccountName || null : null,
+          paymentMethod: fullyCovered ? "拿货单付款" : null,
+          paymentRemarks: fullyCovered ? "系统根据已支付的拿货单付款申请自动结清" : null,
         },
       });
       result.created += 1;

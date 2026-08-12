@@ -123,9 +123,26 @@ export function ReconciliationTable({
                     activeCategory === "Receivable" ? "income" : "expense"
                   )}
                   {bill.billType === "广告返点" && <span className="ml-1 text-xs text-slate-500">返点</span>}
+                  {bill.billType === "工厂订单" && (
+                    <div className="mt-1 space-y-0.5 text-xs font-normal">
+                      {(bill.actualPaidAmount || 0) > 0 && (
+                        <div className="text-emerald-300">拿货单已付 {formatCurrency(bill.actualPaidAmount || 0, bill.currency, "expense")}</div>
+                      )}
+                      {(bill.depositDeductionAmount || 0) > 0 && (
+                        <div className="text-cyan-300">定金抵扣 {formatCurrency(bill.depositDeductionAmount || 0, bill.currency, "expense")}</div>
+                      )}
+                      <div className={(bill.netAmount || 0) > 0.005 && bill.status !== "Paid" ? "text-rose-300" : "text-slate-500"}>
+                        待付 {formatCurrency(bill.status === "Paid" ? 0 : Math.max(0, bill.netAmount || 0), bill.currency, "expense")}
+                      </div>
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  {bill.procurementPaymentCoverage?.blocked ? (
+                  {bill.status === "Paid" ? (
+                    <span className={`px-2 py-1 rounded text-xs border ${bill.billCategory === "Receivable" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors.Paid}`}>
+                      {bill.billCategory === "Receivable" ? "已回款" : "已支付"}
+                    </span>
+                  ) : bill.procurementPaymentCoverage?.blocked ? (
                     <span
                       className="inline-block max-w-[150px] rounded border border-blue-500/40 bg-blue-500/15 px-2 py-1 text-xs leading-5 text-blue-200"
                       title={`已关联 ${bill.procurementPaymentCoverage.activeRequestCount} 条拿货单付款申请`}
@@ -133,8 +150,8 @@ export function ReconciliationTable({
                       {procurementPaymentCoverageLabel(bill.procurementPaymentCoverage)}
                     </span>
                   ) : (
-                    <span className={`px-2 py-1 rounded text-xs border ${bill.billCategory === "Receivable" && bill.status === "Paid" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors[bill.status]}`}>
-                      {bill.billCategory === "Receivable" && bill.status === "Paid" ? "已回款" : statusLabels[bill.status]}
+                    <span className={`px-2 py-1 rounded text-xs border ${statusColors[bill.status]}`}>
+                      {statusLabels[bill.status]}
                     </span>
                   )}
                 </td>

@@ -94,7 +94,7 @@ export function ReconciliationDetailDialog({
                 {selectedBill.billType === "广告" ? "消耗总额（应付）" : selectedBill.billType === "广告返点" ? "返点应收金额" : "账单金额"}
               </div>
               <div className={`font-medium ${selectedBill.billCategory === "Receivable" ? "text-emerald-300" : "text-rose-300"}`}>
-                {formatCurrency(getMonthlyBillPaymentAmount(selectedBill), selectedBill.currency, selectedBill.billCategory === "Receivable" ? "income" : "expense")}
+                {formatCurrency(selectedBill.billType === "工厂订单" ? selectedBill.totalAmount : getMonthlyBillPaymentAmount(selectedBill), selectedBill.currency, selectedBill.billCategory === "Receivable" ? "income" : "expense")}
               </div>
             </div>
             <div>
@@ -102,6 +102,23 @@ export function ReconciliationDetailDialog({
               <div className="text-slate-100">{selectedBill.currency}</div>
             </div>
           </div>
+
+          {selectedBill.billType === "工厂订单" && (
+            <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-700 bg-slate-800/40 p-3 text-sm">
+              <div>
+                <div className="text-xs text-slate-400">拿货单已付</div>
+                <div className="mt-1 font-medium text-emerald-300">{formatCurrency(selectedBill.actualPaidAmount || 0, selectedBill.currency, "expense")}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-400">定金抵扣</div>
+                <div className="mt-1 font-medium text-cyan-300">{formatCurrency(selectedBill.depositDeductionAmount || 0, selectedBill.currency, "expense")}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-400">待付金额</div>
+                <div className="mt-1 font-medium text-rose-300">{formatCurrency(selectedBill.status === "Paid" ? 0 : Math.max(0, selectedBill.netAmount || 0), selectedBill.currency, "expense")}</div>
+              </div>
+            </div>
+          )}
 
           {selectedBill.notes && (
             <div>

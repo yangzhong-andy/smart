@@ -252,7 +252,11 @@ function ApprovalListComponent({
                         ) : null}
                         {request.voucher && (
                           <div className="mb-4">
-                            <div className="text-xs text-slate-400 mb-2">凭证</div>
+                            <div className="text-xs text-slate-400 mb-2">
+                              {String(request.category || "").startsWith("采购") || String(request.summary || "").startsWith("采购")
+                                ? "发起付款凭证"
+                                : "凭证"}
+                            </div>
                             <VoucherThumbnails
                               voucher={request.voucher}
                               thumbClassName="w-20 h-20"

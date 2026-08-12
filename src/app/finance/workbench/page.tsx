@@ -660,6 +660,16 @@ export default function FinanceWorkbenchPage() {
       toast.error("申请不存在");
       return;
     }
+    const isProcurementRequest =
+      String(request.category || "").startsWith("采购") ||
+      String(request.summary || "").startsWith("采购");
+    const hasTransferVoucher = Array.isArray(paymentVoucher)
+      ? paymentVoucher.some((item) => item.trim())
+      : Boolean(paymentVoucher.trim());
+    if (isProcurementRequest && !hasTransferVoucher) {
+      toast.error("采购付款请上传转账成功凭证");
+      return;
+    }
 
     const account = accounts.find((a) => a.id === selectedAccountId);
     if (!account) {
@@ -819,6 +829,17 @@ export default function FinanceWorkbenchPage() {
 
     const selectedRequests = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id));
     if (selectedRequests.length !== batchSelectedIds.length) { toast.error("部分申请数据异常"); return; }
+    const containsProcurement = selectedRequests.some((request) =>
+      String(request.category || "").startsWith("采购") ||
+      String(request.summary || "").startsWith("采购")
+    );
+    const hasTransferVoucher = Array.isArray(paymentVoucher)
+      ? paymentVoucher.some((item) => item.trim())
+      : Boolean(paymentVoucher.trim());
+    if (containsProcurement && !hasTransferVoucher) {
+      toast.error("采购付款请上传转账成功凭证");
+      return;
+    }
 
     const account = accounts.find(a => a.id === selectedAccountId);
     if (!account) { toast.error("账户不存在"); return; }
@@ -847,6 +868,12 @@ export default function FinanceWorkbenchPage() {
       for (const req of selectedRequests) {
         const reqAmount = isCrossCurrency ? req.amount * flowRate : req.amount;
 
+        const initiatingVoucher = Array.isArray(req.voucher)
+          ? (req.voucher.length ? JSON.stringify(req.voucher) : undefined)
+          : req.voucher || undefined;
+        const transferVoucher = Array.isArray(paymentVoucher)
+          ? (paymentVoucher.length ? JSON.stringify(paymentVoucher) : undefined)
+          : paymentVoucher || undefined;
         const cashFlowData = {
           date: req.date || new Date().toISOString().slice(0, 10),
           summary: req.summary || "合并付款",
@@ -860,8 +887,10 @@ export default function FinanceWorkbenchPage() {
           remark: `合并付款(${sharedBusinessNo})：${req.summary}`,
           businessNumber: sharedBusinessNo,
           status: "confirmed" as const,
-          paymentVoucher: paymentVoucher || undefined,
-          transferVoucher: undefined,
+          relatedId: req.relatedId || null,
+          paymentVoucher: initiatingVoucher,
+          transferVoucher,
+          voucher: initiatingVoucher || transferVoucher,
         };
 
         const response = await fetch('/api/cash-flow', {
@@ -881,6 +910,21 @@ export default function FinanceWorkbenchPage() {
           paidAt: new Date().toISOString(),
           paymentFlowId: cashFlowResult.id,
         });
+        const isPurchaseTail =
+          req.relatedId &&
+          (req.category === "采购/采购尾款" || (req.summary || "").includes("采购尾款"));
+        if (isPurchaseTail) {
+          const payTailResponse = await fetch(`/api/delivery-orders/${req.relatedId}/pay-tail`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expenseRequestId: req.id }),
+          });
+          if (!payTailResponse.ok) {
+            const error = await payTailResponse.json().catch(() => ({}));
+            console.error(`拿货单 ${req.relatedId} 付款状态同步失败`, error);
+            toast.error(`流水已生成，但拿货单 ${req.relatedId} 状态同步失败，请勿重复付款`);
+          }
+        }
       }
 
       toast.success(`已合并付款 ${selectedRequests.length} 笔，合计 ${currency} ${totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}（单号：${sharedBusinessNo}）`);
@@ -1173,6 +1217,7 @@ export default function FinanceWorkbenchPage() {
                 size="sm"
                 onClick={() => {
                   setBatchSelectedIds([]);
+                  setPaymentVoucher("");
                   setBatchPaymentModal(true);
                 }}
               >
@@ -1223,6 +1268,7 @@ export default function FinanceWorkbenchPage() {
                         <button
                           onClick={() => {
                             setSelectedExpenseRequest(request);
+                            setPaymentVoucher("");
                             setExpenseAccountModal({ open: true, requestId: request.id });
                           }}
                           className="px-3 py-1.5 rounded-lg bg-rose-500/80 text-white hover:bg-rose-500 text-xs transition"
@@ -1698,13 +1744,13 @@ export default function FinanceWorkbenchPage() {
             {/* 转账凭证上传 */}
             <div className="mb-4">
               <label className="block text-sm text-slate-300 mb-2">
-                转账凭证 <span className="text-slate-500 text-xs">(可选)</span>
+                转账成功凭证 {request && (String(request.category || "").startsWith("采购") || String(request.summary || "").startsWith("采购")) ? <span className="text-rose-400">*</span> : <span className="text-slate-500 text-xs">(可选)</span>}
               </label>
               <ImageUploader
                 value={paymentVoucher}
                 onChange={(value) => setPaymentVoucher(value)}
                 multiple={true}
-                label="上传转账凭证"
+                label="上传转账成功凭证"
                 placeholder="点击上传或直接 Ctrl + V 粘贴转账凭证图片"
                 maxImages={5}
                 onError={(error) => toast.error(error)}
@@ -1868,13 +1914,13 @@ export default function FinanceWorkbenchPage() {
 
             {/* 凭证 */}
             <label className="block mb-4">
-              <span className="text-sm text-slate-300">转账凭证 <span className="text-slate-500">(可选)</span></span>
+              <span className="text-sm text-slate-300">转账成功凭证 {approvedExpenseRequests.filter((request) => batchSelectedIds.includes(request.id)).some((request) => String(request.category || "").startsWith("采购") || String(request.summary || "").startsWith("采购")) ? <span className="text-rose-400">*</span> : <span className="text-slate-500">(可选)</span>}</span>
               <div className="mt-1">
                 <ImageUploader
                   value={paymentVoucher}
                   onChange={(value) => setPaymentVoucher(value)}
                   multiple={true}
-                  label="上传转账凭证"
+                  label="上传转账成功凭证"
                   placeholder="点击上传或 Ctrl+V 粘贴"
                   maxImages={5}
                   onError={(error) => toast.error(error)}
@@ -2255,6 +2301,7 @@ export default function FinanceWorkbenchPage() {
                     setSelectedExpenseRequest(expenseDetailData as ExpenseRequest);
                     setExpenseDetailModal({ open: false, requestId: null });
                     if (expenseDetailData) {
+                      setPaymentVoucher("");
                       setExpenseAccountModal({ open: true, requestId: expenseDetailData.id });
                     }
                   }}
