@@ -2,6 +2,7 @@
 
 import { formatCurrency } from "./types";
 import type { MonthlyBill, BillStatus } from "./types";
+import { getMonthlyBillPaymentAmount } from "@/lib/reconciliation-store";
 
 export const statusColors: Record<BillStatus, string> = {
   Draft: "bg-slate-500/20 text-slate-300 border-slate-500/40",
@@ -93,7 +94,7 @@ export function ReconciliationDetailDialog({
                 {selectedBill.billType === "广告" ? "消耗总额（应付）" : selectedBill.billType === "广告返点" ? "返点应收金额" : "账单金额"}
               </div>
               <div className={`font-medium ${selectedBill.billCategory === "Receivable" ? "text-emerald-300" : "text-rose-300"}`}>
-                {formatCurrency(selectedBill.billType === "广告返点" ? selectedBill.netAmount : selectedBill.totalAmount, selectedBill.currency, selectedBill.billCategory === "Receivable" ? "income" : "expense")}
+                {formatCurrency(getMonthlyBillPaymentAmount(selectedBill), selectedBill.currency, selectedBill.billCategory === "Receivable" ? "income" : "expense")}
               </div>
             </div>
             <div>

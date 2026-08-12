@@ -1,56 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
+import { syncSupplierMonthlyBills } from "@/lib/monthly-bill-sync";
 
 export async function autoGenerateSupplierBills(): Promise<{ created: number; updated: number; skipped: number }> {
-  try {
-    const allOrders = await prisma.deliveryOrder.findMany({
-      include: { contract: true },
-      orderBy: { tailDueDate: "asc" },
-    });
-    const orders = allOrders.filter(
-      (o) => o.contract != null && o.shippedDate != null && o.contract.supplierId != null
-    );
-    const keyToOrders = new Map<string, typeof orders>();
-    for (const o of orders) {
-      const contract = o.contract!;
-      if (!contract.supplierId || !o.shippedDate) continue;
-      const month = o.shippedDate.toISOString().slice(0, 7);
-      const key = contract.supplierId + "\t" + month;
-      if (!keyToOrders.has(key)) keyToOrders.set(key, []);
-      keyToOrders.get(key)!.push(o);
-    }
-    let created = 0, updated = 0, skipped = 0;
-    for (const [, groupOrders] of keyToOrders) {
-      const first = groupOrders[0];
-      const contract = first!.contract!;
-      const supplierId = contract.supplierId!;
-      const supplierName = contract.supplierName || "未知供应商";
-      const billMonth = first!.shippedDate!.toISOString().slice(0, 7);
-      const monthStart = new Date(billMonth + "-01T00:00:00.000Z");
-      const monthEndExcl = new Date(monthStart);
-      monthEndExcl.setUTCMonth(monthEndExcl.getUTCMonth() + 1);
-      const allContractsOfSupplier = await prisma.purchaseContract.findMany({ where: { supplierId }, select: { id: true } });
-      const contractIds = allContractsOfSupplier.map((c) => c.id);
-      const deliveriesInMonth = await prisma.deliveryOrder.findMany({ where: { contractId: { in: contractIds }, shippedDate: { gte: monthStart, lt: monthEndExcl } } });
-      const totalTailAmount = deliveriesInMonth.reduce((sum, d) => sum + Number(d.tailAmount), 0);
-      if (totalTailAmount <= 0) { skipped++; continue; }
-      const existing = await prisma.monthlyBill.findFirst({ where: { billType: "工厂订单", supplierId, month: billMonth } });
-      if (existing) {
-        if (existing.status === "Draft") {
-          await prisma.monthlyBill.update({ where: { id: existing.id }, data: { totalAmount: totalTailAmount, netAmount: totalTailAmount, updatedAt: new Date() } });
-          updated++;
-        } else { skipped++; }
-      } else {
-        await prisma.monthlyBill.create({ data: { billType: "工厂订单", billCategory: "Payable", supplierId, supplierName, month: billMonth, totalAmount: totalTailAmount, netAmount: totalTailAmount, currency: "CNY", status: "Draft", notes: "自动生成：" + billMonth + "月供应商月账单", createdAt: new Date(), updatedAt: new Date() } });
-        created++;
-      }
-    }
-    if (created > 0 || updated > 0) { await clearCacheByPrefix("monthly-bills"); }
-    return { created, updated, skipped };
-  } catch (error) {
-    console.error("autoGenerateSupplierBills error:", error);
-    return { created: 0, updated: 0, skipped: 0 };
-  }
+  const result = await syncSupplierMonthlyBills();
+  return {
+    created: result.created,
+    updated: result.updated + result.cleared,
+    skipped: result.skippedLocked,
+  };
 }
 
 /**

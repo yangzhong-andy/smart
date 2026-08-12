@@ -69,6 +69,15 @@ export type MonthlyBill = {
   notes?: string; // 备注信息
 };
 
+/** Amount that should actually move through the cashier for this bill. */
+export function getMonthlyBillPaymentAmount(
+  bill: Pick<MonthlyBill, "billType" | "totalAmount" | "netAmount">
+): number {
+  return bill.billType === "工厂订单" || bill.billType === "物流" || bill.billType === "广告返点"
+    ? Number(bill.netAmount || 0)
+    : Number(bill.totalAmount || 0);
+}
+
 /**
  * 获取所有月账单
  */

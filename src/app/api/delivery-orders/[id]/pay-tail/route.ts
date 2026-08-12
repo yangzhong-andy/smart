@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 import { PurchaseContractStatus } from "@prisma/client";
+import { syncSupplierMonthlyBills } from "@/lib/monthly-bill-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,7 @@ export async function POST(
     // 清除相关缓存，保证拿货单列表和合同视图可以看到最新的已付尾款/已付总额
     await clearCacheByPrefix("delivery-orders");
     await clearCacheByPrefix("purchase-contracts");
+    await syncSupplierMonthlyBills();
 
     return NextResponse.json({
       ok: true,
