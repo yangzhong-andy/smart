@@ -160,6 +160,12 @@ export async function PUT(
     }
 
     await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);
+    if (
+      updated.relatedId &&
+      (updated.category === "采购/采购尾款" || updated.summary.includes("采购尾款"))
+    ) {
+      await clearCacheByPrefix("monthly-bills");
+    }
 
     return NextResponse.json({
       id: updated.id,
@@ -208,6 +214,12 @@ export async function DELETE(
       where: { id: params.id },
     });
     await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);
+    if (
+      existing.relatedId &&
+      (existing.category === "采购/采购尾款" || existing.summary.includes("采购尾款"))
+    ) {
+      await clearCacheByPrefix("monthly-bills");
+    }
 
     return NextResponse.json({ ok: true, id: params.id });
   } catch (error: any) {

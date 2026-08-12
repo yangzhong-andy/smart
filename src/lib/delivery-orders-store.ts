@@ -18,7 +18,13 @@ export type DeliveryOrder = {
   status: DeliveryOrderStatus; // 子单状态
   // 财务相关
   tailAmount: number; // 本次尾款金额
-  tailPaid: number; // 已付尾款
+  tailPaid: number; // 已实际支付尾款
+  /** 已付款的采购尾款申请汇总。 */
+  actualTailPaid?: number;
+  /** 最后一笔结清时使用的合同定金抵扣。 */
+  depositDeduction?: number;
+  /** 实际付款与定金抵扣合计，用于判断是否结清。 */
+  settlementCoverage?: number;
   tailDueDate?: string; // 尾款到期日（ISO date）
   createdAt: string; // 创建时间
   updatedAt: string; // 更新时间

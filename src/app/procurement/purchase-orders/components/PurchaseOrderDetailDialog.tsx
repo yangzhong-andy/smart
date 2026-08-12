@@ -616,7 +616,7 @@ export function PurchaseOrderDetailDialog({
               <div className="space-y-2">
                 {deliveryOrders.map((order) => {
                   const displayTail = computeDeliveryOrderTailAmount(contract, order as { qty: number; itemQtys?: Record<string, number> });
-                  const isPaid = (order.tailPaid || 0) >= displayTail;
+                  const isPaid = (order.settlementCoverage ?? order.tailPaid ?? 0) >= displayTail;
                   const activeTailReq = findActiveTailExpenseRequestForDeliveryOrder(
                     expenseRequests,
                     order.id

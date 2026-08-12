@@ -948,7 +948,7 @@ export default function PurchaseOrdersPage() {
       const order = deliveryOrders.find((o) => o.contractId === contractId && o.id === deliveryOrderId);
       if (!contract || !order) return;
       const displayTail = computeDeliveryOrderTailAmount(contract, order);
-      const remaining = displayTail - (Number((order as { tailPaid?: number }).tailPaid) || 0);
+      const remaining = displayTail - (Number((order as { tailPaid?: number; settlementCoverage?: number }).settlementCoverage ?? order.tailPaid) || 0);
       if (remaining <= 0) {
         toast.error("该笔尾款已付清", { icon: "⚠️" });
         return;
@@ -1055,7 +1055,7 @@ export default function PurchaseOrdersPage() {
         return;
       }
       const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : (order.tailAmount || 0);
-      const remaining = displayTail - (order.tailPaid || 0);
+      const remaining = displayTail - (order.settlementCoverage ?? order.tailPaid ?? 0);
       amount = Number(paymentModal.tailPaymentAmount);
       if (!Number.isFinite(amount) || amount <= 0) amount = remaining;
       if (amount > remaining) amount = remaining;
@@ -1193,7 +1193,7 @@ export default function PurchaseOrdersPage() {
       if (!contract) return sum;
       if (isContractFinanciallySettled(contract)) return sum;
       const displayTail = computeDeliveryOrderTailAmount(contract, order);
-      const remaining = displayTail - (order.tailPaid || 0);
+      const remaining = displayTail - (order.settlementCoverage ?? order.tailPaid ?? 0);
       return remaining > 0 ? sum + remaining : sum;
     }, 0);
 
@@ -1635,7 +1635,7 @@ export default function PurchaseOrdersPage() {
                 const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
                 const tailOrder = paymentModal.deliveryOrderId ? contractOrders.find((o) => o.id === paymentModal.deliveryOrderId) : null;
                 const displayTailAmountForOrder = tailOrder && contract ? computeDeliveryOrderTailAmount(contract, tailOrder) : (tailOrder?.tailAmount ?? 0);
-                const tailRemaining = tailOrder ? displayTailAmountForOrder - (tailOrder.tailPaid || 0) : 0;
+                const tailRemaining = tailOrder ? displayTailAmountForOrder - (tailOrder.settlementCoverage ?? tailOrder.tailPaid ?? 0) : 0;
                 if (paymentModal.type === "deposit") {
                   amount = contract.depositAmount - (contract.depositPaid || 0);
                 } else if (paymentModal.type === "tail" && tailOrder) {

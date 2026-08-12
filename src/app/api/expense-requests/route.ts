@@ -272,6 +272,12 @@ export async function POST(request: NextRequest) {
 
     // 清除支出申请缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    if (
+      expenseRequest.relatedId &&
+      (expenseRequest.category === "采购/采购尾款" || expenseRequest.summary.includes("采购尾款"))
+    ) {
+      await clearCacheByPrefix("monthly-bills");
+    }
 
     return NextResponse.json({
       id: expenseRequest.id,

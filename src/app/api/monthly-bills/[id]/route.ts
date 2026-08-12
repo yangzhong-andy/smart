@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
+import {
+  buildProcurementPaymentCoverage,
+  parseRelatedIds,
+} from "@/lib/procurement-payment-coverage";
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +56,62 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
+
+    if (body.status === "Pending_Finance_Review") {
+      const existingBill = await prisma.monthlyBill.findUnique({
+        where: { id: params.id },
+        select: { status: true, billType: true, consumptionIds: true },
+      });
+      if (!existingBill) {
+        return NextResponse.json({ error: "月账单不存在" }, { status: 404 });
+      }
+      if (existingBill.status !== "Draft") {
+        return NextResponse.json(
+          { error: "该月账单已进入审批或付款流程，请刷新后核对" },
+          { status: 409 }
+        );
+      }
+
+      if (existingBill.billType === "工厂订单") {
+        const deliveryOrderIds = parseRelatedIds(existingBill.consumptionIds);
+        const requests = deliveryOrderIds.length
+          ? await prisma.expenseRequest.findMany({
+              where: {
+                relatedId: { in: deliveryOrderIds },
+                status: { in: ["Pending_Approval", "Approved", "Paid"] },
+                OR: [
+                  { category: "采购/采购尾款" },
+                  { summary: { contains: "采购尾款" } },
+                ],
+              },
+              select: {
+                id: true,
+                relatedId: true,
+                status: true,
+                summary: true,
+                category: true,
+                amount: true,
+                currency: true,
+              },
+              orderBy: { createdAt: "desc" },
+            })
+          : [];
+        const coverage = buildProcurementPaymentCoverage(
+          deliveryOrderIds,
+          requests.map((item) => ({ ...item, amount: Number(item.amount) }))
+        );
+        if (coverage?.blocked) {
+          return NextResponse.json(
+            {
+              error: "关联拿货单已发起采购尾款付款，请勿在月账单重复提交财务",
+              code: "PURCHASE_PAYMENT_ALREADY_STARTED",
+              procurementPaymentCoverage: coverage,
+            },
+            { status: 409 }
+          );
+        }
+      }
+    }
 
     // 将数组字段转换为 JSON 字符串
     const consumptionIds = body.consumptionIds

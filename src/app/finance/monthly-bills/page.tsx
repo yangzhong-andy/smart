@@ -6,6 +6,7 @@ import useSWR, { mutate } from "swr";
 import { FileText, Plus, Search, Eye, TrendingUp, Zap, Wallet } from "lucide-react";
 import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui";
 import { getMonthlyBills, saveMonthlyBills, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { procurementPaymentCoverageLabel } from "@/lib/procurement-payment-coverage";
 import { formatCurrency } from "@/lib/currency-utils";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -807,7 +808,11 @@ export default function MonthlyBillsPage() {
                         </div>
                       )}
                       <div className={bill.billType === "广告返点" ? "text-emerald-300" : ""}>
-                        {formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency, bill.billCategory === "Receivable" ? "income" : "expense")}
+                        {formatCurrency(
+                          bill.billType === "工厂订单" ? bill.totalAmount : getMonthlyBillPaymentAmount(bill),
+                          bill.currency,
+                          bill.billCategory === "Receivable" ? "income" : "expense"
+                        )}
                         {bill.billType === "广告返点" && <span className="ml-1 text-xs text-slate-500">返点</span>}
                       </div>
                       {bill.billType === "工厂订单" && (
@@ -828,7 +833,7 @@ export default function MonthlyBillsPage() {
                         if (bill.billType === "工厂订单") {
                           // 工厂订单：显示已付和未付
                           const payable = getMonthlyBillPaymentAmount(bill);
-                          const paid = bill.status === "Paid" ? payable : 0;
+                          const paid = bill.actualPaidAmount ?? (bill.status === "Paid" ? Math.max(0, bill.totalAmount - (bill.offsetAmount || 0)) : 0);
                           const unpaid = bill.status === "Paid" ? 0 : payable;
                           return (
                             <div className="space-y-0.5">
@@ -852,11 +857,17 @@ export default function MonthlyBillsPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-300">{bill.currency}</td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${bill.billCategory === "Receivable" && bill.status === "Paid" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors[bill.status]}`}
-                      >
-                        {bill.billCategory === "Receivable" && bill.status === "Paid" ? "已回款" : statusLabels[bill.status]}
-                      </span>
+                      {bill.procurementPaymentCoverage?.blocked ? (
+                        <span className="inline-flex max-w-[150px] items-center rounded border border-blue-500/40 bg-blue-500/15 px-2 py-1 text-xs font-medium leading-5 text-blue-200">
+                          {procurementPaymentCoverageLabel(bill.procurementPaymentCoverage)}
+                        </span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${bill.billCategory === "Receivable" && bill.status === "Paid" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors[bill.status]}`}
+                        >
+                          {bill.billCategory === "Receivable" && bill.status === "Paid" ? "已回款" : statusLabels[bill.status]}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-300 text-sm font-mono">
                       {bill.paymentVoucherNumber || "-"}
@@ -887,7 +898,7 @@ export default function MonthlyBillsPage() {
                           <Eye className="h-4 w-4 inline mr-1" />
                           查看
                         </button>
-                        {bill.status === "Draft" && (
+                        {bill.status === "Draft" && !bill.procurementPaymentCoverage?.blocked && (
                           <Link href={`/finance/reconciliation?billId=${bill.id}&action=submit`}>
                             <button className="px-3 py-1 rounded border border-blue-500/40 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 text-sm transition">
                               提交给财务
@@ -970,7 +981,7 @@ export default function MonthlyBillsPage() {
                   </div>
                   <div className={selectedBill.billType === "广告返点" ? "text-emerald-400 font-medium" : "text-rose-400 font-medium"}>
                     {formatCurrency(
-                      getMonthlyBillPaymentAmount(selectedBill),
+                      selectedBill.billType === "工厂订单" ? selectedBill.totalAmount : getMonthlyBillPaymentAmount(selectedBill),
                       selectedBill.currency,
                       selectedBill.billType === "广告返点" ? "income" : "expense"
                     )}

@@ -770,7 +770,7 @@ export default function FinanceWorkbenchPage() {
           const payTailRes = await fetch(`/api/delivery-orders/${request.relatedId}/pay-tail`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount: request.amount }),
+            body: JSON.stringify({ expenseRequestId: requestId }),
           });
           if (!payTailRes.ok) {
             const err = await payTailRes.json().catch(() => ({}));
