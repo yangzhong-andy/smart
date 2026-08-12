@@ -72,7 +72,7 @@ export default function ApprovalPage() {
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
   const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
-    "/api/purchase-contracts?page=1&pageSize=500&noCache=true",
+    "/api/purchase-contracts?page=1&pageSize=500&includeVouchers=true&noCache=true",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );

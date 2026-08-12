@@ -59,12 +59,12 @@ export default function DeliveryOrdersPage() {
   const { mutate: globalMutate } = useSWRConfig();
 
   const { data: deliveryOrdersDataRaw, mutate: mutateDeliveryOrders } = useSWR<any>(
-    "/api/delivery-orders?page=1&pageSize=500",
+    "/api/delivery-orders?page=1&pageSize=100",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
   const { data: contractsDataRaw, mutate: mutateContracts } = useSWR<any>(
-    "/api/purchase-contracts?page=1&pageSize=500",
+    "/api/purchase-contracts?page=1&pageSize=100",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
@@ -76,8 +76,8 @@ export default function DeliveryOrdersPage() {
   /** 用于判断尾款是否已发起付款申请（与采购合同页逻辑一致） */
   const { data: expenseRequestsData, isLoading: expenseRequestsLoading } = useSWR(
     "procurement-delivery-expense-requests",
-    () => getExpenseRequests(true),
-    { revalidateOnFocus: true, dedupingInterval: 10000 }
+    () => getExpenseRequests(false),
+    { revalidateOnFocus: true, dedupingInterval: 30000, revalidateIfStale: false }
   );
   const expenseRequests: ExpenseRequest[] = Array.isArray(expenseRequestsData) ? expenseRequestsData : [];
   const deliveryOrders = (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[];
