@@ -912,7 +912,8 @@ export default function PurchaseOrdersPage() {
         departmentId: undefined, // 可以从用户系统获取
         departmentName: "全球供应链部", // 可以从用户系统获取
         payeeName,
-        payeeAccount
+        payeeAccount,
+        businessNumber: contract.contractNumber
       };
 
       // 创建支出申请
