@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "20");
     const noCache = searchParams.get("noCache") === "true";
+    // 凭证通常是 Base64 原图。列表页只需要合同和 SKU 摘要，查看详情时再按需加载。
+    const includeVouchers = searchParams.get("includeVouchers") === "true";
 
     // 生成缓存键
     const cacheKey = generateCacheKey(
@@ -56,7 +58,8 @@ export async function GET(request: NextRequest) {
       status || 'all',
       supplierId || 'all',
       String(page),
-      String(pageSize)
+      String(pageSize),
+      includeVouchers ? 'with-vouchers' : 'summary'
     );
 
     // 尝试从缓存获取（仅第一页）
@@ -71,35 +74,37 @@ export async function GET(request: NextRequest) {
     if (status) where.status = status;
     if (supplierId) where.supplierId = supplierId;
 
+    const contractSelect = {
+      id: true, contractNumber: true, supplierId: true, supplierName: true,
+      sku: true, skuId: true, unitPrice: true, totalQty: true,
+      pickedQty: true, finishedQty: true, totalAmount: true,
+      depositRate: true, depositAmount: true, depositPaid: true,
+      tailPeriodDays: true, deliveryDate: true, status: true,
+      ...(includeVouchers ? { contractVoucher: true } : {}),
+      totalPaid: true, totalOwed: true, approvedBy: true, approvedAt: true,
+      approvalResult: true, approvalNotes: true,
+      createdAt: true, updatedAt: true,
+      _count: { select: { items: true, deliveryOrders: true } },
+      items: {
+        select: {
+          id: true,
+          sku: true,
+          skuName: true,
+          spec: true,
+          unitPrice: true,
+          qty: true,
+          pickedQty: true,
+          finishedQty: true,
+          totalAmount: true,
+        },
+        orderBy: { sortOrder: 'asc' as const },
+      },
+    } as const;
+
     const [contracts, total] = await prisma.$transaction([
       prisma.purchaseContract.findMany({
         where,
-        select: {
-          id: true, contractNumber: true, supplierId: true, supplierName: true,
-          sku: true, skuId: true, unitPrice: true, totalQty: true,
-          pickedQty: true, finishedQty: true, totalAmount: true,
-          depositRate: true, depositAmount: true, depositPaid: true,
-          tailPeriodDays: true, deliveryDate: true, status: true,
-          contractVoucher: true,
-          totalPaid: true, totalOwed: true, approvedBy: true, approvedAt: true,
-          approvalResult: true, approvalNotes: true,
-          createdAt: true, updatedAt: true,
-          _count: { select: { items: true, deliveryOrders: true } },
-          items: {
-            select: {
-              id: true,
-              sku: true,
-              skuName: true,
-              spec: true,
-              unitPrice: true,
-              qty: true,
-              pickedQty: true,
-              finishedQty: true,
-              totalAmount: true,
-            },
-            orderBy: { sortOrder: 'asc' },
-          },
-        },
+        select: contractSelect,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -154,7 +159,7 @@ export async function GET(request: NextRequest) {
         tailPeriodDays: c.tailPeriodDays,
         deliveryDate: c.deliveryDate?.toISOString(),
         status: STATUS_MAP_DB_TO_FRONT[c.status] ?? c.status,
-        contractVoucher: parseContractVoucher((c as any).contractVoucher),
+        contractVoucher: includeVouchers ? parseContractVoucher((c as any).contractVoucher) : undefined,
         totalPaid: Number(c.totalPaid),
         totalOwed: Number(c.totalOwed),
         approvedBy: c.approvedBy || undefined,
