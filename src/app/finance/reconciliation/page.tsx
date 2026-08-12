@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { FileText } from "lucide-react";
-import { getMonthlyBills, saveMonthlyBills, updateMonthlyBill, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
+import { getMonthlyBills, saveMonthlyBills, updateMonthlyBill, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
 import { ReconciliationStats } from "./components/ReconciliationStats";
 import { ReconciliationFilters } from "./components/ReconciliationFilters";
 import { ReconciliationTable } from "./components/ReconciliationTable";
@@ -969,7 +969,7 @@ export default function ReconciliationPage() {
                           </div>
                         )}
                         <div className={bill.billType === "广告返点" ? "text-emerald-300" : ""}>
-                          {formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency, "expense")}
+                          {formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency, "expense")}
                           {bill.billType === "广告返点" && <span className="ml-1 text-xs text-slate-500">返点</span>}
                         </div>
                       </td>
@@ -1033,7 +1033,7 @@ export default function ReconciliationPage() {
                           </div>
                         )}
                         <div className={bill.billType === "广告返点" ? "text-emerald-300" : ""}>
-                          {formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency, "expense")}
+                          {formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency, "expense")}
                           {bill.billType === "广告返点" && <span className="ml-1 text-xs text-slate-500">返点</span>}
                         </div>
                       </td>
@@ -1488,7 +1488,7 @@ export default function ReconciliationPage() {
                 <div>
                   <span className="text-slate-400">金额：</span>
                   <span className="text-rose-300 font-medium ml-2">
-                    {formatCurrency(selectedPendingPaymentBill.totalAmount, selectedPendingPaymentBill.currency, "expense")}
+                    {formatCurrency(getMonthlyBillPaymentAmount(selectedPendingPaymentBill), selectedPendingPaymentBill.currency, "expense")}
                   </span>
                 </div>
                 <div className="col-span-2">
@@ -1707,7 +1707,7 @@ export default function ReconciliationPage() {
                   }
 
                   // 检查账户余额
-                  if ((account.originalBalance || 0) < selectedPendingPaymentBill.totalAmount) {
+                  if ((account.originalBalance || 0) < getMonthlyBillPaymentAmount(selectedPendingPaymentBill)) {
                     toast.error("账户余额不足");
                     return;
                   }
@@ -1744,7 +1744,7 @@ export default function ReconciliationPage() {
                                selectedPendingPaymentBill.billType === "工厂订单" ? "采购/工厂订单" :
                                "其他",
                       type: "expense" as const,
-                      amount: -selectedPendingPaymentBill.totalAmount,
+                      amount: -getMonthlyBillPaymentAmount(selectedPendingPaymentBill),
                       accountId: paymentForm.accountId,
                       accountName: account.name,
                       currency: selectedPendingPaymentBill.currency,
@@ -1765,7 +1765,7 @@ export default function ReconciliationPage() {
                     const updatedAccounts = bankAccounts.map((a) => {
                       if (a.id === paymentForm.accountId) {
                         // 与现金流水页面保持一致：待付款是 expense 类型
-                        const amount = Math.abs(selectedPendingPaymentBill.totalAmount);
+                        const amount = Math.abs(getMonthlyBillPaymentAmount(selectedPendingPaymentBill));
                         const change = -amount; // expense 类型，change 为负数
                         const newBalance = (a.originalBalance || 0) + change;
                         return {

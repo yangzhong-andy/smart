@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from '@/lib/redis';
+import { syncLogisticsMonthlyBills } from "@/lib/monthly-bill-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -222,6 +223,8 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      await syncLogisticsMonthlyBills();
+
       return NextResponse.json({
         id: cost.id,
         created: 1,
@@ -259,6 +262,8 @@ export async function POST(request: NextRequest) {
       )
     );
 
+    await syncLogisticsMonthlyBills();
+
     return NextResponse.json({
       id: rows[0]!.id,
       created: rows.length,
@@ -274,4 +279,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

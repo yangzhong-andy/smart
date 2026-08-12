@@ -9,6 +9,7 @@ import {
   getMonthlyBills,
   saveMonthlyBills,
   getBillsByStatus,
+  getMonthlyBillPaymentAmount,
   type MonthlyBill,
   type BillStatus,
   type BillType,
@@ -291,10 +292,7 @@ export default function ApprovalCenterPage() {
     const serviceProvider = bill.billCategory === "Payable" 
       ? (bill.agencyName || bill.supplierName || bill.factoryName || "-")
       : (bill.agencyName || "-");
-    const billAmount = formatCurrencyString(
-      bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, 
-      bill.currency
-    );
+    const billAmount = formatCurrencyString(getMonthlyBillPaymentAmount(bill), bill.currency);
     
     setConfirmDialog({
       open: true,

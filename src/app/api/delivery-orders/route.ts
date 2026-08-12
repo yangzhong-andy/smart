@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 import { DeliveryOrderStatus } from "@prisma/client";
+import { autoGenerateSupplierBills } from "@/lib/auto-generate-bills";
 
 export const dynamic = 'force-dynamic';
 

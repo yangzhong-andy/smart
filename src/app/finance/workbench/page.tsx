@@ -12,7 +12,7 @@ import MaintenanceView from "@/components/MaintenanceView";
 import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
 import Link from "next/link";
 import type { PendingEntry } from "@/lib/pending-entry-store";
-import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { type BankAccount, getAccountStats } from "@/lib/finance-store";
 import type { CashFlow as CashFlowType } from "@/lib/cash-flow-store";
 import { type FinanceRates } from "@/lib/exchange";
@@ -1351,7 +1351,7 @@ export default function FinanceWorkbenchPage() {
                         {bill.agencyName || bill.supplierName || bill.factoryName || "-"} · {bill.month}
                       </div>
                       <div className="text-xs text-slate-400 mb-1">
-                        <span className="font-medium text-slate-300">{formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency)}</span>
+                        <span className="font-medium text-slate-300">{formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency)}</span>
                       </div>
                       <div className="text-xs text-slate-500 mt-2">
                         审批时间：{formatDate(bill.approvedAt || bill.createdAt)}
@@ -1474,7 +1474,7 @@ export default function FinanceWorkbenchPage() {
                           <div className="text-xs text-slate-400 mb-1">
                             <span className="font-medium text-slate-300">{bill.billType}</span>
                             <span className="mx-2">·</span>
-                            <span className="font-medium text-slate-300">{formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency)}</span>
+                            <span className="font-medium text-slate-300">{formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency)}</span>
                           </div>
                           <div className="text-xs text-slate-500 mt-2">
                             {bill.month}

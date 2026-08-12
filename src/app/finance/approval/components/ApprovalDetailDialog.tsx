@@ -3,6 +3,7 @@
 import { formatCurrency } from "@/lib/currency-utils";
 import { STATUS_COLORS, STATUS_LABELS } from "./types";
 import type { MonthlyBill } from "@/lib/reconciliation-store";
+import { getMonthlyBillPaymentAmount } from "@/lib/reconciliation-store";
 import type { ExpenseRequest, IncomeRequest } from "@/lib/expense-income-request-store";
 import type { RebateReceivable } from "@/lib/rebate-receivable-store";
 import type { RejectModalState } from "./types";
@@ -140,7 +141,7 @@ export function ApprovalDetailDialog({
                       }`}
                     >
                       {formatCurrency(
-                        selectedBill.billType === "广告返点" ? selectedBill.netAmount : selectedBill.totalAmount,
+                        getMonthlyBillPaymentAmount(selectedBill),
                         selectedBill.currency,
                         selectedBill.billCategory === "Receivable" ? "income" : "expense"
                       )}

@@ -149,6 +149,9 @@ export async function DELETE(
       where: { id: params.id }
     })
 
+    await autoGenerateSupplierBills()
+    await clearCacheByPrefix(CACHE_KEY_PREFIX)
+
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json(
