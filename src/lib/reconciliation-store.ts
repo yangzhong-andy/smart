@@ -69,6 +69,7 @@ export type MonthlyBill = {
   notes?: string; // 备注信息
   procurementPaymentCoverage?: import("./procurement-payment-coverage").ProcurementPaymentCoverage;
   actualPaidAmount?: number;
+  depositDeductionAmount?: number;
 };
 
 /** Amount that should actually move through the cashier for this bill. */

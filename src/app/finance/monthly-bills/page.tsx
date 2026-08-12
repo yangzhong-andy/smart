@@ -824,9 +824,21 @@ export default function MonthlyBillsPage() {
                           )}
                         </div>
                       )}
-                      {(bill.offsetAmount || 0) > 0 && (
-                        <div className="text-xs text-emerald-400">抵扣 -{formatCurrency(bill.offsetAmount, bill.currency, "income")}</div>
-                      )}
+                      {bill.billType === "工厂订单" ? (
+                        <div className="mt-1 space-y-0.5 text-xs">
+                          {(bill.actualPaidAmount || 0) > 0 && (
+                            <div className="text-emerald-400">拿货单已付 {formatCurrency(bill.actualPaidAmount || 0, bill.currency, "expense")}</div>
+                          )}
+                          {(bill.depositDeductionAmount || 0) > 0 && (
+                            <div className="text-cyan-300">定金抵扣 {formatCurrency(bill.depositDeductionAmount || 0, bill.currency, "expense")}</div>
+                          )}
+                          <div className={(bill.netAmount || 0) > 0.005 ? "text-rose-400" : "text-slate-500"}>
+                            待付 {formatCurrency(bill.status === "Paid" ? 0 : Math.max(0, bill.netAmount || 0), bill.currency, "expense")}
+                          </div>
+                        </div>
+                      ) : (bill.offsetAmount || 0) > 0 ? (
+                        <div className="text-xs text-emerald-400">抵扣 -{formatCurrency(bill.offsetAmount || 0, bill.currency, "income")}</div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
                       {(() => {
@@ -857,15 +869,19 @@ export default function MonthlyBillsPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-300">{bill.currency}</td>
                     <td className="px-4 py-3">
-                      {bill.procurementPaymentCoverage?.blocked ? (
+                      {bill.status === "Paid" ? (
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${bill.billCategory === "Receivable" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors.Paid}`}>
+                          {bill.billCategory === "Receivable" ? "已回款" : "已支付"}
+                        </span>
+                      ) : bill.procurementPaymentCoverage?.blocked ? (
                         <span className="inline-flex max-w-[150px] items-center rounded border border-blue-500/40 bg-blue-500/15 px-2 py-1 text-xs font-medium leading-5 text-blue-200">
                           {procurementPaymentCoverageLabel(bill.procurementPaymentCoverage)}
                         </span>
                       ) : (
                         <span
-                          className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${bill.billCategory === "Receivable" && bill.status === "Paid" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors[bill.status]}`}
+                          className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${statusColors[bill.status]}`}
                         >
-                          {bill.billCategory === "Receivable" && bill.status === "Paid" ? "已回款" : statusLabels[bill.status]}
+                          {statusLabels[bill.status]}
                         </span>
                       )}
                     </td>

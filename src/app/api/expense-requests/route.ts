@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 import { requireApiUser } from "@/lib/api-auth";
+import { Prisma } from "@prisma/client";
+import {
+  hasVoucher,
+  isProcurementPayment,
+  isProcurementTailPayment,
+  serializeVoucher,
+} from "@/lib/procurement-payment-voucher";
 
 export const dynamic = 'force-dynamic';
 
@@ -237,9 +244,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const purchasePayment = isProcurementPayment(body);
+    const purchaseTailPayment = isProcurementTailPayment(body);
+    if (purchasePayment && !hasVoucher(body.voucher)) {
+      return NextResponse.json({ error: "采购发起付款必须上传发起付款凭证" }, { status: 400 });
+    }
+    if (purchaseTailPayment && !nonEmpty(body.relatedId)) {
+      return NextResponse.json({ error: "采购尾款必须关联拿货单" }, { status: 400 });
+    }
+
     const payee = await resolvePurchasePayee(body);
-    const expenseRequest = await prisma.expenseRequest.create({
-      data: {
+    const createdBy = auth.user.name || auth.user.email;
+    const departmentId = auth.user.departmentId || null;
+    const departmentName = auth.user.departmentName || null;
+    const relatedId = nonEmpty(body.relatedId);
+    const voucher = serializeVoucher(body.voucher);
+    const createData = {
         uid: body.uid || null,
         date: body.date ? new Date(body.date) : new Date(),
         summary: body.summary,
@@ -250,7 +270,7 @@ export async function POST(request: NextRequest) {
         storeName: body.storeName || null,
         country: body.country || null,
         businessNumber: body.businessNumber || null,
-        relatedId: body.relatedId || null,
+        relatedId: relatedId || null,
         remark: payee.remark
           ? (Array.isArray(body.containerIds) && body.containerIds.length > 0
             ? `${payee.remark} [关联柜子: ${body.containerIds.join(",")}]`
@@ -260,15 +280,39 @@ export async function POST(request: NextRequest) {
             : null),
         payeeName: payee.payeeName ?? null,
         payeeAccount: payee.payeeAccount ?? null,
-        voucher: body.voucher ? (typeof body.voucher === "string" ? body.voucher : JSON.stringify(body.voucher)) : null,
+        voucher,
         status: body.status || "Pending_Approval",
-        createdBy: body.createdBy || '系统',
+        createdBy,
         submittedAt: body.submittedAt ? new Date(body.submittedAt) : new Date(),
-        departmentId: body.departmentId || null,
-        departmentName: body.departmentName || null,
+        departmentId,
+        departmentName,
         warehouseId: body.warehouseId || null,
-      },
-    });
+      };
+    const expenseRequest = purchaseTailPayment
+      ? await prisma.$transaction(async (tx) => {
+          const deliveryOrder = await tx.deliveryOrder.findUnique({
+            where: { id: relatedId! },
+            select: { id: true },
+          });
+          if (!deliveryOrder) throw new Error("拿货单不存在");
+
+          const duplicate = await tx.expenseRequest.findFirst({
+            where: {
+              relatedId,
+              status: { in: ["Pending_Approval", "Approved", "Paid"] },
+              OR: [
+                { category: "采购/采购尾款" },
+                { summary: { contains: "采购尾款" } },
+              ],
+            },
+            select: { id: true, status: true },
+          });
+          if (duplicate) {
+            throw new Error(`该拿货单已有付款申请（${duplicate.status}），请勿重复发起`);
+          }
+          return tx.expenseRequest.create({ data: createData });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      : await prisma.expenseRequest.create({ data: createData });
 
     // 清除支出申请缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
@@ -286,6 +330,14 @@ export async function POST(request: NextRequest) {
       createdAt: expenseRequest.createdAt.toISOString(),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
+    const message = error.message || "创建失败";
+    const status = message.includes("已有付款申请")
+      ? 409
+      : message === "拿货单不存在"
+        ? 404
+        : error?.code === "P2034"
+          ? 409
+          : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

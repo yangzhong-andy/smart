@@ -702,7 +702,12 @@ export function ApprovalDetailDialog({
                   )}
                   {(selectedExpenseRequest as any).voucher && (
                     <div className="mt-4 p-3 rounded-lg border border-slate-700 bg-slate-800/30">
-                      <div className="text-sm font-medium text-slate-300 mb-2">📋 物流账单凭证 - 点击查看大图</div>
+                      <div className="text-sm font-medium text-slate-300 mb-2">
+                        {String(selectedExpenseRequest.category || "").startsWith("采购") ||
+                        String(selectedExpenseRequest.summary || "").startsWith("采购")
+                          ? "发起付款凭证 - 点击查看大图"
+                          : "业务凭证 - 点击查看大图"}
+                      </div>
                       <VoucherThumbnails
                         voucher={(selectedExpenseRequest as any).voucher}
                         onView={(_src, images, index) => onVoucherView({ images, index })}
