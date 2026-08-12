@@ -10,6 +10,7 @@ import {
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
 import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import { calculateProfitAdCost } from "@/lib/profit-ad-costs";
+import { tiktokAffiliateCommissionCost } from "@/lib/profit-affiliate-commissions";
 import { tiktokShopProductDiscountOriginal } from "@/lib/profit-gmv";
 import { usTikTokProfitInput } from "@/lib/profit-us-tiktok";
 import { selectActiveProfitScheme } from "@/lib/profit-scheme-resolution";
@@ -785,8 +786,7 @@ export async function GET(request: NextRequest) {
     const affiliateSettlementOrders = new Set<string>();
     for (const transaction of orderSettlementTransactions) {
       affiliateSettlementOrders.add(transaction.orderId);
-      const raw = transaction.rawData as any;
-      const commissionCost = -number(raw?.fee_tax_breakdown?.fee?.affiliate_commission_amount);
+      const commissionCost = tiktokAffiliateCommissionCost(transaction.rawData).total;
       if (Math.abs(commissionCost) < 0.000001) continue;
       const currency = String(transaction.currency || "BRL").trim().toUpperCase();
       const current = affiliateCommissionByOrder.get(transaction.orderId) || {};
