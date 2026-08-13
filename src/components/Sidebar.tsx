@@ -220,6 +220,7 @@ const navItems: NavItem[] = [
       { label: "工厂端管理", labelEn: "", icon: Factory, href: "/supply-chain/factories" },
       { label: "库存查询", labelEn: "", icon: Factory, href: "/inventory" },
       { label: "仓库库存", labelEn: "", icon: Package, href: "/inventory/warehouse" },
+      { label: "备货补货", labelEn: "", icon: Package, href: "/inventory/replenishment" },
       { label: "库存看板", labelEn: "", icon: Package, href: "/inventory/dashboard" },
       { label: "库存对账", labelEn: "", icon: Package, href: "/inventory/reconciliation" }
     ]
