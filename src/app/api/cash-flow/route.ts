@@ -5,6 +5,7 @@ import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/
 import { requireApiUser } from "@/lib/api-auth";
 import { summarizeCashFlows } from "@/lib/cash-flow-summary";
 import type { Prisma } from "@prisma/client";
+import { isWarehouseRechargeCategory } from "@/lib/warehouse-funds";
 
 export const dynamic = 'force-dynamic';
 
@@ -279,6 +280,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (isWarehouseRechargeCategory(body.category)) {
+      return NextResponse.json(
+        { error: "海外仓预存款必须从付款申请审批后由财务付款，不能直接新增流水" },
+        { status: 400 },
+      );
+    }
     const rawDate = body.date;
     const flowDate = (rawDate != null && String(rawDate).trim() !== "")
       ? new Date(rawDate)
@@ -298,8 +305,9 @@ export async function POST(request: NextRequest) {
     const paymentVoucherVal = body.paymentVoucher !== undefined ? toVoucherStr(body.paymentVoucher) : null;
     const transferVoucherVal = body.transferVoucher !== undefined ? toVoucherStr(body.transferVoucher) : null;
     const voucherVal = body.voucher !== undefined ? toVoucherStr(body.voucher) : (paymentVoucherVal ?? transferVoucherVal ?? null);
-    const flow = await prisma.cashFlow.create({
-      data: {
+    const flow = await prisma.$transaction(async (tx) => {
+      const created = await tx.cashFlow.create({
+        data: {
         uid: body.uid || null,
         accountId: body.accountId,
         accountName: body.accountName ?? "",
@@ -320,29 +328,16 @@ export async function POST(request: NextRequest) {
         platform: body.platform || null,
         storeId: body.storeId || null,
         storeName: body.storeName || null,
-      },
-    });
+        },
+      });
 
-    // 海外仓一件代发费：自动充值到仓库余额
-    if (body.category === "物流/海外仓一件代发费" && body.warehouseId) {
-      try {
-        const warehouse = await prisma.warehouse.findUnique({ where: { id: body.warehouseId } });
-        if (warehouse) {
-          const chargeAmount = Math.abs(Number(body.amount));
-          const oldBalance = Number(warehouse.balance || 0);
-          await prisma.warehouse.update({
-            where: { id: body.warehouseId },
-            data: { balance: oldBalance + chargeAmount },
-          });
-          console.log(`[Warehouse Charge] ${warehouse.name} 充值 +${chargeAmount} (余额: ${oldBalance} → ${oldBalance + chargeAmount})`);
-        }
-      } catch (e: any) {
-        console.error("[Warehouse Charge] 仓库充值失败:", e.message);
-      }
-    }
+      return created;
+    }, { timeout: 30000 });
 
     // 清除资金流缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    await clearCacheByPrefix("warehouses");
+    await clearCacheByPrefix("warehouse-funds");
 
     return NextResponse.json({
       id: flow.id,

@@ -471,18 +471,14 @@ function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProps) {
           )}
           {warehouse.type === "OVERSEAS" && (
             <div className="border-t border-white/5 pt-3 space-y-1 text-xs text-white/55">
-              <div className="flex justify-between">
-                <span>充值总额</span>
-                <span className="font-mono text-emerald-300/90 font-medium">{Number(warehouse.balance || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>已消费</span>
-                <span className="font-mono text-rose-300/80">{Number(warehouse.consumedAmount || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div className="flex justify-between border-t border-white/5 pt-1">
-                <span className="text-white/70">剩余余额</span>
-                <span className="font-mono text-white/90 font-bold">{(Number(warehouse.balance || 0) - Number(warehouse.consumedAmount || 0)).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
-              </div>
+              {(warehouse.fundAccounts || []).map((account) => (
+                <div key={account.currency} className="space-y-1 border-b border-white/5 pb-2 last:border-0">
+                  <div className="flex justify-between"><span>累计充值</span><span className="font-mono text-emerald-300/90">{account.currency} {account.totalCredit.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>累计扣费</span><span className="font-mono text-rose-300/80">{account.currency} {account.totalDebit.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-white/70">可用余额</span><span className="font-mono font-bold text-white/90">{account.currency} {account.balance.toFixed(2)}</span></div>
+                </div>
+              ))}
+              {!warehouse.fundAccounts?.length && <div className="text-white/40">暂无已付款预存资金</div>}
             </div>
           )}
         </div>

@@ -12,6 +12,10 @@ import { prisma } from "@/lib/prisma";
  *   5. 已扣减过的订单不会重复扣（通过 TikTokStockDeduction 唯一约束）
  */
 export async function deductStockForOrder(orderId: string, shopId: string, orderData: any) {
+  if (process.env.ENABLE_AUTOMATIC_STOCK_DEDUCTION !== "true") {
+    return { skipped: true, reason: "海外仓期初盘点完成前，自动扣库存已关闭", results: [] };
+  }
+
   // 1. 检查触发条件：待揽收 + 有物流信息
   const status = orderData.order_status || orderData.status;
   const trackingNumber = orderData.tracking_number;
