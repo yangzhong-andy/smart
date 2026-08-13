@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { calculateReplenishment } from "./replenishment"
+import { calculateReplenishment, selectReplenishmentUnitCost } from "./replenishment"
 
 const policy = { salesWindowDays: 30, targetCoverageDays: 45, safetyStockDays: 15, leadTimeDays: 30 }
 const today = new Date("2026-08-14T00:00:00Z")
@@ -43,3 +43,8 @@ test("reports no-sales SKUs without inventing demand", () => {
   assert.equal(result.urgency, "NO_SALES")
 })
 
+test("uses the SKU-level cost before the supplier fallback price", () => {
+  assert.equal(selectReplenishmentUnitCost(8.35, 9.7), 8.35)
+  assert.equal(selectReplenishmentUnitCost(null, 9.7), 9.7)
+  assert.equal(selectReplenishmentUnitCost(undefined, undefined), 0)
+})

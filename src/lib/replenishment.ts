@@ -49,6 +49,15 @@ function positive(value: number | null | undefined): number {
   return Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0
 }
 
+export function selectReplenishmentUnitCost(
+  variantCost: unknown,
+  supplierPrice: unknown,
+): number {
+  const selected = variantCost != null ? variantCost : supplierPrice
+  const parsed = Number(selected ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function round(value: number, digits = 2): number {
   const factor = 10 ** digits
   return Math.round((value + Number.EPSILON) * factor) / factor
