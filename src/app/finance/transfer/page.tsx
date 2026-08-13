@@ -28,6 +28,10 @@ type CashFlow = {
   isReversal?: boolean;
   reversedById?: string;
   voucher?: string;
+  paymentVoucher?: string;
+  transferVoucher?: string;
+  hasPaymentVoucher?: boolean;
+  hasTransferVoucher?: boolean;
   createdAt: string;
 };
 
@@ -47,6 +51,7 @@ type TransferRecord = {
   isManualRate: boolean;
   remark: string;
   voucher?: string;
+  hasVoucher: boolean;
   createdAt: string;
   outFlowId: string;
   inFlowId: string;
@@ -54,6 +59,7 @@ type TransferRecord = {
 
 // SWR fetcher
 const fetcher = (url: string) => fetch(url).then(res => res.json());
+const TRANSFER_FLOW_URL = "/api/cash-flow?page=1&pageSize=500&categories=%E5%86%85%E9%83%A8%E5%88%92%E6%8B%A8%2C%E6%8D%A2%E6%B1%87&includeVouchers=false";
 
 const currency = (n: number, curr: string = "CNY") =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
@@ -84,7 +90,7 @@ const formatDate = (d: string) => {
 
 export default function TransferPage() {
   // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }）
-  const { data: cashFlowData } = useSWR<CashFlow[] | { data: CashFlow[]; pagination: unknown }>('/api/cash-flow?page=1&pageSize=5000&noCache=true', fetcher, {
+  const { data: cashFlowData } = useSWR<CashFlow[] | { data: CashFlow[]; pagination: unknown }>(TRANSFER_FLOW_URL, fetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     keepPreviousData: true,
@@ -125,7 +131,43 @@ export default function TransferPage() {
   const [supplementVoucherValue, setSupplementVoucherValue] = useState<string | string[]>("");
   const [filterTransferType, setFilterTransferType] = useState<string>("all");
   const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
+  const [voucherLoadingId, setVoucherLoadingId] = useState<string | null>(null);
   const [voucherRotation, setVoucherRotation] = useState(0);
+
+  const firstVoucherImage = (value: unknown): string | null => {
+    if (typeof value !== "string" || !value.trim()) return null;
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.find((item) => typeof item === "string" && item.trim()) || null;
+      }
+      return typeof parsed === "string" && parsed.trim() ? parsed : value;
+    } catch {
+      return value;
+    }
+  };
+
+  const viewTransferVoucher = async (transfer: TransferRecord) => {
+    setVoucherLoadingId(transfer.id);
+    try {
+      for (const flowId of [transfer.outFlowId, transfer.inFlowId]) {
+        const response = await fetch(`/api/cash-flow/${flowId}/vouchers`, { cache: "no-store" });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body?.error || "凭证加载失败");
+        const image = firstVoucherImage(body.transferVoucher) || firstVoucherImage(body.paymentVoucher);
+        if (image) {
+          setVoucherRotation(0);
+          setVoucherViewModal(image);
+          return;
+        }
+      }
+      toast.error("该划拨记录没有可查看的凭证");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "凭证加载失败");
+    } finally {
+      setVoucherLoadingId((current) => current === transfer.id ? null : current);
+    }
+  };
 
   // 将两条流水记录合并为一条划拨记录
   const transfers = useMemo(() => {
@@ -185,6 +227,12 @@ export default function TransferPage() {
         isManualRate,
         remark,
         voucher: (outFlow as any).paymentVoucher || (outFlow as any).transferVoucher || outFlow.voucher || (inFlow as any).paymentVoucher || (inFlow as any).transferVoucher || inFlow.voucher,
+        hasVoucher: Boolean(
+          outFlow.voucher || outFlow.paymentVoucher || outFlow.transferVoucher ||
+          inFlow.voucher || inFlow.paymentVoucher || inFlow.transferVoucher ||
+          outFlow.hasPaymentVoucher || outFlow.hasTransferVoucher ||
+          inFlow.hasPaymentVoucher || inFlow.hasTransferVoucher
+        ),
         createdAt: outFlow.createdAt,
         outFlowId: outFlow.id,
         inFlowId: inFlow.id,
@@ -244,7 +292,7 @@ export default function TransferPage() {
           throw new Error(err.error || "更新失败");
         }
       }
-      swrMutate("/api/cash-flow?page=1&pageSize=5000&noCache=true");
+      swrMutate(TRANSFER_FLOW_URL);
       swrMutate("/api/accounts?page=1&pageSize=500");
       toast.success("换汇已确认");
     } catch (e: any) {
@@ -261,7 +309,7 @@ export default function TransferPage() {
       for (const flowId of flowIds) {
         await fetch(`/api/cash-flow/${flowId}`, { method: "DELETE" });
       }
-      swrMutate("/api/cash-flow?page=1&pageSize=5000&noCache=true");
+      swrMutate(TRANSFER_FLOW_URL);
       toast.success("已删除");
     } catch {
       toast.error("删除失败");
@@ -638,7 +686,7 @@ export default function TransferPage() {
                                 body: JSON.stringify({ businessNumber: val || null }),
                               });
                               toast.success(val ? "单号已更新" : "单号已清除");
-                              swrMutate("/api/cash-flow?page=1&pageSize=5000&noCache=true");
+                              swrMutate(TRANSFER_FLOW_URL);
                             } catch { toast.error("更新失败"); }
                           }
                           // 同时更新转入流水
@@ -655,20 +703,14 @@ export default function TransferPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-center">
-                    {transfer.voucher && transfer.voucher.length > 10 ? (
+                    {transfer.hasVoucher ? (
                       <button
-                        onClick={() => {
-                          let v = transfer.voucher || "";
-                          try {
-                            const parsed = JSON.parse(v);
-                            if (Array.isArray(parsed) && parsed.length > 0) v = parsed[0];
-                            else if (typeof parsed === "string") v = parsed;
-                          } catch {}
-                          setVoucherViewModal(v || null);
-                        }}
+                        type="button"
+                        disabled={voucherLoadingId === transfer.id}
+                        onClick={() => void viewTransferVoucher(transfer)}
                         className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
                       >
-                        查看
+                        {voucherLoadingId === transfer.id ? "加载中..." : "查看"}
                       </button>
                     ) : (
                       <span className="text-slate-500 text-xs">-</span>
@@ -745,7 +787,7 @@ export default function TransferPage() {
                       }),
                     });
                     toast.success("凭证已补充");
-                    swrMutate("/api/cash-flow?page=1&pageSize=5000&noCache=true");
+                    swrMutate(TRANSFER_FLOW_URL);
                   } catch { toast.error("保存失败"); }
                   setSupplementTransfer(null);
                   setSupplementVoucherValue("");

@@ -41,6 +41,10 @@ function buildWhere(searchParams: URLSearchParams): Prisma.CashFlowWhereInput {
   const status = searchParams.get("status");
   const currency = searchParams.get("currency");
   const category = searchParams.get("category");
+  const categories = String(searchParams.get("categories") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   const subCategory = searchParams.get("subCategory");
   const businessNumber = searchParams.get("businessNumber");
   const keyword = String(searchParams.get("search") || "").trim();
@@ -57,7 +61,9 @@ function buildWhere(searchParams: URLSearchParams): Prisma.CashFlowWhereInput {
   if (currency) and.push({ currency });
   if (businessNumber) and.push({ businessNumber });
 
-  if (subCategory) {
+  if (categories.length > 0) {
+    and.push({ category: { in: categories } });
+  } else if (subCategory) {
     and.push({ category: subCategory });
   } else if (category) {
     and.push({
