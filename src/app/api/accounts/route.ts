@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
-import { AccountType } from '@prisma/client'
+import { AccountType, CashFlowType } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 import { serverError } from '@/lib/api-response'
 
@@ -55,13 +55,10 @@ export async function GET(request: NextRequest) {
     if (accountType) where.accountType = accountType as AccountType
     if (storeId) where.storeId = storeId
 
-    const [accounts, total] = await prisma.$transaction([
+    const [accounts, total, balanceGroups, countGroups] = await Promise.all([
       prisma.bankAccount.findMany({
         where,
         include: {
-          cashFlows: {
-            select: { amount: true, type: true },
-          },
           children: {
             select: { id: true },
           },
@@ -71,21 +68,28 @@ export async function GET(request: NextRequest) {
         take: pageSize,
       }),
       prisma.bankAccount.count({ where }),
+      prisma.cashFlow.groupBy({
+        by: ['accountId'],
+        where: { type: { in: [CashFlowType.INCOME, CashFlowType.EXPENSE] } },
+        _sum: { amount: true },
+      }),
+      prisma.cashFlow.groupBy({
+        by: ['accountId'],
+        _count: { id: true },
+      }),
     ])
+    const balanceByAccount = new Map(
+      balanceGroups.map((row) => [row.accountId, Number(row._sum.amount || 0)])
+    )
+    const countByAccount = new Map(
+      countGroups.map((row) => [row.accountId, row._count.id])
+    )
     
     const response = {
       data: accounts.map(acc => {
         // 根据流水计算实时余额：初始资金 + 收入 - 支出
         const initialCapital = Number(acc.initialCapital) || 0;
-        let balance = initialCapital;
-        acc.cashFlows.forEach((flow: any) => {
-          if (String(flow.type).toLowerCase() === 'income') {
-            balance += Number(flow.amount);
-          } else if (String(flow.type).toLowerCase() === "expense") {
-            // 注意：expense 的 amount 已经是负数，直接加即可，不要减
-            balance += Number(flow.amount);
-          }
-        });
+        const balance = initialCapital + (balanceByAccount.get(acc.id) || 0);
         
         return {
           id: acc.id,
@@ -111,7 +115,7 @@ export async function GET(request: NextRequest) {
           createdAt: acc.createdAt.toISOString(),
           updatedAt: acc.updatedAt.toISOString(),
           childCount: acc.children?.length || 0,
-          cashFlowCount: acc.cashFlows?.length || 0,
+          cashFlowCount: countByAccount.get(acc.id) || 0,
         };
       }),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
