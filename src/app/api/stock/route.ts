@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { calculateWarehouseAssetValue } from '@/lib/warehouse-asset-ledger'
 
 // GET - 获取库存数据（支持筛选）
 export async function GET(request: NextRequest) {
@@ -118,8 +119,8 @@ export async function GET(request: NextRequest) {
       const costContinuous = Boolean(openingLog?.unitCost) && costLogs.every(log =>
         log.unitCost != null && Boolean(log.currency) && log.currency === assetCurrency
       )
-      const ledgerAssetValue = costContinuous
-        ? costLogs.reduce((sum, log) => sum + (log.qty * Number(log.unitCost)), 0)
+      const ledgerAssetValue = costContinuous && openingLog
+        ? calculateWarehouseAssetValue(openingLog, postOpeningLogs)
         : stock.qty * (stock.variant.costPrice ? Number(stock.variant.costPrice) : 0)
       const costPrice = stock.qty > 0 ? ledgerAssetValue / stock.qty : Number(openingLog?.unitCost || stock.variant.costPrice || 0)
       const assetStatus = reconciliationStatus !== 'RECONCILED'
