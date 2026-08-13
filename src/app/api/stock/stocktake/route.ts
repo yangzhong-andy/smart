@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`stocktake:${warehouseId}:${variantId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`stocktake:${warehouseId}:${variantId}`}))`;
       const [warehouse, variant] = await Promise.all([
         tx.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, name: true, type: true } }),
         tx.productVariant.findUnique({ where: { id: variantId }, select: { id: true, skuId: true, costPrice: true, currency: true } }),

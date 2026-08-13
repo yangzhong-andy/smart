@@ -21,7 +21,7 @@ async function main() {
   if (existing > 0) throw new Error(`Calibration ${CALIBRATION_NUMBER} already exists (${existing} rows)`)
 
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${CALIBRATION_NUMBER}))`
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${CALIBRATION_NUMBER}))`
     for (const target of targets) {
       const [stock, variant, deductions, firstLog] = await Promise.all([
         tx.stock.findUnique({ where: { variantId_warehouseId: { variantId: target.variantId, warehouseId: target.warehouseId } } }),
