@@ -66,3 +66,23 @@ test("shop-wide internal switches ignore changing or missing platform warehouse 
   assert.equal(resolve({}, "shop-a", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
   assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "legacy");
 });
+
+test("first new-warehouse order is the exact boundary on a mixed switch day", () => {
+  const resolve = createWarehouseResolver(
+    [{ tiktokWarehouseId: "OLD-ID", warehouseId: "old-warehouse" }],
+    [{
+      platform: "TIKTOK",
+      region: "BR",
+      shopId: "shop-a",
+      externalWarehouseId: "*",
+      warehouseId: "new-warehouse",
+      effectiveFrom: "2026-08-13T14:30:00.000Z",
+      effectiveOrderId: "585500000000000200",
+    }],
+  );
+
+  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-a", "2026-08-13T14:29:59.999Z", "TIKTOK", "BR", "585500000000000199").warehouseId, "old-warehouse");
+  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-a", "2026-08-13T14:30:00.000Z", "TIKTOK", "BR", "585500000000000199").warehouseId, "old-warehouse");
+  assert.equal(resolve({ warehouse_id: "NEW-ID" }, "shop-a", "2026-08-13T14:30:00.000Z", "TIKTOK", "BR", "585500000000000200").warehouseId, "new-warehouse");
+  assert.equal(resolve({}, "shop-a", "2026-08-13T14:30:00.001Z", "TIKTOK", "BR", "585500000000000201").warehouseId, "new-warehouse");
+});
