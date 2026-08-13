@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { Prisma, Platform, PurchaseOrderStatus } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { requireApiUser } from "@/lib/api-auth"
-import { calculateReplenishment, type ReplenishmentPolicy } from "@/lib/replenishment"
+import {
+  calculateReplenishment,
+  selectReplenishmentUnitCost,
+  type ReplenishmentPolicy,
+} from "@/lib/replenishment"
 
 export const dynamic = "force-dynamic"
 
@@ -12,6 +16,12 @@ const DEFAULT_POLICY: ReplenishmentPolicy = {
   safetyStockDays: 15,
   leadTimeDays: 30,
 }
+
+const REPLENISHMENT_NOTE_PREFIX = "??:??????"
+const CLOSED_REPLENISHMENT_STATUSES: PurchaseOrderStatus[] = [
+  PurchaseOrderStatus.CONTRACT_CREATED,
+  PurchaseOrderStatus.CANCELLED,
+]
 
 function number(value: unknown): number {
   const parsed = Number(value ?? 0)
@@ -204,7 +214,7 @@ export async function GET(request: NextRequest) {
         orderCount: demand.orders,
         shopSales: [...demand.shops].map(([shopId, units]) => ({ shopId, shopName: shopName.get(shopId) || shopId, units })),
         supplier: supplier ? { id: supplier.id, name: supplier.name } : null,
-        unitCost: productSupplier?.price != null ? number(productSupplier.price) : number(variant.costPrice),
+        unitCost: selectReplenishmentUnitCost(variant.costPrice, productSupplier?.price),
         ...result,
       }
     })
@@ -218,7 +228,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ generatedAt: new Date().toISOString(), policy, summary, shops, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })) })
   } catch (error: any) {
     console.error("[replenishment] GET failed", error)
-    return NextResponse.json({ error: error?.message || "备货建议读取失败" }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "????????" }, { status: 500 })
   }
 }
 
@@ -227,21 +237,37 @@ export async function POST(request: NextRequest) {
   if (auth.response) return auth.response
   try {
     const body = await request.json()
-    if (body?.confirm !== true) return NextResponse.json({ error: "必须明确确认后才能生成采购建议单" }, { status: 400 })
+    if (body?.confirm !== true) return NextResponse.json({ error: "????????????????" }, { status: 400 })
     const variantId = String(body?.variantId || "").trim()
     const quantity = Math.floor(number(body?.quantity))
     const shopId = String(body?.shopId || "").trim()
-    if (!variantId || quantity < 1 || !shopId) return NextResponse.json({ error: "缺少店铺、SKU或补货数量" }, { status: 400 })
+    if (!variantId || quantity < 1 || !shopId) return NextResponse.json({ error: "?????SKU?????" }, { status: 400 })
     const [variant, shop] = await Promise.all([
       prisma.productVariant.findUnique({ where: { id: variantId }, select: { id: true, skuId: true, costPrice: true, product: { select: { name: true } } } }),
       prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true, shopName: true, storeId: true } }),
     ])
-    if (!variant || !shop) return NextResponse.json({ error: "SKU或店铺不存在" }, { status: 404 })
+    if (!variant || !shop) return NextResponse.json({ error: "SKU??????" }, { status: 404 })
     const unitPrice = number(body?.unitPrice) || number(variant.costPrice)
     const orderNumber = `PO-RESTOCK-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
     const policySnapshot = body?.policy && typeof body.policy === "object" ? body.policy : DEFAULT_POLICY
-    const order = await prisma.purchaseOrder.create({
-      data: {
+    const order = await prisma.$transaction(async (tx) => {
+      const duplicateLockKey = `replenishment:${shop.storeId || shop.shopId}:${variant.skuId}`
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${duplicateLockKey}))`
+      const existing = await tx.purchaseOrder.findFirst({
+        where: {
+          platform: Platform.TIKTOK,
+          sku: variant.skuId,
+          status: { notIn: CLOSED_REPLENISHMENT_STATUSES },
+          notes: { startsWith: REPLENISHMENT_NOTE_PREFIX },
+          ...(shop.storeId ? { storeId: shop.storeId } : { storeName: shop.shopName }),
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, orderNumber: true, status: true, quantity: true, sku: true, storeName: true },
+      })
+      if (existing) return { duplicate: true as const, order: existing }
+
+      const created = await tx.purchaseOrder.create({
+        data: {
         uid: `RESTOCK-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         orderNumber,
         createdBy: auth.user.name,
@@ -249,22 +275,31 @@ export async function POST(request: NextRequest) {
         storeId: shop.storeId,
         storeName: shop.shopName,
         sku: variant.skuId,
-        skuId: variant.id,
+        skuId: variant.skuId,
         productName: variant.product.name,
         quantity,
         expectedDeliveryDate: new Date(Date.now() + number(policySnapshot.leadTimeDays || DEFAULT_POLICY.leadTimeDays) * 86400000),
-        urgency: body?.urgency || "紧急",
-        notes: `来源：备货补货建议\n建议快照：${JSON.stringify({ ...policySnapshot, suggestedQty: quantity })}`,
+        urgency: body?.urgency || "??",
+        notes: `${REPLENISHMENT_NOTE_PREFIX}\n????:${JSON.stringify({ ...policySnapshot, suggestedQty: quantity })}`,
         status: PurchaseOrderStatus.PENDING_RISK,
-        riskControlStatus: "待评估",
-        approvalStatus: "待审批",
-        items: { create: [{ sku: variant.skuId, skuId: variant.id, skuName: variant.product.name, quantity, unitPrice: new Prisma.Decimal(unitPrice), totalAmount: new Prisma.Decimal(unitPrice * quantity) }] },
-      },
-      select: { id: true, orderNumber: true, status: true, quantity: true, sku: true, storeName: true },
-    })
-    return NextResponse.json({ success: true, order })
+        riskControlStatus: "???",
+        approvalStatus: "???",
+        items: { create: [{ sku: variant.skuId, skuId: variant.skuId, skuName: variant.product.name, quantity, unitPrice: new Prisma.Decimal(unitPrice), totalAmount: new Prisma.Decimal(unitPrice * quantity) }] },
+        },
+        select: { id: true, orderNumber: true, status: true, quantity: true, sku: true, storeName: true },
+      })
+      return { duplicate: false as const, order: created }
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+
+    if (order.duplicate) {
+      return NextResponse.json({
+        error: `???? SKU ${variant.skuId} ??????????? ${order.order.orderNumber}`,
+        existingOrder: order.order,
+      }, { status: 409 })
+    }
+    return NextResponse.json({ success: true, order: order.order })
   } catch (error: any) {
     console.error("[replenishment] POST failed", error)
-    return NextResponse.json({ error: error?.message || "生成采购建议单失败" }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "?????????" }, { status: 500 })
   }
 }
