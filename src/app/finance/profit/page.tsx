@@ -1198,7 +1198,7 @@ export default function ProfitPage() {
                   <CoverageBar label="采购成本覆盖" value={data.coverage.productCost} detail={`${data.coverage.missingCostSkuCount} 个 SKU 待补成本`} />
                   <CoverageBar label="头程物流费用覆盖" value={data.coverage.logisticsCost} detail={`${data.coverage.missingLogisticsSkuCount} 个 SKU 待分摊`} />
                   <CoverageBar label="逐单平台账单" value={data.coverage.platformActual} detail={`${data.coverage.exactSettlementOrders.toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`} />
-                  <CoverageBar label="海外仓代发规则" value={data.coverage.warehouseFulfillment} detail="按订单仓库代码匹配" />
+                  <CoverageBar label="海外仓代发规则" value={data.coverage.warehouseFulfillment} detail="按店铺切仓历史匹配" />
                   {data.summary.components.some((component) => component.code === "TAX_COST") && <CoverageBar label="店铺税率规则" value={data.coverage.taxRule} detail="按主体和生效日期匹配" />}
                   <CoverageBar label="广告店铺覆盖" value={data.coverage.adStore} detail="按广告消耗金额计算" />
                 </div>

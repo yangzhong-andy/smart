@@ -50,3 +50,19 @@ test("effective switch history supports repeated provider changes without rewrit
   assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-a", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
   assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "panlian");
 });
+
+test("shop-wide internal switches ignore changing or missing platform warehouse ids", () => {
+  const resolve = createWarehouseResolver(
+    [{ tiktokWarehouseId: "OLD-ID", warehouseId: "legacy" }],
+    [
+      { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "*", warehouseId: "hqst", effectiveFrom: "2026-07-01T03:00:00.000Z" },
+      { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "*", warehouseId: "panlian", effectiveFrom: "2026-07-15T03:00:00.000Z" },
+      { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "*", warehouseId: "hqst", effectiveFrom: "2026-08-01T03:00:00.000Z" },
+    ],
+  );
+
+  assert.equal(resolve({ warehouse_id: "NEW-ID-1" }, "shop-a", "2026-07-10T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
+  assert.equal(resolve({ warehouse_id: "NEW-ID-2" }, "shop-a", "2026-07-20T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "panlian");
+  assert.equal(resolve({}, "shop-a", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
+  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "legacy");
+});

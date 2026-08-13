@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     const warehouseId = String(body?.warehouseId || "").trim();
     const effectiveOrderId = String(body?.effectiveOrderId || "").trim();
     const effectiveDate = String(body?.effectiveDate || "").trim();
-    let externalWarehouseId = String(body?.externalWarehouseId || "").trim();
+    const externalWarehouseId = "*";
     if (!shopId || !warehouseId || (!effectiveOrderId && !effectiveDate)) {
       return NextResponse.json({ error: "请选择店铺、目标仓库，并填写首笔订单号或生效日期" }, { status: 400 });
     }
@@ -132,16 +132,9 @@ export async function POST(request: NextRequest) {
     if (effectiveOrderId) {
       if (!boundaryOrder || !boundaryOrder.createTime) return NextResponse.json({ error: "首笔新仓订单不存在或缺少下单时间" }, { status: 400 });
       if (boundaryOrder.shopId !== shopId) return NextResponse.json({ error: "首笔新仓订单不属于所选店铺" }, { status: 400 });
-      const orderWarehouseId = extractTikTokWarehouseId(boundaryOrder.rawData);
-      if (!orderWarehouseId) return NextResponse.json({ error: "首笔新仓订单缺少仓库编号" }, { status: 400 });
-      if (externalWarehouseId && externalWarehouseId !== orderWarehouseId) {
-        return NextResponse.json({ error: `订单仓库编号为 ${orderWarehouseId}，与填写值不一致` }, { status: 400 });
-      }
-      externalWarehouseId = orderWarehouseId;
       effectiveFrom = boundaryOrder.createTime;
     } else {
       if (!VALID_DATE.test(effectiveDate)) return NextResponse.json({ error: "生效日期格式无效" }, { status: 400 });
-      if (!externalWarehouseId) return NextResponse.json({ error: "按日期切换时必须填写订单仓库编号" }, { status: 400 });
       effectiveFrom = startOfDateInTimeZone(effectiveDate, timeZoneForRegion(shop.region));
     }
 
