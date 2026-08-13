@@ -10,8 +10,10 @@ import {
   addPlatformSKUMapping,
   removePlatformSKUMapping
 } from "@/lib/products-store";
-import { Search, X, Package, Link2, Download } from "lucide-react";
+import { Search, X, Package, Link2, Download, Warehouse, Store } from "lucide-react";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
+import WarehouseSkuMappingsPanel from "./WarehouseSkuMappingsPanel";
+import StoreSkuMappingsPanel from "./StoreSkuMappingsPanel";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 
@@ -27,6 +29,7 @@ export default function SKUMappingPage() {
   });
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
+  const [mappingType, setMappingType] = useState<"store" | "warehouse" | "legacy">("store");
 
   const { data: productsRaw, mutate: mutateProducts } = useSWR<any>("/api/products?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
@@ -219,16 +222,24 @@ export default function SKUMappingPage() {
       <header className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">SKU 映射</h1>
-          <p className="mt-1 text-sm text-slate-400">管理产品SKU与各平台SKU的映射关系。</p>
+          <p className="mt-1 text-sm text-slate-400">统一维护平台销售 SKU、仓库 SKU 与内部 SKU 的映射关系。</p>
         </div>
-        <button
+        {mappingType === "legacy" && <button
           onClick={handleExportData}
           className="flex items-center gap-2 rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-200 shadow hover:bg-slate-700 active:translate-y-px transition-colors"
         >
           <Download className="h-4 w-4" />
           导出数据
-        </button>
+        </button>}
       </header>
+
+      <div className="flex w-fit rounded-md border border-slate-700 bg-slate-900 p-1">
+        <button type="button" onClick={() => setMappingType("store")} className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm ${mappingType === "store" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}><Store className="h-4 w-4" />店铺销售 SKU</button>
+        <button type="button" onClick={() => setMappingType("warehouse")} className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm ${mappingType === "warehouse" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}><Warehouse className="h-4 w-4" />仓库 SKU 映射</button>
+        <button type="button" onClick={() => setMappingType("legacy")} className={`inline-flex h-9 items-center gap-2 rounded px-3 text-sm ${mappingType === "legacy" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-slate-200"}`}><Link2 className="h-4 w-4" />产品档案映射</button>
+      </div>
+
+      {mappingType === "store" ? <StoreSkuMappingsPanel /> : mappingType === "warehouse" ? <WarehouseSkuMappingsPanel /> : <>
 
       {/* 统计面板 */}
       <section className="grid gap-6 md:grid-cols-4">
@@ -538,6 +549,7 @@ export default function SKUMappingPage() {
         </div>
       )}
       {confirmDialog}
+      </>}
     </div>
   );
 }
