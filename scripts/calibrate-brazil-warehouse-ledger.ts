@@ -2,7 +2,7 @@ import { config as loadEnv } from "dotenv"
 loadEnv({ path: ".env.local" })
 loadEnv()
 
-import { Prisma, StockLogReason } from "@prisma/client"
+import { InventoryMovementType, Prisma, StockLogReason } from "@prisma/client"
 import { prisma } from "../src/lib/prisma"
 import { LEDGER_CALIBRATION_TYPE } from "../src/lib/warehouse-stock-ledger"
 
