@@ -454,6 +454,7 @@ export async function GET(request: NextRequest) {
         where: {
           platform: "TIKTOK",
           shopId: { in: shopIds },
+          enabled: true,
         },
         select: {
           shopId: true,
