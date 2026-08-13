@@ -4,20 +4,20 @@ import { prisma } from "@/lib/prisma"
 import { requireApiUser } from "@/lib/api-auth"
 import {
   calculateReplenishment,
+  normalizeReplenishmentQuantity,
   selectReplenishmentUnitCost,
-  type ReplenishmentPolicy,
 } from "@/lib/replenishment"
+import {
+  DEFAULT_REPLENISHMENT_POLICY,
+  resolveCartonQty,
+  resolveMoq,
+  selectPolicyRecord,
+  toPolicy,
+} from "@/lib/replenishment-policy"
 
 export const dynamic = "force-dynamic"
 
-const DEFAULT_POLICY: ReplenishmentPolicy = {
-  salesWindowDays: 30,
-  targetCoverageDays: 45,
-  safetyStockDays: 15,
-  leadTimeDays: 30,
-}
-
-const REPLENISHMENT_NOTE_PREFIX = "??:??????"
+const REPLENISHMENT_NOTE_PREFIX = "来源：备货补货建议"
 const CLOSED_REPLENISHMENT_STATUSES: PurchaseOrderStatus[] = [
   PurchaseOrderStatus.CONTRACT_CREATED,
   PurchaseOrderStatus.CANCELLED,
@@ -26,12 +26,6 @@ const CLOSED_REPLENISHMENT_STATUSES: PurchaseOrderStatus[] = [
 function number(value: unknown): number {
   const parsed = Number(value ?? 0)
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-function integerParam(value: string | null, fallback: number, min: number, max: number) {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.min(max, Math.max(min, Math.floor(parsed)))
 }
 
 function normalize(value: unknown) {
@@ -57,16 +51,6 @@ function startDate(days: number) {
   return date
 }
 
-function makePolicy(request: NextRequest): ReplenishmentPolicy {
-  const query = request.nextUrl.searchParams
-  return {
-    salesWindowDays: integerParam(query.get("salesWindowDays"), DEFAULT_POLICY.salesWindowDays, 7, 30),
-    targetCoverageDays: integerParam(query.get("targetCoverageDays"), DEFAULT_POLICY.targetCoverageDays, 7, 180),
-    safetyStockDays: integerParam(query.get("safetyStockDays"), DEFAULT_POLICY.safetyStockDays, 0, 90),
-    leadTimeDays: integerParam(query.get("leadTimeDays"), DEFAULT_POLICY.leadTimeDays, 1, 180),
-  }
-}
-
 export async function GET(request: NextRequest) {
   const auth = await requireApiUser(request)
   if (auth.response) return auth.response
@@ -75,7 +59,7 @@ export async function GET(request: NextRequest) {
     const query = request.nextUrl.searchParams
     const selectedShopId = query.get("shopId") || ""
     const country = String(query.get("country") || "BR").trim().toUpperCase()
-    const policy = makePolicy(request)
+    const now = new Date()
     const shops = await prisma.tikTokShopSetting.findMany({
       where: { status: "active", region: country, ...(selectedShopId ? { shopId: selectedShopId } : {}) },
       select: { shopId: true, shopName: true, region: true, storeId: true },
@@ -95,7 +79,7 @@ export async function GET(request: NextRequest) {
       }),
     ])
     const warehouseIds = [...new Set([...switchWarehouseIds, ...mappedWarehouseIds].map((row) => row.warehouseId))]
-    const [variants, mappings, profitMappings, stocks, orders, transitItems] = await Promise.all([
+    const [variants, mappings, profitMappings, stocks, orders, transitItems, policyRecords, boxSpecs] = await Promise.all([
       prisma.productVariant.findMany({
         select: {
           id: true, skuId: true, costPrice: true, atDomestic: true, atFactory: true,
@@ -131,6 +115,20 @@ export async function GET(request: NextRequest) {
       prisma.outboundBatchItem.findMany({
         where: { outboundBatch: { arrivalConfirmedAt: null, OR: [{ destinationCountry: country }, { warehouseId: { in: warehouseIds } }] } },
         select: { variantId: true, qty: true },
+      }),
+      prisma.replenishmentPolicyConfig.findMany({
+        where: {
+          platform: Platform.TIKTOK,
+          country,
+          effectiveFrom: { lte: now },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+        },
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      prisma.boxSpec.findMany({
+        where: { isDefault: true },
+        select: { variantId: true, qtyPerBox: true },
+        orderBy: { updatedAt: "desc" },
       }),
     ])
 
@@ -193,18 +191,25 @@ export async function GET(request: NextRequest) {
     }
     const inTransitMap = new Map<string, number>()
     for (const item of transitItems) if (item.variantId) inTransitMap.set(item.variantId, (inTransitMap.get(item.variantId) || 0) + item.qty)
+    const cartonQtyMap = new Map<string, number>()
+    for (const spec of boxSpecs) if (!cartonQtyMap.has(spec.variantId)) cartonQtyMap.set(spec.variantId, spec.qtyPerBox)
     const shopName = new Map(shops.map((shop) => [shop.shopId, shop.shopName]))
     const rows = variants.map((variant) => {
       const demand = demandMap.get(variant.id) || { sales7: 0, sales14: 0, sales30: 0, shops: new Map<string, number>(), orders: 0 }
       const stock = stockMap.get(variant.id) || { overseasAvailable: 0, warehouseQty: [] }
       const supplier = variant.product.productSuppliers[0]?.supplier || variant.product.defaultSupplier
       const productSupplier = variant.product.productSuppliers[0]
+      const policyRecord = selectPolicyRecord(policyRecords, selectedShopId || null, variant.id)
+      const supplierLeadTime = productSupplier?.leadTime ?? supplier?.defaultLeadTime ?? 30
+      const effectivePolicy = toPolicy(policyRecord, supplierLeadTime)
+      const moq = resolveMoq(policyRecord, productSupplier?.moq ?? supplier?.moq)
+      const cartonQty = resolveCartonQty(policyRecord, cartonQtyMap.get(variant.id))
       const result = calculateReplenishment({
         sales7: demand.sales7, sales14: demand.sales14, sales30: demand.sales30,
         overseasAvailable: stock.overseasAvailable, domesticReady: variant.atDomestic,
         factoryReady: variant.atFactory, inTransit: inTransitMap.get(variant.id) || 0,
-        moq: productSupplier?.moq ?? supplier?.moq, cartonQty: null, today: new Date(),
-      }, policy)
+        moq, cartonQty, today: now,
+      }, effectivePolicy)
       return {
         variantId: variant.id, sku: variant.skuId, productName: variant.product.name,
         country: shops[0]?.region || "UNSET", warehouseQty: stock.warehouseQty,
@@ -215,6 +220,15 @@ export async function GET(request: NextRequest) {
         shopSales: [...demand.shops].map(([shopId, units]) => ({ shopId, shopName: shopName.get(shopId) || shopId, units })),
         supplier: supplier ? { id: supplier.id, name: supplier.name } : null,
         unitCost: selectReplenishmentUnitCost(variant.costPrice, productSupplier?.price),
+        moq, cartonQty, policy: effectivePolicy,
+        policySource: policyRecord ? { id: policyRecord.id, scope: policyRecord.variantId ? "SKU" : policyRecord.shopId ? "SHOP" : "GLOBAL" } : null,
+        missingParameters: [
+          ...(moq == null ? ["MOQ"] : []),
+          ...(cartonQty == null ? ["装箱数"] : []),
+          ...(selectReplenishmentUnitCost(variant.costPrice, productSupplier?.price) <= 0 ? ["采购成本"] : []),
+          ...(!productSupplier?.leadTime && !supplier?.defaultLeadTime && policyRecord?.supplierLeadTimeDays == null ? ["生产周期"] : []),
+          ...(!policyRecord ? ["国内集货", "海运时效", "清关入仓"] : []),
+        ],
         ...result,
       }
     })
@@ -225,10 +239,10 @@ export async function GET(request: NextRequest) {
       suggestedUnits: rows.reduce((sum, row) => sum + row.suggestedQty, 0),
       unresolvedSkuCount: unresolved.size,
     }
-    return NextResponse.json({ generatedAt: new Date().toISOString(), policy, summary, shops, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })) })
+    return NextResponse.json({ generatedAt: new Date().toISOString(), defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })) })
   } catch (error: any) {
     console.error("[replenishment] GET failed", error)
-    return NextResponse.json({ error: error?.message || "????????" }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "备货建议读取失败" }, { status: 500 })
   }
 }
 
@@ -237,19 +251,55 @@ export async function POST(request: NextRequest) {
   if (auth.response) return auth.response
   try {
     const body = await request.json()
-    if (body?.confirm !== true) return NextResponse.json({ error: "????????????????" }, { status: 400 })
+    if (body?.confirm !== true) return NextResponse.json({ error: "必须明确确认后才能生成采购建议单" }, { status: 400 })
     const variantId = String(body?.variantId || "").trim()
     const quantity = Math.floor(number(body?.quantity))
     const shopId = String(body?.shopId || "").trim()
-    if (!variantId || quantity < 1 || !shopId) return NextResponse.json({ error: "?????SKU?????" }, { status: 400 })
-    const [variant, shop] = await Promise.all([
-      prisma.productVariant.findUnique({ where: { id: variantId }, select: { id: true, skuId: true, costPrice: true, product: { select: { name: true } } } }),
-      prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true, shopName: true, storeId: true } }),
+    if (!variantId || quantity < 1 || !shopId) return NextResponse.json({ error: "缺少店铺、SKU或补货数量" }, { status: 400 })
+    const now = new Date()
+    const [variant, shop, policyRecords, defaultBoxSpec] = await Promise.all([
+      prisma.productVariant.findUnique({
+        where: { id: variantId },
+        select: {
+          id: true, skuId: true, costPrice: true,
+          product: { select: {
+            name: true,
+            defaultSupplier: { select: { moq: true, defaultLeadTime: true } },
+            productSuppliers: { where: { isPrimary: true }, select: { price: true, moq: true, leadTime: true, supplier: { select: { moq: true, defaultLeadTime: true } } } },
+          } },
+        },
+      }),
+      prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true, shopName: true, storeId: true, region: true, status: true } }),
+      prisma.replenishmentPolicyConfig.findMany({
+        where: { platform: Platform.TIKTOK, country: "BR", effectiveFrom: { lte: now }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] },
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      prisma.boxSpec.findFirst({ where: { variantId, isDefault: true }, select: { qtyPerBox: true }, orderBy: { updatedAt: "desc" } }),
     ])
-    if (!variant || !shop) return NextResponse.json({ error: "SKU??????" }, { status: 404 })
-    const unitPrice = number(body?.unitPrice) || number(variant.costPrice)
+    if (!variant || !shop) return NextResponse.json({ error: "SKU或店铺不存在" }, { status: 404 })
+    if (shop.status !== "active" || shop.region !== "BR") {
+      return NextResponse.json({ error: "该店铺不是已启用的巴西店铺，不能生成本补货建议" }, { status: 400 })
+    }
+    const productSupplier = variant.product.productSuppliers[0]
+    const supplier = productSupplier?.supplier || variant.product.defaultSupplier
+    const policyRecord = selectPolicyRecord(policyRecords, shopId, variant.id)
+    const effectivePolicy = toPolicy(policyRecord, productSupplier?.leadTime ?? supplier?.defaultLeadTime ?? 30)
+    const moq = resolveMoq(policyRecord, productSupplier?.moq ?? supplier?.moq)
+    const cartonQty = resolveCartonQty(policyRecord, defaultBoxSpec?.qtyPerBox)
+    const unitPrice = selectReplenishmentUnitCost(variant.costPrice, productSupplier?.price)
+    if (unitPrice <= 0) return NextResponse.json({ error: "该 SKU 未维护有效采购成本，不能生成建议单" }, { status: 400 })
+    const normalizedQuantity = normalizeReplenishmentQuantity(quantity, moq ?? 0, cartonQty ?? 0)
     const orderNumber = `PO-RESTOCK-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
-    const policySnapshot = body?.policy && typeof body.policy === "object" ? body.policy : DEFAULT_POLICY
+    const policySnapshot = {
+      ...effectivePolicy,
+      policyId: policyRecord?.id ?? null,
+      policyScope: policyRecord?.variantId ? "SKU" : policyRecord?.shopId ? "SHOP" : "GLOBAL_DEFAULT",
+      moq,
+      cartonQty,
+      requestedQty: quantity,
+      suggestedQty: normalizedQuantity,
+      capturedAt: now.toISOString(),
+    }
     const order = await prisma.$transaction(async (tx) => {
       const duplicateLockKey = `replenishment:${shop.storeId || shop.shopId}:${variant.skuId}`
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${duplicateLockKey}))`
@@ -277,14 +327,14 @@ export async function POST(request: NextRequest) {
         sku: variant.skuId,
         skuId: variant.skuId,
         productName: variant.product.name,
-        quantity,
-        expectedDeliveryDate: new Date(Date.now() + number(policySnapshot.leadTimeDays || DEFAULT_POLICY.leadTimeDays) * 86400000),
-        urgency: body?.urgency || "??",
-        notes: `${REPLENISHMENT_NOTE_PREFIX}\n????:${JSON.stringify({ ...policySnapshot, suggestedQty: quantity })}`,
+        quantity: normalizedQuantity,
+        expectedDeliveryDate: new Date(now.getTime() + effectivePolicy.leadTimeDays * 86400000),
+        urgency: body?.urgency || "紧急",
+        notes: `${REPLENISHMENT_NOTE_PREFIX}\n建议快照：${JSON.stringify(policySnapshot)}`,
         status: PurchaseOrderStatus.PENDING_RISK,
-        riskControlStatus: "???",
-        approvalStatus: "???",
-        items: { create: [{ sku: variant.skuId, skuId: variant.skuId, skuName: variant.product.name, quantity, unitPrice: new Prisma.Decimal(unitPrice), totalAmount: new Prisma.Decimal(unitPrice * quantity) }] },
+        riskControlStatus: "待评估",
+        approvalStatus: "待审批",
+        items: { create: [{ sku: variant.skuId, skuId: variant.skuId, skuName: variant.product.name, quantity: normalizedQuantity, unitPrice: new Prisma.Decimal(unitPrice), totalAmount: new Prisma.Decimal(unitPrice * normalizedQuantity) }] },
         },
         select: { id: true, orderNumber: true, status: true, quantity: true, sku: true, storeName: true },
       })
@@ -293,13 +343,13 @@ export async function POST(request: NextRequest) {
 
     if (order.duplicate) {
       return NextResponse.json({
-        error: `???? SKU ${variant.skuId} ??????????? ${order.order.orderNumber}`,
+        error: `该店铺的 SKU ${variant.skuId} 已有未结束的备货建议单 ${order.order.orderNumber}`,
         existingOrder: order.order,
       }, { status: 409 })
     }
     return NextResponse.json({ success: true, order: order.order })
   } catch (error: any) {
     console.error("[replenishment] POST failed", error)
-    return NextResponse.json({ error: error?.message || "?????????" }, { status: 500 })
+    return NextResponse.json({ error: error?.message || "生成采购建议单失败" }, { status: 500 })
   }
 }

@@ -96,6 +96,7 @@ model ProductVariant {
   profitSkuComponents    ProfitSkuMappingComponent[]
   warehouseSkuComponents WarehouseSkuMappingComponent[]
   contractItems          PurchaseContractItem[]
+  replenishmentPolicies  ReplenishmentPolicyConfig[]
   stocks                 Stock[]
   stockLogs              StockLog[]
 
@@ -1935,6 +1936,49 @@ model BoxSpec {
   updatedAt   DateTime @updatedAt
 
   @@index([variantId])
+}
+
+model ReplenishmentPolicyConfig {
+  id                     String                      @id @default(uuid())
+  platform               Platform                    @default(TIKTOK)
+  country                String
+  shopId                 String?
+  variantId              String?
+  salesWindowDays        Int                         @default(30)
+  targetCoverageDays     Int                         @default(45)
+  safetyStockDays        Int                         @default(15)
+  supplierLeadTimeDays   Int?
+  domesticCollectionDays Int                         @default(0)
+  oceanTransitDays       Int                         @default(0)
+  customsClearanceDays   Int                         @default(0)
+  demandMultiplier       Decimal                     @default(1) @db.Decimal(8, 4)
+  moqOverride            Int?
+  cartonQtyOverride      Int?
+  effectiveFrom          DateTime                    @default(now())
+  effectiveTo            DateTime?
+  reason                 String?
+  createdBy              String                      @default("system")
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  changes                ReplenishmentPolicyChange[]
+  variant                ProductVariant?             @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([platform, country, shopId, variantId, effectiveFrom])
+  @@index([variantId])
+  @@index([shopId])
+}
+
+model ReplenishmentPolicyChange {
+  id        String                    @id @default(uuid())
+  policyId  String
+  action    String
+  before    Json?
+  after     Json
+  changedBy String                    @default("system")
+  changedAt DateTime                  @default(now())
+  policy    ReplenishmentPolicyConfig @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, changedAt])
 }
 
 model ProfitCalculation {

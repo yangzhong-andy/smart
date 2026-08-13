@@ -8,7 +8,7 @@
     "build:with-db": "prisma generate && prisma db push && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "start": "next start",
     "test:warehouse-assets": "tsx --test src/lib/warehouse-asset-ledger.test.ts src/lib/warehouse-stock-ledger.test.ts",
-    "test:replenishment": "tsx --test src/lib/replenishment.test.ts",
+    "test:replenishment": "tsx --test src/lib/replenishment.test.ts src/lib/replenishment-policy.test.ts",
     "lint": "next lint",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
