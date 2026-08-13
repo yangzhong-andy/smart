@@ -76,27 +76,27 @@ export function createWarehouseResolver(
     region?: string | null,
   ): WarehouseResolution => {
     const tiktokWarehouseId = extractTikTokWarehouseId(rawData);
-    if (!tiktokWarehouseId) {
-      return { tiktokWarehouseId: null, warehouseId: null, mapping: null, status: "missing_id" };
-    }
-
     const orderTime = orderCreateTime ? new Date(orderCreateTime) : null;
     if (shopId && orderTime && !Number.isNaN(orderTime.getTime())) {
       const switchRule = normalizedSwitches.find((rule) => (
         rule.platform === platform
         && rule.shopId === shopId
-        && rule.externalWarehouseId === tiktokWarehouseId
+        && (rule.externalWarehouseId === "*" || rule.externalWarehouseId === tiktokWarehouseId)
         && (!region || rule.region === region)
         && rule.effectiveFrom.getTime() <= orderTime.getTime()
       ));
       if (switchRule) {
         const mapping = {
-          tiktokWarehouseId,
+          tiktokWarehouseId: tiktokWarehouseId || "*",
           tiktokShopId: shopId,
           warehouseId: switchRule.warehouseId,
         };
         return { tiktokWarehouseId, warehouseId: switchRule.warehouseId, mapping, status: "mapped" };
       }
+    }
+
+    if (!tiktokWarehouseId) {
+      return { tiktokWarehouseId: null, warehouseId: null, mapping: null, status: "missing_id" };
     }
 
     const allRows = byTikTokId.get(tiktokWarehouseId) || [];
