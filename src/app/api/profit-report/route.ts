@@ -1009,6 +1009,7 @@ export async function GET(request: NextRequest) {
         order.createTime,
         "TIKTOK",
         shopById.get(order.shopId)?.region,
+        order.orderId,
       );
       const tiktokWarehouseId = resolution.tiktokWarehouseId;
       const mapping = resolution.mapping;

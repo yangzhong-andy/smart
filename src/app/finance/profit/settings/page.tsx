@@ -127,7 +127,6 @@ export default function ProfitSettingsPage() {
     shopId: "",
     warehouseId: "",
     effectiveOrderId: "",
-    effectiveDate: today,
     notes: "",
   });
 
@@ -257,7 +256,7 @@ export default function ProfitSettingsPage() {
 
   const saveWarehouseSwitch = async () => {
     if (!warehouseSwitchForm.shopId || !warehouseSwitchForm.warehouseId) return toast.error("请选择店铺和切换后的仓库");
-    if (!warehouseSwitchForm.effectiveOrderId && !warehouseSwitchForm.effectiveDate) return toast.error("请填写首笔新仓订单号或生效日期");
+    if (!warehouseSwitchForm.effectiveOrderId) return toast.error("请填写首笔新仓订单号");
     setSaving(true);
     try {
       const response = await fetch("/api/profit-warehouse-switches", {
@@ -343,12 +342,11 @@ export default function ProfitSettingsPage() {
         </section>
 
         {switchData && <section className="border-b border-slate-800 py-6">
-          <div className="mb-4"><h2 className="text-base font-semibold">店铺切仓</h2><p className="mt-1 text-xs text-slate-500">按店铺和生效时间指定实际发货仓，平台仓库编号变化不影响核算</p></div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-4"><h2 className="text-base font-semibold">店铺切仓</h2><p className="mt-1 text-xs text-slate-500">以首笔新仓订单为边界，从该订单开始归入新仓；切换当天允许两个仓库并存</p></div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="店铺"><select value={warehouseSwitchForm.shopId} onChange={(event) => selectWarehouseSwitchShop(event.target.value)} className="input"><option value="">请选择</option>{data.shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}</select></Field>
             <Field label="切换到"><select value={warehouseSwitchForm.warehouseId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, warehouseId: event.target.value })} className="input"><option value="">请选择</option>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></Field>
-            <Field label="首笔新仓订单号（更精确）"><input value={warehouseSwitchForm.effectiveOrderId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveOrderId: event.target.value })} className="input" /></Field>
-            <Field label="生效日期（未填订单号时）"><input type="date" value={warehouseSwitchForm.effectiveDate} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveDate: event.target.value })} className="input" /></Field>
+            <Field label="首笔新仓订单号（必填）"><input value={warehouseSwitchForm.effectiveOrderId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveOrderId: event.target.value })} className="input" /></Field>
             <Field label="备注"><input value={warehouseSwitchForm.notes} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, notes: event.target.value })} className="input" /></Field>
           </div>
           <button type="button" onClick={saveWarehouseSwitch} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />保存切换记录</button>

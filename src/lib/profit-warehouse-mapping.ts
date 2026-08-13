@@ -11,6 +11,7 @@ export type ProfitWarehouseSwitchRule = {
   externalWarehouseId: string;
   warehouseId: string;
   effectiveFrom: Date | string;
+  effectiveOrderId?: string | null;
 };
 
 export type WarehouseResolutionStatus = "mapped" | "missing_id" | "unmapped" | "ambiguous";
@@ -74,17 +75,28 @@ export function createWarehouseResolver(
     orderCreateTime?: Date | string | null,
     platform = "TIKTOK",
     region?: string | null,
+    orderId?: string | null,
   ): WarehouseResolution => {
     const tiktokWarehouseId = extractTikTokWarehouseId(rawData);
     const orderTime = orderCreateTime ? new Date(orderCreateTime) : null;
     if (shopId && orderTime && !Number.isNaN(orderTime.getTime())) {
-      const switchRule = normalizedSwitches.find((rule) => (
-        rule.platform === platform
-        && rule.shopId === shopId
-        && (rule.externalWarehouseId === "*" || rule.externalWarehouseId === tiktokWarehouseId)
-        && (!region || rule.region === region)
-        && rule.effectiveFrom.getTime() <= orderTime.getTime()
-      ));
+      const switchRule = normalizedSwitches.find((rule) => {
+        if (
+          rule.platform !== platform
+          || rule.shopId !== shopId
+          || (rule.externalWarehouseId !== "*" && rule.externalWarehouseId !== tiktokWarehouseId)
+          || (region && rule.region !== region)
+        ) return false;
+
+        const timeDifference = orderTime.getTime() - rule.effectiveFrom.getTime();
+        if (timeDifference !== 0) return timeDifference > 0;
+
+        // The first new-warehouse order is the exact boundary on a mixed
+        // switch day. Order id breaks ties for equal order timestamps.
+        const boundaryOrderId = String(rule.effectiveOrderId || "").trim();
+        const currentOrderId = String(orderId || "").trim();
+        return !boundaryOrderId || (currentOrderId && currentOrderId.localeCompare(boundaryOrderId) >= 0);
+      });
       if (switchRule) {
         const mapping = {
           tiktokWarehouseId: tiktokWarehouseId || "*",
