@@ -63,12 +63,11 @@ export async function PUT(
     if (body.type !== undefined) {
       updateData.type = body.type === 'OVERSEAS' ? 'OVERSEAS' : 'DOMESTIC'
     }
-    // 累加充值总额（海外仓代发费付款后调用）
-    if (body.rechargeAdd !== undefined) {
-      const current = await prisma.warehouse.findUnique({ where: { id: params.id }, select: { rechargeTotal: true } })
-      const newTotal = Number(current?.rechargeTotal ?? 0) + Number(body.rechargeAdd)
-      updateData.rechargeTotal = newTotal
-      updateData.balance = newTotal
+    if (body.rechargeAdd !== undefined || body.balance !== undefined || body.rechargeTotal !== undefined) {
+      return NextResponse.json(
+        { error: '仓库预存款只能通过已审批付款写入资金台账，不能直接修改余额' },
+        { status: 400 }
+      )
     }
     const warehouse = await prisma.warehouse.update({
       where: { id: params.id },

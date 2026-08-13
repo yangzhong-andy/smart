@@ -699,37 +699,16 @@ export default function FinanceWorkbenchPage() {
         if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
         return typeof v === "string" ? v : null;
       };
-      const paymentVoucherStr = toVoucherStr(request.voucher); // 发起时的凭证
       const transferVoucherStr = toVoucherStr(paymentVoucher);   // 财务上传的转账凭证
-      const reqDate = request.date;
-      const fallbackDate = request.createdAt || request.submittedAt || new Date().toISOString();
-      const flowDate = (reqDate != null && String(reqDate).trim() !== "") ? new Date(reqDate) : new Date(fallbackDate);
-      const dateStr = Number.isNaN(flowDate.getTime()) ? new Date(fallbackDate).toISOString().slice(0, 10) : flowDate.toISOString().slice(0, 10);
-      
-      const cashFlowData = {
-        date: dateStr,
-        summary: request.summary,
-        category: request.category,
-        type: "expense" as const,
-        amount: -request.amount, // 支出为负数
+      const response = await fetch(`/api/expense-requests/${requestId}/pay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
         accountId: selectedAccountId,
-        accountName: account.name,
-        currency: request.currency || "CNY",
-        exchangeRate: flowRate, // 付款当天输入的汇率
-        remark: request.remark || "",
-        businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
-        relatedId: ('relatedId' in request ? request.relatedId : null) || null,
-        status: "confirmed" as const,
-        paymentVoucher: paymentVoucherStr ?? undefined,  // 发起付款时的凭证（申请单上的）
-        transferVoucher: transferVoucherStr ?? undefined, // 财务打款后的转账凭证
-        voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined, // 兼容旧逻辑
-      };
-
-      // 调用 API 创建现金流
-      const response = await fetch('/api/cash-flow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cashFlowData)
+          exchangeRate: flowRate,
+          paidAt: new Date().toISOString(),
+          transferVoucher: transferVoucherStr ?? undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -743,37 +722,13 @@ export default function FinanceWorkbenchPage() {
         throw new Error(errMsg);
       }
 
-      // 获取创建的现金流ID
-      const cashFlowResult = await response.json();
-      
-      // 更新申请状态为已支付
-      await updateExpenseRequest(requestId, {
-        status: "Paid",
-        financeAccountId: selectedAccountId,
-        financeAccountName: account.name,
-        paidBy: getCurrentUserDisplayName(session),
-        paidAt: new Date().toISOString(),
-        paymentFlowId: cashFlowResult.id
-      });
+      await response.json();
 
       // 采购尾款：同步更新拿货单已付尾款与合同已付总额
       const isPurchaseTail =
         request.relatedId &&
         (request.category === "采购/采购尾款" ||
           (request.summary || "").includes("采购尾款"));
-
-      // 海外仓代发费：累加仓库充值总额
-      if ((request as any).warehouseId) {
-        try {
-          await fetch(`/api/warehouses/${(request as any).warehouseId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ rechargeAdd: request.amount }),
-          });
-        } catch (e) {
-          console.error("更新仓库充值总额失败", e);
-        }
-      }
 
       if (isPurchaseTail) {
         try {
@@ -864,52 +819,26 @@ export default function FinanceWorkbenchPage() {
 
     setBatchPaying(true);
     try {
-      // 为每笔申请创建独立的流水，共享同一个 businessNumber
+      // 每笔申请由服务端原子完成：流水、申请状态、仓库资金台账。
       for (const req of selectedRequests) {
-        const reqAmount = isCrossCurrency ? req.amount * flowRate : req.amount;
-
-        const initiatingVoucher = Array.isArray(req.voucher)
-          ? (req.voucher.length ? JSON.stringify(req.voucher) : undefined)
-          : req.voucher || undefined;
         const transferVoucher = Array.isArray(paymentVoucher)
           ? (paymentVoucher.length ? JSON.stringify(paymentVoucher) : undefined)
           : paymentVoucher || undefined;
-        const cashFlowData = {
-          date: req.date || new Date().toISOString().slice(0, 10),
-          summary: req.summary || "合并付款",
-          category: req.category || "其他",
-          type: "expense" as const,
-          amount: -Math.abs(reqAmount),
-          accountId: selectedAccountId,
-          accountName: account.name,
-          currency: accountCurrency,
-          exchangeRate: isCrossCurrency ? flowRate : 1,
-          remark: `合并付款(${sharedBusinessNo})：${req.summary}`,
-          businessNumber: sharedBusinessNo,
-          status: "confirmed" as const,
-          relatedId: req.relatedId || null,
-          paymentVoucher: initiatingVoucher,
-          transferVoucher,
-          voucher: initiatingVoucher || transferVoucher,
-        };
-
-        const response = await fetch('/api/cash-flow', {
+        const response = await fetch(`/api/expense-requests/${req.id}/pay`, {
           method: "POST",
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cashFlowData)
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+          accountId: selectedAccountId,
+            exchangeRate: isCrossCurrency ? flowRate : 1,
+            paidAt: new Date().toISOString(),
+          businessNumber: sharedBusinessNo,
+          transferVoucher,
+          }),
         });
-        if (!response.ok) throw new Error("创建流水失败");
-        const cashFlowResult = await response.json();
-
-        // 更新该申请为已付款
-        await updateExpenseRequest(req.id, {
-          status: "Paid",
-          financeAccountId: selectedAccountId,
-          financeAccountName: account.name,
-          paidBy: getCurrentUserDisplayName(session),
-          paidAt: new Date().toISOString(),
-          paymentFlowId: cashFlowResult.id,
-        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || "创建流水失败");
+        }
         const isPurchaseTail =
           req.relatedId &&
           (req.category === "采购/采购尾款" || (req.summary || "").includes("采购尾款"));

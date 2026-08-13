@@ -49,19 +49,82 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 获取 TikTok 扣减统计（按仓库+变体分组）
-    const tiktokDeductions = await prisma.tikTokStockDeduction.groupBy({
-      by: ['warehouseId', 'variantId'],
-      where: { status: 'deducted' },
-      _sum: { qty: true },
-    })
+    const stockPairFilter = stocks.map((stock) => ({ warehouseId: stock.warehouseId, variantId: stock.variantId }))
+    const [tiktokDeductions, stockLogs] = await Promise.all([
+      prisma.tikTokStockDeduction.groupBy({
+        by: ['warehouseId', 'variantId'],
+        where: { status: 'deducted' },
+        _sum: { qty: true },
+      }),
+      stockPairFilter.length ? prisma.stockLog.findMany({
+        where: { OR: stockPairFilter },
+        select: {
+          id: true, warehouseId: true, variantId: true, movementType: true,
+          qty: true, qtyBefore: true, qtyAfter: true, operationDate: true,
+          unitCost: true, totalCost: true, currency: true, evidence: true, createdAt: true,
+        },
+        orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      }) : Promise.resolve([]),
+    ])
     const deductionMap = new Map(
       tiktokDeductions.map(d => [`${d.warehouseId}_${d.variantId}`, d._sum.qty || 0])
     )
+    const logMap = new Map<string, typeof stockLogs>()
+    for (const log of stockLogs) {
+      const key = `${log.warehouseId}_${log.variantId}`
+      const rows = logMap.get(key) || []
+      rows.push(log)
+      logMap.set(key, rows)
+    }
 
     // 转换数据格式
     const transformed = stocks.map(stock => {
       const tiktokDeducted = deductionMap.get(`${stock.warehouseId}_${stock.variantId}`) || 0
+      const logs = logMap.get(`${stock.warehouseId}_${stock.variantId}`) || []
+      const businessLogs = logs.filter(log => log.movementType !== 'STOCKTAKE' && log.movementType !== 'ADJUSTMENT')
+      const cumulativeInbound = businessLogs.reduce((sum, log) => sum + Math.max(0, log.qty), 0)
+      const cumulativeOutbound = businessLogs.reduce((sum, log) => sum + Math.abs(Math.min(0, log.qty)), 0)
+      let openingIndex = -1
+      for (let index = logs.length - 1; index >= 0; index -= 1) {
+        if (logs[index].movementType === 'STOCKTAKE' && Boolean(logs[index].evidence)) {
+          openingIndex = index
+          break
+        }
+      }
+      let chainBalance = openingIndex >= 0 ? logs[openingIndex].qtyAfter : 0
+      const openingQty = openingIndex >= 0 ? logs[openingIndex].qtyAfter : 0
+      const postOpeningLogs = openingIndex >= 0 ? logs.slice(openingIndex + 1) : logs
+      const postOpeningBusinessLogs = postOpeningLogs.filter(log => log.movementType !== 'STOCKTAKE' && log.movementType !== 'ADJUSTMENT')
+      const inboundAfterOpening = postOpeningBusinessLogs.reduce((sum, log) => sum + Math.max(0, log.qty), 0)
+      const outboundAfterOpening = postOpeningBusinessLogs.reduce((sum, log) => sum + Math.abs(Math.min(0, log.qty)), 0)
+      const adjustmentAfterOpening = postOpeningLogs.filter(log => log.movementType === 'ADJUSTMENT').reduce((sum, log) => sum + log.qty, 0)
+      let chainContinuous = openingIndex >= 0
+      if (openingIndex >= 0) {
+        for (const log of logs.slice(openingIndex + 1)) {
+          if (log.qtyBefore !== chainBalance || log.qtyAfter !== chainBalance + log.qty) {
+            chainContinuous = false
+            break
+          }
+          chainBalance = log.qtyAfter
+        }
+      }
+      const reconciliationDifference = stock.qty - chainBalance
+      const reconciliationStatus = openingIndex >= 0 && chainContinuous && reconciliationDifference === 0
+        ? 'RECONCILED'
+        : 'PENDING_STOCKTAKE'
+      const openingLog = openingIndex >= 0 ? logs[openingIndex] : null
+      const assetCurrency = openingLog?.currency || stock.variant.currency || 'CNY'
+      const costLogs = openingLog ? [openingLog, ...postOpeningLogs] : []
+      const costContinuous = Boolean(openingLog?.unitCost) && costLogs.every(log =>
+        log.unitCost != null && Boolean(log.currency) && log.currency === assetCurrency
+      )
+      const ledgerAssetValue = costContinuous
+        ? costLogs.reduce((sum, log) => sum + (log.qty * Number(log.unitCost)), 0)
+        : stock.qty * (stock.variant.costPrice ? Number(stock.variant.costPrice) : 0)
+      const costPrice = stock.qty > 0 ? ledgerAssetValue / stock.qty : Number(openingLog?.unitCost || stock.variant.costPrice || 0)
+      const assetStatus = reconciliationStatus !== 'RECONCILED'
+        ? 'PENDING_STOCKTAKE'
+        : costContinuous ? 'RECONCILED' : 'PENDING_COST_REVIEW'
       return {
         id: stock.id,
         variantId: stock.variantId,
@@ -80,9 +143,25 @@ export async function GET(request: NextRequest) {
         availableQty: stock.availableQty,
         reservedQty: stock.reservedQty,
         lockedQty: stock.reservedQty,
-        costPrice: stock.variant.costPrice ? Number(stock.variant.costPrice) : 0,
-        currency: stock.variant.currency,
-        totalValue: (stock.qty - stock.reservedQty) * (stock.variant.costPrice ? Number(stock.variant.costPrice) : 0),
+        cumulativeInbound,
+        cumulativeOutbound,
+        openingQty,
+        inboundAfterOpening,
+        outboundAfterOpening,
+        adjustmentAfterOpening,
+        netMovement: cumulativeInbound - cumulativeOutbound,
+        ledgerQty: openingIndex >= 0 ? chainBalance : cumulativeInbound - cumulativeOutbound,
+        reconciliationDifference: openingIndex >= 0 ? reconciliationDifference : stock.qty - (cumulativeInbound - cumulativeOutbound),
+        reconciliationStatus,
+        assetStatus,
+        costContinuous,
+        hasFormalStocktake: openingIndex >= 0,
+        costPrice,
+        currency: assetCurrency,
+        totalValue: ledgerAssetValue,
+        confirmedAssetValue: assetStatus === 'RECONCILED' ? ledgerAssetValue : 0,
+        provisionalAssetValue: assetStatus === 'RECONCILED' ? 0 : ledgerAssetValue,
+        availableValue: (stock.qty - stock.reservedQty) * costPrice,
         updatedAt: stock.updatedAt.toISOString(),
         createdAt: stock.createdAt.toISOString()
       }
@@ -116,6 +195,14 @@ export async function POST(request: NextRequest) {
     if (!variantId || !warehouseId) {
       return NextResponse.json(
         { error: '缺少必要参数' },
+        { status: 400 }
+      )
+    }
+
+    const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { type: true } })
+    if (warehouse?.type === 'OVERSEAS') {
+      return NextResponse.json(
+        { error: '海外仓初始库存必须通过正式盘点录入，不能直接创建库存余额' },
         { status: 400 }
       )
     }

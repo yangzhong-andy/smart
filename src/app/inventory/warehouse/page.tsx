@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship } from "lucide-react";
+import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship, ClipboardCheck, ShieldAlert, WalletCards, X } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { toast } from "sonner";
+import ImageUploader from "@/components/ImageUploader";
 
 type StockItem = {
   id: string;
@@ -24,6 +25,22 @@ type StockItem = {
   lockedQty: number;
   tiktokDeducted?: number;
   costPrice?: number;
+  currency?: string;
+  cumulativeInbound: number;
+  cumulativeOutbound: number;
+  openingQty: number;
+  inboundAfterOpening: number;
+  outboundAfterOpening: number;
+  adjustmentAfterOpening: number;
+  ledgerQty: number;
+  reconciliationDifference: number;
+  reconciliationStatus: "RECONCILED" | "PENDING_STOCKTAKE";
+  assetStatus: "RECONCILED" | "PENDING_STOCKTAKE" | "PENDING_COST_REVIEW";
+  costContinuous: boolean;
+  hasFormalStocktake: boolean;
+  totalValue: number;
+  confirmedAssetValue: number;
+  provisionalAssetValue: number;
 };
 
 type Warehouse = {
@@ -59,7 +76,7 @@ export default function WarehouseInventoryPage() {
   const inTransitVariantTotal = Number(transitRaw?.inTransitTotal ?? 0);
 
   // 获取库存数据
-  const { data: stocksRaw, isLoading } = useSWR<StockItem[]>(
+  const { data: stocksRaw, isLoading, mutate: mutateStocks } = useSWR<StockItem[]>(
     selectedWarehouseId === "all" 
       ? "/api/stock?noCache=true" 
       : `/api/stock?warehouseId=${selectedWarehouseId}&noCache=true`,
@@ -69,6 +86,19 @@ export default function WarehouseInventoryPage() {
   const stocks = Array.isArray(stocksRaw) 
     ? stocksRaw 
     : (stocksRaw as any)?.data || [];
+  const { data: fundData } = useSWR<{
+    accounts: Array<{ warehouseId: string; warehouseName: string; currency: string; balance: number; totalCredit: number; totalDebit: number }>;
+    entries: Array<{ id: string; warehouseName: string; currency: string; entryType: string; amount: number; balanceAfter: number; occurredAt: string; notes?: string | null }>;
+  }>(
+    "/api/warehouse-funds?page=1&pageSize=20", fetcher, { revalidateOnFocus: false }
+  );
+  const [stocktakeItem, setStocktakeItem] = useState<StockItem | null>(null);
+  const [stocktakeQty, setStocktakeQty] = useState("");
+  const [stocktakeReason, setStocktakeReason] = useState("");
+  const [stocktakeUnitCost, setStocktakeUnitCost] = useState("");
+  const [stocktakeCurrency, setStocktakeCurrency] = useState("CNY");
+  const [stocktakeEvidence, setStocktakeEvidence] = useState<string | string[]>([]);
+  const [stocktakeSaving, setStocktakeSaving] = useState(false);
 
   // 按仓库分组统计
   const warehouseStats = useMemo(() => {
@@ -115,6 +145,17 @@ export default function WarehouseInventoryPage() {
       totalQty: warehouseStats.reduce((sum, w) => sum + w.totalQty, 0),
       availableQty: warehouseStats.reduce((sum, w) => sum + w.availableQty, 0),
       totalSku: warehouseStats.reduce((sum, w) => sum + w.skuCount, 0),
+      overseasAssetByCurrency: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS").reduce((totals: Record<string, number>, item: StockItem) => {
+        const currency = item.currency || "CNY";
+        totals[currency] = (totals[currency] || 0) + (item.totalValue || 0);
+        return totals;
+      }, {}),
+      confirmedAssetByCurrency: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS").reduce((totals: Record<string, number>, item: StockItem) => {
+        const currency = item.currency || "CNY";
+        totals[currency] = (totals[currency] || 0) + (item.confirmedAssetValue || 0);
+        return totals;
+      }, {}),
+      pendingStocktake: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS" && item.assetStatus !== "RECONCILED").length,
     };
   }, [warehouseStats]);
 
@@ -137,25 +178,42 @@ export default function WarehouseInventoryPage() {
     setExpandedWarehouse(expandedWarehouse === id ? null : id);
   };
 
+  const submitStocktake = async () => {
+    if (!stocktakeItem) return;
+    setStocktakeSaving(true);
+    try {
+      const response = await fetch("/api/stock/stocktake", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warehouseId: stocktakeItem.warehouseId, variantId: stocktakeItem.variantId, countedQty: Number(stocktakeQty), unitCost: Number(stocktakeUnitCost), currency: stocktakeCurrency, reason: stocktakeReason, evidence: stocktakeEvidence, operationDate: new Date().toISOString() }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "盘点入账失败");
+      toast.success(`盘点已入账：${result.qtyBefore} → ${result.countedQty}，差异 ${result.difference}`);
+      setStocktakeItem(null); setStocktakeQty(""); setStocktakeReason(""); setStocktakeUnitCost(""); setStocktakeEvidence([]);
+      await mutateStocks();
+    } catch (error: any) { toast.error(error?.message || "盘点入账失败"); }
+    finally { setStocktakeSaving(false); }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950">
       <PageHeader
         title="仓库库存"
-        description="库内数为 Stock 表（物理仓账面）；货已发海运、尚未入海外仓时，请以「海运在途」与库存查询页「海运中」为准。"
+        description="海外仓库存按资产台账管理；只有完成正式盘点且后续流水连续的 SKU 才标记为已核对资产。"
         actions={
           <ActionButton
             icon={Download}
             onClick={() => {
-              const headers = ["仓库", "SKU", "产品名称", "规格", "库内库存", "TikTok出库", "可用", "锁定"];
+              const headers = ["仓库", "SKU", "产品名称", "规格", "累计入库", "累计出库", "当前剩余", "单位成本", "暂估资产", "对账状态"];
               const rows = filteredWarehouseStocks.map((item: StockItem) => [
                 item.warehouseName,
                 item.skuId,
                 item.productName,
                 [item.color, item.size].filter(Boolean).join("/") || "-",
-                String(item.qty || 0),
-                String(item.tiktokDeducted || 0),
-                String(item.availableQty || 0),
-                String(item.lockedQty || 0),
+                String(item.cumulativeInbound || 0), String(item.cumulativeOutbound || 0), String(item.qty || 0),
+                `${item.currency || "CNY"} ${(item.costPrice || 0).toFixed(2)}`,
+                `${item.currency || "CNY"} ${(item.totalValue || 0).toFixed(2)}`,
+                item.reconciliationStatus === "RECONCILED" ? "已核对" : "待盘点",
               ]);
               const csv = [headers.join(","), ...rows.map((r: string[]) => r.join(","))].join("\n");
               const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
@@ -216,6 +274,36 @@ export default function WarehouseInventoryPage() {
             icon={Package}
             iconColor="text-cyan-400"
           />
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-200"><WalletCards className="h-4 w-4 text-emerald-400" />海外仓预存资金</div>
+              <span className="text-xs text-slate-500">与商品库存分账管理</span>
+            </div>
+            <div className="space-y-2">
+              {(fundData?.accounts || []).map((account) => (
+                <div key={`${account.warehouseId}-${account.currency}`} className="grid grid-cols-4 gap-3 border-t border-slate-800 pt-2 text-sm">
+                  <div className="text-slate-300">{account.warehouseName}</div>
+                  <div><div className="text-xs text-slate-500">累计充值</div><div>{account.currency} {account.totalCredit.toFixed(2)}</div></div>
+                  <div><div className="text-xs text-slate-500">累计扣费</div><div className="text-rose-300">{account.currency} {account.totalDebit.toFixed(2)}</div></div>
+                  <div><div className="text-xs text-slate-500">可用余额</div><div className="font-medium text-emerald-300">{account.currency} {account.balance.toFixed(2)}</div></div>
+                </div>
+              ))}
+              {!fundData?.accounts?.length && <div className="text-sm text-slate-500">尚无已付款的海外仓预存资金</div>}
+            </div>
+            {!!fundData?.entries?.length && <div className="mt-4 border-t border-slate-800 pt-3"><div className="mb-2 text-xs text-slate-500">最近资金流水</div><div className="space-y-2">{fundData.entries.slice(0, 3).map((entry) => <div key={entry.id} className="flex items-center justify-between text-xs"><div><span className="text-slate-300">{entry.warehouseName}</span><span className="ml-2 text-slate-500">{new Date(entry.occurredAt).toLocaleDateString("zh-CN")}</span></div><div className={entry.amount >= 0 ? "text-emerald-300" : "text-rose-300"}>{entry.amount >= 0 ? "+" : ""}{entry.currency} {entry.amount.toFixed(2)}<span className="ml-2 text-slate-500">余额 {entry.balanceAfter.toFixed(2)}</span></div></div>)}</div></div>}
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-200"><ShieldAlert className="h-4 w-4 text-amber-400" />库存资产状态</div>
+            <div className="mt-3 grid grid-cols-3 gap-4">
+              <div><div className="text-xs text-slate-500">已核对资产</div><div className="mt-1 space-y-1 font-semibold text-emerald-300">{Object.entries(totalStats.confirmedAssetByCurrency as Record<string, number>).map(([currency, amount]) => <div key={currency}>{currency} {amount.toFixed(2)}</div>)}</div></div>
+              <div><div className="text-xs text-slate-500">账面暂估资产</div><div className="mt-1 space-y-1 font-semibold">{Object.entries(totalStats.overseasAssetByCurrency as Record<string, number>).map(([currency, amount]) => <div key={currency}>{currency} {amount.toFixed(2)}</div>)}</div></div>
+              <div><div className="text-xs text-slate-500">待盘点 SKU</div><div className="mt-1 text-xl font-semibold text-amber-300">{totalStats.pendingStocktake}</div></div>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">待盘点金额仅供核对，不进入已确认库存资产。期初盘点完成后，系统按入库、出库和调整流水持续核对。</p>
+          </div>
         </div>
 
         {totalStats.totalQty === 0 && inTransitVariantTotal > 0 && (
@@ -320,7 +408,7 @@ export default function WarehouseInventoryPage() {
             className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200"
           >
             <option value="">全部SKU</option>
-            {[...new Set(stocks.map((s: StockItem) => s.skuId))].sort().map((sku: string) => (
+            {Array.from(new Set<string>(stocks.map((s: StockItem) => s.skuId))).sort().map((sku) => (
               <option key={sku} value={sku}>{sku}</option>
             ))}
           </select>
@@ -363,9 +451,10 @@ export default function WarehouseInventoryPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">产品名称</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">规格</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">库内库存</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">TikTok出库</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">可用</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">锁定</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">累计入 / 出</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">单位成本 / 暂估资产</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">资产状态</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -383,9 +472,10 @@ export default function WarehouseInventoryPage() {
                         {[item.color, item.size].filter(Boolean).join(" / ") || "-"}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-200">{item.qty?.toLocaleString("en-US") || 0}</td>
-                      <td className="px-4 py-3 text-right text-rose-400">{(item.tiktokDeducted || 0).toLocaleString("en-US")}</td>
-                      <td className="px-4 py-3 text-right text-emerald-400">{item.availableQty?.toLocaleString("en-US") || 0}</td>
-                      <td className="px-4 py-3 text-right text-amber-400">{item.lockedQty || 0}</td>
+                      <td className="px-4 py-3 text-right text-sm"><span className="text-emerald-400">+{item.cumulativeInbound || 0}</span><span className="mx-1 text-slate-600">/</span><span className="text-rose-400">-{item.cumulativeOutbound || 0}</span></td>
+                      <td className="px-4 py-3 text-right text-sm"><div>{item.currency || "CNY"} {(item.costPrice || 0).toFixed(2)}</div><div className="text-slate-500">{item.currency || "CNY"} {(item.totalValue || 0).toFixed(2)}</div></td>
+                      <td className="px-4 py-3 text-center"><span className={`rounded px-2 py-1 text-xs ${item.assetStatus === "RECONCILED" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{item.assetStatus === "RECONCILED" ? "资产已核对" : item.assetStatus === "PENDING_COST_REVIEW" ? "数量已核对 · 成本待核对" : `待盘点 · 差 ${item.reconciliationDifference}`}</span>{item.hasFormalStocktake && <div className="mt-1 text-[10px] text-slate-500">{item.openingQty} + {item.inboundAfterOpening} - {item.outboundAfterOpening} = {item.ledgerQty}</div>}</td>
+                      <td className="px-4 py-3 text-center">{item.warehouseType === "OVERSEAS" && <button type="button" title="正式盘点" onClick={() => { setStocktakeItem(item); setStocktakeQty(String(item.qty)); setStocktakeUnitCost(String(item.costPrice || 0)); setStocktakeCurrency(item.currency || "CNY"); }} className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-700 hover:bg-slate-800"><ClipboardCheck className="h-4 w-4" /></button>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -394,6 +484,21 @@ export default function WarehouseInventoryPage() {
           )}
         </div>
       </div>
+      {stocktakeItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between"><div><h2 className="font-semibold">海外仓正式盘点</h2><p className="mt-1 text-sm text-slate-400">{stocktakeItem.warehouseName} · {stocktakeItem.skuId}</p></div><button title="关闭" onClick={() => setStocktakeItem(null)}><X className="h-5 w-5" /></button></div>
+            <div className="space-y-4">
+              <label className="block"><span className="mb-1 block text-sm">实际盘点数量</span><input type="number" min="0" step="1" value={stocktakeQty} onChange={(event) => setStocktakeQty(event.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2" /></label>
+              <div className="grid grid-cols-2 gap-3"><label><span className="mb-1 block text-sm">单位采购成本</span><input type="number" min="0" step="0.01" value={stocktakeUnitCost} onChange={(event) => setStocktakeUnitCost(event.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2" /></label><label><span className="mb-1 block text-sm">成本币种</span><select value={stocktakeCurrency} onChange={(event) => setStocktakeCurrency(event.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2"><option value="CNY">CNY</option><option value="BRL">BRL</option><option value="USD">USD</option></select></label></div>
+              <label className="block"><span className="mb-1 block text-sm">盘点原因或差异说明</span><textarea value={stocktakeReason} onChange={(event) => setStocktakeReason(event.target.value)} rows={3} className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2" placeholder="例如：仓库实盘期初数量，已与仓库库存表核对" /></label>
+              <ImageUploader value={stocktakeEvidence} onChange={setStocktakeEvidence} multiple maxImages={5} maxSizeKB={350} label="盘点凭证（必填）" />
+              <div className="rounded border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">提交后会生成盘点流水，并把当前库存调整为实盘数量；不会删除历史记录。</div>
+              <button type="button" disabled={stocktakeSaving} onClick={submitStocktake} className="w-full rounded bg-emerald-600 px-4 py-2 font-medium text-white disabled:opacity-50">{stocktakeSaving ? "正在入账..." : "确认盘点并入账"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
