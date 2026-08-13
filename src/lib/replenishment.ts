@@ -3,6 +3,11 @@ export type ReplenishmentPolicy = {
   targetCoverageDays: number
   safetyStockDays: number
   leadTimeDays: number
+  supplierLeadTimeDays?: number
+  domesticCollectionDays?: number
+  oceanTransitDays?: number
+  customsClearanceDays?: number
+  demandMultiplier?: number
 }
 
 export type ReplenishmentInput = {
@@ -53,9 +58,10 @@ export function selectReplenishmentUnitCost(
   variantCost: unknown,
   supplierPrice: unknown,
 ): number {
-  const selected = variantCost != null ? variantCost : supplierPrice
-  const parsed = Number(selected ?? 0)
-  return Number.isFinite(parsed) ? parsed : 0
+  const variant = Number(variantCost ?? 0)
+  const supplier = Number(supplierPrice ?? 0)
+  if (Number.isFinite(variant) && variant > 0) return variant
+  return Number.isFinite(supplier) && supplier > 0 ? supplier : 0
 }
 
 function round(value: number, digits = 2): number {
@@ -63,7 +69,7 @@ function round(value: number, digits = 2): number {
   return Math.round((value + Number.EPSILON) * factor) / factor
 }
 
-function roundOrderQuantity(value: number, moq: number, cartonQty: number): number {
+export function normalizeReplenishmentQuantity(value: number, moq: number, cartonQty: number): number {
   if (value <= 0) return 0
   const minimum = Math.max(1, Math.ceil(moq || 1))
   const pack = Math.max(1, Math.ceil(cartonQty || 1))
@@ -84,14 +90,14 @@ export function calculateReplenishment(
   const averageDailySales = policy.salesWindowDays <= 7
     ? sales7 / 7
     : policy.salesWindowDays <= 14 ? sales14 / 14 : sales30 / 30
-  const forecastDailySales = round(
+  const forecastDailySales = round(round(
     policy.salesWindowDays <= 7
       ? sales7 / 7
       : policy.salesWindowDays <= 14
         ? (sales7 / 7) * 0.65 + (sales14 / 14) * 0.35
         : (sales7 / 7) * 0.5 + (sales14 / 14) * 0.3 + (sales30 / 30) * 0.2,
     4,
-  )
+  ) * Math.max(0.1, Number(policy.demandMultiplier ?? 1)), 4)
   const overseasAvailable = positive(input.overseasAvailable)
   const inventoryPosition = Math.floor(
     overseasAvailable
@@ -123,7 +129,7 @@ export function calculateReplenishment(
   )
   const rawSuggestedQty = Math.max(0, targetPosition - inventoryPosition)
   const suggestedQty = inventoryPosition <= reorderPoint
-    ? roundOrderQuantity(rawSuggestedQty, positive(input.moq), positive(input.cartonQty))
+    ? normalizeReplenishmentQuantity(rawSuggestedQty, positive(input.moq), positive(input.cartonQty))
     : 0
   const orderInDays = Math.floor(availableDays - policy.leadTimeDays - policy.safetyStockDays)
   const suggestedOrderDate = isoDate(addDays(input.today, orderInDays))
