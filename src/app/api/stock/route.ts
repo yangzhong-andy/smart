@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { calculateWarehouseAssetValue } from '@/lib/warehouse-asset-ledger'
+import { calculateWarehouseStockLedger } from '@/lib/warehouse-stock-ledger'
 
 // GET - 获取库存数据（支持筛选）
 export async function GET(request: NextRequest) {
@@ -61,7 +62,8 @@ export async function GET(request: NextRequest) {
         where: { OR: stockPairFilter },
         select: {
           id: true, warehouseId: true, variantId: true, movementType: true,
-          qty: true, qtyBefore: true, qtyAfter: true, operationDate: true,
+          qty: true, qtyBefore: true, qtyAfter: true, operationDate: true, reason: true,
+          relatedOrderType: true,
           unitCost: true, totalCost: true, currency: true, evidence: true, createdAt: true,
         },
         orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
@@ -82,9 +84,7 @@ export async function GET(request: NextRequest) {
     const transformed = stocks.map(stock => {
       const tiktokDeducted = deductionMap.get(`${stock.warehouseId}_${stock.variantId}`) || 0
       const logs = logMap.get(`${stock.warehouseId}_${stock.variantId}`) || []
-      const businessLogs = logs.filter(log => log.movementType !== 'STOCKTAKE' && log.movementType !== 'ADJUSTMENT')
-      const cumulativeInbound = businessLogs.reduce((sum, log) => sum + Math.max(0, log.qty), 0)
-      const cumulativeOutbound = businessLogs.reduce((sum, log) => sum + Math.abs(Math.min(0, log.qty)), 0)
+      const ledger = calculateWarehouseStockLedger(logs, stock.qty)
       let openingIndex = -1
       for (let index = logs.length - 1; index >= 0; index -= 1) {
         if (logs[index].movementType === 'STOCKTAKE' && Boolean(logs[index].evidence)) {
@@ -109,9 +109,9 @@ export async function GET(request: NextRequest) {
           chainBalance = log.qtyAfter
         }
       }
-      const reconciliationDifference = stock.qty - chainBalance
-      const reconciliationStatus = openingIndex >= 0 && chainContinuous && reconciliationDifference === 0
-        ? 'RECONCILED'
+      const reconciliationDifference = stock.qty - ledger.expectedQty
+      const reconciliationStatus = ledger.hasSystemBaseline && reconciliationDifference === 0
+        ? openingIndex >= 0 ? 'RECONCILED' : 'SYSTEM_RECONCILED'
         : 'PENDING_STOCKTAKE'
       const openingLog = openingIndex >= 0 ? logs[openingIndex] : null
       const assetCurrency = openingLog?.currency || stock.variant.currency || 'CNY'
@@ -144,19 +144,24 @@ export async function GET(request: NextRequest) {
         availableQty: stock.availableQty,
         reservedQty: stock.reservedQty,
         lockedQty: stock.reservedQty,
-        cumulativeInbound,
-        cumulativeOutbound,
-        openingQty,
-        inboundAfterOpening,
-        outboundAfterOpening,
-        adjustmentAfterOpening,
-        netMovement: cumulativeInbound - cumulativeOutbound,
-        ledgerQty: openingIndex >= 0 ? chainBalance : cumulativeInbound - cumulativeOutbound,
-        reconciliationDifference: openingIndex >= 0 ? reconciliationDifference : stock.qty - (cumulativeInbound - cumulativeOutbound),
+        cumulativeInbound: ledger.openingQty + ledger.inboundAfterOpening,
+        cumulativeOutbound: ledger.effectiveOutbound,
+        openingQty: ledger.openingQty,
+        openingDate: ledger.openingDate?.toISOString() || null,
+        inboundAfterOpening: ledger.inboundAfterOpening,
+        outboundAfterOpening: ledger.effectiveOutbound,
+        returnInboundAfterOpening: ledger.returnInboundAfterOpening,
+        adjustmentAfterOpening: ledger.otherAdjustments,
+        calibrationAdjustment: ledger.calibrationAdjustment,
+        hasLedgerCalibration: ledger.hasLedgerCalibration,
+        netMovement: ledger.inboundAfterOpening - ledger.effectiveOutbound + ledger.otherAdjustments,
+        ledgerQty: ledger.expectedQty,
+        reconciliationDifference,
         reconciliationStatus,
         assetStatus,
         costContinuous,
         hasFormalStocktake: openingIndex >= 0,
+        baselineSource: openingIndex >= 0 ? 'FORMAL_STOCKTAKE' : ledger.hasSystemBaseline ? 'SYSTEM_HISTORY' : 'CURRENT_BALANCE',
         costPrice,
         currency: assetCurrency,
         totalValue: ledgerAssetValue,

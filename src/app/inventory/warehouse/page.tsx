@@ -29,18 +29,23 @@ type StockItem = {
   cumulativeInbound: number;
   cumulativeOutbound: number;
   openingQty: number;
+  openingDate?: string | null;
   inboundAfterOpening: number;
   outboundAfterOpening: number;
+  returnInboundAfterOpening: number;
   adjustmentAfterOpening: number;
+  calibrationAdjustment: number;
+  hasLedgerCalibration: boolean;
   ledgerQty: number;
   reconciliationDifference: number;
-  reconciliationStatus: "RECONCILED" | "PENDING_STOCKTAKE";
+  reconciliationStatus: "RECONCILED" | "SYSTEM_RECONCILED" | "PENDING_STOCKTAKE";
   assetStatus: "RECONCILED" | "PENDING_STOCKTAKE" | "PENDING_COST_REVIEW";
   costContinuous: boolean;
   hasFormalStocktake: boolean;
   totalValue: number;
   confirmedAssetValue: number;
   provisionalAssetValue: number;
+  baselineSource: "FORMAL_STOCKTAKE" | "SYSTEM_HISTORY" | "CURRENT_BALANCE";
 };
 
 type Warehouse = {
@@ -107,6 +112,10 @@ export default function WarehouseInventoryPage() {
       totalQty: number; 
       availableQty: number;
       skuCount: number;
+      openingQty: number;
+      inboundQty: number;
+      outboundQty: number;
+      differenceQty: number;
       items: StockItem[];
     }>();
 
@@ -116,6 +125,10 @@ export default function WarehouseInventoryPage() {
         totalQty: 0, 
         availableQty: 0, 
         skuCount: 0,
+        openingQty: 0,
+        inboundQty: 0,
+        outboundQty: 0,
+        differenceQty: 0,
         items: [] 
       });
     });
@@ -127,6 +140,10 @@ export default function WarehouseInventoryPage() {
         stat.totalQty += item.qty || 0;
         stat.availableQty += item.availableQty || 0;
         stat.skuCount += 1;
+        stat.openingQty += item.openingQty || 0;
+        stat.inboundQty += item.inboundAfterOpening || 0;
+        stat.outboundQty += item.outboundAfterOpening || 0;
+        stat.differenceQty += item.reconciliationDifference || 0;
         stat.items.push(item);
       }
     });
@@ -136,15 +153,17 @@ export default function WarehouseInventoryPage() {
 
   // 总体统计
   const totalStats = useMemo(() => {
-    const domestic = warehouseStats.filter(w => w.warehouse.type === "DOMESTIC");
     const overseas = warehouseStats.filter(w => w.warehouse.type === "OVERSEAS");
     return {
       totalWarehouses: warehouseStats.length,
-      domesticWarehouses: domestic.length,
       overseasWarehouses: overseas.length,
-      totalQty: warehouseStats.reduce((sum, w) => sum + w.totalQty, 0),
-      availableQty: warehouseStats.reduce((sum, w) => sum + w.availableQty, 0),
-      totalSku: warehouseStats.reduce((sum, w) => sum + w.skuCount, 0),
+      totalQty: overseas.reduce((sum, w) => sum + w.totalQty, 0),
+      availableQty: overseas.reduce((sum, w) => sum + w.availableQty, 0),
+      totalSku: overseas.reduce((sum, w) => sum + w.skuCount, 0),
+      openingQty: overseas.reduce((sum, w) => sum + w.openingQty, 0),
+      inboundQty: overseas.reduce((sum, w) => sum + w.inboundQty, 0),
+      outboundQty: overseas.reduce((sum, w) => sum + w.outboundQty, 0),
+      differenceQty: overseas.reduce((sum, w) => sum + w.differenceQty, 0),
       overseasAssetByCurrency: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS").reduce((totals: Record<string, number>, item: StockItem) => {
         const currency = item.currency || "CNY";
         totals[currency] = (totals[currency] || 0) + (item.totalValue || 0);
@@ -155,14 +174,15 @@ export default function WarehouseInventoryPage() {
         totals[currency] = (totals[currency] || 0) + (item.confirmedAssetValue || 0);
         return totals;
       }, {}),
-      pendingStocktake: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS" && item.assetStatus !== "RECONCILED").length,
+      pendingStocktake: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS" && !item.hasFormalStocktake).length,
+      ledgerCalibrated: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS" && item.reconciliationStatus === "SYSTEM_RECONCILED").length,
     };
   }, [warehouseStats]);
 
   // 当前选中的仓库
   const selectedWarehouse = warehouses.find((w: Warehouse) => w.id === selectedWarehouseId);
   const selectedWarehouseStocks = selectedWarehouseId === "all" 
-    ? stocks 
+    ? stocks.filter((s: StockItem) => s.warehouseType === "OVERSEAS")
     : stocks.filter((s: StockItem) => s.warehouseId === selectedWarehouseId);
   const filteredWarehouseStocks = useMemo(() => {
     const sku = skuKeyword.trim();
@@ -204,16 +224,16 @@ export default function WarehouseInventoryPage() {
           <ActionButton
             icon={Download}
             onClick={() => {
-              const headers = ["仓库", "SKU", "产品名称", "规格", "累计入库", "累计出库", "当前剩余", "单位成本", "暂估资产", "对账状态"];
+              const headers = ["仓库", "SKU", "产品名称", "规格", "期初库存", "期后入库", "有效出库", "当前库存", "账面差异", "单位成本", "暂估资产", "对账状态"];
               const rows = filteredWarehouseStocks.map((item: StockItem) => [
                 item.warehouseName,
                 item.skuId,
                 item.productName,
                 [item.color, item.size].filter(Boolean).join("/") || "-",
-                String(item.cumulativeInbound || 0), String(item.cumulativeOutbound || 0), String(item.qty || 0),
+                String(item.openingQty || 0), String(item.inboundAfterOpening || 0), String(item.outboundAfterOpening || 0), String(item.qty || 0), String(item.reconciliationDifference || 0),
                 `${item.currency || "CNY"} ${(item.costPrice || 0).toFixed(2)}`,
                 `${item.currency || "CNY"} ${(item.totalValue || 0).toFixed(2)}`,
-                item.reconciliationStatus === "RECONCILED" ? "已核对" : "待盘点",
+                item.reconciliationStatus === "RECONCILED" ? "实盘已核对" : item.reconciliationStatus === "SYSTEM_RECONCILED" ? "系统账已校准" : "待核对",
               ]);
               const csv = [headers.join(","), ...rows.map((r: string[]) => r.join(","))].join("\n");
               const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
@@ -231,39 +251,27 @@ export default function WarehouseInventoryPage() {
 
       <div className="p-6 space-y-6">
         {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <StatCard
-            title="仓库数量"
-            value={totalStats.totalWarehouses}
+            title="海外仓数量"
+            value={totalStats.overseasWarehouses}
             icon={WarehouseIcon}
             iconColor="text-blue-400"
           />
           <StatCard
-            title="国内仓"
-            value={totalStats.domesticWarehouses}
-            icon={WarehouseIcon}
-            iconColor="text-emerald-400"
-          />
-          <StatCard
-            title="海外仓"
-            value={totalStats.overseasWarehouses}
-            icon={WarehouseIcon}
-            iconColor="text-purple-400"
-          />
-          <StatCard
-            title="SKU种类"
+            title="海外仓 SKU"
             value={totalStats.totalSku}
             icon={Package}
             iconColor="text-amber-400"
           />
           <StatCard
-            title="库内库存"
+            title="当前库存"
             value={totalStats.totalQty.toLocaleString("en-US")}
             icon={Package}
             iconColor="text-green-400"
           />
           <StatCard
-            title="海运在途"
+            title="真实海运在途"
             value={inTransitVariantTotal.toLocaleString("en-US")}
             icon={Ship}
             iconColor="text-orange-400"
@@ -274,6 +282,19 @@ export default function WarehouseInventoryPage() {
             icon={Package}
             iconColor="text-cyan-400"
           />
+          <StatCard
+            title="有效累计出库"
+            value={totalStats.outboundQty.toLocaleString("en-US")}
+            icon={Package}
+            iconColor="text-rose-400"
+          />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">历史期初库存</div><div className="mt-1 text-xl font-semibold tabular-nums text-slate-100">{totalStats.openingQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">来自首笔出库前余额或正式盘点</div></div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">期后正式入库</div><div className="mt-1 text-xl font-semibold tabular-nums text-emerald-300">+{totalStats.inboundQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">不再重复计算历史到仓批次</div></div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">有效订单出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-rose-300">-{totalStats.outboundQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">已扣除取消订单回补</div></div>
+          <div className={`rounded-lg border p-4 ${totalStats.differenceQty === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="text-xs text-slate-400">账面差异</div><div className={`mt-1 text-xl font-semibold tabular-nums ${totalStats.differenceQty === 0 ? "text-emerald-300" : "text-amber-300"}`}>{totalStats.differenceQty > 0 ? "+" : ""}{totalStats.differenceQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-400">期初 + 入库 - 有效出库 = 当前库存</div></div>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -300,9 +321,9 @@ export default function WarehouseInventoryPage() {
             <div className="mt-3 grid grid-cols-3 gap-4">
               <div><div className="text-xs text-slate-500">已核对资产</div><div className="mt-1 space-y-1 font-semibold text-emerald-300">{Object.entries(totalStats.confirmedAssetByCurrency as Record<string, number>).map(([currency, amount]) => <div key={currency}>{currency} {amount.toFixed(2)}</div>)}</div></div>
               <div><div className="text-xs text-slate-500">账面暂估资产</div><div className="mt-1 space-y-1 font-semibold">{Object.entries(totalStats.overseasAssetByCurrency as Record<string, number>).map(([currency, amount]) => <div key={currency}>{currency} {amount.toFixed(2)}</div>)}</div></div>
-              <div><div className="text-xs text-slate-500">待盘点 SKU</div><div className="mt-1 text-xl font-semibold text-amber-300">{totalStats.pendingStocktake}</div></div>
+              <div><div className="text-xs text-slate-500">系统账已校准 / 待实盘</div><div className="mt-1 text-xl font-semibold text-amber-300">{totalStats.ledgerCalibrated} / {totalStats.pendingStocktake}</div></div>
             </div>
-            <p className="mt-3 text-xs text-slate-500">待盘点金额仅供核对，不进入已确认库存资产。期初盘点完成后，系统按入库、出库和调整流水持续核对。</p>
+            <p className="mt-3 text-xs text-slate-500">系统账校准表示数量已按历史订单链核对；只有上传仓库实盘凭证后，才进入已确认库存资产。</p>
           </div>
         </div>
 
@@ -340,13 +361,21 @@ export default function WarehouseInventoryPage() {
                   </div>
                   {isExpanded ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-sm">
+                <div className="grid grid-cols-5 gap-2 text-sm">
                   <div>
                     <div className="text-slate-500">SKU种类</div>
                     <div className="text-lg font-semibold text-slate-200">{stat.skuCount}</div>
                   </div>
                   <div>
-                    <div className="text-slate-500">库内库存</div>
+                    <div className="text-slate-500">期初</div>
+                    <div className="text-lg font-semibold text-slate-200">{stat.openingQty.toLocaleString("en-US")}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500">有效出库</div>
+                    <div className="text-lg font-semibold text-rose-300">{stat.outboundQty.toLocaleString("en-US")}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500">当前库存</div>
                     <div className="text-lg font-semibold text-slate-200">{stat.totalQty.toLocaleString("en-US")}</div>
                   </div>
                   <div>
@@ -450,8 +479,8 @@ export default function WarehouseInventoryPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">SKU</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">产品名称</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">规格</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">库内库存</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">累计入 / 出</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">当前库存</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">期初 / 入库 / 出库</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">单位成本 / 暂估资产</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">资产状态</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">操作</th>
@@ -472,9 +501,9 @@ export default function WarehouseInventoryPage() {
                         {[item.color, item.size].filter(Boolean).join(" / ") || "-"}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-200">{item.qty?.toLocaleString("en-US") || 0}</td>
-                      <td className="px-4 py-3 text-right text-sm"><span className="text-emerald-400">+{item.cumulativeInbound || 0}</span><span className="mx-1 text-slate-600">/</span><span className="text-rose-400">-{item.cumulativeOutbound || 0}</span></td>
+                      <td className="px-4 py-3 text-right text-sm tabular-nums"><span className="text-slate-300">{item.openingQty || 0}</span><span className="mx-1 text-slate-600">/</span><span className="text-emerald-400">+{item.inboundAfterOpening || 0}</span><span className="mx-1 text-slate-600">/</span><span className="text-rose-400">-{item.outboundAfterOpening || 0}</span></td>
                       <td className="px-4 py-3 text-right text-sm"><div>{item.currency || "CNY"} {(item.costPrice || 0).toFixed(2)}</div><div className="text-slate-500">{item.currency || "CNY"} {(item.totalValue || 0).toFixed(2)}</div></td>
-                      <td className="px-4 py-3 text-center"><span className={`rounded px-2 py-1 text-xs ${item.assetStatus === "RECONCILED" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{item.assetStatus === "RECONCILED" ? "资产已核对" : item.assetStatus === "PENDING_COST_REVIEW" ? "数量已核对 · 成本待核对" : `待盘点 · 差 ${item.reconciliationDifference}`}</span>{item.hasFormalStocktake && <div className="mt-1 text-[10px] text-slate-500">{item.openingQty} + {item.inboundAfterOpening} - {item.outboundAfterOpening} = {item.ledgerQty}</div>}</td>
+                      <td className="px-4 py-3 text-center"><span className={`rounded px-2 py-1 text-xs ${item.reconciliationStatus === "RECONCILED" ? "bg-emerald-500/15 text-emerald-300" : item.reconciliationStatus === "SYSTEM_RECONCILED" ? "bg-blue-500/15 text-blue-300" : "bg-amber-500/15 text-amber-300"}`}>{item.reconciliationStatus === "RECONCILED" ? "实盘已核对" : item.reconciliationStatus === "SYSTEM_RECONCILED" ? "系统账已校准 · 待实盘" : `账面待核对 · 差 ${item.reconciliationDifference}`}</span><div className="mt-1 text-[10px] text-slate-500">{item.openingQty} + {item.inboundAfterOpening} - {item.outboundAfterOpening} = {item.ledgerQty}</div>{item.calibrationAdjustment !== 0 && <div className="mt-1 text-[10px] text-blue-400">历史并发漂移已校准 {item.calibrationAdjustment > 0 ? "+" : ""}{item.calibrationAdjustment}</div>}</td>
                       <td className="px-4 py-3 text-center">{item.warehouseType === "OVERSEAS" && <button type="button" title="正式盘点" onClick={() => { setStocktakeItem(item); setStocktakeQty(String(item.qty)); setStocktakeUnitCost(String(item.costPrice || 0)); setStocktakeCurrency(item.currency || "CNY"); }} className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-700 hover:bg-slate-800"><ClipboardCheck className="h-4 w-4" /></button>}</td>
                     </tr>
                   ))}

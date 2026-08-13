@@ -7,7 +7,7 @@
     "build": "prisma generate && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "build:with-db": "prisma generate && prisma db push && node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "start": "next start",
-    "test:warehouse-assets": "tsx --test src/lib/warehouse-asset-ledger.test.ts",
+    "test:warehouse-assets": "tsx --test src/lib/warehouse-asset-ledger.test.ts src/lib/warehouse-stock-ledger.test.ts",
     "lint": "next lint",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
@@ -39,7 +39,8 @@
     "backfill:tiktok-settlements": "npx tsx scripts/backfill-tiktok-settlements.ts",
     "fix:brush-stock": "npx tsx scripts/fix-brush-stock-targets.ts",
     "move:brush-sea": "npx tsx scripts/move-brush-stock-to-sea-transit.ts",
-    "clear:domestic-stock": "npx tsx scripts/clear-domestic-warehouse-stock.ts"
+    "clear:domestic-stock": "npx tsx scripts/clear-domestic-warehouse-stock.ts",
+    "calibrate:brazil-warehouse-ledger": "npx tsx scripts/calibrate-brazil-warehouse-ledger.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
