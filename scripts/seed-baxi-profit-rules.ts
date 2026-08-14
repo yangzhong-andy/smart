@@ -35,7 +35,7 @@ const globeTiers = [
 }));
 
 const panlianTiers = [
-  [0, 0.5, 15, 10, 3, 2.5], [0.5, 1, null, null, null, 3],
+  [0, 0.5, 20, 20, 10, 2.5], [0.5, 1, null, null, null, 3],
   [1, 2, null, null, null, 3.5], [2, 3, null, null, null, 4],
 ].map(([minWeightKg, maxWeightKg, maxLengthCm, maxWidthCm, maxHeightCm, baseFee]) => ({
   minWeightKg,
