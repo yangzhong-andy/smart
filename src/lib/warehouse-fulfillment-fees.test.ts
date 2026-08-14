@@ -35,6 +35,8 @@ function calculate(chargeableWeightKg: number, billedUnits = 1) {
     baseOrderFee: 1,
     firstUnitFee: 0,
     additionalUnitFee: 0.5,
+    multiSkuFee: 0,
+    distinctSkuCount: 1,
     overweightThresholdKg: 70,
     overweightFeePerKg: 0.1,
     feeTiers: weightTiers,
@@ -118,4 +120,26 @@ test("keeps F003-sized parcels in Panlian's first tier while F002 still promotes
 
   assert.equal(calculateWarehouseFulfillmentFee({ ...input, chargeableWeightKg: 0.05, packageLengthCm: 17, packageWidthCm: 14, packageHeightCm: 6 }).fee, 2.5);
   assert.equal(calculateWarehouseFulfillmentFee({ ...input, chargeableWeightKg: 0.47, packageLengthCm: 30, packageWidthCm: 15.5, packageHeightCm: 11.5 }).fee, 3);
+});
+
+test("adds the fixed multi-SKU fee once without affecting one-SKU orders", () => {
+  const input = {
+    pricingMode: "WEIGHT_TIER" as const,
+    billedUnits: 5,
+    chargeableWeightKg: 1.51,
+    packageLengthCm: 30,
+    packageWidthCm: 17,
+    packageHeightCm: 12,
+    baseOrderFee: 0,
+    firstUnitFee: 0,
+    additionalUnitFee: 0.5,
+    multiSkuFee: 1,
+    overweightThresholdKg: null,
+    overweightFeePerKg: 0,
+    feeTiers: [
+      { minWeightKg: 1, maxWeightKg: 2, minInclusive: false, maxInclusive: true, maxLengthCm: null, maxWidthCm: null, maxHeightCm: null, baseFee: 3.5 },
+    ],
+  };
+  assert.equal(calculateWarehouseFulfillmentFee({ ...input, distinctSkuCount: 2 }).fee, 6.5);
+  assert.equal(calculateWarehouseFulfillmentFee({ ...input, distinctSkuCount: 1 }).fee, 5.5);
 });

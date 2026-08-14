@@ -19,6 +19,8 @@ export type WarehouseFeeInput = {
   baseOrderFee: number;
   firstUnitFee: number;
   additionalUnitFee: number;
+  multiSkuFee?: number;
+  distinctSkuCount?: number;
   overweightThresholdKg: number | null;
   overweightFeePerKg: number;
   feeTiers: WarehouseFeeTierInput[];
@@ -45,10 +47,11 @@ export function findWarehouseFeeTier(
 export function calculateWarehouseFulfillmentFee(input: WarehouseFeeInput) {
   if (input.billedUnits <= 0) return { fee: 0, covered: false, tier: null };
   const additionalUnitsFee = Math.max(0, input.billedUnits - 1) * input.additionalUnitFee;
+  const multiSkuCharge = Number(input.distinctSkuCount) > 1 ? Math.max(0, Number(input.multiSkuFee) || 0) : 0;
 
   if (input.pricingMode === "FLAT_UNIT") {
     return {
-      fee: input.baseOrderFee + input.firstUnitFee + additionalUnitsFee,
+      fee: input.baseOrderFee + input.firstUnitFee + additionalUnitsFee + multiSkuCharge,
       covered: true,
       tier: null,
     };
@@ -72,7 +75,7 @@ export function calculateWarehouseFulfillmentFee(input: WarehouseFeeInput) {
   if (!tier) return { fee: 0, covered: false, tier: null };
 
   return {
-    fee: input.baseOrderFee + tier.baseFee + additionalUnitsFee + overweightFee,
+    fee: input.baseOrderFee + tier.baseFee + additionalUnitsFee + multiSkuCharge + overweightFee,
     covered: true,
     tier,
   };

@@ -31,7 +31,7 @@ const globeTiers = [
   maxLengthCm: null,
   maxWidthCm: null,
   maxHeightCm: null,
-  baseFee,
+  baseFee: Number(baseFee),
 }));
 
 const panlianTiers = [
@@ -45,7 +45,7 @@ const panlianTiers = [
   maxLengthCm,
   maxWidthCm,
   maxHeightCm,
-  baseFee,
+  baseFee: Number(baseFee),
 }));
 
 function date(value: string) {
@@ -107,6 +107,7 @@ async function upsertWarehouseRule(
     billingUnit?: "SELLER_UNIT" | "INTERNAL_COMPONENT";
     baseOrderFee: number;
     additionalUnitFee: number;
+    multiSkuFee: number;
     overweightThresholdKg: number | null;
     overweightFeePerKg: number;
     notes: string;
@@ -131,6 +132,7 @@ async function upsertWarehouseRule(
     baseOrderFee: data.baseOrderFee,
     firstUnitFee: 0,
     additionalUnitFee: data.additionalUnitFee,
+    multiSkuFee: data.multiSkuFee,
     volumetricDivisor: 6000,
     overweightThresholdKg: data.overweightThresholdKg,
     overweightFeePerKg: data.overweightFeePerKg,
@@ -190,6 +192,7 @@ async function main() {
       pricingMode: "WEIGHT_TIER",
       baseOrderFee: 1,
       additionalUnitFee: 0.5,
+      multiSkuFee: 0,
       overweightThresholdKg: 70,
       overweightFeePerKg: 0.1,
       feeTiers: globeTiers,
@@ -200,6 +203,7 @@ async function main() {
       billingUnit: "INTERNAL_COMPONENT",
       baseOrderFee: 0,
       additionalUnitFee: 0.5,
+      multiSkuFee: 1,
       overweightThresholdKg: null,
       overweightFeePerKg: 0,
       feeTiers: panlianTiers,
