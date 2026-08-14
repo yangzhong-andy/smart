@@ -30,14 +30,15 @@ export function findWarehouseFeeTier(
   tiers: WarehouseFeeTierInput[],
 ) {
   return tiers.find((tier) => {
-    const aboveMin = tier.minWeightKg == null
-      || (tier.minInclusive ? weightKg >= tier.minWeightKg : weightKg > tier.minWeightKg);
+    // A package that exceeds a lower tier's dimensions must be promoted to
+    // the next tier even when its actual weight is still below that tier's
+    // minimum. The upper limits therefore determine the first eligible tier.
     const belowMax = tier.maxWeightKg == null
       || (tier.maxInclusive ? weightKg <= tier.maxWeightKg : weightKg < tier.maxWeightKg);
     const withinLength = tier.maxLengthCm == null || dimensions[0] <= tier.maxLengthCm;
     const withinWidth = tier.maxWidthCm == null || dimensions[1] <= tier.maxWidthCm;
     const withinHeight = tier.maxHeightCm == null || dimensions[2] <= tier.maxHeightCm;
-    return aboveMin && belowMax && withinLength && withinWidth && withinHeight;
+    return belowMax && withinLength && withinWidth && withinHeight;
   });
 }
 

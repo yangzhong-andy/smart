@@ -35,17 +35,16 @@ const globeTiers = [
 }));
 
 const panlianTiers = [
-  [0, 0.5, 2.5], [0.5, 1, 3], [1, 2, 3.5], [2, 3, 4], [3, 5, 5],
-  [5, 10, 6.5], [10, 15, 13], [15, 20, 13], [20, 25, 18], [25, 30, 18],
-  [30, 40, 30], [40, 50, 30], [50, 60, 35], [60, 70, 45],
-].map(([minWeightKg, maxWeightKg, baseFee]) => ({
+  [0, 0.5, 15, 10, 3, 2.5], [0.5, 1, null, null, null, 3],
+  [1, 2, null, null, null, 3.5], [2, 3, null, null, null, 4],
+].map(([minWeightKg, maxWeightKg, maxLengthCm, maxWidthCm, maxHeightCm, baseFee]) => ({
   minWeightKg,
   maxWeightKg,
   minInclusive: false,
   maxInclusive: true,
-  maxLengthCm: null,
-  maxWidthCm: null,
-  maxHeightCm: null,
+  maxLengthCm,
+  maxWidthCm,
+  maxHeightCm,
   baseFee,
 }));
 
@@ -105,6 +104,7 @@ async function upsertWarehouseRule(
   effectiveFrom: string,
   data: {
     pricingMode: "WEIGHT_TIER" | "PACKAGE_TIER";
+    billingUnit?: "SELLER_UNIT" | "INTERNAL_COMPONENT";
     baseOrderFee: number;
     additionalUnitFee: number;
     overweightThresholdKg: number | null;
@@ -127,7 +127,7 @@ async function upsertWarehouseRule(
     warehouseId: mapping.warehouseId,
     shopId: null,
     pricingMode: data.pricingMode,
-    billingUnit: "SELLER_UNIT",
+    billingUnit: data.billingUnit || "SELLER_UNIT",
     baseOrderFee: data.baseOrderFee,
     firstUnitFee: 0,
     additionalUnitFee: data.additionalUnitFee,
@@ -197,8 +197,9 @@ async function main() {
     });
     await upsertWarehouseRule(db, WAREHOUSES.panlian, "2026-06-03", {
       pricingMode: "WEIGHT_TIER",
+      billingUnit: "INTERNAL_COMPONENT",
       baseOrderFee: 0,
-      additionalUnitFee: 0,
+      additionalUnitFee: 0.5,
       overweightThresholdKg: null,
       overweightFeePerKg: 0,
       feeTiers: panlianTiers,

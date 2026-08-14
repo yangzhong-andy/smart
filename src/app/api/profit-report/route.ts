@@ -1040,11 +1040,8 @@ export async function GET(request: NextRequest) {
         : "FLAT_UNIT";
       const volumetricDivisor = Math.max(1, rule?.volumetricDivisor || 6000);
       const volumetricWeightKg = physical.volumeCm3 / volumetricDivisor;
-      // Panlian's standard tiers are based on actual weight. Only package-tier
-      // quotes should use the greater of actual and volumetric weight.
-      const chargeableWeightKg = pricingMode === "PACKAGE_TIER"
-        ? Math.max(physical.actualWeightKg, volumetricWeightKg)
-        : physical.actualWeightKg;
+      // Panlian's quote uses actual weight; dimensions only promote the tier.
+      const chargeableWeightKg = physical.actualWeightKg;
       const compactHeightCm = physical.maxLengthCm > 0 && physical.maxWidthCm > 0
         ? Math.max(physical.maxHeightCm, physical.volumeCm3 / (physical.maxLengthCm * physical.maxWidthCm))
         : 0;

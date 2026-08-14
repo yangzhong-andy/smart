@@ -77,3 +77,25 @@ test("package tiers enforce both weight and sorted dimensions", () => {
   assert.equal(result.fee, 3);
   assert.equal(result.covered, true);
 });
+
+test("promotes a light package to the next tier when its dimensions exceed the lower tier", () => {
+  const result = calculateWarehouseFulfillmentFee({
+    pricingMode: "PACKAGE_TIER",
+    billedUnits: 1,
+    chargeableWeightKg: 0.47,
+    packageLengthCm: 30,
+    packageWidthCm: 15.5,
+    packageHeightCm: 3,
+    baseOrderFee: 0,
+    firstUnitFee: 0,
+    additionalUnitFee: 0,
+    overweightThresholdKg: null,
+    overweightFeePerKg: 0,
+    feeTiers: [
+      { minWeightKg: 0, maxWeightKg: 0.5, minInclusive: false, maxInclusive: true, maxLengthCm: 15, maxWidthCm: 10, maxHeightCm: 3, baseFee: 2.5 },
+      { minWeightKg: 0.5, maxWeightKg: 1, minInclusive: false, maxInclusive: true, maxLengthCm: 30, maxWidthCm: 25, maxHeightCm: 3, baseFee: 3 },
+    ],
+  });
+  assert.equal(result.fee, 3);
+  assert.equal(result.covered, true);
+});
