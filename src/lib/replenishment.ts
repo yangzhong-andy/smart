@@ -36,6 +36,12 @@ export type ReplenishmentResult = {
   urgency: "OUT_OF_STOCK" | "URGENT" | "WATCH" | "HEALTHY" | "NO_SALES"
 }
 
+const ACTUAL_SHIPMENT_STATUSES = new Set(["IN_TRANSIT", "DELIVERED", "COMPLETED"])
+
+export function isActualShipmentStatus(status: unknown): boolean {
+  return ACTUAL_SHIPMENT_STATUSES.has(String(status || "").trim().toUpperCase())
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000
 
 function day(value: Date): Date {
