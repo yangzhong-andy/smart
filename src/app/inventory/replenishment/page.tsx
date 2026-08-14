@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import useSWR from "swr"
 import { AlertTriangle, Boxes, ClipboardCheck, History, PackageSearch, RefreshCw, Search, Settings2, TrendingUp, X } from "lucide-react"
@@ -9,8 +9,10 @@ import { toast } from "sonner"
 type Policy = { salesWindowDays: number; targetCoverageDays: number; safetyStockDays: number; leadTimeDays: number; supplierLeadTimeDays?: number; domesticCollectionDays?: number; oceanTransitDays?: number; customsClearanceDays?: number; demandMultiplier?: number }
 type Shop = { shopId: string; shopName: string; region: string }
 type Warehouse = { id: string; name: string; code: string }
-type ShipmentWindow = { shippedOrders: number; shippedUnits: number; orderShare: number; unitShare: number }
-type WarehouseStat = { warehouse: Warehouse; windows: Record<"7" | "14" | "30", ShipmentWindow>; overseasAvailable: number; inTransit: number; suggestedQty: number }
+type ShipmentWindow = { shippedOrders: number; shippedUnits: number; sampleUnits: number; orderShare: number; unitShare: number }
+type SkuShipmentWindow = { shippedOrders: number; shippedUnits: number; sampleUnits: number; unitShare: number }
+type WarehouseSkuStat = { variantId: string; sku: string; productName: string; windows: Record<"7" | "14" | "30", SkuShipmentWindow>; overseasAvailable: number; inTransit: number; suggestedQty: number }
+type WarehouseStat = { warehouse: Warehouse; windows: Record<"7" | "14" | "30", ShipmentWindow>; skuStats: WarehouseSkuStat[]; overseasAvailable: number; inTransit: number; suggestedQty: number }
 type ShipmentCoverage = { totalOrders: number; recognizedOrders: number; unresolvedOrders: number; coverageRate: number }
 type Row = {
   variantId: string; sku: string; productName: string; warehouse: Warehouse; overseasAvailable: number; sharedDomesticReady: number; sharedFactoryReady: number; inTransit: number
@@ -65,15 +67,6 @@ export default function ReplenishmentPage() {
   const warehouseStats = useMemo(() => (Array.isArray(data?.warehouseStats) ? [...data.warehouseStats] : [])
     .sort((left, right) => right.windows[shipmentWindow].shippedUnits - left.windows[shipmentWindow].shippedUnits), [data, shipmentWindow])
   const shipmentCoverage = data?.shipmentCoverage?.[shipmentWindow]
-  const warehouseTotals = useMemo(() => warehouseStats.reduce((total, item) => {
-    const current = item.windows[shipmentWindow]
-    total.shippedOrders += current.shippedOrders
-    total.shippedUnits += current.shippedUnits
-    total.overseasAvailable += item.overseasAvailable
-    total.inTransit += item.inTransit
-    total.suggestedQty += item.suggestedQty
-    return total
-  }, { shippedOrders: 0, shippedUnits: 0, overseasAvailable: 0, inTransit: 0, suggestedQty: 0 }), [warehouseStats, shipmentWindow])
   const rows = useMemo(() => (Array.isArray(data?.rows) ? data.rows : [])
     .filter((row) => Boolean(row?.warehouse?.id))
     .filter((row) => !riskOnly || ["OUT_OF_STOCK", "URGENT", "WATCH"].includes(row.urgency))
@@ -139,21 +132,23 @@ export default function ReplenishmentPage() {
 
     <section className="border-y border-slate-800 bg-slate-950/20">
       <div className="flex flex-wrap items-start justify-between gap-3 py-4">
-        <div><h2 className="text-sm font-medium">仓库出货结构</h2><p className="mt-1 text-xs text-slate-500">按实际出库订单统计，组合装已拆为基础件；件数占比仅基于已识别仓库且已映射 SKU 的数据。</p></div>
+        <div><h2 className="text-sm font-medium">仓库 SKU 出货结构</h2><p className="mt-1 text-xs text-slate-500">每个仓库独立计算各基础 SKU 的出货占比；组合装已拆分，免费样品计入真实出货并单独标记。</p></div>
         <div className="inline-flex rounded-md border border-slate-700 bg-slate-900 p-1">{(["7", "14", "30"] as const).map((days) => <button key={days} type="button" onClick={() => setShipmentWindow(days)} className={`h-7 min-w-14 rounded px-3 text-xs ${shipmentWindow === days ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-100"}`}>{days} 天</button>)}</div>
       </div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[980px] table-fixed text-left text-xs">
-        <thead className="bg-slate-900/80 text-slate-400"><tr><Th width="210">仓库</Th><Th width="120">出货订单</Th><Th width="130">真实基础件数</Th><Th width="220">出货占比</Th><Th width="130">当前可用库存</Th><Th width="120">在途</Th><Th width="140">建议补货</Th></tr></thead>
-        <tbody className="divide-y divide-slate-800">{isLoading ? <tr><td colSpan={7} className="h-28 text-center text-slate-500">正在汇总仓库出货...</td></tr> : warehouseStats.length === 0 ? <tr><td colSpan={7} className="h-28 text-center text-slate-500">暂无已识别仓库的出货数据</td></tr> : warehouseStats.map((item) => { const current = item.windows[shipmentWindow]; return <tr key={item.warehouse.id} className="bg-slate-950/20 hover:bg-slate-900/50">
-          <Td><div className="font-medium text-slate-100">{item.warehouse.name}</div><div className="mt-1 text-[11px] text-slate-500">{item.warehouse.code}</div></Td>
-          <Td><strong className="font-medium text-slate-200">{current.shippedOrders.toLocaleString()}</strong> 单<div className="mt-1 text-[11px] text-slate-500">订单占比 {(current.orderShare * 100).toFixed(1)}%</div></Td>
-          <Td><strong className="font-medium text-cyan-300">{current.shippedUnits.toLocaleString()}</strong> 件</Td>
-          <Td><div className="flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded bg-slate-800"><div className="h-full bg-cyan-500" style={{ width: `${Math.min(100, current.unitShare * 100)}%` }} /></div><span className="w-14 text-right font-medium text-cyan-300">{(current.unitShare * 100).toFixed(1)}%</span></div><div className="mt-1 text-[11px] text-slate-500">按拆分后基础件数计算</div></Td>
-          <Td><span className="text-emerald-300">{item.overseasAvailable.toLocaleString()}</span> 件</Td><Td>{item.inTransit.toLocaleString()} 件</Td><Td><strong className={item.suggestedQty > 0 ? "text-amber-300" : "text-slate-500"}>{item.suggestedQty.toLocaleString()}</strong> 件</Td>
-        </tr>})}</tbody>
-        {warehouseStats.length > 0 && <tfoot className="border-t border-slate-700 bg-slate-900/70 font-medium text-slate-200"><tr><Td>合计</Td><Td>{warehouseTotals.shippedOrders.toLocaleString()} 单</Td><Td><span className="text-cyan-300">{warehouseTotals.shippedUnits.toLocaleString()}</span> 件</Td><Td>100.0%</Td><Td><span className="text-emerald-300">{warehouseTotals.overseasAvailable.toLocaleString()}</span> 件</Td><Td>{warehouseTotals.inTransit.toLocaleString()} 件</Td><Td><span className={warehouseTotals.suggestedQty > 0 ? "text-amber-300" : "text-slate-500"}>{warehouseTotals.suggestedQty.toLocaleString()}</span> 件</Td></tr></tfoot>}
+      <div className="overflow-x-auto"><table className="w-full min-w-[1080px] table-fixed text-left text-xs">
+        <thead className="bg-slate-900/80 text-slate-400"><tr><Th width="230">SKU / 商品</Th><Th width="175">7 / 14 / 30天出货</Th><Th width="230">仓内 SKU 占比</Th><Th width="120">其中免费样品</Th><Th width="130">当前可用库存</Th><Th width="110">在途</Th><Th width="130">建议补货</Th></tr></thead>
+        <tbody className="divide-y divide-slate-800">{isLoading ? <tr><td colSpan={7} className="h-28 text-center text-slate-500">正在汇总仓库 SKU 出货...</td></tr> : warehouseStats.length === 0 ? <tr><td colSpan={7} className="h-28 text-center text-slate-500">暂无已识别仓库的出货数据</td></tr> : warehouseStats.map((item) => { const current = item.windows[shipmentWindow]; const skuStats = [...(item.skuStats || [])].sort((left, right) => right.windows[shipmentWindow].shippedUnits - left.windows[shipmentWindow].shippedUnits); return <Fragment key={item.warehouse.id}>
+          <tr className="border-t border-slate-700 bg-slate-900/60"><td colSpan={7} className="px-3 py-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-slate-100">{item.warehouse.name}</strong><span className="ml-2 text-[11px] text-slate-500">{item.warehouse.code}</span></div><div className="text-slate-400">{shipmentWindow} 天合计：<span className="text-slate-200">{current.shippedOrders.toLocaleString()} 单</span><span className="mx-2 text-slate-700">|</span><span className="text-cyan-300">{current.shippedUnits.toLocaleString()} 件</span>{current.sampleUnits > 0 && <span className="ml-2 text-amber-300">其中样品 {current.sampleUnits.toLocaleString()} 件</span>}</div></div></td></tr>
+          {skuStats.length === 0 ? <tr><td colSpan={7} className="h-20 text-center text-slate-500">该仓库暂无 SKU 数据</td></tr> : skuStats.map((sku) => { const selected = sku.windows[shipmentWindow]; return <tr key={`${item.warehouse.id}-${sku.variantId}`} className="bg-slate-950/20 hover:bg-slate-900/50">
+            <Td><div className="font-medium text-slate-100">{sku.sku}</div><div className="mt-1 line-clamp-2 text-[11px] text-slate-500">{sku.productName}</div></Td>
+            <Td><span className="text-cyan-300">{sku.windows["7"].shippedUnits.toLocaleString()}</span><span className="text-slate-600"> / </span>{sku.windows["14"].shippedUnits.toLocaleString()}<span className="text-slate-600"> / </span>{sku.windows["30"].shippedUnits.toLocaleString()}</Td>
+            <Td><div className="flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded bg-slate-800"><div className="h-full bg-cyan-500" style={{ width: `${Math.min(100, selected.unitShare * 100)}%` }} /></div><span className="w-14 text-right font-medium text-cyan-300">{(selected.unitShare * 100).toFixed(1)}%</span></div><div className="mt-1 text-[11px] text-slate-500">{shipmentWindow} 天 {selected.shippedUnits.toLocaleString()} 件 · {selected.shippedOrders.toLocaleString()} 单</div></Td>
+            <Td>{selected.sampleUnits > 0 ? <span className="text-amber-300">{selected.sampleUnits.toLocaleString()} 件</span> : <span className="text-slate-600">0 件</span>}</Td>
+            <Td><span className="text-emerald-300">{sku.overseasAvailable.toLocaleString()}</span> 件</Td><Td>{sku.inTransit.toLocaleString()} 件</Td><Td><strong className={sku.suggestedQty > 0 ? "text-amber-300" : "text-slate-500"}>{sku.suggestedQty.toLocaleString()}</strong> 件</Td>
+          </tr>})}
+        </Fragment>})}</tbody>
       </table></div>
-      <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs text-slate-500"><span>补货建议仍按各仓自己的需求、库存和在途独立计算，不直接用总量乘占比。</span>{shipmentCoverage && <span>仓库识别覆盖：{shipmentCoverage.recognizedOrders.toLocaleString()} / {shipmentCoverage.totalOrders.toLocaleString()} 单（{(shipmentCoverage.coverageRate * 100).toFixed(1)}%）{shipmentCoverage.unresolvedOrders > 0 ? `，${shipmentCoverage.unresolvedOrders.toLocaleString()} 单未参与占比` : ""}</span>}</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs text-slate-500"><span>每个仓库分别按 100% 计算 SKU 结构；补货建议仍按该仓需求、库存和在途独立计算。</span>{shipmentCoverage && <span>仓库识别覆盖：{shipmentCoverage.recognizedOrders.toLocaleString()} / {shipmentCoverage.totalOrders.toLocaleString()} 单（{(shipmentCoverage.coverageRate * 100).toFixed(1)}%）{shipmentCoverage.unresolvedOrders > 0 ? `，${shipmentCoverage.unresolvedOrders.toLocaleString()} 单未参与占比` : ""}</span>}</div>
     </section>
 
     <section className="overflow-hidden border-y border-slate-800">

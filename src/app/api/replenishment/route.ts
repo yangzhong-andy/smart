@@ -55,13 +55,13 @@ function startDate(days: number) {
 
 const SHIPMENT_WINDOWS = [7, 14, 30] as const
 type ShipmentWindow = typeof SHIPMENT_WINDOWS[number]
-type ShipmentWindowCounters = Record<ShipmentWindow, { orders: Set<string>; units: number }>
+type ShipmentWindowCounters = Record<ShipmentWindow, { orders: Set<string>; units: number; sampleUnits: number }>
 
 function emptyShipmentWindows(): ShipmentWindowCounters {
   return {
-    7: { orders: new Set<string>(), units: 0 },
-    14: { orders: new Set<string>(), units: 0 },
-    30: { orders: new Set<string>(), units: 0 },
+    7: { orders: new Set<string>(), units: 0, sampleUnits: 0 },
+    14: { orders: new Set<string>(), units: 0, sampleUnits: 0 },
+    30: { orders: new Set<string>(), units: 0, sampleUnits: 0 },
   }
 }
 
@@ -69,8 +69,11 @@ function addShipmentOrder(windows: ShipmentWindowCounters, orderId: string, ageD
   for (const days of SHIPMENT_WINDOWS) if (ageDays < days) windows[days].orders.add(orderId)
 }
 
-function addShipmentUnits(windows: ShipmentWindowCounters, quantity: number, ageDays: number) {
-  for (const days of SHIPMENT_WINDOWS) if (ageDays < days) windows[days].units += quantity
+function addShipmentUnits(windows: ShipmentWindowCounters, quantity: number, ageDays: number, sampleOrder: boolean) {
+  for (const days of SHIPMENT_WINDOWS) if (ageDays < days) {
+    windows[days].units += quantity
+    if (sampleOrder) windows[days].sampleUnits += quantity
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -195,6 +198,7 @@ export async function GET(request: NextRequest) {
     const unresolved = new Map<string, { shopId: string; count: number }>()
     const unresolvedWarehouses = new Map<string, { shopId: string; count: number; status: string }>()
     const shipmentByWarehouse = new Map<string, ShipmentWindowCounters>()
+    const shipmentByWarehouseSku = new Map<string, ShipmentWindowCounters>()
     const allShipmentOrders = emptyShipmentWindows()
     const recognizedShipmentOrders = emptyShipmentWindows()
     const unresolvedShipmentOrders = emptyShipmentWindows()
@@ -231,11 +235,13 @@ export async function GET(request: NextRequest) {
       }
     }
     for (const order of [...orders].sort((left, right) => (right.createTime?.getTime() || 0) - (left.createTime?.getTime() || 0))) {
-      if (!isDemandOrder(order)) continue
       const raw = order.rawData as any
+      const demandOrder = isDemandOrder(order)
+      const sampleOrder = raw?.is_sample_order === true
+      const actualShipment = isActualShipmentStatus(order.orderStatus || order.status)
+      if (!demandOrder && !actualShipment) continue
       const created = order.createTime || (raw?.create_time ? new Date(number(raw.create_time) * 1000) : new Date())
       const ageDays = Math.max(0, (Date.now() - created.getTime()) / (24 * 60 * 60 * 1000))
-      const actualShipment = isActualShipmentStatus(order.orderStatus || order.status)
       if (actualShipment) addShipmentOrder(allShipmentOrders, order.orderId, ageDays)
       const resolution = warehouseResolver(raw, order.shopId, created, "TIKTOK", country, order.orderId)
       if (!resolution.warehouseId) {
@@ -267,12 +273,19 @@ export async function GET(request: NextRequest) {
         }
         for (const component of components) {
           const componentQuantity = lineQuantity(line) * component.quantity
-          addDemand(resolution.warehouseId, component.variantId, componentQuantity, order.shopId, ageDays)
-          if (actualShipment) addShipmentUnits(warehouseShipment, componentQuantity, ageDays)
+          if (demandOrder) addDemand(resolution.warehouseId, component.variantId, componentQuantity, order.shopId, ageDays)
+          if (actualShipment) {
+            addShipmentUnits(warehouseShipment, componentQuantity, ageDays, sampleOrder)
+            const skuShipmentKey = key(resolution.warehouseId, component.variantId)
+            const skuShipment = shipmentByWarehouseSku.get(skuShipmentKey) || emptyShipmentWindows()
+            addShipmentOrder(skuShipment, order.orderId, ageDays)
+            addShipmentUnits(skuShipment, componentQuantity, ageDays, sampleOrder)
+            shipmentByWarehouseSku.set(skuShipmentKey, skuShipment)
+          }
         }
         for (const component of components) seenVariants.add(component.variantId)
       }
-      for (const variantId of seenVariants) {
+      if (demandOrder) for (const variantId of seenVariants) {
         const current = demandMap.get(key(resolution.warehouseId, variantId))
         if (current) current.orders += 1
       }
@@ -359,9 +372,27 @@ export async function GET(request: NextRequest) {
         windows: Object.fromEntries(SHIPMENT_WINDOWS.map((days) => [days, {
           shippedOrders: shipment[days].orders.size,
           shippedUnits: shipment[days].units,
+          sampleUnits: shipment[days].sampleUnits,
           orderShare: shipmentTotals[days].orders > 0 ? shipment[days].orders.size / shipmentTotals[days].orders : 0,
           unitShare: shipmentTotals[days].units > 0 ? shipment[days].units / shipmentTotals[days].units : 0,
         }])),
+        skuStats: warehouseRows.map((row) => {
+          const skuShipment = shipmentByWarehouseSku.get(key(warehouse.id, row.variantId)) || emptyShipmentWindows()
+          return {
+            variantId: row.variantId,
+            sku: row.sku,
+            productName: row.productName,
+            windows: Object.fromEntries(SHIPMENT_WINDOWS.map((days) => [days, {
+              shippedOrders: skuShipment[days].orders.size,
+              shippedUnits: skuShipment[days].units,
+              sampleUnits: skuShipment[days].sampleUnits,
+              unitShare: shipment[days].units > 0 ? skuShipment[days].units / shipment[days].units : 0,
+            }])),
+            overseasAvailable: row.overseasAvailable,
+            inTransit: row.inTransit,
+            suggestedQty: row.suggestedQty,
+          }
+        }),
         overseasAvailable: warehouseRows.reduce((sum, row) => sum + row.overseasAvailable, 0),
         inTransit: warehouseRows.reduce((sum, row) => sum + row.inTransit, 0),
         suggestedQty: warehouseRows.reduce((sum, row) => sum + row.suggestedQty, 0),
