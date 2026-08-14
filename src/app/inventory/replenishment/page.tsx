@@ -8,16 +8,17 @@ import { toast } from "sonner"
 
 type Policy = { salesWindowDays: number; targetCoverageDays: number; safetyStockDays: number; leadTimeDays: number; supplierLeadTimeDays?: number; domesticCollectionDays?: number; oceanTransitDays?: number; customsClearanceDays?: number; demandMultiplier?: number }
 type Shop = { shopId: string; shopName: string; region: string }
+type Warehouse = { id: string; name: string; code: string }
 type Row = {
-  variantId: string; sku: string; productName: string; overseasAvailable: number; domesticReady: number; factoryReady: number; inTransit: number
+  variantId: string; sku: string; productName: string; warehouse: Warehouse; overseasAvailable: number; sharedDomesticReady: number; sharedFactoryReady: number; inTransit: number
   sales7: number; sales14: number; sales30: number; forecastDailySales: number; availableDays: number | null; stockoutDate: string | null
   suggestedOrderDate: string | null; suggestedQty: number; rawSuggestedQty: number; reorderPoint: number; urgency: string
-  supplier: { id: string; name: string } | null; unitCost: number; shopSales: Array<{ shopId: string; shopName: string; units: number }>
+  supplier: { id: string; name: string } | null; unitCost: number; shopSales: Array<{ shopId: string; shopName: string; units: number }>; suggestionShopId: string | null
   moq: number | null; cartonQty: number | null; policy: Policy; policySource: { id: string; scope: string } | null; missingParameters: string[]
 }
 type Payload = {
-  generatedAt: string; defaultPolicy: Policy; summary: { skuCount: number; urgentCount: number; suggestedUnits: number; unresolvedSkuCount: number }
-  shops: Shop[]; rows: Row[]; unresolved: Array<{ sellerSku: string; shopId: string; count: number }>
+  generatedAt: string; defaultPolicy: Policy; summary: { skuCount: number; warehouseCount: number; urgentCount: number; suggestedUnits: number; unresolvedSkuCount: number; unresolvedWarehouseOrderCount: number }
+  shops: Shop[]; warehouses: Warehouse[]; rows: Row[]; unresolved: Array<{ sellerSku: string; shopId: string; count: number }>; unresolvedWarehouses: Array<{ orderId: string; shopId: string; count: number; status: string }>
 }
 
 const fetcher = async (url: string) => {
@@ -37,6 +38,7 @@ const urgencyMeta: Record<string, { label: string; className: string; rank: numb
 
 export default function ReplenishmentPage() {
   const [shopId, setShopId] = useState("")
+  const [warehouseId, setWarehouseId] = useState("")
   const [keyword, setKeyword] = useState("")
   const [riskOnly, setRiskOnly] = useState(false)
   const [draft, setDraft] = useState<Row | null>(null)
@@ -47,6 +49,7 @@ export default function ReplenishmentPage() {
   const [savingPolicy, setSavingPolicy] = useState(false)
   const params = new URLSearchParams()
   if (shopId) params.set("shopId", shopId)
+  if (warehouseId) params.set("warehouseId", warehouseId)
   const { data, error, isLoading, isValidating, mutate } = useSWR<Payload>(`/api/replenishment?${params}`, fetcher, { revalidateOnFocus: false, dedupingInterval: 60000 })
   const rows = useMemo(() => (data?.rows || [])
     .filter((row) => !riskOnly || ["OUT_OF_STOCK", "URGENT", "WATCH"].includes(row.urgency))
@@ -54,16 +57,19 @@ export default function ReplenishmentPage() {
     .sort((left, right) => (urgencyMeta[left.urgency]?.rank ?? 9) - (urgencyMeta[right.urgency]?.rank ?? 9) || right.suggestedQty - left.suggestedQty),
   [data, keyword, riskOnly])
 
-  const openDraft = (row: Row) => { setDraft(row); setDraftQty(row.suggestedQty) }
+  const openDraft = (row: Row) => {
+    if (!row.suggestionShopId) return toast.error("该仓库仅保留历史销量追溯，不能生成建议单")
+    setDraft(row); setDraftQty(row.suggestedQty)
+  }
   const createSuggestion = async () => {
     if (!draft || draftQty < 1) return
-    const targetShop = shopId || [...draft.shopSales].sort((a, b) => b.units - a.units)[0]?.shopId || data?.shops[0]?.shopId
+    const targetShop = draft.suggestionShopId
     if (!targetShop) return toast.error("没有可关联的店铺")
     setSubmitting(true)
     try {
       const response = await fetch("/api/replenishment", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: true, variantId: draft.variantId, quantity: draftQty, shopId: targetShop, country: "BR", urgency: draft.urgency === "HEALTHY" ? "普通" : "紧急" }),
+        body: JSON.stringify({ confirm: true, variantId: draft.variantId, quantity: draftQty, shopId: targetShop, warehouseId: draft.warehouse.id, country: "BR", urgency: draft.urgency === "HEALTHY" ? "普通" : "紧急" }),
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result?.error || "生成失败")
@@ -85,41 +91,44 @@ export default function ReplenishmentPage() {
       </div>
     </header>
 
-    <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       <Kpi icon={PackageSearch} label="基础 SKU" value={data?.summary.skuCount ?? "-"} tone="cyan" />
+      <Kpi icon={Boxes} label="已配置海外仓" value={data?.summary.warehouseCount ?? "-"} tone="emerald" />
       <Kpi icon={AlertTriangle} label="需立即处理" value={data?.summary.urgentCount ?? "-"} tone="rose" />
       <Kpi icon={Boxes} label="建议补货件数" value={(data?.summary.suggestedUnits ?? 0).toLocaleString()} tone="amber" />
-      <Kpi icon={TrendingUp} label="未映射销售 SKU" value={data?.summary.unresolvedSkuCount ?? "-"} tone={(data?.summary.unresolvedSkuCount || 0) > 0 ? "rose" : "emerald"} />
+      <Kpi icon={TrendingUp} label="待处理映射" value={((data?.summary.unresolvedSkuCount || 0) + (data?.summary.unresolvedWarehouseOrderCount || 0)).toLocaleString()} tone={((data?.summary.unresolvedSkuCount || 0) + (data?.summary.unresolvedWarehouseOrderCount || 0)) > 0 ? "rose" : "emerald"} />
     </section>
 
     <section className="border-y border-slate-800 bg-slate-950/30 py-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <label className="text-xs text-slate-400">店铺范围<select value={shopId} onChange={(event) => setShopId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部巴西店铺</option>{data?.shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="text-xs text-slate-400">店铺范围<select value={shopId} onChange={(event) => { setShopId(event.target.value); setWarehouseId("") }} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部巴西店铺</option>{data?.shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
+        <label className="text-xs text-slate-400">目标海外仓<select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部已配置仓库</option>{data?.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}（{warehouse.code}）</option>)}</select></label>
         <div className="relative self-end"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索 SKU / 商品 / 供应商" className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 pl-9 pr-3 text-sm outline-none focus:border-cyan-500" /></div>
-        <div className="self-end text-xs text-slate-500">参数由已生效规则自动计算；选择店铺后可维护店铺级规则。</div>
+        <div className="self-end text-xs text-slate-500">国内、工厂库存是共享待分配库存，不会重复计入两个海外仓。</div>
       </div>
       <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={riskOnly} onChange={(event) => setRiskOnly(event.target.checked)} className="h-4 w-4 accent-cyan-500" />只看需要跟进的 SKU</label>
     </section>
 
     {error && <div className="rounded-md border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error.message}</div>}
-    {data?.unresolved.length ? <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-amber-400" /><div><h2 className="text-sm font-medium text-amber-200">有 {data.unresolved.length} 个销售 SKU 未映射</h2><p className="mt-1 text-xs text-slate-400">这些销量没有参与补货建议，请先到 SKU 映射补齐：{data.unresolved.slice(0, 5).map((item) => item.sellerSku).join("、")}</p></div></div></section> : null}
+    {(data?.unresolved.length || data?.unresolvedWarehouses.length) ? <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-amber-400" /><div><h2 className="text-sm font-medium text-amber-200">有 {(data?.unresolved.length || 0) + (data?.unresolvedWarehouses.length || 0)} 项订单映射待处理</h2><p className="mt-1 text-xs text-slate-400">未映射 SKU：{data?.unresolved.slice(0, 3).map((item) => item.sellerSku).join("、") || "无"}；未识别发货仓订单：{data?.unresolvedWarehouses.slice(0, 3).map((item) => item.orderId).join("、") || "无"}。这些订单不会分摊到任一仓库。</p></div></div></section> : null}
 
     <section className="overflow-hidden border-y border-slate-800">
-      <div className="flex items-center justify-between py-3"><div><h2 className="text-sm font-medium">SKU 补货建议</h2><p className="mt-1 text-xs text-slate-500">库存口径：海外仓可用 + 国内待发 + 工厂完工 + 未到仓在途</p></div><span className="text-xs text-slate-500">{data ? `更新于 ${new Date(data.generatedAt).toLocaleString("zh-CN")}` : ""}</span></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[1540px] table-fixed text-left text-xs">
-        <thead className="bg-slate-900/80 text-slate-400"><tr><Th width="210">SKU / 商品</Th><Th width="120">风险</Th><Th width="150">7 / 14 / 30天销量</Th><Th width="105">预测日销</Th><Th width="145">海外 / 国内 / 工厂</Th><Th width="105">海运在途</Th><Th width="115">可售天数</Th><Th width="120">预计断货</Th><Th width="120">建议下单</Th><Th width="130">建议补货</Th><Th width="190">补货参数</Th><Th width="150">供应商</Th><Th width="120">操作</Th></tr></thead>
+      <div className="flex items-center justify-between py-3"><div><h2 className="text-sm font-medium">SKU 补货建议</h2><p className="mt-1 text-xs text-slate-500">库存口径：目标海外仓可用 + 目标仓在途；国内和工厂库存只作共享待分配展示。</p></div><span className="text-xs text-slate-500">{data ? `更新于 ${new Date(data.generatedAt).toLocaleString("zh-CN")}` : ""}</span></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[1700px] table-fixed text-left text-xs">
+        <thead className="bg-slate-900/80 text-slate-400"><tr><Th width="210">SKU / 商品</Th><Th width="150">目标海外仓</Th><Th width="120">风险</Th><Th width="150">7 / 14 / 30天销量</Th><Th width="105">预测日销</Th><Th width="155">目标仓 / 国内共享 / 工厂共享</Th><Th width="105">目标仓在途</Th><Th width="115">可售天数</Th><Th width="120">预计断货</Th><Th width="120">建议下单</Th><Th width="130">建议补货</Th><Th width="190">补货参数</Th><Th width="150">供应商</Th><Th width="120">操作</Th></tr></thead>
         <tbody className="divide-y divide-slate-800">
-          {isLoading ? <tr><td colSpan={13} className="h-48 text-center text-slate-500">正在计算真实销量和库存...</td></tr> : rows.length === 0 ? <tr><td colSpan={13} className="h-48 text-center text-slate-500">没有符合条件的 SKU</td></tr> : rows.map((row) => { const meta = urgencyMeta[row.urgency] || urgencyMeta.NO_SALES; return <tr key={row.variantId} className="bg-slate-950/20 align-top hover:bg-slate-900/50">
+          {isLoading ? <tr><td colSpan={14} className="h-48 text-center text-slate-500">正在计算真实销量和库存...</td></tr> : rows.length === 0 ? <tr><td colSpan={14} className="h-48 text-center text-slate-500">没有符合条件的 SKU</td></tr> : rows.map((row) => { const meta = urgencyMeta[row.urgency] || urgencyMeta.NO_SALES; return <tr key={`${row.warehouse.id}-${row.variantId}`} className="bg-slate-950/20 align-top hover:bg-slate-900/50">
             <Td><div className="font-medium text-slate-100">{row.sku}</div><div className="mt-1 line-clamp-2 text-slate-500">{row.productName}</div></Td>
+            <Td><div className="font-medium text-slate-200">{row.warehouse.name}</div><div className="mt-1 text-[11px] text-slate-500">{row.warehouse.code}</div>{row.suggestionShopId ? <div className="mt-1 text-[11px] text-emerald-300">当前可补货</div> : <div className="mt-1 text-[11px] text-slate-500">历史仓销量</div>}</Td>
             <Td><span className={`inline-flex rounded border px-2 py-1 ${meta.className}`}>{meta.label}</span></Td>
             <Td><span className="text-cyan-300">{row.sales7}</span><span className="text-slate-600"> / </span>{row.sales14}<span className="text-slate-600"> / </span>{row.sales30}</Td>
             <Td><strong className="font-medium text-slate-200">{row.forecastDailySales.toFixed(2)}</strong> 件</Td>
-            <Td><span className="text-emerald-300">{row.overseasAvailable.toLocaleString()}</span><span className="text-slate-600"> / </span>{row.domesticReady}<span className="text-slate-600"> / </span>{row.factoryReady}</Td>
+            <Td><span className="text-emerald-300">{row.overseasAvailable.toLocaleString()}</span><span className="text-slate-600"> / </span>{row.sharedDomesticReady}<span className="text-slate-600"> / </span>{row.sharedFactoryReady}</Td>
             <Td>{row.inTransit.toLocaleString()}</Td><Td>{row.availableDays == null ? "-" : `${row.availableDays.toFixed(1)} 天`}</Td><Td>{row.stockoutDate || "-"}</Td><Td>{row.suggestedOrderDate || "-"}</Td>
             <Td><strong className={row.suggestedQty > 0 ? "text-amber-300" : "text-slate-500"}>{row.suggestedQty.toLocaleString()}</strong>{row.suggestedQty > 0 && <div className="mt-1 text-[11px] text-slate-500">触发点 {row.reorderPoint}</div>}</Td>
             <Td><div className="text-slate-300">交期 {row.policy.leadTimeDays}天 · 系数 {(row.policy.demandMultiplier || 1).toFixed(2)}</div><div className="mt-1 text-[11px] text-slate-500">MOQ {row.moq ?? "未维护"} · {row.cartonQty ? `${row.cartonQty}件/箱` : "装箱数未维护"}</div>{row.missingParameters.length > 0 && <div className="mt-1 text-[11px] text-amber-300">缺少：{row.missingParameters.join("、")}</div>}</Td>
             <Td><div className="text-slate-300">{row.supplier?.name || "未维护"}</div><div className="mt-1 text-[11px] text-slate-500">CNY {row.unitCost.toFixed(2)} / 件</div></Td>
-            <Td><div className="flex gap-1"><button type="button" onClick={() => setSettingsRow(row)} title="维护补货参数" className="grid h-8 w-8 place-items-center rounded-md border border-slate-700 text-slate-300 hover:border-cyan-500"><Settings2 className="h-4 w-4" /></button><button type="button" disabled={row.suggestedQty <= 0 || row.unitCost <= 0} onClick={() => openDraft(row)} title={row.unitCost <= 0 ? "请先维护采购成本" : "生成采购建议单"} className="h-8 rounded-md bg-cyan-600 px-2 text-white disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600">生成</button></div></Td>
+            <Td><div className="flex gap-1"><button type="button" onClick={() => setSettingsRow(row)} title="维护补货参数" className="grid h-8 w-8 place-items-center rounded-md border border-slate-700 text-slate-300 hover:border-cyan-500"><Settings2 className="h-4 w-4" /></button><button type="button" disabled={row.suggestedQty <= 0 || row.unitCost <= 0 || !row.suggestionShopId} onClick={() => openDraft(row)} title={!row.suggestionShopId ? "仅历史仓销量，不能生成建议单" : row.unitCost <= 0 ? "请先维护采购成本" : "生成采购建议单"} className="h-8 rounded-md bg-cyan-600 px-2 text-white disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600">生成</button></div></Td>
           </tr>})}
         </tbody>
       </table></div>
@@ -127,7 +136,7 @@ export default function ReplenishmentPage() {
 
     {draft && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"><div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-md border border-slate-700 bg-slate-950 shadow-2xl">
       <div className="flex items-start justify-between border-b border-slate-800 p-4"><div><h2 className="font-medium">确认生成采购建议单</h2><p className="mt-1 text-xs text-slate-500">生成后进入现有风控、审批和采购流程，不会自动采购。</p></div><button type="button" onClick={() => setDraft(null)} aria-label="关闭" className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
-      <div className="space-y-4 p-4"><div className="grid grid-cols-2 gap-3 text-sm"><Info label="SKU" value={draft.sku} /><Info label="供应商" value={draft.supplier?.name || "未维护"} /><Info label="预测日销" value={`${draft.forecastDailySales.toFixed(2)} 件`} /><Info label="预计断货" value={draft.stockoutDate || "-"} /></div>
+      <div className="space-y-4 p-4"><div className="grid grid-cols-2 gap-3 text-sm"><Info label="SKU" value={draft.sku} /><Info label="目标海外仓" value={draft.warehouse.name} /><Info label="供应商" value={draft.supplier?.name || "未维护"} /><Info label="预测日销" value={`${draft.forecastDailySales.toFixed(2)} 件`} /><Info label="预计断货" value={draft.stockoutDate || "-"} /></div>
         <label className="block text-sm text-slate-300">建议采购数量<input type="number" min={1} value={draftQty} onChange={(event) => setDraftQty(Math.max(1, Math.floor(Number(event.target.value) || 1)))} className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-base outline-none focus:border-cyan-500" /></label>
         <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">预计采购货值 CNY {(draftQty * draft.unitCost).toFixed(2)}。本次参数会随建议单保存，后续可追溯。</div>
       </div><div className="flex justify-end gap-2 border-t border-slate-800 p-4"><button type="button" onClick={() => setDraft(null)} className="h-9 rounded-md border border-slate-700 px-4 text-sm">取消</button><button type="button" disabled={submitting} onClick={createSuggestion} className="h-9 rounded-md bg-cyan-600 px-4 text-sm text-white disabled:opacity-50">{submitting ? "正在生成..." : "确认生成"}</button></div>
