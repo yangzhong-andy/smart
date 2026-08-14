@@ -17,6 +17,7 @@ type Row = {
   moq: number | null; cartonQty: number | null; policy: Policy; policySource: { id: string; scope: string } | null; missingParameters: string[]
 }
 type Payload = {
+  country: string; countries: string[]
   generatedAt: string; defaultPolicy: Policy; summary: { skuCount: number; warehouseCount: number; urgentCount: number; suggestedUnits: number; unresolvedSkuCount: number; unresolvedWarehouseOrderCount: number }
   shops: Shop[]; warehouses: Warehouse[]; rows: Row[]; unresolved: Array<{ sellerSku: string; shopId: string; count: number }>; unresolvedWarehouses: Array<{ orderId: string; shopId: string; count: number; status: string }>
 }
@@ -37,6 +38,7 @@ const urgencyMeta: Record<string, { label: string; className: string; rank: numb
 }
 
 export default function ReplenishmentPage() {
+  const [country, setCountry] = useState("")
   const [shopId, setShopId] = useState("")
   const [warehouseId, setWarehouseId] = useState("")
   const [keyword, setKeyword] = useState("")
@@ -48,6 +50,7 @@ export default function ReplenishmentPage() {
   const [showHistory, setShowHistory] = useState(false)
   const [savingPolicy, setSavingPolicy] = useState(false)
   const params = new URLSearchParams()
+  if (country) params.set("country", country)
   if (shopId) params.set("shopId", shopId)
   if (warehouseId) params.set("warehouseId", warehouseId)
   const { data, error, isLoading, isValidating, mutate } = useSWR<Payload>(`/api/replenishment?${params}`, fetcher, { revalidateOnFocus: false, dedupingInterval: 60000 })
@@ -74,7 +77,7 @@ export default function ReplenishmentPage() {
     try {
       const response = await fetch("/api/replenishment", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: true, variantId: draft.variantId, quantity: draftQty, shopId: targetShop, warehouseId: draft.warehouse.id, country: "BR", urgency: draft.urgency === "HEALTHY" ? "普通" : "紧急" }),
+        body: JSON.stringify({ confirm: true, variantId: draft.variantId, quantity: draftQty, shopId: targetShop, warehouseId: draft.warehouse.id, country: data?.country || country, urgency: draft.urgency === "HEALTHY" ? "普通" : "紧急" }),
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result?.error || "生成失败")
@@ -105,8 +108,9 @@ export default function ReplenishmentPage() {
     </section>
 
     <section className="border-y border-slate-800 bg-slate-950/30 py-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <label className="text-xs text-slate-400">店铺范围<select value={shopId} onChange={(event) => { setShopId(event.target.value); setWarehouseId("") }} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部巴西店铺</option>{shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <label className="text-xs text-slate-400">国家<select value={country || data?.country || ""} onChange={(event) => { setCountry(event.target.value); setShopId(""); setWarehouseId("") }} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200">{(data?.countries || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="text-xs text-slate-400">店铺范围<select value={shopId} onChange={(event) => { setShopId(event.target.value); setWarehouseId("") }} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部 {data?.country || country || "当前国家"} 店铺</option>{shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
         <label className="text-xs text-slate-400">目标海外仓<select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部已配置仓库</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}（{warehouse.code}）</option>)}</select></label>
         <div className="relative self-end"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索 SKU / 商品 / 供应商" className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 pl-9 pr-3 text-sm outline-none focus:border-cyan-500" /></div>
         <div className="self-end text-xs text-slate-500">国内、工厂库存是共享待分配库存，不会重复计入两个海外仓。</div>
@@ -146,7 +150,7 @@ export default function ReplenishmentPage() {
         <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">预计采购货值 CNY {(draftQty * draft.unitCost).toFixed(2)}。本次参数会随建议单保存，后续可追溯。</div>
       </div><div className="flex justify-end gap-2 border-t border-slate-800 p-4"><button type="button" onClick={() => setDraft(null)} className="h-9 rounded-md border border-slate-700 px-4 text-sm">取消</button><button type="button" disabled={submitting} onClick={createSuggestion} className="h-9 rounded-md bg-cyan-600 px-4 text-sm text-white disabled:opacity-50">{submitting ? "正在生成..." : "确认生成"}</button></div>
     </div></div>}
-    {settingsRow && data && <PolicyDialog row={settingsRow} shopId={shopId} shops={shops} defaults={data.defaultPolicy} saving={savingPolicy} onClose={() => setSettingsRow(null)} onSave={async (values) => {
+    {settingsRow && data && <PolicyDialog row={settingsRow} country={data.country} shopId={shopId} shops={shops} defaults={data.defaultPolicy} saving={savingPolicy} onClose={() => setSettingsRow(null)} onSave={async (values) => {
       setSavingPolicy(true)
       try {
         const response = await fetch("/api/replenishment/policies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) })
@@ -158,7 +162,7 @@ export default function ReplenishmentPage() {
       } catch (cause) { toast.error(cause instanceof Error ? cause.message : "保存补货参数失败") }
       finally { setSavingPolicy(false) }
     }} />}
-    {showHistory && <PolicyHistoryDialog onClose={() => setShowHistory(false)} />}
+    {showHistory && data && <PolicyHistoryDialog country={data.country} onClose={() => setShowHistory(false)} />}
   </div>
 }
 
@@ -174,12 +178,12 @@ type PolicyForm = {
   demandMultiplier: number; moqOverride: string; cartonQtyOverride: string; reason: string
 }
 
-function PolicyDialog({ row, shopId, shops, defaults, saving, onClose, onSave }: {
-  row: Row | "GLOBAL"; shopId: string; shops: Shop[]; defaults: Policy; saving: boolean; onClose: () => void; onSave: (values: PolicyForm) => Promise<void>
+function PolicyDialog({ row, country, shopId, shops, defaults, saving, onClose, onSave }: {
+  row: Row | "GLOBAL"; country: string; shopId: string; shops: Shop[]; defaults: Policy; saving: boolean; onClose: () => void; onSave: (values: PolicyForm) => Promise<void>
 }) {
   const rowPolicy = row === "GLOBAL" ? defaults : row.policy
   const [form, setForm] = useState<PolicyForm>({
-    country: "BR", shopId, variantId: row === "GLOBAL" ? "" : row.variantId,
+    country, shopId, variantId: row === "GLOBAL" ? "" : row.variantId,
     salesWindowDays: rowPolicy.salesWindowDays, targetCoverageDays: rowPolicy.targetCoverageDays,
     safetyStockDays: rowPolicy.safetyStockDays,
     supplierLeadTimeDays: row === "GLOBAL" ? "" : String(rowPolicy.supplierLeadTimeDays || ""),
@@ -198,7 +202,7 @@ function PolicyDialog({ row, shopId, shops, defaults, saving, onClose, onSave }:
     <div className="flex items-start justify-between border-b border-slate-800 p-4"><div><h2 className="font-medium">{row === "GLOBAL" ? "全局补货参数" : `SKU 参数 · ${row.sku}`}</h2><p className="mt-1 text-xs text-slate-500">保存后生成新版本，旧版本保留用于追溯。</p></div><button type="button" onClick={onClose} aria-label="关闭"><X className="h-5 w-5 text-slate-400" /></button></div>
     <div className="space-y-4 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-xs text-slate-400">作用店铺<select value={form.shopId} onChange={(e) => setForm({ ...form, shopId: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"><option value="">全部巴西店铺</option>{shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
+        <label className="text-xs text-slate-400">作用店铺<select value={form.shopId} onChange={(e) => setForm({ ...form, shopId: e.target.value })} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"><option value="">全部 {country} 店铺</option>{shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
         <div className="rounded-md border border-slate-800 bg-slate-900/50 p-3 text-xs text-slate-400">生效范围：{form.shopId ? "指定店铺" : "全部店铺"} / {form.variantId ? "指定 SKU" : "全部 SKU"}</div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3"><NumberField label="销量窗口" value={form.salesWindowDays} min={7} max={30} suffix="天" onChange={(value) => setForm({ ...form, salesWindowDays: value })} /><NumberField label="目标覆盖" value={form.targetCoverageDays} min={7} max={180} suffix="天" onChange={(value) => setForm({ ...form, targetCoverageDays: value })} /><NumberField label="安全库存" value={form.safetyStockDays} min={0} max={90} suffix="天" onChange={(value) => setForm({ ...form, safetyStockDays: value })} /></div>
@@ -218,8 +222,8 @@ function PolicyDialog({ row, shopId, shops, defaults, saving, onClose, onSave }:
 function OptionalNumber({ label, value, suffix, placeholder, onChange }: { label: string; value: string; suffix: string; placeholder: string; onChange: (value: string) => void }) { return <label className="text-xs text-slate-400">{label}<div className="relative mt-1"><input type="number" min={1} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 pr-12 text-sm outline-none focus:border-cyan-500" /><span className="absolute right-2 top-2.5 text-xs text-slate-500">{suffix}</span></div></label> }
 function DecimalField({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (value: number) => void }) { return <label className="text-xs text-slate-400">{label}<div className="relative mt-1"><input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Math.min(max, Math.max(min, Number(event.target.value) || min)))} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 pr-10 text-sm outline-none focus:border-cyan-500" /><span className="absolute right-2 top-2.5 text-xs text-slate-500">{suffix}</span></div></label> }
 
-function PolicyHistoryDialog({ onClose }: { onClose: () => void }) {
-  const { data, error, isLoading } = useSWR<{ policies: any[] }>("/api/replenishment/policies?country=BR&history=1", fetcher, { revalidateOnFocus: false })
+function PolicyHistoryDialog({ country, onClose }: { country: string; onClose: () => void }) {
+  const { data, error, isLoading } = useSWR<{ policies: any[] }>(`/api/replenishment/policies?country=${encodeURIComponent(country)}&history=1`, fetcher, { revalidateOnFocus: false })
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"><div role="dialog" aria-modal="true" className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-md border border-slate-700 bg-slate-950 shadow-2xl">
     <div className="flex items-start justify-between border-b border-slate-800 p-4"><div><h2 className="font-medium">补货参数历史</h2><p className="mt-1 text-xs text-slate-500">所有版本只读保留，采购建议单另存生成时快照。</p></div><button type="button" onClick={onClose} aria-label="关闭"><X className="h-5 w-5 text-slate-400" /></button></div>
     <div className="max-h-[72vh] overflow-auto"><table className="w-full min-w-[900px] text-left text-xs"><thead className="sticky top-0 bg-slate-900 text-slate-400"><tr><th className="px-3 py-3">生效范围</th><th className="px-3 py-3">库存策略</th><th className="px-3 py-3">交期拆分</th><th className="px-3 py-3">覆盖参数</th><th className="px-3 py-3">调整信息</th></tr></thead><tbody className="divide-y divide-slate-800">

@@ -60,14 +60,23 @@ export async function GET(request: NextRequest) {
     const query = request.nextUrl.searchParams
     const selectedShopId = query.get("shopId") || ""
     const selectedWarehouseId = query.get("warehouseId") || ""
-    const country = String(query.get("country") || "BR").trim().toUpperCase()
+    const requestedCountry = String(query.get("country") || "").trim().toUpperCase()
     const now = new Date()
-    const shops = await prisma.tikTokShopSetting.findMany({
-      where: { status: "active", region: country, ...(selectedShopId ? { shopId: selectedShopId } : {}) },
+    const allShops = await prisma.tikTokShopSetting.findMany({
+      where: { status: "active" },
       select: { shopId: true, shopName: true, region: true, storeId: true },
       orderBy: { shopName: "asc" },
     })
-    const shopIds = shops.map((shop) => shop.shopId)
+    const countries = [...new Set(allShops.map((shop) => String(shop.region || "").trim().toUpperCase()).filter(Boolean))].sort()
+    const selectedShop = selectedShopId ? allShops.find((shop) => shop.shopId === selectedShopId) : null
+    if (selectedShopId && !selectedShop) return NextResponse.json({ error: "所选店铺不存在或已停用" }, { status: 400 })
+    const country = requestedCountry || String(selectedShop?.region || countries[0] || "").trim().toUpperCase()
+    if (requestedCountry && !countries.includes(requestedCountry)) return NextResponse.json({ error: "所选国家没有已启用店铺" }, { status: 400 })
+    if (selectedShop && String(selectedShop.region || "").trim().toUpperCase() !== country) {
+      return NextResponse.json({ error: "所选店铺与国家不匹配" }, { status: 400 })
+    }
+    const shops = allShops.filter((shop) => String(shop.region || "").trim().toUpperCase() === country)
+    const shopIds = selectedShop ? [selectedShop.shopId] : shops.map((shop) => shop.shopId)
     const since = startDate(30)
 
     const [switchWarehouseIds, mappedWarehouseIds] = await Promise.all([
@@ -299,7 +308,7 @@ export async function GET(request: NextRequest) {
       unresolvedSkuCount: unresolved.size,
       unresolvedWarehouseOrderCount: unresolvedWarehouses.size,
     }
-    return NextResponse.json({ generatedAt: new Date().toISOString(), defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, warehouses, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })), unresolvedWarehouses: [...unresolvedWarehouses].map(([orderId, item]) => ({ orderId, ...item })) })
+    return NextResponse.json({ generatedAt: new Date().toISOString(), country, countries, defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, warehouses, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })), unresolvedWarehouses: [...unresolvedWarehouses].map(([orderId, item]) => ({ orderId, ...item })) })
   } catch (error: any) {
     console.error("[replenishment] GET failed", error)
     return NextResponse.json({ error: error?.message || "备货建议读取失败" }, { status: 500 })
@@ -316,7 +325,8 @@ export async function POST(request: NextRequest) {
     const quantity = Math.floor(number(body?.quantity))
     const shopId = String(body?.shopId || "").trim()
     const warehouseId = String(body?.warehouseId || "").trim()
-    if (!variantId || quantity < 1 || !shopId || !warehouseId) return NextResponse.json({ error: "缺少店铺、仓库、SKU或补货数量" }, { status: 400 })
+    const country = String(body?.country || "").trim().toUpperCase()
+    if (!variantId || quantity < 1 || !shopId || !warehouseId || !country) return NextResponse.json({ error: "缺少国家、店铺、仓库、SKU或补货数量" }, { status: 400 })
     const now = new Date()
     const [variant, shop, policyRecords, defaultBoxSpec, warehouse, latestOrder, warehouseMappings, switchRules] = await Promise.all([
       prisma.productVariant.findUnique({
@@ -332,7 +342,7 @@ export async function POST(request: NextRequest) {
       }),
       prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true, shopName: true, storeId: true, region: true, status: true } }),
       prisma.replenishmentPolicyConfig.findMany({
-        where: { platform: Platform.TIKTOK, country: "BR", effectiveFrom: { lte: now }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] },
+        where: { platform: Platform.TIKTOK, country, effectiveFrom: { lte: now }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] },
         orderBy: { effectiveFrom: "desc" },
       }),
       prisma.boxSpec.findFirst({ where: { variantId, isDefault: true }, select: { qtyPerBox: true }, orderBy: { updatedAt: "desc" } }),
@@ -353,8 +363,8 @@ export async function POST(request: NextRequest) {
       }),
     ])
     if (!variant || !shop) return NextResponse.json({ error: "SKU或店铺不存在" }, { status: 404 })
-    if (shop.status !== "active" || shop.region !== "BR") {
-      return NextResponse.json({ error: "该店铺不是已启用的巴西店铺，不能生成本补货建议" }, { status: 400 })
+    if (shop.status !== "active" || String(shop.region || "").trim().toUpperCase() !== country) {
+      return NextResponse.json({ error: "该店铺未启用或与所选国家不匹配，不能生成补货建议" }, { status: 400 })
     }
     if (!warehouse || warehouse.type !== "OVERSEAS" || !warehouse.isActive) {
       return NextResponse.json({ error: "目标海外仓不存在或已停用" }, { status: 400 })
