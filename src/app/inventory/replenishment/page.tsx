@@ -51,7 +51,12 @@ export default function ReplenishmentPage() {
   if (shopId) params.set("shopId", shopId)
   if (warehouseId) params.set("warehouseId", warehouseId)
   const { data, error, isLoading, isValidating, mutate } = useSWR<Payload>(`/api/replenishment?${params}`, fetcher, { revalidateOnFocus: false, dedupingInterval: 60000 })
-  const rows = useMemo(() => (data?.rows || [])
+  const shops = Array.isArray(data?.shops) ? data.shops : []
+  const warehouses = Array.isArray(data?.warehouses) ? data.warehouses : []
+  const unresolvedSkus = Array.isArray(data?.unresolved) ? data.unresolved : []
+  const unresolvedWarehouses = Array.isArray(data?.unresolvedWarehouses) ? data.unresolvedWarehouses : []
+  const rows = useMemo(() => (Array.isArray(data?.rows) ? data.rows : [])
+    .filter((row) => Boolean(row?.warehouse?.id))
     .filter((row) => !riskOnly || ["OUT_OF_STOCK", "URGENT", "WATCH"].includes(row.urgency))
     .filter((row) => !keyword.trim() || `${row.sku} ${row.productName} ${row.supplier?.name || ""}`.toLowerCase().includes(keyword.trim().toLowerCase()))
     .sort((left, right) => (urgencyMeta[left.urgency]?.rank ?? 9) - (urgencyMeta[right.urgency]?.rank ?? 9) || right.suggestedQty - left.suggestedQty),
@@ -101,8 +106,8 @@ export default function ReplenishmentPage() {
 
     <section className="border-y border-slate-800 bg-slate-950/30 py-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <label className="text-xs text-slate-400">店铺范围<select value={shopId} onChange={(event) => { setShopId(event.target.value); setWarehouseId("") }} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部巴西店铺</option>{data?.shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
-        <label className="text-xs text-slate-400">目标海外仓<select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部已配置仓库</option>{data?.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}（{warehouse.code}）</option>)}</select></label>
+        <label className="text-xs text-slate-400">店铺范围<select value={shopId} onChange={(event) => { setShopId(event.target.value); setWarehouseId("") }} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部巴西店铺</option>{shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select></label>
+        <label className="text-xs text-slate-400">目标海外仓<select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-200"><option value="">全部已配置仓库</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}（{warehouse.code}）</option>)}</select></label>
         <div className="relative self-end"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" /><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索 SKU / 商品 / 供应商" className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 pl-9 pr-3 text-sm outline-none focus:border-cyan-500" /></div>
         <div className="self-end text-xs text-slate-500">国内、工厂库存是共享待分配库存，不会重复计入两个海外仓。</div>
       </div>
@@ -110,7 +115,7 @@ export default function ReplenishmentPage() {
     </section>
 
     {error && <div className="rounded-md border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">{error.message}</div>}
-    {(data?.unresolved.length || data?.unresolvedWarehouses.length) ? <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-amber-400" /><div><h2 className="text-sm font-medium text-amber-200">有 {(data?.unresolved.length || 0) + (data?.unresolvedWarehouses.length || 0)} 项订单映射待处理</h2><p className="mt-1 text-xs text-slate-400">未映射 SKU：{data?.unresolved.slice(0, 3).map((item) => item.sellerSku).join("、") || "无"}；未识别发货仓订单：{data?.unresolvedWarehouses.slice(0, 3).map((item) => item.orderId).join("、") || "无"}。这些订单不会分摊到任一仓库。</p></div></div></section> : null}
+    {(unresolvedSkus.length || unresolvedWarehouses.length) ? <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-amber-400" /><div><h2 className="text-sm font-medium text-amber-200">有 {unresolvedSkus.length + unresolvedWarehouses.length} 项订单映射待处理</h2><p className="mt-1 text-xs text-slate-400">未映射 SKU：{unresolvedSkus.slice(0, 3).map((item) => item.sellerSku).join("、") || "无"}；未识别发货仓订单：{unresolvedWarehouses.slice(0, 3).map((item) => item.orderId).join("、") || "无"}。这些订单不会分摊到任一仓库。</p></div></div></section> : null}
 
     <section className="overflow-hidden border-y border-slate-800">
       <div className="flex items-center justify-between py-3"><div><h2 className="text-sm font-medium">SKU 补货建议</h2><p className="mt-1 text-xs text-slate-500">库存口径：目标海外仓可用 + 目标仓在途；国内和工厂库存只作共享待分配展示。</p></div><span className="text-xs text-slate-500">{data ? `更新于 ${new Date(data.generatedAt).toLocaleString("zh-CN")}` : ""}</span></div>
@@ -141,7 +146,7 @@ export default function ReplenishmentPage() {
         <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">预计采购货值 CNY {(draftQty * draft.unitCost).toFixed(2)}。本次参数会随建议单保存，后续可追溯。</div>
       </div><div className="flex justify-end gap-2 border-t border-slate-800 p-4"><button type="button" onClick={() => setDraft(null)} className="h-9 rounded-md border border-slate-700 px-4 text-sm">取消</button><button type="button" disabled={submitting} onClick={createSuggestion} className="h-9 rounded-md bg-cyan-600 px-4 text-sm text-white disabled:opacity-50">{submitting ? "正在生成..." : "确认生成"}</button></div>
     </div></div>}
-    {settingsRow && data && <PolicyDialog row={settingsRow} shopId={shopId} shops={data.shops} defaults={data.defaultPolicy} saving={savingPolicy} onClose={() => setSettingsRow(null)} onSave={async (values) => {
+    {settingsRow && data && <PolicyDialog row={settingsRow} shopId={shopId} shops={shops} defaults={data.defaultPolicy} saving={savingPolicy} onClose={() => setSettingsRow(null)} onSave={async (values) => {
       setSavingPolicy(true)
       try {
         const response = await fetch("/api/replenishment/policies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) })
