@@ -67,6 +67,16 @@ export default function ReplenishmentPage() {
   const warehouseStats = useMemo(() => (Array.isArray(data?.warehouseStats) ? [...data.warehouseStats] : [])
     .sort((left, right) => right.windows[shipmentWindow].shippedUnits - left.windows[shipmentWindow].shippedUnits), [data, shipmentWindow])
   const shipmentCoverage = data?.shipmentCoverage?.[shipmentWindow]
+  const warehouseTotals = useMemo(() => warehouseStats.reduce((total, item) => {
+    const current = item.windows[shipmentWindow]
+    total.shippedOrders += current.shippedOrders
+    total.shippedUnits += current.shippedUnits
+    total.sampleUnits += current.sampleUnits
+    total.overseasAvailable += item.overseasAvailable
+    total.inTransit += item.inTransit
+    total.suggestedQty += item.suggestedQty
+    return total
+  }, { shippedOrders: 0, shippedUnits: 0, sampleUnits: 0, overseasAvailable: 0, inTransit: 0, suggestedQty: 0 }), [warehouseStats, shipmentWindow])
   const rows = useMemo(() => (Array.isArray(data?.rows) ? data.rows : [])
     .filter((row) => Boolean(row?.warehouse?.id))
     .filter((row) => !riskOnly || ["OUT_OF_STOCK", "URGENT", "WATCH"].includes(row.urgency))
@@ -135,6 +145,14 @@ export default function ReplenishmentPage() {
         <div><h2 className="text-sm font-medium">仓库 SKU 出货结构</h2><p className="mt-1 text-xs text-slate-500">每个仓库独立计算各基础 SKU 的出货占比；组合装已拆分，免费样品计入真实出货并单独标记。</p></div>
         <div className="inline-flex rounded-md border border-slate-700 bg-slate-900 p-1">{(["7", "14", "30"] as const).map((days) => <button key={days} type="button" onClick={() => setShipmentWindow(days)} className={`h-7 min-w-14 rounded px-3 text-xs ${shipmentWindow === days ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-100"}`}>{days} 天</button>)}</div>
       </div>
+      <div className="mb-4 grid grid-cols-2 border-y border-slate-800 bg-slate-900/40 sm:grid-cols-3 xl:grid-cols-6">
+        <SummaryMetric label={`${shipmentWindow} 天出货订单`} value={`${warehouseTotals.shippedOrders.toLocaleString()} 单`} />
+        <SummaryMetric label="拆分后基础件数" value={`${warehouseTotals.shippedUnits.toLocaleString()} 件`} tone="cyan" />
+        <SummaryMetric label="其中免费样品" value={`${warehouseTotals.sampleUnits.toLocaleString()} 件`} tone="amber" />
+        <SummaryMetric label="当前可用库存" value={`${warehouseTotals.overseasAvailable.toLocaleString()} 件`} tone="emerald" />
+        <SummaryMetric label="在途" value={`${warehouseTotals.inTransit.toLocaleString()} 件`} />
+        <SummaryMetric label="建议补货" value={`${warehouseTotals.suggestedQty.toLocaleString()} 件`} tone={warehouseTotals.suggestedQty > 0 ? "amber" : undefined} />
+      </div>
       <div className="overflow-x-auto"><table className="w-full min-w-[1080px] table-fixed text-left text-xs">
         <thead className="bg-slate-900/80 text-slate-400"><tr><Th width="230">SKU / 商品</Th><Th width="175">7 / 14 / 30天出货</Th><Th width="230">仓内 SKU 占比</Th><Th width="120">其中免费样品</Th><Th width="130">当前可用库存</Th><Th width="110">在途</Th><Th width="130">建议补货</Th></tr></thead>
         <tbody className="divide-y divide-slate-800">{isLoading ? <tr><td colSpan={7} className="h-28 text-center text-slate-500">正在汇总仓库 SKU 出货...</td></tr> : warehouseStats.length === 0 ? <tr><td colSpan={7} className="h-28 text-center text-slate-500">暂无已识别仓库的出货数据</td></tr> : warehouseStats.map((item) => { const current = item.windows[shipmentWindow]; const skuStats = [...(item.skuStats || [])].sort((left, right) => right.windows[shipmentWindow].shippedUnits - left.windows[shipmentWindow].shippedUnits); return <Fragment key={item.warehouse.id}>
@@ -197,6 +215,7 @@ export default function ReplenishmentPage() {
 }
 
 function Kpi({ icon: Icon, label, value, tone }: { icon: any; label: string; value: string | number; tone: string }) { const colors: Record<string, string> = { cyan: "text-cyan-300", rose: "text-rose-300", amber: "text-amber-300", emerald: "text-emerald-300" }; return <div className="rounded-md border border-slate-800 bg-slate-900/50 p-4"><div className="flex items-center justify-between"><span className="text-xs text-slate-500">{label}</span><Icon className={`h-4 w-4 ${colors[tone]}`} /></div><div className={`mt-2 text-2xl font-semibold ${colors[tone]}`}>{value}</div></div> }
+function SummaryMetric({ label, value, tone }: { label: string; value: string; tone?: "cyan" | "amber" | "emerald" }) { const color = tone === "cyan" ? "text-cyan-300" : tone === "amber" ? "text-amber-300" : tone === "emerald" ? "text-emerald-300" : "text-slate-200"; return <div className="min-w-0 border-b border-r border-slate-800 px-4 py-3 sm:last:border-r-0 xl:border-b-0"><div className="truncate text-[11px] text-slate-500">{label}</div><div className={`mt-1 text-base font-semibold tabular-nums ${color}`}>{value}</div></div> }
 function NumberField({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix: string; onChange: (value: number) => void }) { return <label className="text-xs text-slate-400">{label}<div className="relative mt-1"><input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Math.min(max, Math.max(min, Math.floor(Number(event.target.value) || min))))} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-500" /><span className="absolute right-2 top-2.5 text-xs text-slate-500">{suffix}</span></div></label> }
 function Th({ children, width }: { children: React.ReactNode; width: string }) { return <th style={{ width }} className="px-3 py-3 font-medium">{children}</th> }
 function Td({ children }: { children: React.ReactNode }) { return <td className="px-3 py-3 text-slate-400">{children}</td> }
