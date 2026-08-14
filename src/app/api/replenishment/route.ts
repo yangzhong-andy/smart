@@ -14,6 +14,7 @@ import {
   selectPolicyRecord,
   toPolicy,
 } from "@/lib/replenishment-policy"
+import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping"
 
 export const dynamic = "force-dynamic"
 
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
   try {
     const query = request.nextUrl.searchParams
     const selectedShopId = query.get("shopId") || ""
+    const selectedWarehouseId = query.get("warehouseId") || ""
     const country = String(query.get("country") || "BR").trim().toUpperCase()
     const now = new Date()
     const shops = await prisma.tikTokShopSetting.findMany({
@@ -78,8 +80,14 @@ export async function GET(request: NextRequest) {
         distinct: ["warehouseId"], select: { warehouseId: true },
       }),
     ])
-    const warehouseIds = [...new Set([...switchWarehouseIds, ...mappedWarehouseIds].map((row) => row.warehouseId))]
-    const [variants, mappings, profitMappings, stocks, orders, transitItems, policyRecords, boxSpecs] = await Promise.all([
+    const configuredWarehouseIds = [...new Set([...switchWarehouseIds, ...mappedWarehouseIds].map((row) => row.warehouseId))]
+    const warehouseIds = selectedWarehouseId
+      ? configuredWarehouseIds.filter((id) => id === selectedWarehouseId)
+      : configuredWarehouseIds
+    if (selectedWarehouseId && warehouseIds.length === 0) {
+      return NextResponse.json({ error: "所选仓库未配置给当前店铺" }, { status: 400 })
+    }
+    const [variants, mappings, profitMappings, stocks, orders, transitItems, policyRecords, boxSpecs, warehouses, warehouseMappings, switchRules, latestOrders] = await Promise.all([
       prisma.productVariant.findMany({
         select: {
           id: true, skuId: true, costPrice: true, atDomestic: true, atFactory: true,
@@ -110,11 +118,11 @@ export async function GET(request: NextRequest) {
       }),
       shopIds.length ? prisma.tikTokOrder.findMany({
         where: { shopId: { in: shopIds }, createTime: { gte: since } },
-        select: { shopId: true, status: true, orderStatus: true, createTime: true, rawData: true },
+        select: { orderId: true, shopId: true, status: true, orderStatus: true, createTime: true, rawData: true },
       }) : Promise.resolve([]),
       prisma.outboundBatchItem.findMany({
-        where: { outboundBatch: { arrivalConfirmedAt: null, OR: [{ destinationCountry: country }, { warehouseId: { in: warehouseIds } }] } },
-        select: { variantId: true, qty: true },
+        where: { outboundBatch: { arrivalConfirmedAt: null, warehouseId: { in: warehouseIds } } },
+        select: { variantId: true, qty: true, outboundBatch: { select: { warehouseId: true } } },
       }),
       prisma.replenishmentPolicyConfig.findMany({
         where: {
@@ -130,11 +138,32 @@ export async function GET(request: NextRequest) {
         select: { variantId: true, qtyPerBox: true },
         orderBy: { updatedAt: "desc" },
       }),
+      prisma.warehouse.findMany({
+        where: { id: { in: warehouseIds }, type: "OVERSEAS", isActive: true },
+        select: { id: true, name: true, code: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.tikTokWarehouseMapping.findMany({
+        where: { OR: [{ tiktokShopId: { in: shopIds } }, { tiktokShopId: null }] },
+        select: { tiktokWarehouseId: true, tiktokShopId: true, warehouseId: true },
+      }),
+      prisma.profitWarehouseSwitchRule.findMany({
+        where: { platform: "TIKTOK", region: country, shopId: { in: shopIds } },
+        select: { platform: true, region: true, shopId: true, externalWarehouseId: true, warehouseId: true, effectiveFrom: true, effectiveOrderId: true },
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      shopIds.length ? prisma.tikTokOrder.findMany({
+        where: { shopId: { in: shopIds }, createTime: { not: null } },
+        distinct: ["shopId"],
+        orderBy: [{ shopId: "asc" }, { createTime: "desc" }],
+        select: { orderId: true, shopId: true, createTime: true, rawData: true },
+      }) : Promise.resolve([]),
     ])
 
     const variantById = new Map(variants.map((variant) => [variant.id, variant]))
     const demandMap = new Map<string, { sales7: number; sales14: number; sales30: number; shops: Map<string, number>; orders: number }>()
     const unresolved = new Map<string, { shopId: string; count: number }>()
+    const unresolvedWarehouses = new Map<string, { shopId: string; count: number; status: string }>()
     const profitMap = new Map(profitMappings.map((mapping) => [
       `${mapping.shopId}\u0000${normalize(mapping.sellerSku)}`,
       mapping.components,
@@ -143,21 +172,43 @@ export async function GET(request: NextRequest) {
       `${mapping.tiktokShopId}\u0000${normalize(mapping.sellerSku)}`,
       mapping.variantId,
     ]))
-    const addDemand = (variantId: string, quantity: number, shopId: string, ageDays: number) => {
+    const warehouseResolver = createWarehouseResolver(warehouseMappings, switchRules)
+    const key = (warehouseId: string, variantId: string) => `${warehouseId}\u0000${variantId}`
+    const addDemand = (warehouseId: string, variantId: string, quantity: number, shopId: string, ageDays: number) => {
       if (!variantById.has(variantId)) return
-      const current = demandMap.get(variantId) || { sales7: 0, sales14: 0, sales30: 0, shops: new Map<string, number>(), orders: 0 }
+      const demandKey = key(warehouseId, variantId)
+      const current = demandMap.get(demandKey) || { sales7: 0, sales14: 0, sales30: 0, shops: new Map<string, number>(), orders: 0 }
       current.sales30 += quantity
       if (ageDays < 14) current.sales14 += quantity
       if (ageDays < 7) current.sales7 += quantity
       current.shops.set(shopId, (current.shops.get(shopId) || 0) + quantity)
-      demandMap.set(variantId, current)
+      demandMap.set(demandKey, current)
     }
 
-    for (const order of orders) {
+    const latestWarehouseByShop = new Map<string, string>()
+    for (const order of latestOrders) {
+      const resolution = warehouseResolver(order.rawData, order.shopId, order.createTime, "TIKTOK", country, order.orderId)
+      if (resolution.warehouseId) latestWarehouseByShop.set(order.shopId, resolution.warehouseId)
+    }
+    for (const shopId of shopIds) {
+      if (!latestWarehouseByShop.has(shopId)) {
+        const latestSwitch = switchRules.find((rule) => rule.shopId === shopId)
+        if (latestSwitch) latestWarehouseByShop.set(shopId, latestSwitch.warehouseId)
+      }
+    }
+    for (const order of [...orders].sort((left, right) => (right.createTime?.getTime() || 0) - (left.createTime?.getTime() || 0))) {
       if (!isDemandOrder(order)) continue
       const raw = order.rawData as any
       const created = order.createTime || (raw?.create_time ? new Date(number(raw.create_time) * 1000) : new Date())
       const ageDays = Math.max(0, (Date.now() - created.getTime()) / (24 * 60 * 60 * 1000))
+      const resolution = warehouseResolver(raw, order.shopId, created, "TIKTOK", country, order.orderId)
+      if (!resolution.warehouseId) {
+        const current = unresolvedWarehouses.get(order.orderId) || { shopId: order.shopId, count: 0, status: resolution.status }
+        current.count += 1
+        unresolvedWarehouses.set(order.orderId, current)
+        continue
+      }
+      if (!warehouseIds.includes(resolution.warehouseId)) continue
       const lines = Array.isArray(raw?.line_items) ? raw.line_items : []
       const seenVariants = new Set<string>()
       for (const line of lines) {
@@ -173,30 +224,36 @@ export async function GET(request: NextRequest) {
           unresolved.set(sellerSku, current)
           continue
         }
-        for (const component of components) addDemand(component.variantId, lineQuantity(line) * component.quantity, order.shopId, ageDays)
+        for (const component of components) addDemand(resolution.warehouseId, component.variantId, lineQuantity(line) * component.quantity, order.shopId, ageDays)
         for (const component of components) seenVariants.add(component.variantId)
       }
       for (const variantId of seenVariants) {
-        const current = demandMap.get(variantId)
+        const current = demandMap.get(key(resolution.warehouseId, variantId))
         if (current) current.orders += 1
       }
     }
 
     const stockMap = new Map<string, { overseasAvailable: number; warehouseQty: Array<{ warehouseId: string; warehouseName: string; qty: number }> }>()
     for (const stock of stocks) {
-      const current = stockMap.get(stock.variantId) || { overseasAvailable: 0, warehouseQty: [] }
+      const stockKey = key(stock.warehouseId, stock.variantId)
+      const current = stockMap.get(stockKey) || { overseasAvailable: 0, warehouseQty: [] }
       current.overseasAvailable += Math.max(0, stock.availableQty ?? stock.qty - stock.reservedQty)
       current.warehouseQty.push({ warehouseId: stock.warehouseId, warehouseName: stock.warehouse.name, qty: stock.qty })
-      stockMap.set(stock.variantId, current)
+      stockMap.set(stockKey, current)
     }
     const inTransitMap = new Map<string, number>()
-    for (const item of transitItems) if (item.variantId) inTransitMap.set(item.variantId, (inTransitMap.get(item.variantId) || 0) + item.qty)
+    for (const item of transitItems) {
+      if (!item.variantId || !item.outboundBatch.warehouseId) continue
+      const transitKey = key(item.outboundBatch.warehouseId, item.variantId)
+      inTransitMap.set(transitKey, (inTransitMap.get(transitKey) || 0) + item.qty)
+    }
     const cartonQtyMap = new Map<string, number>()
     for (const spec of boxSpecs) if (!cartonQtyMap.has(spec.variantId)) cartonQtyMap.set(spec.variantId, spec.qtyPerBox)
     const shopName = new Map(shops.map((shop) => [shop.shopId, shop.shopName]))
-    const rows = variants.map((variant) => {
-      const demand = demandMap.get(variant.id) || { sales7: 0, sales14: 0, sales30: 0, shops: new Map<string, number>(), orders: 0 }
-      const stock = stockMap.get(variant.id) || { overseasAvailable: 0, warehouseQty: [] }
+    const rows = variants.flatMap((variant) => warehouses.map((warehouse) => {
+      const rowKey = key(warehouse.id, variant.id)
+      const demand = demandMap.get(rowKey) || { sales7: 0, sales14: 0, sales30: 0, shops: new Map<string, number>(), orders: 0 }
+      const stock = stockMap.get(rowKey) || { overseasAvailable: 0, warehouseQty: [] }
       const supplier = variant.product.productSuppliers[0]?.supplier || variant.product.defaultSupplier
       const productSupplier = variant.product.productSuppliers[0]
       const policyRecord = selectPolicyRecord(policyRecords, selectedShopId || null, variant.id)
@@ -206,18 +263,19 @@ export async function GET(request: NextRequest) {
       const cartonQty = resolveCartonQty(policyRecord, cartonQtyMap.get(variant.id))
       const result = calculateReplenishment({
         sales7: demand.sales7, sales14: demand.sales14, sales30: demand.sales30,
-        overseasAvailable: stock.overseasAvailable, domesticReady: variant.atDomestic,
-        factoryReady: variant.atFactory, inTransit: inTransitMap.get(variant.id) || 0,
+        overseasAvailable: stock.overseasAvailable, domesticReady: 0,
+        factoryReady: 0, inTransit: inTransitMap.get(rowKey) || 0,
         moq, cartonQty, today: now,
       }, effectivePolicy)
       return {
         variantId: variant.id, sku: variant.skuId, productName: variant.product.name,
-        country: shops[0]?.region || "UNSET", warehouseQty: stock.warehouseQty,
-        overseasAvailable: stock.overseasAvailable, domesticReady: variant.atDomestic,
-        factoryReady: variant.atFactory, inTransit: inTransitMap.get(variant.id) || 0,
+        country: shops[0]?.region || "UNSET", warehouse,
+        overseasAvailable: stock.overseasAvailable, sharedDomesticReady: variant.atDomestic,
+        sharedFactoryReady: variant.atFactory, inTransit: inTransitMap.get(rowKey) || 0,
         sales7: demand.sales7, sales14: demand.sales14, sales30: demand.sales30,
         orderCount: demand.orders,
         shopSales: [...demand.shops].map(([shopId, units]) => ({ shopId, shopName: shopName.get(shopId) || shopId, units })),
+        suggestionShopId: [...latestWarehouseByShop.entries()].find(([, warehouseId]) => warehouseId === warehouse.id)?.[0] || null,
         supplier: supplier ? { id: supplier.id, name: supplier.name } : null,
         unitCost: selectReplenishmentUnitCost(variant.costPrice, productSupplier?.price),
         moq, cartonQty, policy: effectivePolicy,
@@ -231,15 +289,17 @@ export async function GET(request: NextRequest) {
         ],
         ...result,
       }
-    })
+    }))
 
     const summary = {
-      skuCount: rows.length,
+      skuCount: variants.length,
+      warehouseCount: warehouses.length,
       urgentCount: rows.filter((row) => row.urgency === "OUT_OF_STOCK" || row.urgency === "URGENT").length,
       suggestedUnits: rows.reduce((sum, row) => sum + row.suggestedQty, 0),
       unresolvedSkuCount: unresolved.size,
+      unresolvedWarehouseOrderCount: unresolvedWarehouses.size,
     }
-    return NextResponse.json({ generatedAt: new Date().toISOString(), defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })) })
+    return NextResponse.json({ generatedAt: new Date().toISOString(), defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, warehouses, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })), unresolvedWarehouses: [...unresolvedWarehouses].map(([orderId, item]) => ({ orderId, ...item })) })
   } catch (error: any) {
     console.error("[replenishment] GET failed", error)
     return NextResponse.json({ error: error?.message || "备货建议读取失败" }, { status: 500 })
@@ -255,9 +315,10 @@ export async function POST(request: NextRequest) {
     const variantId = String(body?.variantId || "").trim()
     const quantity = Math.floor(number(body?.quantity))
     const shopId = String(body?.shopId || "").trim()
-    if (!variantId || quantity < 1 || !shopId) return NextResponse.json({ error: "缺少店铺、SKU或补货数量" }, { status: 400 })
+    const warehouseId = String(body?.warehouseId || "").trim()
+    if (!variantId || quantity < 1 || !shopId || !warehouseId) return NextResponse.json({ error: "缺少店铺、仓库、SKU或补货数量" }, { status: 400 })
     const now = new Date()
-    const [variant, shop, policyRecords, defaultBoxSpec] = await Promise.all([
+    const [variant, shop, policyRecords, defaultBoxSpec, warehouse, latestOrder, warehouseMappings, switchRules] = await Promise.all([
       prisma.productVariant.findUnique({
         where: { id: variantId },
         select: {
@@ -275,11 +336,35 @@ export async function POST(request: NextRequest) {
         orderBy: { effectiveFrom: "desc" },
       }),
       prisma.boxSpec.findFirst({ where: { variantId, isDefault: true }, select: { qtyPerBox: true }, orderBy: { updatedAt: "desc" } }),
+      prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, name: true, code: true, type: true, isActive: true } }),
+      prisma.tikTokOrder.findFirst({
+        where: { shopId, createTime: { not: null } },
+        select: { orderId: true, shopId: true, createTime: true, rawData: true },
+        orderBy: { createTime: "desc" },
+      }),
+      prisma.tikTokWarehouseMapping.findMany({
+        where: { OR: [{ tiktokShopId: shopId }, { tiktokShopId: null }] },
+        select: { tiktokWarehouseId: true, tiktokShopId: true, warehouseId: true },
+      }),
+      prisma.profitWarehouseSwitchRule.findMany({
+        where: { platform: "TIKTOK", shopId },
+        select: { platform: true, region: true, shopId: true, externalWarehouseId: true, warehouseId: true, effectiveFrom: true, effectiveOrderId: true },
+        orderBy: { effectiveFrom: "desc" },
+      }),
     ])
     if (!variant || !shop) return NextResponse.json({ error: "SKU或店铺不存在" }, { status: 404 })
     if (shop.status !== "active" || shop.region !== "BR") {
       return NextResponse.json({ error: "该店铺不是已启用的巴西店铺，不能生成本补货建议" }, { status: 400 })
     }
+    if (!warehouse || warehouse.type !== "OVERSEAS" || !warehouse.isActive) {
+      return NextResponse.json({ error: "目标海外仓不存在或已停用" }, { status: 400 })
+    }
+    const warehouseResolver = createWarehouseResolver(warehouseMappings, switchRules)
+    const currentWarehouseId = (latestOrder
+      ? warehouseResolver(latestOrder.rawData, shopId, latestOrder.createTime, "TIKTOK", shop.region, latestOrder.orderId).warehouseId
+      : null) || switchRules[0]?.warehouseId || null
+    if (!currentWarehouseId) return NextResponse.json({ error: "无法确认店铺当前发货仓，请先维护仓库映射或切仓记录" }, { status: 400 })
+    if (currentWarehouseId !== warehouseId) return NextResponse.json({ error: "所选仓库不是该店铺当前发货仓，不能生成建议单" }, { status: 400 })
     const productSupplier = variant.product.productSuppliers[0]
     const supplier = productSupplier?.supplier || variant.product.defaultSupplier
     const policyRecord = selectPolicyRecord(policyRecords, shopId, variant.id)
@@ -296,6 +381,8 @@ export async function POST(request: NextRequest) {
       policyScope: policyRecord?.variantId ? "SKU" : policyRecord?.shopId ? "SHOP" : "GLOBAL_DEFAULT",
       moq,
       cartonQty,
+      warehouseId: warehouse.id,
+      warehouseName: warehouse.name,
       requestedQty: quantity,
       suggestedQty: normalizedQuantity,
       capturedAt: now.toISOString(),
