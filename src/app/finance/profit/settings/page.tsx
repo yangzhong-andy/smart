@@ -62,8 +62,9 @@ const HQST_FEE_TIERS: FeeTierDraft[] = [
 
 const PANLIAN_FEE_TIERS: FeeTierDraft[] = [
   [0, 0.5, 15, 10, 3, 2.5],
-  [0, 1, 30, 25, 3, 3],
-  [0, 3, 50, 40, 5, 4],
+  [0.5, 1, "", "", "", 3],
+  [1, 2, "", "", "", 3.5],
+  [2, 3, "", "", "", 4],
 ].map(([min, max, length, width, height, fee], index) => ({
   id: `panlian-${index}`,
   minWeightKg: String(min), maxWeightKg: String(max), minInclusive: false, maxInclusive: true,
@@ -150,11 +151,11 @@ export default function ProfitSettingsPage() {
     } else if (preset === "PANLIAN") {
       setWarehouseForm((current) => ({
         ...current,
-        pricingMode: "PACKAGE_TIER",
-        billingUnit: "SELLER_UNIT",
+        pricingMode: "WEIGHT_TIER",
+        billingUnit: "INTERNAL_COMPONENT",
         baseOrderFee: "0",
         firstUnitFee: "0",
-        additionalUnitFee: "0",
+        additionalUnitFee: "0.5",
         volumetricDivisor: "6000",
         overweightThresholdKg: "",
         overweightFeePerKg: "0",
