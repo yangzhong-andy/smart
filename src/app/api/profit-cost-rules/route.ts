@@ -118,6 +118,7 @@ export async function GET(request: NextRequest) {
         baseOrderFee: Number(rule.baseOrderFee),
         firstUnitFee: Number(rule.firstUnitFee),
         additionalUnitFee: Number(rule.additionalUnitFee),
+        multiSkuFee: Number(rule.multiSkuFee),
         overweightThresholdKg: rule.overweightThresholdKg == null ? null : Number(rule.overweightThresholdKg),
         overweightFeePerKg: Number(rule.overweightFeePerKg),
         feeTiers: rule.feeTiers.map((tier) => ({
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest) {
       const baseOrderFee = finiteNumber(body?.baseOrderFee);
       const firstUnitFee = finiteNumber(body?.firstUnitFee);
       const additionalUnitFee = finiteNumber(body?.additionalUnitFee);
+      const multiSkuFee = finiteNumber(body?.multiSkuFee);
       const volumetricDivisor = Math.round(finiteNumber(body?.volumetricDivisor, 6000));
       const overweightThresholdKg = body?.overweightThresholdKg === "" || body?.overweightThresholdKg == null
         ? null
@@ -234,7 +236,7 @@ export async function POST(request: NextRequest) {
         !warehouseId
         || !WAREHOUSE_PRICING_MODES.has(pricingMode)
         || !BILLING_UNITS.has(billingUnit)
-        || [baseOrderFee, firstUnitFee, additionalUnitFee, overweightFeePerKg].some((value) => value < 0)
+        || [baseOrderFee, firstUnitFee, additionalUnitFee, multiSkuFee, overweightFeePerKg].some((value) => value < 0)
         || volumetricDivisor <= 0
         || (overweightThresholdKg != null && overweightThresholdKg <= 0)
       ) {
@@ -254,6 +256,7 @@ export async function POST(request: NextRequest) {
         baseOrderFee,
         firstUnitFee,
         additionalUnitFee,
+        multiSkuFee,
         volumetricDivisor,
         overweightThresholdKg,
         overweightFeePerKg,

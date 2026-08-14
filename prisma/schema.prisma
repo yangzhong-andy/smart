@@ -2826,6 +2826,7 @@ model WarehouseFulfillmentRule {
   baseOrderFee          Decimal                       @default(0) @db.Decimal(18, 4)
   firstUnitFee          Decimal                       @default(0) @db.Decimal(18, 4)
   additionalUnitFee     Decimal                       @default(0) @db.Decimal(18, 4)
+  multiSkuFee           Decimal                       @default(0) @db.Decimal(18, 4)
   volumetricDivisor     Int                           @default(6000)
   overweightThresholdKg Decimal?                      @db.Decimal(10, 3)
   overweightFeePerKg    Decimal                       @default(0) @db.Decimal(18, 4)

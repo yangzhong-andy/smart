@@ -1020,6 +1020,7 @@ export async function GET(request: NextRequest) {
         sum + line.qty * Math.max(1, line.costComponents.reduce((componentSum, component) => componentSum + component.quantity, 0))
       ), 0);
       const billedUnits = rule?.billingUnit === "INTERNAL_COMPONENT" ? internalUnits : sellerUnits;
+      const distinctSkuCount = new Set(lines.flatMap((line) => line.costComponents.map((component) => component.variantId))).size;
       const physical = lines.reduce((total, line) => ({
         actualWeightKg: total.actualWeightKg + line.actualWeightKg * line.qty,
         volumeCm3: total.volumeCm3 + line.volumeCm3 * line.qty,
@@ -1058,6 +1059,8 @@ export async function GET(request: NextRequest) {
             baseOrderFee: number(rule.baseOrderFee),
             firstUnitFee: number(rule.firstUnitFee),
             additionalUnitFee: number(rule.additionalUnitFee),
+            multiSkuFee: number(rule.multiSkuFee),
+            distinctSkuCount,
             overweightThresholdKg: rule.overweightThresholdKg == null ? null : number(rule.overweightThresholdKg),
             overweightFeePerKg: number(rule.overweightFeePerKg),
             feeTiers: rule.feeTiers.map((tier) => ({

@@ -115,6 +115,7 @@ export default function ProfitSettingsPage() {
     baseOrderFee: "1",
     firstUnitFee: "0",
     additionalUnitFee: "0.5",
+    multiSkuFee: "0",
     volumetricDivisor: "6000",
     overweightThresholdKg: "70",
     overweightFeePerKg: "0.1",
@@ -141,6 +142,7 @@ export default function ProfitSettingsPage() {
         baseOrderFee: "1",
         firstUnitFee: "0",
         additionalUnitFee: "0.5",
+        multiSkuFee: "0",
         volumetricDivisor: "6000",
         overweightThresholdKg: "70",
         overweightFeePerKg: "0.1",
@@ -156,6 +158,7 @@ export default function ProfitSettingsPage() {
         baseOrderFee: "0",
         firstUnitFee: "0",
         additionalUnitFee: "0.5",
+        multiSkuFee: "1",
         volumetricDivisor: "6000",
         overweightThresholdKg: "",
         overweightFeePerKg: "0",
@@ -214,6 +217,7 @@ export default function ProfitSettingsPage() {
           baseOrderFee: Number(warehouseForm.baseOrderFee || 0),
           firstUnitFee: Number(warehouseForm.firstUnitFee || 0),
           additionalUnitFee: Number(warehouseForm.additionalUnitFee || 0),
+          multiSkuFee: Number(warehouseForm.multiSkuFee || 0),
           volumetricDivisor: Number(warehouseForm.volumetricDivisor || 6000),
           overweightThresholdKg: warehouseForm.overweightThresholdKg === "" ? null : Number(warehouseForm.overweightThresholdKg),
           overweightFeePerKg: Number(warehouseForm.overweightFeePerKg || 0),
@@ -366,6 +370,7 @@ export default function ProfitSettingsPage() {
             <Field label={`每单基础费 (${warehouseForm.currency})`}><input type="number" min="0" value={warehouseForm.baseOrderFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, baseOrderFee: event.target.value })} className="input" /></Field>
             {warehouseForm.pricingMode === "FLAT_UNIT" && <Field label={`首件费 (${warehouseForm.currency})`}><input type="number" min="0" value={warehouseForm.firstUnitFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, firstUnitFee: event.target.value })} className="input" /></Field>}
             <Field label={`超首件每件费 (${warehouseForm.currency})`}><input type="number" min="0" value={warehouseForm.additionalUnitFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, additionalUnitFee: event.target.value })} className="input" /></Field>
+            <Field label={`多 SKU 固定加收 (${warehouseForm.currency})`}><input type="number" min="0" step="0.01" value={warehouseForm.multiSkuFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, multiSkuFee: event.target.value })} className="input" /></Field>
             {warehouseForm.pricingMode !== "FLAT_UNIT" && <Field label="体积重除数"><input type="number" min="1" value={warehouseForm.volumetricDivisor} onChange={(event) => setWarehouseForm({ ...warehouseForm, volumetricDivisor: event.target.value })} className="input" /></Field>}
             {warehouseForm.pricingMode === "WEIGHT_TIER" && <Field label="续重起点 (kg)"><input type="number" min="0" value={warehouseForm.overweightThresholdKg} onChange={(event) => setWarehouseForm({ ...warehouseForm, overweightThresholdKg: event.target.value })} className="input" /></Field>}
             {warehouseForm.pricingMode === "WEIGHT_TIER" && <Field label={`续重费 / kg (${warehouseForm.currency})`}><input type="number" min="0" step="0.01" value={warehouseForm.overweightFeePerKg} onChange={(event) => setWarehouseForm({ ...warehouseForm, overweightFeePerKg: event.target.value })} className="input" /></Field>}
@@ -433,7 +438,7 @@ function RuleTable({ rows, shops, onDelete }: { rows: any[]; shops: CostRuleData
 function WarehouseRuleTable({ rows, shops, onDelete }: { rows: any[]; shops: CostRuleData["shops"]; onDelete: (id: string) => void }) {
   return <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[1000px] text-sm"><thead className="text-xs text-slate-500"><tr className="border-b border-slate-800"><th className="px-3 py-3 text-left">仓库</th><th className="px-3 py-3 text-left">店铺</th><th className="px-3 py-3 text-left">收费</th><th className="px-3 py-3 text-left">计件口径</th><th className="px-3 py-3 text-left">有效期</th><th className="px-3 py-3 text-left">备注</th><th className="w-12" /></tr></thead><tbody>{rows.map((rule) => {
     const feeText = rule.pricingMode === "WEIGHT_TIER"
-      ? `重量 ${rule.feeTiers?.length || 0} 档；超首件 ${rule.additionalUnitFee}；>${rule.overweightThresholdKg || "-"}kg +${rule.overweightFeePerKg}/kg ${rule.currency}`
+      ? `重量 ${rule.feeTiers?.length || 0} 档；超首件 ${rule.additionalUnitFee}；多 SKU +${rule.multiSkuFee || 0}；>${rule.overweightThresholdKg || "-"}kg +${rule.overweightFeePerKg}/kg ${rule.currency}`
       : rule.pricingMode === "PACKAGE_TIER"
         ? `重量/尺寸 ${rule.feeTiers?.length || 0} 档；超范围待询价 ${rule.currency}`
         : `基础 ${rule.baseOrderFee} + 首件 ${rule.firstUnitFee} + 续件 ${rule.additionalUnitFee} ${rule.currency}`;
