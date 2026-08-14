@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { calculateReplenishment, normalizeReplenishmentQuantity, selectReplenishmentUnitCost } from "./replenishment"
+import { calculateReplenishment, isActualShipmentStatus, normalizeReplenishmentQuantity, selectReplenishmentUnitCost } from "./replenishment"
 
 const policy = { salesWindowDays: 30, targetCoverageDays: 45, safetyStockDays: 15, leadTimeDays: 30 }
 const today = new Date("2026-08-14T00:00:00Z")
@@ -53,4 +53,13 @@ test("uses the SKU-level cost before the supplier fallback price", () => {
 test("normalizes a manually entered quantity to MOQ and full cartons", () => {
   assert.equal(normalizeReplenishmentQuantity(120, 500, 24), 504)
   assert.equal(normalizeReplenishmentQuantity(520, 500, 24), 528)
+})
+
+test("counts only orders that have actually left the warehouse as shipments", () => {
+  assert.equal(isActualShipmentStatus("IN_TRANSIT"), true)
+  assert.equal(isActualShipmentStatus("delivered"), true)
+  assert.equal(isActualShipmentStatus("COMPLETED"), true)
+  assert.equal(isActualShipmentStatus("AWAITING_COLLECTION"), false)
+  assert.equal(isActualShipmentStatus("AWAITING_SHIPMENT"), false)
+  assert.equal(isActualShipmentStatus("CANCELLED"), false)
 })

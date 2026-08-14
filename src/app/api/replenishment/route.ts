@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { requireApiUser } from "@/lib/api-auth"
 import {
   calculateReplenishment,
+  isActualShipmentStatus,
   normalizeReplenishmentQuantity,
   selectReplenishmentUnitCost,
 } from "@/lib/replenishment"
@@ -50,6 +51,26 @@ function startDate(days: number) {
   date.setUTCHours(0, 0, 0, 0)
   date.setUTCDate(date.getUTCDate() - days + 1)
   return date
+}
+
+const SHIPMENT_WINDOWS = [7, 14, 30] as const
+type ShipmentWindow = typeof SHIPMENT_WINDOWS[number]
+type ShipmentWindowCounters = Record<ShipmentWindow, { orders: Set<string>; units: number }>
+
+function emptyShipmentWindows(): ShipmentWindowCounters {
+  return {
+    7: { orders: new Set<string>(), units: 0 },
+    14: { orders: new Set<string>(), units: 0 },
+    30: { orders: new Set<string>(), units: 0 },
+  }
+}
+
+function addShipmentOrder(windows: ShipmentWindowCounters, orderId: string, ageDays: number) {
+  for (const days of SHIPMENT_WINDOWS) if (ageDays < days) windows[days].orders.add(orderId)
+}
+
+function addShipmentUnits(windows: ShipmentWindowCounters, quantity: number, ageDays: number) {
+  for (const days of SHIPMENT_WINDOWS) if (ageDays < days) windows[days].units += quantity
 }
 
 export async function GET(request: NextRequest) {
@@ -173,6 +194,10 @@ export async function GET(request: NextRequest) {
     const demandMap = new Map<string, { sales7: number; sales14: number; sales30: number; shops: Map<string, number>; orders: number }>()
     const unresolved = new Map<string, { shopId: string; count: number }>()
     const unresolvedWarehouses = new Map<string, { shopId: string; count: number; status: string }>()
+    const shipmentByWarehouse = new Map<string, ShipmentWindowCounters>()
+    const allShipmentOrders = emptyShipmentWindows()
+    const recognizedShipmentOrders = emptyShipmentWindows()
+    const unresolvedShipmentOrders = emptyShipmentWindows()
     const profitMap = new Map(profitMappings.map((mapping) => [
       `${mapping.shopId}\u0000${normalize(mapping.sellerSku)}`,
       mapping.components,
@@ -210,14 +235,21 @@ export async function GET(request: NextRequest) {
       const raw = order.rawData as any
       const created = order.createTime || (raw?.create_time ? new Date(number(raw.create_time) * 1000) : new Date())
       const ageDays = Math.max(0, (Date.now() - created.getTime()) / (24 * 60 * 60 * 1000))
+      const actualShipment = isActualShipmentStatus(order.orderStatus || order.status)
+      if (actualShipment) addShipmentOrder(allShipmentOrders, order.orderId, ageDays)
       const resolution = warehouseResolver(raw, order.shopId, created, "TIKTOK", country, order.orderId)
       if (!resolution.warehouseId) {
         const current = unresolvedWarehouses.get(order.orderId) || { shopId: order.shopId, count: 0, status: resolution.status }
         current.count += 1
         unresolvedWarehouses.set(order.orderId, current)
+        if (actualShipment) addShipmentOrder(unresolvedShipmentOrders, order.orderId, ageDays)
         continue
       }
+      if (actualShipment) addShipmentOrder(recognizedShipmentOrders, order.orderId, ageDays)
       if (!warehouseIds.includes(resolution.warehouseId)) continue
+      const warehouseShipment = shipmentByWarehouse.get(resolution.warehouseId) || emptyShipmentWindows()
+      if (actualShipment) addShipmentOrder(warehouseShipment, order.orderId, ageDays)
+      shipmentByWarehouse.set(resolution.warehouseId, warehouseShipment)
       const lines = Array.isArray(raw?.line_items) ? raw.line_items : []
       const seenVariants = new Set<string>()
       for (const line of lines) {
@@ -233,7 +265,11 @@ export async function GET(request: NextRequest) {
           unresolved.set(sellerSku, current)
           continue
         }
-        for (const component of components) addDemand(resolution.warehouseId, component.variantId, lineQuantity(line) * component.quantity, order.shopId, ageDays)
+        for (const component of components) {
+          const componentQuantity = lineQuantity(line) * component.quantity
+          addDemand(resolution.warehouseId, component.variantId, componentQuantity, order.shopId, ageDays)
+          if (actualShipment) addShipmentUnits(warehouseShipment, componentQuantity, ageDays)
+        }
         for (const component of components) seenVariants.add(component.variantId)
       }
       for (const variantId of seenVariants) {
@@ -308,7 +344,40 @@ export async function GET(request: NextRequest) {
       unresolvedSkuCount: unresolved.size,
       unresolvedWarehouseOrderCount: unresolvedWarehouses.size,
     }
-    return NextResponse.json({ generatedAt: new Date().toISOString(), country, countries, defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, warehouses, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })), unresolvedWarehouses: [...unresolvedWarehouses].map(([orderId, item]) => ({ orderId, ...item })) })
+    const shipmentTotals = Object.fromEntries(SHIPMENT_WINDOWS.map((days) => {
+      const counters = [...shipmentByWarehouse.values()]
+      return [days, {
+        orders: counters.reduce((sum, item) => sum + item[days].orders.size, 0),
+        units: counters.reduce((sum, item) => sum + item[days].units, 0),
+      }]
+    })) as Record<ShipmentWindow, { orders: number; units: number }>
+    const warehouseStats = warehouses.map((warehouse) => {
+      const shipment = shipmentByWarehouse.get(warehouse.id) || emptyShipmentWindows()
+      const warehouseRows = rows.filter((row) => row.warehouse.id === warehouse.id)
+      return {
+        warehouse,
+        windows: Object.fromEntries(SHIPMENT_WINDOWS.map((days) => [days, {
+          shippedOrders: shipment[days].orders.size,
+          shippedUnits: shipment[days].units,
+          orderShare: shipmentTotals[days].orders > 0 ? shipment[days].orders.size / shipmentTotals[days].orders : 0,
+          unitShare: shipmentTotals[days].units > 0 ? shipment[days].units / shipmentTotals[days].units : 0,
+        }])),
+        overseasAvailable: warehouseRows.reduce((sum, row) => sum + row.overseasAvailable, 0),
+        inTransit: warehouseRows.reduce((sum, row) => sum + row.inTransit, 0),
+        suggestedQty: warehouseRows.reduce((sum, row) => sum + row.suggestedQty, 0),
+      }
+    })
+    const shipmentCoverage = Object.fromEntries(SHIPMENT_WINDOWS.map((days) => {
+      const total = allShipmentOrders[days].orders.size
+      const recognized = recognizedShipmentOrders[days].orders.size
+      return [days, {
+        totalOrders: total,
+        recognizedOrders: recognized,
+        unresolvedOrders: unresolvedShipmentOrders[days].orders.size,
+        coverageRate: total > 0 ? recognized / total : 1,
+      }]
+    }))
+    return NextResponse.json({ generatedAt: new Date().toISOString(), country, countries, defaultPolicy: DEFAULT_REPLENISHMENT_POLICY, summary, shops, warehouses, warehouseStats, shipmentCoverage, rows, unresolved: [...unresolved].map(([sellerSku, item]) => ({ sellerSku, ...item })), unresolvedWarehouses: [...unresolvedWarehouses].map(([orderId, item]) => ({ orderId, ...item })) })
   } catch (error: any) {
     console.error("[replenishment] GET failed", error)
     return NextResponse.json({ error: error?.message || "备货建议读取失败" }, { status: 500 })
