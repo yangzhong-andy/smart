@@ -99,3 +99,23 @@ test("promotes a light package to the next tier when its dimensions exceed the l
   assert.equal(result.fee, 3);
   assert.equal(result.covered, true);
 });
+
+test("keeps F003-sized parcels in Panlian's first tier while F002 still promotes", () => {
+  const feeTiers = [
+    { minWeightKg: 0, maxWeightKg: 0.5, minInclusive: false, maxInclusive: true, maxLengthCm: 20, maxWidthCm: 20, maxHeightCm: 10, baseFee: 2.5 },
+    { minWeightKg: 0.5, maxWeightKg: 1, minInclusive: false, maxInclusive: true, maxLengthCm: null, maxWidthCm: null, maxHeightCm: null, baseFee: 3 },
+  ];
+  const input = {
+    pricingMode: "WEIGHT_TIER" as const,
+    billedUnits: 1,
+    baseOrderFee: 0,
+    firstUnitFee: 0,
+    additionalUnitFee: 0.5,
+    overweightThresholdKg: null,
+    overweightFeePerKg: 0,
+    feeTiers,
+  };
+
+  assert.equal(calculateWarehouseFulfillmentFee({ ...input, chargeableWeightKg: 0.05, packageLengthCm: 17, packageWidthCm: 14, packageHeightCm: 6 }).fee, 2.5);
+  assert.equal(calculateWarehouseFulfillmentFee({ ...input, chargeableWeightKg: 0.47, packageLengthCm: 30, packageWidthCm: 15.5, packageHeightCm: 11.5 }).fee, 3);
+});

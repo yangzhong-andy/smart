@@ -61,7 +61,7 @@ const HQST_FEE_TIERS: FeeTierDraft[] = [
 }));
 
 const PANLIAN_FEE_TIERS: FeeTierDraft[] = [
-  [0, 0.5, 15, 10, 3, 2.5],
+  [0, 0.5, 20, 20, 10, 2.5],
   [0.5, 1, "", "", "", 3],
   [1, 2, "", "", "", 3.5],
   [2, 3, "", "", "", 4],
