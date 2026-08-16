@@ -93,9 +93,22 @@ export async function POST(request: NextRequest) {
         }).filter(Boolean))] as string[];
 
         for (const month of months) {
-          // 汇总该月份+代理商的所有信用消耗
+          // 汇总该月份+代理商的信用消耗。部分广告文件只提供
+          // creditConsumption/amount，没有逐行 estimatedRebate；这时按代理商
+          // 配置比例补算返点，避免新月份只有广告账单而没有返点账单。
           const summary = await prisma.$queryRawUnsafe<Array<{ totalCredit: number; totalRebate: number; currency: string; ids: string }>>(
-            `SELECT COALESCE(SUM("creditConsumption"::numeric), 0) as "totalCredit", COALESCE(SUM("estimatedRebate"), 0) as "totalRebate", MAX(currency) as currency, STRING_AGG(id::text, ',') as ids FROM "AdConsumption" WHERE "agencyId" = $1 AND month = $2 AND "creditConsumption" IS NOT NULL`,
+            `SELECT
+               COALESCE(SUM(COALESCE("creditConsumption", amount)::numeric), 0) as "totalCredit",
+               COALESCE(SUM(COALESCE(
+                 "estimatedRebate",
+                 COALESCE("creditConsumption", amount)::numeric
+                   * COALESCE((SELECT "rebateRate" FROM "AdAgency" WHERE id = $1 LIMIT 1), 0)::numeric / 100
+               )), 0) as "totalRebate",
+               MAX(currency) as currency,
+               STRING_AGG(id::text, ',') as ids
+             FROM "AdConsumption"
+             WHERE "agencyId" = $1 AND month = $2
+               AND COALESCE("creditConsumption", amount) IS NOT NULL`,
             agencyId, month
           );
 
