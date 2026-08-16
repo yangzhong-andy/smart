@@ -1020,10 +1020,17 @@ export async function GET(request: NextRequest) {
         sum + line.qty * Math.max(1, line.costComponents.reduce((componentSum, component) => componentSum + component.quantity, 0))
       ), 0);
       const billedUnits = rule?.billingUnit === "INTERNAL_COMPONENT" ? internalUnits : sellerUnits;
-      // Multi-SKU handling is based on the seller SKU lines in the order.
-      // Repeated lines of one seller SKU (for example F003 x3) must not be
-      // treated as multiple SKUs because their internal components repeat.
-      const distinctSkuCount = new Set(lines.map((line) => line.skuKey)).size;
+      // Multi-SKU handling must use the seller SKU values from the raw TikTok
+      // order. Profit lines may be expanded for bundle/internal components,
+      // which would incorrectly turn one seller SKU with quantity > 1 into a
+      // multi-SKU order and add the fixed fee twice.
+      const rawSellerSkus = parseLineItems(order.rawData)
+        .map((item) => String(item?.seller_sku || item?.sellerSku || item?.sku || "").trim().toLowerCase())
+        .filter(Boolean);
+      const distinctSkuCount = new Set(rawSellerSkus.length > 0
+        ? rawSellerSkus
+        : lines.map((line) => String(line.sellerSku || line.skuKey || "").trim().toLowerCase()).filter(Boolean)
+      ).size;
       const physical = lines.reduce((total, line) => ({
         actualWeightKg: total.actualWeightKg + line.actualWeightKg * line.qty,
         volumeCm3: total.volumeCm3 + line.volumeCm3 * line.qty,
