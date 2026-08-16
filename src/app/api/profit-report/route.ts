@@ -1053,10 +1053,11 @@ export async function GET(request: NextRequest) {
       const volumetricWeightKg = physical.volumeCm3 / volumetricDivisor;
       // Panlian's quote uses actual weight; dimensions only promote the tier.
       const chargeableWeightKg = physical.actualWeightKg;
-      const compactHeightCm = physical.maxLengthCm > 0 && physical.maxWidthCm > 0
-        ? Math.max(physical.maxHeightCm, physical.volumeCm3 / (physical.maxLengthCm * physical.maxWidthCm))
-        : 0;
-      const packageDimensions = [physical.maxLengthCm, physical.maxWidthCm, compactHeightCm]
+      // Panlian promotes a parcel by the largest product dimensions. Do not
+      // turn repeated units of one SKU into a taller virtual package by
+      // dividing the order's summed volume by one item's footprint; e.g.
+      // F003 x3 remains within the first 20 x 20 x 10 cm tier.
+      const packageDimensions = [physical.maxLengthCm, physical.maxWidthCm, physical.maxHeightCm]
         .sort((left, right) => right - left);
       const feeResult = rule
         ? calculateWarehouseFulfillmentFee({
