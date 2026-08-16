@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
+import { syncAdvertisingMonthlyBills } from "@/lib/auto-generate-bills";
 
 export const dynamic = 'force-dynamic';
 
@@ -111,6 +112,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const date = new Date(body.date);
+    if (Number.isNaN(date.getTime())) {
+      return NextResponse.json({ error: "广告消耗日期无效" }, { status: 400 });
+    }
     const consumption = await prisma.adConsumption.create({
       data: {
         id: randomUUID(),
@@ -119,22 +124,34 @@ export async function POST(request: NextRequest) {
         agencyName: body.agencyName,
         adAccountId: body.accountId,
         accountName: body.accountName,
-        date: new Date(body.date),
-        month: body.month || new Date(body.date).toISOString().slice(0, 7),
+        date,
+        month: body.month || date.toISOString().slice(0, 7),
         amount: body.amount,
         currency: body.currency || "USD",
         isSettled: body.isSettled || false,
+        estimatedRebate: body.estimatedRebate ?? null,
+        rebateRate: body.rebateRate ?? null,
+        cashConsumption: body.cashConsumption ?? null,
+        creditConsumption: body.creditConsumption ?? null,
+        giftConsumption: body.giftConsumption ?? null,
+        campaignName: body.campaignName ?? null,
+        campaignId: body.campaignId ?? null,
+        consumptionType: body.consumptionType ?? null,
+        storeId: body.storeId ?? null,
+        storeName: body.storeName ?? null,
         notes: body.notes,
       },
     });
 
     // 清除广告消费缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    const billSync = await syncAdvertisingMonthlyBills([consumption.month]);
 
     return NextResponse.json({
       id: consumption.id,
       agencyName: consumption.agencyName,
       amount: Number(consumption.amount),
+      billSync,
       createdAt: consumption.createdAt.toISOString(),
     });
   } catch (error: any) {
