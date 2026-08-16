@@ -1020,7 +1020,10 @@ export async function GET(request: NextRequest) {
         sum + line.qty * Math.max(1, line.costComponents.reduce((componentSum, component) => componentSum + component.quantity, 0))
       ), 0);
       const billedUnits = rule?.billingUnit === "INTERNAL_COMPONENT" ? internalUnits : sellerUnits;
-      const distinctSkuCount = new Set(lines.flatMap((line) => line.costComponents.map((component) => component.variantId))).size;
+      // Multi-SKU handling is based on the seller SKU lines in the order.
+      // Repeated lines of one seller SKU (for example F003 x3) must not be
+      // treated as multiple SKUs because their internal components repeat.
+      const distinctSkuCount = new Set(lines.map((line) => line.skuKey)).size;
       const physical = lines.reduce((total, line) => ({
         actualWeightKg: total.actualWeightKg + line.actualWeightKg * line.qty,
         volumeCm3: total.volumeCm3 + line.volumeCm3 * line.qty,
