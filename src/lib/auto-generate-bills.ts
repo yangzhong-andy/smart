@@ -16,7 +16,7 @@ type AdvertisingGroup = {
   month: string;
   agencyId: string;
   agencyName: string;
-  adAccountId: string;
+  adAccountId: string | null;
   accountName: string;
   currency: string;
   totalAmount: number;
@@ -99,7 +99,6 @@ export async function syncAdvertisingMonthlyBills(
     const key = [
       row.month,
       row.agencyId,
-      row.adAccountId,
       row.currency,
     ].join("\u0000");
     const baseAmount = asNumber(row.creditConsumption ?? row.amount);
@@ -117,8 +116,10 @@ export async function syncAdvertisingMonthlyBills(
         month: row.month,
         agencyId: row.agencyId,
         agencyName: row.agencyName || "",
-        adAccountId: row.adAccountId,
-        accountName: row.accountName || "",
+        // A monthly bill belongs to the associated agency, not to an
+        // individual advertising account. Account-level rows are merged.
+        adAccountId: null,
+        accountName: "",
         currency: row.currency || "USD",
         totalAmount: baseAmount,
         rebateAmount: rebate,
@@ -135,43 +136,20 @@ export async function syncAdvertisingMonthlyBills(
     },
     orderBy: { createdAt: "asc" },
   });
-  const groupsByAgencyMonth = new Map<string, number>();
-  for (const group of groups.values()) {
-    const key = `${group.month}\u0000${group.agencyId}`;
-    groupsByAgencyMonth.set(key, (groupsByAgencyMonth.get(key) || 0) + 1);
-  }
-
   let created = 0;
   let updated = 0;
   let skippedLocked = 0;
   let cacheDirty = false;
   const matchedBillIds = new Set<string>();
 
-  const findBill = (group: AdvertisingGroup, billType: string) => {
-    const exact = existingBills.find(
+  const findBills = (group: AdvertisingGroup, billType: string) =>
+    existingBills.filter(
       (bill) =>
         bill.billType === billType &&
         bill.month === group.month &&
         bill.agencyId === group.agencyId &&
-        bill.adAccountId === group.adAccountId &&
         bill.currency === group.currency,
     );
-    if (exact) return exact;
-
-    // Older imports created one agency/month bill without accountId. Reuse it
-    // only when that month has a single account group, preventing duplicates.
-    if (groupsByAgencyMonth.get(`${group.month}\u0000${group.agencyId}`) === 1) {
-      return existingBills.find(
-        (bill) =>
-          bill.billType === billType &&
-          bill.month === group.month &&
-          bill.agencyId === group.agencyId &&
-          !bill.adAccountId &&
-          bill.currency === group.currency,
-      );
-    }
-    return undefined;
-  };
 
   for (const group of groups.values()) {
     const totalAmount = roundMoney(group.totalAmount);
@@ -210,7 +188,10 @@ export async function syncAdvertisingMonthlyBills(
       ["广告返点", rebateData],
     ] as const) {
       if (billType === "广告返点" && rebateAmount <= 0) continue;
-      const existing = findBill(group, billType);
+      const candidates = findBills(group, billType);
+      const existing = candidates.find(
+        (bill) => bill.status === "Draft" && isSystemGeneratedBill(bill),
+      );
       if (existing) {
         if (
           existing.status !== "Draft" ||
@@ -223,8 +204,8 @@ export async function syncAdvertisingMonthlyBills(
           where: { id: existing.id },
           data: {
             agencyName: data.agencyName,
-            adAccountId: data.adAccountId,
-            accountName: data.accountName,
+            adAccountId: null,
+            accountName: null,
             totalAmount: data.totalAmount,
             currency: data.currency,
             rebateAmount: data.rebateAmount,
@@ -236,6 +217,18 @@ export async function syncAdvertisingMonthlyBills(
           },
         });
         matchedBillIds.add(existing.id);
+        for (const duplicate of candidates) {
+          if (
+            duplicate.id !== existing.id &&
+            duplicate.status === "Draft" &&
+            isSystemGeneratedBill(duplicate)
+          ) {
+            await prisma.monthlyBill.delete({ where: { id: duplicate.id } });
+            matchedBillIds.add(duplicate.id);
+            updated += 1;
+            cacheDirty = true;
+          }
+        }
         updated += 1;
         cacheDirty = true;
       } else {
