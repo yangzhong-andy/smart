@@ -2830,6 +2830,11 @@ model WarehouseFulfillmentRule {
   volumetricDivisor     Int                           @default(6000)
   overweightThresholdKg Decimal?                      @db.Decimal(10, 3)
   overweightFeePerKg    Decimal                       @default(0) @db.Decimal(18, 4)
+  // When enabled, chargeable weight is max(actual weight, summed volume / divisor).
+  useVolumetricWeight   Boolean                       @default(false)
+  oversizeThresholdCm   Decimal?                      @db.Decimal(10, 2)
+  oversizeFee           Decimal                       @default(0) @db.Decimal(18, 4)
+  packagingFeeTiers     WarehouseFulfillmentPackagingFeeTier[]
   currency              String                        @default("BRL")
   effectiveFrom         DateTime                      @db.Date
   effectiveTo           DateTime?                     @db.Date
@@ -2857,6 +2862,24 @@ model WarehouseFulfillmentFeeTier {
   baseFee         Decimal                  @default(0) @db.Decimal(18, 4)
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
+  fulfillmentRule WarehouseFulfillmentRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+}
+
+// Packaging/handling fees have different weight breaks from outbound fees.
+// Keeping them separate prevents a provider's material charge from being
+// hidden in the outbound-operation tier.
+model WarehouseFulfillmentPackagingFeeTier {
+  id              String                    @id @default(uuid())
+  ruleId          String
+  minWeightKg     Decimal?                  @db.Decimal(10, 3)
+  maxWeightKg     Decimal?                  @db.Decimal(10, 3)
+  minInclusive    Boolean                   @default(false)
+  maxInclusive    Boolean                   @default(true)
+  baseFee         Decimal                   @default(0) @db.Decimal(18, 4)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
   fulfillmentRule WarehouseFulfillmentRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId])

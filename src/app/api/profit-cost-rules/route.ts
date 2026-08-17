@@ -60,6 +60,22 @@ function normalizeFeeTiers(value: unknown) {
   ));
 }
 
+function normalizePackagingFeeTiers(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((raw: any) => ({
+    minWeightKg: raw?.minWeightKg === "" || raw?.minWeightKg == null ? null : finiteNumber(raw.minWeightKg),
+    maxWeightKg: raw?.maxWeightKg === "" || raw?.maxWeightKg == null ? null : finiteNumber(raw.maxWeightKg),
+    minInclusive: raw?.minInclusive === true,
+    maxInclusive: raw?.maxInclusive !== false,
+    baseFee: finiteNumber(raw?.baseFee),
+  })).filter((tier) => (
+    tier.baseFee >= 0
+    && (tier.minWeightKg == null || tier.minWeightKg >= 0)
+    && (tier.maxWeightKg == null || tier.maxWeightKg > 0)
+    && (tier.minWeightKg == null || tier.maxWeightKg == null || tier.maxWeightKg > tier.minWeightKg)
+  ));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireApiUser(request);
@@ -84,6 +100,7 @@ export async function GET(request: NextRequest) {
         include: {
           warehouse: { select: { name: true, code: true } },
           feeTiers: { orderBy: [{ maxWeightKg: "asc" }, { baseFee: "asc" }] },
+          packagingFeeTiers: { orderBy: [{ maxWeightKg: "asc" }, { baseFee: "asc" }] },
         },
         orderBy: [{ warehouseId: "asc" }, { effectiveFrom: "desc" }],
       }),
@@ -121,6 +138,8 @@ export async function GET(request: NextRequest) {
         multiSkuFee: Number(rule.multiSkuFee),
         overweightThresholdKg: rule.overweightThresholdKg == null ? null : Number(rule.overweightThresholdKg),
         overweightFeePerKg: Number(rule.overweightFeePerKg),
+        oversizeThresholdCm: rule.oversizeThresholdCm == null ? null : Number(rule.oversizeThresholdCm),
+        oversizeFee: Number(rule.oversizeFee),
         feeTiers: rule.feeTiers.map((tier) => ({
           ...tier,
           minWeightKg: tier.minWeightKg == null ? null : Number(tier.minWeightKg),
@@ -128,6 +147,12 @@ export async function GET(request: NextRequest) {
           maxLengthCm: tier.maxLengthCm == null ? null : Number(tier.maxLengthCm),
           maxWidthCm: tier.maxWidthCm == null ? null : Number(tier.maxWidthCm),
           maxHeightCm: tier.maxHeightCm == null ? null : Number(tier.maxHeightCm),
+          baseFee: Number(tier.baseFee),
+        })),
+        packagingFeeTiers: rule.packagingFeeTiers.map((tier) => ({
+          ...tier,
+          minWeightKg: tier.minWeightKg == null ? null : Number(tier.minWeightKg),
+          maxWeightKg: tier.maxWeightKg == null ? null : Number(tier.maxWeightKg),
           baseFee: Number(tier.baseFee),
         })),
         effectiveFrom: rule.effectiveFrom.toISOString().slice(0, 10),
@@ -228,7 +253,13 @@ export async function POST(request: NextRequest) {
         ? null
         : finiteNumber(body.overweightThresholdKg);
       const overweightFeePerKg = finiteNumber(body?.overweightFeePerKg);
+      const useVolumetricWeight = body?.useVolumetricWeight === true;
+      const oversizeThresholdCm = body?.oversizeThresholdCm === "" || body?.oversizeThresholdCm == null
+        ? null
+        : finiteNumber(body.oversizeThresholdCm);
+      const oversizeFee = finiteNumber(body?.oversizeFee);
       const feeTiers = normalizeFeeTiers(body?.feeTiers);
+      const packagingFeeTiers = normalizePackagingFeeTiers(body?.packagingFeeTiers);
       if (pricingMode !== "FLAT_UNIT" && (!Array.isArray(body?.feeTiers) || feeTiers.length !== body.feeTiers.length || feeTiers.length === 0)) {
         return NextResponse.json({ error: "仓库费用分档参数无效" }, { status: 400 });
       }
@@ -239,6 +270,7 @@ export async function POST(request: NextRequest) {
         || [baseOrderFee, firstUnitFee, additionalUnitFee, multiSkuFee, overweightFeePerKg].some((value) => value < 0)
         || volumetricDivisor <= 0
         || (overweightThresholdKg != null && overweightThresholdKg <= 0)
+        || (oversizeThresholdCm != null && oversizeThresholdCm <= 0)
       ) {
         return NextResponse.json({ error: "仓库代发规则参数无效" }, { status: 400 });
       }
@@ -260,6 +292,9 @@ export async function POST(request: NextRequest) {
         volumetricDivisor,
         overweightThresholdKg,
         overweightFeePerKg,
+        useVolumetricWeight,
+        oversizeThresholdCm,
+        oversizeFee,
         currency: String(body?.currency || "BRL").trim().toUpperCase(),
         effectiveFrom,
         effectiveTo,
@@ -274,6 +309,12 @@ export async function POST(request: NextRequest) {
         if (pricingMode !== "FLAT_UNIT") {
           await tx.warehouseFulfillmentFeeTier.createMany({
             data: feeTiers.map((tier) => ({ ruleId: saved.id, ...tier })),
+          });
+        }
+        await tx.warehouseFulfillmentPackagingFeeTier.deleteMany({ where: { ruleId: saved.id } });
+        if (packagingFeeTiers.length > 0) {
+          await tx.warehouseFulfillmentPackagingFeeTier.createMany({
+            data: packagingFeeTiers.map((tier) => ({ ruleId: saved.id, ...tier })),
           });
         }
         return saved;

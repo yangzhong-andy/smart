@@ -9,6 +9,14 @@ export type WarehouseFeeTierInput = {
   baseFee: number;
 };
 
+export type WarehousePackagingFeeTierInput = {
+  minWeightKg: number | null;
+  maxWeightKg: number | null;
+  minInclusive: boolean;
+  maxInclusive: boolean;
+  baseFee: number;
+};
+
 export type WarehouseFeeInput = {
   pricingMode: "FLAT_UNIT" | "WEIGHT_TIER" | "PACKAGE_TIER";
   billedUnits: number;
@@ -24,6 +32,9 @@ export type WarehouseFeeInput = {
   overweightThresholdKg: number | null;
   overweightFeePerKg: number;
   feeTiers: WarehouseFeeTierInput[];
+  packagingFeeTiers?: WarehousePackagingFeeTierInput[];
+  oversizeThresholdCm?: number | null;
+  oversizeFee?: number;
 };
 
 export function findWarehouseFeeTier(
@@ -52,6 +63,9 @@ export function calculateWarehouseFulfillmentFee(input: WarehouseFeeInput) {
   if (input.pricingMode === "FLAT_UNIT") {
     return {
       fee: input.baseOrderFee + input.firstUnitFee + additionalUnitsFee + multiSkuCharge,
+      operationalFee: input.baseOrderFee + input.firstUnitFee + additionalUnitsFee + multiSkuCharge,
+      packagingFee: 0,
+      oversizeFee: 0,
       covered: true,
       tier: null,
     };
@@ -74,8 +88,27 @@ export function calculateWarehouseFulfillmentFee(input: WarehouseFeeInput) {
   }
   if (!tier) return { fee: 0, covered: false, tier: null };
 
+  const operationalFee = input.baseOrderFee + tier.baseFee + additionalUnitsFee + multiSkuCharge + overweightFee;
+  const packagingTier = (input.packagingFeeTiers || []).find((packaging) => {
+    const aboveMin = packaging.minWeightKg == null
+      || (packaging.minInclusive ? input.chargeableWeightKg >= packaging.minWeightKg : input.chargeableWeightKg > packaging.minWeightKg);
+    const belowMax = packaging.maxWeightKg == null
+      || (packaging.maxInclusive ? input.chargeableWeightKg <= packaging.maxWeightKg : input.chargeableWeightKg < packaging.maxWeightKg);
+    return aboveMin && belowMax;
+  });
+  // Providers charge packaging/handling only when the parcel contains more
+  // than one physical/internal unit. A single ordinary SKU x1 has no fee.
+  const packagingFee = input.billedUnits > 1 ? (packagingTier?.baseFee || 0) : 0;
+  const oversizeFee = input.oversizeThresholdCm != null
+    && Math.max(input.packageLengthCm, input.packageWidthCm, input.packageHeightCm) > input.oversizeThresholdCm
+    ? Math.max(0, input.oversizeFee || 0)
+    : 0;
+
   return {
-    fee: input.baseOrderFee + tier.baseFee + additionalUnitsFee + multiSkuCharge + overweightFee,
+    operationalFee,
+    packagingFee,
+    oversizeFee,
+    fee: operationalFee + packagingFee + oversizeFee,
     covered: true,
     tier,
   };

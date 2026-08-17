@@ -51,6 +51,15 @@ type FeeTierDraft = {
   baseFee: string;
 };
 
+type PackagingFeeTierDraft = {
+  id: string;
+  minWeightKg: string;
+  maxWeightKg: string;
+  minInclusive: boolean;
+  maxInclusive: boolean;
+  baseFee: string;
+};
+
 const HQST_FEE_TIERS: FeeTierDraft[] = [
   [0, 1, 2.5], [1, 3, 3.5], [3, 5, 6], [5, 10, 8], [10, 20, 14],
   [20, 30, 20], [30, 40, 30], [40, 50, 33], [50, 60, 40], [60, 70, 47],
@@ -69,6 +78,14 @@ const PANLIAN_FEE_TIERS: FeeTierDraft[] = [
   id: `panlian-${index}`,
   minWeightKg: String(min), maxWeightKg: String(max), minInclusive: false, maxInclusive: true,
   maxLengthCm: String(length), maxWidthCm: String(width), maxHeightCm: String(height), baseFee: String(fee),
+}));
+
+const HQST_PACKAGING_FEE_TIERS: PackagingFeeTierDraft[] = [
+  [0, 3, 1], [3, 10, 10], [10, 20, 20], [20, 50, 25],
+].map(([min, max, fee], index) => ({
+  id: `hqst-packaging-${index}`,
+  minWeightKg: String(min), maxWeightKg: String(max),
+  minInclusive: false, maxInclusive: true, baseFee: String(fee),
 }));
 
 const fetcher = async (url: string) => {
@@ -112,14 +129,18 @@ export default function ProfitSettingsPage() {
     shopId: "",
     pricingMode: "WEIGHT_TIER",
     billingUnit: "INTERNAL_COMPONENT",
-    baseOrderFee: "1",
+    baseOrderFee: "0",
     firstUnitFee: "0",
     additionalUnitFee: "0.5",
     multiSkuFee: "0",
     volumetricDivisor: "6000",
     overweightThresholdKg: "70",
     overweightFeePerKg: "0.1",
+    useVolumetricWeight: false,
+    oversizeThresholdCm: "60",
+    oversizeFee: "26",
     feeTiers: HQST_FEE_TIERS,
+    packagingFeeTiers: HQST_PACKAGING_FEE_TIERS,
     currency: "BRL",
     effectiveFrom: "",
     effectiveTo: "",
@@ -139,14 +160,18 @@ export default function ProfitSettingsPage() {
         ...current,
         pricingMode: "WEIGHT_TIER",
         billingUnit: "INTERNAL_COMPONENT",
-        baseOrderFee: "1",
+        baseOrderFee: "0",
         firstUnitFee: "0",
         additionalUnitFee: "0.5",
         multiSkuFee: "0",
         volumetricDivisor: "6000",
         overweightThresholdKg: "70",
         overweightFeePerKg: "0.1",
+        useVolumetricWeight: true,
+        oversizeThresholdCm: "60",
+        oversizeFee: "26",
         feeTiers: HQST_FEE_TIERS,
+        packagingFeeTiers: HQST_PACKAGING_FEE_TIERS,
         currency: "BRL",
         notes: "环球盛通巴西海外仓报价；包材费 R$1/单",
       }));
@@ -162,7 +187,11 @@ export default function ProfitSettingsPage() {
         volumetricDivisor: "6000",
         overweightThresholdKg: "",
         overweightFeePerKg: "0",
+        useVolumetricWeight: false,
+        oversizeThresholdCm: "",
+        oversizeFee: "0",
         feeTiers: PANLIAN_FEE_TIERS,
+        packagingFeeTiers: [],
         currency: "BRL",
         effectiveFrom: "2026-03-01",
         effectiveTo: "2026-05-31",
@@ -221,6 +250,9 @@ export default function ProfitSettingsPage() {
           volumetricDivisor: Number(warehouseForm.volumetricDivisor || 6000),
           overweightThresholdKg: warehouseForm.overweightThresholdKg === "" ? null : Number(warehouseForm.overweightThresholdKg),
           overweightFeePerKg: Number(warehouseForm.overweightFeePerKg || 0),
+          useVolumetricWeight: warehouseForm.useVolumetricWeight,
+          oversizeThresholdCm: warehouseForm.oversizeThresholdCm === "" ? null : Number(warehouseForm.oversizeThresholdCm),
+          oversizeFee: Number(warehouseForm.oversizeFee || 0),
           feeTiers: warehouseForm.feeTiers.map((tier) => ({
             minWeightKg: tier.minWeightKg === "" ? null : Number(tier.minWeightKg),
             maxWeightKg: tier.maxWeightKg === "" ? null : Number(tier.maxWeightKg),
@@ -229,6 +261,13 @@ export default function ProfitSettingsPage() {
             maxLengthCm: tier.maxLengthCm === "" ? null : Number(tier.maxLengthCm),
             maxWidthCm: tier.maxWidthCm === "" ? null : Number(tier.maxWidthCm),
             maxHeightCm: tier.maxHeightCm === "" ? null : Number(tier.maxHeightCm),
+            baseFee: Number(tier.baseFee || 0),
+          })),
+          packagingFeeTiers: warehouseForm.packagingFeeTiers.map((tier) => ({
+            minWeightKg: tier.minWeightKg === "" ? null : Number(tier.minWeightKg),
+            maxWeightKg: tier.maxWeightKg === "" ? null : Number(tier.maxWeightKg),
+            minInclusive: tier.minInclusive,
+            maxInclusive: tier.maxInclusive,
             baseFee: Number(tier.baseFee || 0),
           })),
         }),
@@ -372,6 +411,9 @@ export default function ProfitSettingsPage() {
             <Field label={`超首件每件费 (${warehouseForm.currency})`}><input type="number" min="0" value={warehouseForm.additionalUnitFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, additionalUnitFee: event.target.value })} className="input" /></Field>
             <Field label={`多 SKU 固定加收 (${warehouseForm.currency})`}><input type="number" min="0" step="0.01" value={warehouseForm.multiSkuFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, multiSkuFee: event.target.value })} className="input" /></Field>
             {warehouseForm.pricingMode !== "FLAT_UNIT" && <Field label="体积重除数"><input type="number" min="1" value={warehouseForm.volumetricDivisor} onChange={(event) => setWarehouseForm({ ...warehouseForm, volumetricDivisor: event.target.value })} className="input" /></Field>}
+            {warehouseForm.pricingMode !== "FLAT_UNIT" && <label className="flex items-end gap-2 pb-2 text-xs text-slate-400"><input type="checkbox" checked={warehouseForm.useVolumetricWeight} onChange={(event) => setWarehouseForm({ ...warehouseForm, useVolumetricWeight: event.target.checked })} />实际重与体积重取大</label>}
+            {warehouseForm.pricingMode !== "FLAT_UNIT" && <Field label="异型尺寸阈值 (cm)"><input type="number" min="0" value={warehouseForm.oversizeThresholdCm} onChange={(event) => setWarehouseForm({ ...warehouseForm, oversizeThresholdCm: event.target.value })} className="input" /></Field>}
+            {warehouseForm.pricingMode !== "FLAT_UNIT" && <Field label={`异型处理费 (${warehouseForm.currency})`}><input type="number" min="0" step="0.01" value={warehouseForm.oversizeFee} onChange={(event) => setWarehouseForm({ ...warehouseForm, oversizeFee: event.target.value })} className="input" /></Field>}
             {warehouseForm.pricingMode === "WEIGHT_TIER" && <Field label="续重起点 (kg)"><input type="number" min="0" value={warehouseForm.overweightThresholdKg} onChange={(event) => setWarehouseForm({ ...warehouseForm, overweightThresholdKg: event.target.value })} className="input" /></Field>}
             {warehouseForm.pricingMode === "WEIGHT_TIER" && <Field label={`续重费 / kg (${warehouseForm.currency})`}><input type="number" min="0" step="0.01" value={warehouseForm.overweightFeePerKg} onChange={(event) => setWarehouseForm({ ...warehouseForm, overweightFeePerKg: event.target.value })} className="input" /></Field>}
             <Field label="生效日期"><input type="date" value={warehouseForm.effectiveFrom} onChange={(event) => setWarehouseForm({ ...warehouseForm, effectiveFrom: event.target.value })} className="input" /></Field>
@@ -383,6 +425,11 @@ export default function ProfitSettingsPage() {
             showDimensions={warehouseForm.pricingMode === "PACKAGE_TIER"}
             currency={warehouseForm.currency}
             onChange={(feeTiers) => setWarehouseForm({ ...warehouseForm, feeTiers })}
+          />}
+          {warehouseForm.pricingMode !== "FLAT_UNIT" && <PackagingFeeTierEditor
+            tiers={warehouseForm.packagingFeeTiers}
+            currency={warehouseForm.currency}
+            onChange={(packagingFeeTiers) => setWarehouseForm({ ...warehouseForm, packagingFeeTiers })}
           />}
           <button type="button" onClick={saveWarehouseRule} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />保存仓库规则</button>
           <WarehouseRuleTable rows={data.warehouseRules} shops={data.shops} onDelete={(id) => deleteRule("warehouse", id)} />
@@ -427,6 +474,29 @@ function FeeTierEditor({
         <td className="px-2 py-2"><input type="number" min="0" step="0.01" value={tier.baseFee} onChange={(event) => update(index, { baseFee: event.target.value })} className="input" /></td>
         <td><button type="button" onClick={() => onChange(tiers.filter((_, tierIndex) => tierIndex !== index))} title="删除分档" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><X className="h-4 w-4" /></button></td>
       </tr>)}</tbody>
+    </table>
+  </div>;
+}
+
+function PackagingFeeTierEditor({
+  tiers,
+  currency,
+  onChange,
+}: {
+  tiers: PackagingFeeTierDraft[];
+  currency: string;
+  onChange: (tiers: PackagingFeeTierDraft[]) => void;
+}) {
+  const update = (index: number, patch: Partial<PackagingFeeTierDraft>) => {
+    onChange(tiers.map((tier, tierIndex) => tierIndex === index ? { ...tier, ...patch } : tier));
+  };
+  const add = () => onChange([...tiers, {
+    id: crypto.randomUUID(), minWeightKg: "", maxWeightKg: "", minInclusive: false, maxInclusive: true, baseFee: "",
+  }]);
+  return <div className="mt-5 overflow-x-auto border-y border-slate-800 py-4">
+    <div className="mb-3 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-slate-200">包材/人工费用分档</h3><button type="button" onClick={add} title="新增包材分档" className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white"><Plus className="h-4 w-4" /></button></div>
+    <table className="w-full min-w-[560px] text-sm"><thead className="text-xs text-slate-500"><tr><th className="px-2 py-2 text-left">最小重量 kg</th><th className="px-2 py-2 text-left">最大重量 kg</th><th className="px-2 py-2 text-left">每单费用 ({currency})</th><th className="w-10" /></tr></thead>
+      <tbody>{tiers.map((tier, index) => <tr key={tier.id} className="border-t border-slate-900"><td className="px-2 py-2"><input type="number" min="0" value={tier.minWeightKg} onChange={(event) => update(index, { minWeightKg: event.target.value })} className="input" /></td><td className="px-2 py-2"><input type="number" min="0" value={tier.maxWeightKg} onChange={(event) => update(index, { maxWeightKg: event.target.value })} className="input" /></td><td className="px-2 py-2"><input type="number" min="0" step="0.01" value={tier.baseFee} onChange={(event) => update(index, { baseFee: event.target.value })} className="input" /></td><td><button type="button" onClick={() => onChange(tiers.filter((_, tierIndex) => tierIndex !== index))} title="删除包材分档" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><X className="h-4 w-4" /></button></td></tr>)}</tbody>
     </table>
   </div>;
 }

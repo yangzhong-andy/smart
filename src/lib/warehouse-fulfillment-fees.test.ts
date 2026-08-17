@@ -143,3 +143,52 @@ test("adds the fixed multi-SKU fee once without affecting one-SKU orders", () =>
   assert.equal(calculateWarehouseFulfillmentFee({ ...input, distinctSkuCount: 2 }).fee, 6.5);
   assert.equal(calculateWarehouseFulfillmentFee({ ...input, distinctSkuCount: 1 }).fee, 5.5);
 });
+
+test("adds provider packaging tiers and oversize handling without changing operation tiers", () => {
+  const result = calculateWarehouseFulfillmentFee({
+    pricingMode: "WEIGHT_TIER",
+    billedUnits: 2,
+    chargeableWeightKg: 4,
+    packageLengthCm: 61,
+    packageWidthCm: 20,
+    packageHeightCm: 10,
+    baseOrderFee: 0,
+    firstUnitFee: 0,
+    additionalUnitFee: 0,
+    multiSkuFee: 0,
+    distinctSkuCount: 1,
+    overweightThresholdKg: null,
+    overweightFeePerKg: 0,
+    feeTiers: [{ minWeightKg: 3, maxWeightKg: 5, minInclusive: false, maxInclusive: true, maxLengthCm: null, maxWidthCm: null, maxHeightCm: null, baseFee: 6 }],
+    packagingFeeTiers: [{ minWeightKg: 3, maxWeightKg: 10, minInclusive: false, maxInclusive: true, baseFee: 10 }],
+    oversizeThresholdCm: 60,
+    oversizeFee: 26,
+  });
+  assert.equal(result.operationalFee, 6);
+  assert.equal(result.packagingFee, 10);
+  assert.equal(result.oversizeFee, 26);
+  assert.equal(result.fee, 42);
+});
+
+test("does not charge packaging for a single physical unit", () => {
+  const result = calculateWarehouseFulfillmentFee({
+    pricingMode: "WEIGHT_TIER",
+    billedUnits: 1,
+    chargeableWeightKg: 2,
+    packageLengthCm: 30,
+    packageWidthCm: 15,
+    packageHeightCm: 10,
+    baseOrderFee: 0,
+    firstUnitFee: 0,
+    additionalUnitFee: 0,
+    multiSkuFee: 0,
+    distinctSkuCount: 1,
+    overweightThresholdKg: null,
+    overweightFeePerKg: 0,
+    feeTiers: [{ minWeightKg: 1, maxWeightKg: 3, minInclusive: false, maxInclusive: true, maxLengthCm: null, maxWidthCm: null, maxHeightCm: null, baseFee: 3.5 }],
+    packagingFeeTiers: [{ minWeightKg: 0, maxWeightKg: 3, minInclusive: false, maxInclusive: true, baseFee: 1 }],
+  });
+  assert.equal(result.operationalFee, 3.5);
+  assert.equal(result.packagingFee, 0);
+  assert.equal(result.fee, 3.5);
+});

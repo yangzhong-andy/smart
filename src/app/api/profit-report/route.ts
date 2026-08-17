@@ -515,6 +515,7 @@ export async function GET(request: NextRequest) {
         include: {
           warehouse: { select: { name: true } },
           feeTiers: { orderBy: [{ maxWeightKg: "asc" }, { baseFee: "asc" }] },
+          packagingFeeTiers: { orderBy: [{ maxWeightKg: "asc" }, { baseFee: "asc" }] },
         },
         orderBy: { effectiveFrom: "desc" },
       }),
@@ -1051,8 +1052,13 @@ export async function GET(request: NextRequest) {
         : "FLAT_UNIT";
       const volumetricDivisor = Math.max(1, rule?.volumetricDivisor || 6000);
       const volumetricWeightKg = physical.volumeCm3 / volumetricDivisor;
-      // Panlian's quote uses actual weight; dimensions only promote the tier.
-      const chargeableWeightKg = physical.actualWeightKg;
+      // Providers choose their own chargeable-weight basis.环球 uses the
+      // larger of summed actual weight and summed product volume / divisor;
+      // Panlian's current quote uses actual weight and dimensions only
+      // promote a tier.
+      const chargeableWeightKg = rule?.useVolumetricWeight
+        ? Math.max(physical.actualWeightKg, volumetricWeightKg)
+        : physical.actualWeightKg;
       // Panlian promotes a parcel by the largest product dimensions. Do not
       // turn repeated units of one SKU into a taller virtual package by
       // dividing the order's summed volume by one item's footprint; e.g.
@@ -1074,6 +1080,15 @@ export async function GET(request: NextRequest) {
             distinctSkuCount,
             overweightThresholdKg: rule.overweightThresholdKg == null ? null : number(rule.overweightThresholdKg),
             overweightFeePerKg: number(rule.overweightFeePerKg),
+            packagingFeeTiers: rule.packagingFeeTiers.map((tier) => ({
+              minWeightKg: tier.minWeightKg == null ? null : number(tier.minWeightKg),
+              maxWeightKg: tier.maxWeightKg == null ? null : number(tier.maxWeightKg),
+              minInclusive: tier.minInclusive,
+              maxInclusive: tier.maxInclusive,
+              baseFee: number(tier.baseFee),
+            })),
+            oversizeThresholdCm: rule.oversizeThresholdCm == null ? null : number(rule.oversizeThresholdCm),
+            oversizeFee: number(rule.oversizeFee),
             feeTiers: rule.feeTiers.map((tier) => ({
               minWeightKg: tier.minWeightKg == null ? null : number(tier.minWeightKg),
               maxWeightKg: tier.maxWeightKg == null ? null : number(tier.maxWeightKg),
@@ -1093,7 +1108,7 @@ export async function GET(request: NextRequest) {
         currency: rule?.currency || null,
         covered: Boolean(mapping && rule && feeResult.covered && (!requiresPhysicalData || physical.covered)),
         warehouseId: mapping?.warehouseId || null,
-        warehouseName: rule?.warehouse.name || (tiktokWarehouseId ? `Warehouse ${tiktokWarehouseId}` : "Unknown warehouse"),
+        warehouseName: rule?.warehouse.name || "未配置切仓规则",
         chargeableWeightKg,
         tiktokWarehouseId,
         mappingStatus: resolution.status,

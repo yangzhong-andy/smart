@@ -8,7 +8,7 @@ test("extracts the order warehouse id from TikTok payloads", () => {
   assert.equal(extractTikTokWarehouseId({}), null);
 });
 
-test("resolves by TikTok warehouse id rather than shop id", () => {
+test("uses the source warehouse id only when no shop switch context is available", () => {
   const resolve = createWarehouseResolver([
     { tiktokWarehouseId: "WH-1", tiktokShopId: "shop-a", warehouseId: "erp-globe" },
     { tiktokWarehouseId: "WH-2", tiktokShopId: null, warehouseId: "erp-panlian" },
@@ -38,17 +38,18 @@ test("effective switch history supports repeated provider changes without rewrit
   const resolve = createWarehouseResolver(
     [{ tiktokWarehouseId: "WH-BR", warehouseId: "panlian" }],
     [
+      { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "WH-BR", warehouseId: "panlian", effectiveFrom: "2026-06-01T03:00:00.000Z" },
       { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "WH-BR", warehouseId: "hqst", effectiveFrom: "2026-07-01T03:00:00.000Z" },
       { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "WH-BR", warehouseId: "panlian", effectiveFrom: "2026-07-15T03:00:00.000Z" },
       { platform: "TIKTOK", region: "BR", shopId: "shop-a", externalWarehouseId: "WH-BR", warehouseId: "hqst", effectiveFrom: "2026-08-01T03:00:00.000Z" },
     ],
   );
 
-  assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-a", "2026-06-30T23:59:59.000Z", "TIKTOK", "BR").warehouseId, "panlian");
-  assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-a", "2026-07-01T03:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
-  assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-a", "2026-07-20T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "panlian");
-  assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-a", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
-  assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "panlian");
+  assert.equal(resolve({ warehouse_id: "WH-CHANGED-1" }, "shop-a", "2026-06-30T23:59:59.000Z", "TIKTOK", "BR").warehouseId, "panlian");
+  assert.equal(resolve({ warehouse_id: "WH-CHANGED-2" }, "shop-a", "2026-07-01T03:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
+  assert.equal(resolve({ warehouse_id: "WH-CHANGED-3" }, "shop-a", "2026-07-20T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "panlian");
+  assert.equal(resolve({}, "shop-a", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
+  assert.equal(resolve({ warehouse_id: "WH-BR" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").status, "unmapped");
 });
 
 test("shop-wide internal switches ignore changing or missing platform warehouse ids", () => {
@@ -64,7 +65,7 @@ test("shop-wide internal switches ignore changing or missing platform warehouse 
   assert.equal(resolve({ warehouse_id: "NEW-ID-1" }, "shop-a", "2026-07-10T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
   assert.equal(resolve({ warehouse_id: "NEW-ID-2" }, "shop-a", "2026-07-20T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "panlian");
   assert.equal(resolve({}, "shop-a", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "hqst");
-  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").warehouseId, "legacy");
+  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-b", "2026-08-09T12:00:00.000Z", "TIKTOK", "BR").status, "unmapped");
 });
 
 test("first new-warehouse order is the exact boundary on a mixed switch day", () => {
@@ -81,8 +82,8 @@ test("first new-warehouse order is the exact boundary on a mixed switch day", ()
     }],
   );
 
-  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-a", "2026-08-13T14:29:59.999Z", "TIKTOK", "BR", "585500000000000199").warehouseId, "old-warehouse");
-  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-a", "2026-08-13T14:30:00.000Z", "TIKTOK", "BR", "585500000000000199").warehouseId, "old-warehouse");
+  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-a", "2026-08-13T14:29:59.999Z", "TIKTOK", "BR", "585500000000000199").status, "unmapped");
+  assert.equal(resolve({ warehouse_id: "OLD-ID" }, "shop-a", "2026-08-13T14:30:00.000Z", "TIKTOK", "BR", "585500000000000199").status, "unmapped");
   assert.equal(resolve({ warehouse_id: "NEW-ID" }, "shop-a", "2026-08-13T14:30:00.000Z", "TIKTOK", "BR", "585500000000000200").warehouseId, "new-warehouse");
   assert.equal(resolve({}, "shop-a", "2026-08-13T14:30:00.001Z", "TIKTOK", "BR", "585500000000000201").warehouseId, "new-warehouse");
 });

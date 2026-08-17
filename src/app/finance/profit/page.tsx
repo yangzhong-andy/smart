@@ -357,10 +357,7 @@ function OrderComponentSections({
                       : <div className="tabular-nums text-slate-300">{group.key === "GMV" ? "未计入" : money(0)}</div>}
                   </div>
                   {group.key === "WAREHOUSE_FULFILLMENT" && (
-                    <>
-                      <div className="mt-1 break-words text-[10px] leading-4 text-slate-500" title={order.warehouseName}>{order.warehouseName}</div>
-                      {order.tiktokWarehouseId && <div className="break-all text-[9px] text-slate-600" title={`TikTok ${order.tiktokWarehouseId}`}>TikTok {order.tiktokWarehouseId}</div>}
-                    </>
+                    <div className="mt-1 break-words text-[10px] leading-4 text-slate-500" title={order.warehouseName}>{order.warehouseName}</div>
                   )}
                 </div>
               );

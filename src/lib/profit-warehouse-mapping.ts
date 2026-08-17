@@ -63,10 +63,12 @@ export function createWarehouseResolver(
 
   const normalizedSwitches = switchRules.flatMap((rule) => {
     const effectiveFrom = new Date(rule.effectiveFrom);
-    const externalWarehouseId = String(rule.externalWarehouseId ?? "").trim();
     const warehouseId = String(rule.warehouseId ?? "").trim();
-    if (!externalWarehouseId || !warehouseId || Number.isNaN(effectiveFrom.getTime())) return [];
-    return [{ ...rule, externalWarehouseId, warehouseId, effectiveFrom }];
+    if (!warehouseId || Number.isNaN(effectiveFrom.getTime())) return [];
+    // Platform warehouse IDs can change whenever a shop changes its shipping
+    // warehouse. Profit attribution is intentionally driven by the internal
+    // shop switch history, not by that volatile source value.
+    return [{ ...rule, warehouseId, effectiveFrom }];
   }).sort((left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime());
 
   return (
@@ -84,7 +86,6 @@ export function createWarehouseResolver(
         if (
           rule.platform !== platform
           || rule.shopId !== shopId
-          || (rule.externalWarehouseId !== "*" && rule.externalWarehouseId !== tiktokWarehouseId)
           || (region && rule.region !== region)
         ) return false;
 
@@ -107,6 +108,15 @@ export function createWarehouseResolver(
       }
     }
 
+    // Do not infer profit warehouse ownership from TikTok's warehouse ID.
+    // Orders outside the maintained switch history stay explicitly unmapped
+    // so a missing rule cannot silently allocate costs to the wrong warehouse.
+    if (shopId && orderTime && !Number.isNaN(orderTime.getTime())) {
+      return { tiktokWarehouseId, warehouseId: null, mapping: null, status: "unmapped" };
+    }
+
+    // Retain the legacy source-ID fallback only for callers that do not have
+    // a shop/date context. Profit and replenishment callers always provide it.
     if (!tiktokWarehouseId) {
       return { tiktokWarehouseId: null, warehouseId: null, mapping: null, status: "missing_id" };
     }
