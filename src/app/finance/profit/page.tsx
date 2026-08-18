@@ -111,10 +111,10 @@ function originalSummary(amounts: Record<string, number> | undefined) {
     .join(" + ");
 }
 
-function originalAverage(amounts: Record<string, number> | undefined, units: number) {
-  if (units <= 0) return "-";
+function originalAverage(amounts: Record<string, number> | undefined, orders: number) {
+  if (orders <= 0) return "-";
   const averages = Object.fromEntries(
-    Object.entries(amounts || {}).map(([currency, amount]) => [currency, amount / units]),
+    Object.entries(amounts || {}).map(([currency, amount]) => [currency, amount / orders]),
   );
   return originalSummary(averages) || "-";
 }
@@ -1134,7 +1134,7 @@ export default function ProfitPage() {
                   <thead className="text-xs text-slate-500">
                     <tr className="border-b border-slate-800">
                       <th className="px-3 py-3 text-left font-medium">周期</th>
-                      <th className="px-3 py-3 text-right font-medium">订单 / 销售件 / 实物件 / 均件客单价</th>
+                      <th className="px-3 py-3 text-right font-medium">订单 / 销售件 / 实物件 / 平均客单价</th>
                       {componentGroups.map((group) => <th key={group.key} className="px-3 py-3 text-right font-medium">{group.label}</th>)}
                       <th className="px-3 py-3 text-right font-medium">贡献利润</th>
                       <th className="px-3 py-3 text-right font-medium">利润率</th>
@@ -1153,7 +1153,7 @@ export default function ProfitPage() {
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
                           <div>{row.orderCount.toLocaleString()} / {row.units.toLocaleString()} / {row.internalUnits.toLocaleString()}</div>
-                          <div className="mt-0.5 text-[11px] font-normal text-slate-500">均件客单价 {originalAverage(row.originalAmounts?.gmv, row.units)}</div>
+                          <div className="mt-0.5 text-[11px] font-normal text-slate-500">平均客单价 {originalAverage(row.originalAmounts?.gmv, row.orderCount)}</div>
                         </td>
                           <MetricCells row={row} groups={componentGroups} />
                       </tr>
