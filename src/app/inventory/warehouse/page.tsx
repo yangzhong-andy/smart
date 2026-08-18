@@ -337,8 +337,8 @@ export default function WarehouseInventoryPage() {
             iconColor="text-cyan-400"
           />
           <StatCard
-            title="历史台账出库"
-            value={totalStats.outboundQty.toLocaleString("en-US")}
+            title="真实累计出库"
+            value={isAuditLoading ? "..." : (overseasStockAudit?.summary.trueOutboundUnits || 0).toLocaleString("en-US")}
             icon={Package}
             iconColor="text-rose-400"
           />

@@ -44,7 +44,7 @@ export async function buildOverseasStockAudit(prisma: PrismaClient) {
     orderBy: { name: "asc" },
   });
   const warehouseIds = warehouses.map((warehouse) => warehouse.id);
-  const [stocks, deductions, profitMappings, legacyMappings, rules, orders, manualSampleCosts] = await Promise.all([
+  const [stocks, deductions, rebuildBaselines, profitMappings, legacyMappings, rules, orders, manualSampleCosts] = await Promise.all([
     prisma.stock.findMany({
       where: { warehouseId: { in: warehouseIds } },
       select: {
@@ -58,6 +58,14 @@ export async function buildOverseasStockAudit(prisma: PrismaClient) {
       by: ["warehouseId", "variantId"],
       where: { warehouseId: { in: warehouseIds }, status: "deducted" },
       _sum: { qty: true },
+    }),
+    prisma.stockLog.findMany({
+      where: {
+        warehouseId: { in: warehouseIds },
+        relatedOrderType: "PROFIT_ORDER_STOCK_BASELINE",
+      },
+      select: { warehouseId: true, variantId: true, qtyAfter: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
     }),
     prisma.profitSkuMapping.findMany({
       where: { platform: "TIKTOK", enabled: true },
@@ -139,6 +147,11 @@ export async function buildOverseasStockAudit(prisma: PrismaClient) {
 
   const stockByKey = new Map(stocks.map((stock) => [`${stock.warehouseId}\u0000${stock.variantId}`, stock]));
   const legacyByKey = new Map(deductions.map((row) => [`${row.warehouseId}\u0000${row.variantId}`, Number(row._sum.qty || 0)]));
+  const rebuildBaselineByKey = new Map<string, number>();
+  for (const baseline of rebuildBaselines) {
+    const key = `${baseline.warehouseId}\u0000${baseline.variantId}`;
+    if (!rebuildBaselineByKey.has(key)) rebuildBaselineByKey.set(key, Number(baseline.qtyAfter));
+  }
   const allKeys = new Set([...stockByKey.keys(), ...auditRows.keys()]);
   const warehouseRows = new Map<string, any[]>();
   for (const key of allKeys) {
@@ -150,10 +163,10 @@ export async function buildOverseasStockAudit(prisma: PrismaClient) {
     const salesUnits = audit?.salesUnits || 0;
     const sampleUnits = audit?.sampleUnits || 0;
     const trueOutboundUnits = salesUnits + sampleUnits;
-    // Existing overseas balances were established before formal post-opening
-    // inbound. Adding legacy deductions reconstructs the approved opening
-    // balance without changing it.
-    const openingQty = currentQty + legacyOutboundUnits;
+    // Once the real-order rebuild has been approved, preserve its opening
+    // baseline. Before that one-time event, derive the legacy opening from
+    // the current balance plus the former TikTok deduction total.
+    const openingQty = rebuildBaselineByKey.get(key) ?? currentQty + legacyOutboundUnits;
     const expectedQty = openingQty - trueOutboundUnits;
     const row = {
       warehouseId,
