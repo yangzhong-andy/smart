@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship, ClipboardCheck, ShieldAlert, WalletCards, X } from "lucide-react";
+import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship, ClipboardCheck, ShieldAlert, WalletCards, X, Gift } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
@@ -56,6 +56,47 @@ type Warehouse = {
   location?: string;
 };
 
+type OverseasStockAuditRow = {
+  warehouseId: string;
+  variantId: string;
+  openingQty: number;
+  currentQty: number;
+  salesUnits: number;
+  sampleUnits: number;
+  trueOutboundUnits: number;
+  legacyOutboundUnits: number;
+  expectedQty: number;
+  differenceQty: number;
+};
+
+type OverseasStockAudit = {
+  summary: {
+    openingQty: number;
+    currentQty: number;
+    salesUnits: number;
+    sampleUnits: number;
+    trueOutboundUnits: number;
+    legacyOutboundUnits: number;
+    expectedQty: number;
+    differenceQty: number;
+  };
+  warehouses: Array<{
+    id: string;
+    salesOrderCount: number;
+    sampleOrderCount: number;
+    openingQty: number;
+    currentQty: number;
+    salesUnits: number;
+    sampleUnits: number;
+    trueOutboundUnits: number;
+    legacyOutboundUnits: number;
+    expectedQty: number;
+    differenceQty: number;
+    rows: OverseasStockAuditRow[];
+  }>;
+  coverage: { missingWarehouseOrders: number; missingSkuOrders: number };
+};
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function WarehouseInventoryPage() {
@@ -91,6 +132,19 @@ export default function WarehouseInventoryPage() {
   const stocks = Array.isArray(stocksRaw) 
     ? stocksRaw 
     : (stocksRaw as any)?.data || [];
+  const { data: overseasStockAudit, isLoading: isAuditLoading } = useSWR<OverseasStockAudit>(
+    "/api/inventory/overseas-stock-audit",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
+  const auditWarehouseById = useMemo(
+    () => new Map((overseasStockAudit?.warehouses || []).map((warehouse) => [warehouse.id, warehouse])),
+    [overseasStockAudit]
+  );
+  const auditRowByStockKey = useMemo(
+    () => new Map((overseasStockAudit?.warehouses || []).flatMap((warehouse) => warehouse.rows.map((row) => [`${row.warehouseId}_${row.variantId}`, row]))),
+    [overseasStockAudit]
+  );
   const { data: fundData } = useSWR<{
     accounts: Array<{ warehouseId: string; warehouseName: string; currency: string; balance: number; totalCredit: number; totalDebit: number }>;
     entries: Array<{ id: string; warehouseName: string; currency: string; entryType: string; amount: number; balanceAfter: number; occurredAt: string; notes?: string | null }>;
@@ -251,7 +305,7 @@ export default function WarehouseInventoryPage() {
 
       <div className="p-6 space-y-6">
         {/* 统计卡片 */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <StatCard
             title="海外仓数量"
             value={totalStats.overseasWarehouses}
@@ -283,19 +337,34 @@ export default function WarehouseInventoryPage() {
             iconColor="text-cyan-400"
           />
           <StatCard
-            title="有效累计出库"
+            title="历史台账出库"
             value={totalStats.outboundQty.toLocaleString("en-US")}
             icon={Package}
             iconColor="text-rose-400"
           />
+          <StatCard
+            title="达人寄样出库"
+            value={isAuditLoading ? "..." : (overseasStockAudit?.summary.sampleUnits || 0).toLocaleString("en-US")}
+            icon={Gift}
+            iconColor="text-pink-400"
+          />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-5">
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">历史期初库存</div><div className="mt-1 text-xl font-semibold tabular-nums text-slate-100">{totalStats.openingQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">来自首笔出库前余额或正式盘点</div></div>
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">期后正式入库</div><div className="mt-1 text-xl font-semibold tabular-nums text-emerald-300">+{totalStats.inboundQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">不再重复计算历史到仓批次</div></div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">有效订单出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-rose-300">-{totalStats.outboundQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">已扣除取消订单回补</div></div>
-          <div className={`rounded-lg border p-4 ${totalStats.differenceQty === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="text-xs text-slate-400">账面差异</div><div className={`mt-1 text-xl font-semibold tabular-nums ${totalStats.differenceQty === 0 ? "text-emerald-300" : "text-amber-300"}`}>{totalStats.differenceQty > 0 ? "+" : ""}{totalStats.differenceQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-400">期初 + 入库 - 有效出库 = 当前库存</div></div>
+          <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 p-4"><div className="text-xs text-slate-400">真实销售订单出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-sky-200">-{isAuditLoading ? "..." : (overseasStockAudit?.summary.salesUnits || 0).toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">利润核算的有效订单，组合 SKU 已拆分</div></div>
+          <div className="rounded-lg border border-pink-500/25 bg-pink-500/5 p-4"><div className="text-xs text-slate-400">达人寄样出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-pink-200">-{isAuditLoading ? "..." : (overseasStockAudit?.summary.sampleUnits || 0).toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">免费样品单独扣库存，不混入销售</div></div>
+          <div className={`rounded-lg border p-4 ${(overseasStockAudit?.summary.differenceQty || 0) === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="text-xs text-slate-400">真实库存审计差异</div><div className={`mt-1 text-xl font-semibold tabular-nums ${(overseasStockAudit?.summary.differenceQty || 0) === 0 ? "text-emerald-300" : "text-amber-300"}`}>{isAuditLoading ? "..." : `${(overseasStockAudit?.summary.differenceQty || 0) > 0 ? "+" : ""}${(overseasStockAudit?.summary.differenceQty || 0).toLocaleString("en-US")}`}</div><div className="mt-1 text-xs text-slate-400">当前余额 - 真实期初扣真实出库；仅审计，不自动改库存</div></div>
         </div>
+
+        {overseasStockAudit && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm text-slate-300">
+            <span className="font-medium text-amber-200">海外仓真实订单审计：</span>
+            期初 {overseasStockAudit.summary.openingQty.toLocaleString("en-US")} - 销售 {overseasStockAudit.summary.salesUnits.toLocaleString("en-US")} - 达人寄样 {overseasStockAudit.summary.sampleUnits.toLocaleString("en-US")} = 应有库存 {overseasStockAudit.summary.expectedQty.toLocaleString("en-US")}，当前账面 {overseasStockAudit.summary.currentQty.toLocaleString("en-US")}。
+            {overseasStockAudit.coverage.missingWarehouseOrders + overseasStockAudit.coverage.missingSkuOrders > 0 && <span className="ml-2 text-amber-300">另有 {overseasStockAudit.coverage.missingWarehouseOrders + overseasStockAudit.coverage.missingSkuOrders} 笔订单待补充映射。</span>}
+          </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
@@ -341,6 +410,7 @@ export default function WarehouseInventoryPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {warehouseStats.map((stat) => {
             const isExpanded = expandedWarehouse === stat.warehouse.id;
+            const audit = auditWarehouseById.get(stat.warehouse.id);
             return (
               <div
                 key={stat.warehouse.id}
@@ -383,6 +453,13 @@ export default function WarehouseInventoryPage() {
                     <div className="text-lg font-semibold text-emerald-400">{stat.availableQty.toLocaleString("en-US")}</div>
                   </div>
                 </div>
+                {stat.warehouse.type === "OVERSEAS" && audit && (
+                  <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-700/50 pt-3 text-xs">
+                    <div><div className="text-slate-500">真实销售出库</div><div className="mt-0.5 font-semibold tabular-nums text-sky-300">{audit.salesUnits.toLocaleString("en-US")} 件 / {audit.salesOrderCount.toLocaleString("en-US")} 单</div></div>
+                    <div><div className="text-slate-500">达人寄样出库</div><div className="mt-0.5 font-semibold tabular-nums text-pink-300">{audit.sampleUnits.toLocaleString("en-US")} 件 / {audit.sampleOrderCount.toLocaleString("en-US")} 单</div></div>
+                    <div><div className="text-slate-500">应有库存 / 差异</div><div className={audit.differenceQty === 0 ? "mt-0.5 font-semibold tabular-nums text-emerald-300" : "mt-0.5 font-semibold tabular-nums text-amber-300"}>{audit.expectedQty.toLocaleString("en-US")} / {audit.differenceQty > 0 ? "+" : ""}{audit.differenceQty.toLocaleString("en-US")}</div></div>
+                  </div>
+                )}
                 {isExpanded && (
                   <div className="mt-3 pt-3 border-t border-slate-700/50">
                     <table className="w-full text-xs">
@@ -391,7 +468,8 @@ export default function WarehouseInventoryPage() {
                           <th className="pb-1 pr-2 text-left">SKU</th>
                           <th className="pb-1 pr-2 text-left">产品</th>
                           <th className="pb-1 pr-2 text-right">库内库存</th>
-                          <th className="pb-1 pr-2 text-right">TikTok出库</th>
+                          <th className="pb-1 pr-2 text-right">销售出库</th>
+                          <th className="pb-1 pr-2 text-right">达人寄样</th>
                           <th className="pb-1 text-right">可用</th>
                         </tr>
                       </thead>
@@ -399,15 +477,19 @@ export default function WarehouseInventoryPage() {
                         {stat.items
                           .slice()
                           .sort((a: StockItem, b: StockItem) => (b.availableQty || 0) - (a.availableQty || 0))
-                          .map((item: StockItem) => (
+                          .map((item: StockItem) => {
+                            const itemAudit = auditRowByStockKey.get(`${item.warehouseId}_${item.variantId}`);
+                            return (
                           <tr key={item.id} className="border-b border-slate-700/20">
                             <td className="py-1.5 pr-2 font-mono text-slate-300">{item.skuId}</td>
                             <td className="py-1.5 pr-2 text-slate-400 truncate max-w-24">{item.productName}</td>
                             <td className="py-1.5 pr-2 text-right text-slate-200">{item.qty?.toLocaleString("en-US") || 0}</td>
-                            <td className="py-1.5 pr-2 text-right text-rose-400">{(item.tiktokDeducted || 0).toLocaleString("en-US")}</td>
+                            <td className="py-1.5 pr-2 text-right text-sky-300">{(itemAudit?.salesUnits || 0).toLocaleString("en-US")}</td>
+                            <td className="py-1.5 pr-2 text-right text-pink-300">{(itemAudit?.sampleUnits || 0).toLocaleString("en-US")}</td>
                             <td className="py-1.5 text-right text-emerald-400">{item.availableQty?.toLocaleString("en-US") || 0}</td>
                           </tr>
-                        ))}
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
