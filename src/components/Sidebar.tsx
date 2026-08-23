@@ -123,6 +123,7 @@ import {
   Building2,
   GripVertical,
   Shield,
+  ClipboardCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
