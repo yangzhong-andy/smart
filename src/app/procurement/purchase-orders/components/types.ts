@@ -45,6 +45,9 @@ export type DeliveryOrderForDetail = {
   domesticTrackingNumber?: string;
   tailAmount: number;
   tailPaid: number;
+  actualTailPaid?: number;
+  depositDeduction?: number;
+  settlementCoverage?: number;
   tailDueDate?: string;
 };
 

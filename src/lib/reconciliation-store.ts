@@ -67,7 +67,40 @@ export type MonthlyBill = {
   
   // 备注
   notes?: string; // 备注信息
+  procurementPaymentCoverage?: import("./procurement-payment-coverage").ProcurementPaymentCoverage;
+  actualPaidAmount?: number;
+  depositDeductionAmount?: number;
 };
+
+/** Amount that should actually move through the cashier for this bill. */
+export function getMonthlyBillPaymentAmount(
+  bill: Pick<MonthlyBill, "billType" | "totalAmount" | "netAmount">
+): number {
+  return bill.billType === "工厂订单" || bill.billType === "物流" || bill.billType === "广告返点"
+    ? Number(bill.netAmount || 0)
+    : Number(bill.totalAmount || 0);
+}
+
+/** Amount already covered by cash payments and deposit deductions. */
+export function getMonthlyBillSettledAmount(
+  bill: Pick<
+    MonthlyBill,
+    "billType" | "status" | "totalAmount" | "offsetAmount" | "actualPaidAmount" | "depositDeductionAmount"
+  >
+): number {
+  if (bill.billType !== "工厂订单") {
+    return bill.status === "Paid" ? Number(bill.totalAmount || 0) : 0;
+  }
+
+  const actualPaid = Number(bill.actualPaidAmount || 0);
+  const depositDeduction = Number(bill.depositDeductionAmount || 0);
+  const covered = actualPaid + depositDeduction;
+  if (covered > 0) return Math.min(Number(bill.totalAmount || 0), covered);
+
+  return bill.status === "Paid"
+    ? Math.max(0, Number(bill.totalAmount || 0) - Number(bill.offsetAmount || 0))
+    : 0;
+}
 
 /**
  * 获取所有月账单
@@ -193,7 +226,8 @@ export async function updateMonthlyBill(id: string, bill: Partial<MonthlyBill>):
       body: JSON.stringify(bill),
     });
     if (!response.ok) {
-      throw new Error("Failed to update monthly bill");
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Failed to update monthly bill");
     }
     const updated = await response.json();
     // 转换日期字段为字符串

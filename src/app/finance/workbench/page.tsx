@@ -12,7 +12,7 @@ import MaintenanceView from "@/components/MaintenanceView";
 import Skeleton, { SkeletonDetail, SkeletonTable } from "@/components/ui/Skeleton";
 import Link from "next/link";
 import type { PendingEntry } from "@/lib/pending-entry-store";
-import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { getMonthlyBills, saveMonthlyBills, getBillsByStatus, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { type BankAccount, getAccountStats } from "@/lib/finance-store";
 import type { CashFlow as CashFlowType } from "@/lib/cash-flow-store";
 import { type FinanceRates } from "@/lib/exchange";
@@ -660,6 +660,16 @@ export default function FinanceWorkbenchPage() {
       toast.error("申请不存在");
       return;
     }
+    const isProcurementRequest =
+      String(request.category || "").startsWith("采购") ||
+      String(request.summary || "").startsWith("采购");
+    const hasTransferVoucher = Array.isArray(paymentVoucher)
+      ? paymentVoucher.some((item) => item.trim())
+      : Boolean(paymentVoucher.trim());
+    if (isProcurementRequest && !hasTransferVoucher) {
+      toast.error("采购付款请上传转账成功凭证");
+      return;
+    }
 
     const account = accounts.find((a) => a.id === selectedAccountId);
     if (!account) {
@@ -689,37 +699,16 @@ export default function FinanceWorkbenchPage() {
         if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
         return typeof v === "string" ? v : null;
       };
-      const paymentVoucherStr = toVoucherStr(request.voucher); // 发起时的凭证
       const transferVoucherStr = toVoucherStr(paymentVoucher);   // 财务上传的转账凭证
-      const reqDate = request.date;
-      const fallbackDate = request.createdAt || request.submittedAt || new Date().toISOString();
-      const flowDate = (reqDate != null && String(reqDate).trim() !== "") ? new Date(reqDate) : new Date(fallbackDate);
-      const dateStr = Number.isNaN(flowDate.getTime()) ? new Date(fallbackDate).toISOString().slice(0, 10) : flowDate.toISOString().slice(0, 10);
-      
-      const cashFlowData = {
-        date: dateStr,
-        summary: request.summary,
-        category: request.category,
-        type: "expense" as const,
-        amount: -request.amount, // 支出为负数
+      const response = await fetch(`/api/expense-requests/${requestId}/pay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
         accountId: selectedAccountId,
-        accountName: account.name,
-        currency: request.currency || "CNY",
-        exchangeRate: flowRate, // 付款当天输入的汇率
-        remark: request.remark || "",
-        businessNumber: ('businessNumber' in request ? request.businessNumber : null) || null,
-        relatedId: ('relatedId' in request ? request.relatedId : null) || null,
-        status: "confirmed" as const,
-        paymentVoucher: paymentVoucherStr ?? undefined,  // 发起付款时的凭证（申请单上的）
-        transferVoucher: transferVoucherStr ?? undefined, // 财务打款后的转账凭证
-        voucher: paymentVoucherStr ?? transferVoucherStr ?? undefined, // 兼容旧逻辑
-      };
-
-      // 调用 API 创建现金流
-      const response = await fetch('/api/cash-flow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cashFlowData)
+          exchangeRate: flowRate,
+          paidAt: new Date().toISOString(),
+          transferVoucher: transferVoucherStr ?? undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -733,18 +722,7 @@ export default function FinanceWorkbenchPage() {
         throw new Error(errMsg);
       }
 
-      // 获取创建的现金流ID
-      const cashFlowResult = await response.json();
-      
-      // 更新申请状态为已支付
-      await updateExpenseRequest(requestId, {
-        status: "Paid",
-        financeAccountId: selectedAccountId,
-        financeAccountName: account.name,
-        paidBy: getCurrentUserDisplayName(session),
-        paidAt: new Date().toISOString(),
-        paymentFlowId: cashFlowResult.id
-      });
+      await response.json();
 
       // 采购尾款：同步更新拿货单已付尾款与合同已付总额
       const isPurchaseTail =
@@ -752,25 +730,12 @@ export default function FinanceWorkbenchPage() {
         (request.category === "采购/采购尾款" ||
           (request.summary || "").includes("采购尾款"));
 
-      // 海外仓代发费：累加仓库充值总额
-      if ((request as any).warehouseId) {
-        try {
-          await fetch(`/api/warehouses/${(request as any).warehouseId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ rechargeAdd: request.amount }),
-          });
-        } catch (e) {
-          console.error("更新仓库充值总额失败", e);
-        }
-      }
-
       if (isPurchaseTail) {
         try {
           const payTailRes = await fetch(`/api/delivery-orders/${request.relatedId}/pay-tail`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount: request.amount }),
+            body: JSON.stringify({ expenseRequestId: requestId }),
           });
           if (!payTailRes.ok) {
             const err = await payTailRes.json().catch(() => ({}));
@@ -819,6 +784,17 @@ export default function FinanceWorkbenchPage() {
 
     const selectedRequests = approvedExpenseRequests.filter(r => batchSelectedIds.includes(r.id));
     if (selectedRequests.length !== batchSelectedIds.length) { toast.error("部分申请数据异常"); return; }
+    const containsProcurement = selectedRequests.some((request) =>
+      String(request.category || "").startsWith("采购") ||
+      String(request.summary || "").startsWith("采购")
+    );
+    const hasTransferVoucher = Array.isArray(paymentVoucher)
+      ? paymentVoucher.some((item) => item.trim())
+      : Boolean(paymentVoucher.trim());
+    if (containsProcurement && !hasTransferVoucher) {
+      toast.error("采购付款请上传转账成功凭证");
+      return;
+    }
 
     const account = accounts.find(a => a.id === selectedAccountId);
     if (!account) { toast.error("账户不存在"); return; }
@@ -843,44 +819,41 @@ export default function FinanceWorkbenchPage() {
 
     setBatchPaying(true);
     try {
-      // 为每笔申请创建独立的流水，共享同一个 businessNumber
+      // 每笔申请由服务端原子完成：流水、申请状态、仓库资金台账。
       for (const req of selectedRequests) {
-        const reqAmount = isCrossCurrency ? req.amount * flowRate : req.amount;
-
-        const cashFlowData = {
-          date: req.date || new Date().toISOString().slice(0, 10),
-          summary: req.summary || "合并付款",
-          category: req.category || "其他",
-          type: "expense" as const,
-          amount: -Math.abs(reqAmount),
-          accountId: selectedAccountId,
-          accountName: account.name,
-          currency: accountCurrency,
-          exchangeRate: isCrossCurrency ? flowRate : 1,
-          remark: `合并付款(${sharedBusinessNo})：${req.summary}`,
-          businessNumber: sharedBusinessNo,
-          status: "confirmed" as const,
-          paymentVoucher: paymentVoucher || undefined,
-          transferVoucher: undefined,
-        };
-
-        const response = await fetch('/api/cash-flow', {
+        const transferVoucher = Array.isArray(paymentVoucher)
+          ? (paymentVoucher.length ? JSON.stringify(paymentVoucher) : undefined)
+          : paymentVoucher || undefined;
+        const response = await fetch(`/api/expense-requests/${req.id}/pay`, {
           method: "POST",
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cashFlowData)
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+          accountId: selectedAccountId,
+            exchangeRate: isCrossCurrency ? flowRate : 1,
+            paidAt: new Date().toISOString(),
+          businessNumber: sharedBusinessNo,
+          transferVoucher,
+          }),
         });
-        if (!response.ok) throw new Error("创建流水失败");
-        const cashFlowResult = await response.json();
-
-        // 更新该申请为已付款
-        await updateExpenseRequest(req.id, {
-          status: "Paid",
-          financeAccountId: selectedAccountId,
-          financeAccountName: account.name,
-          paidBy: getCurrentUserDisplayName(session),
-          paidAt: new Date().toISOString(),
-          paymentFlowId: cashFlowResult.id,
-        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || "创建流水失败");
+        }
+        const isPurchaseTail =
+          req.relatedId &&
+          (req.category === "采购/采购尾款" || (req.summary || "").includes("采购尾款"));
+        if (isPurchaseTail) {
+          const payTailResponse = await fetch(`/api/delivery-orders/${req.relatedId}/pay-tail`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expenseRequestId: req.id }),
+          });
+          if (!payTailResponse.ok) {
+            const error = await payTailResponse.json().catch(() => ({}));
+            console.error(`拿货单 ${req.relatedId} 付款状态同步失败`, error);
+            toast.error(`流水已生成，但拿货单 ${req.relatedId} 状态同步失败，请勿重复付款`);
+          }
+        }
       }
 
       toast.success(`已合并付款 ${selectedRequests.length} 笔，合计 ${currency} ${totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}（单号：${sharedBusinessNo}）`);
@@ -1173,6 +1146,7 @@ export default function FinanceWorkbenchPage() {
                 size="sm"
                 onClick={() => {
                   setBatchSelectedIds([]);
+                  setPaymentVoucher("");
                   setBatchPaymentModal(true);
                 }}
               >
@@ -1223,6 +1197,7 @@ export default function FinanceWorkbenchPage() {
                         <button
                           onClick={() => {
                             setSelectedExpenseRequest(request);
+                            setPaymentVoucher("");
                             setExpenseAccountModal({ open: true, requestId: request.id });
                           }}
                           className="px-3 py-1.5 rounded-lg bg-rose-500/80 text-white hover:bg-rose-500 text-xs transition"
@@ -1351,7 +1326,7 @@ export default function FinanceWorkbenchPage() {
                         {bill.agencyName || bill.supplierName || bill.factoryName || "-"} · {bill.month}
                       </div>
                       <div className="text-xs text-slate-400 mb-1">
-                        <span className="font-medium text-slate-300">{formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency)}</span>
+                        <span className="font-medium text-slate-300">{formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency)}</span>
                       </div>
                       <div className="text-xs text-slate-500 mt-2">
                         审批时间：{formatDate(bill.approvedAt || bill.createdAt)}
@@ -1474,7 +1449,7 @@ export default function FinanceWorkbenchPage() {
                           <div className="text-xs text-slate-400 mb-1">
                             <span className="font-medium text-slate-300">{bill.billType}</span>
                             <span className="mx-2">·</span>
-                            <span className="font-medium text-slate-300">{formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency)}</span>
+                            <span className="font-medium text-slate-300">{formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency)}</span>
                           </div>
                           <div className="text-xs text-slate-500 mt-2">
                             {bill.month}
@@ -1698,13 +1673,13 @@ export default function FinanceWorkbenchPage() {
             {/* 转账凭证上传 */}
             <div className="mb-4">
               <label className="block text-sm text-slate-300 mb-2">
-                转账凭证 <span className="text-slate-500 text-xs">(可选)</span>
+                转账成功凭证 {request && (String(request.category || "").startsWith("采购") || String(request.summary || "").startsWith("采购")) ? <span className="text-rose-400">*</span> : <span className="text-slate-500 text-xs">(可选)</span>}
               </label>
               <ImageUploader
                 value={paymentVoucher}
                 onChange={(value) => setPaymentVoucher(value)}
                 multiple={true}
-                label="上传转账凭证"
+                label="上传转账成功凭证"
                 placeholder="点击上传或直接 Ctrl + V 粘贴转账凭证图片"
                 maxImages={5}
                 onError={(error) => toast.error(error)}
@@ -1868,13 +1843,13 @@ export default function FinanceWorkbenchPage() {
 
             {/* 凭证 */}
             <label className="block mb-4">
-              <span className="text-sm text-slate-300">转账凭证 <span className="text-slate-500">(可选)</span></span>
+              <span className="text-sm text-slate-300">转账成功凭证 {approvedExpenseRequests.filter((request) => batchSelectedIds.includes(request.id)).some((request) => String(request.category || "").startsWith("采购") || String(request.summary || "").startsWith("采购")) ? <span className="text-rose-400">*</span> : <span className="text-slate-500">(可选)</span>}</span>
               <div className="mt-1">
                 <ImageUploader
                   value={paymentVoucher}
                   onChange={(value) => setPaymentVoucher(value)}
                   multiple={true}
-                  label="上传转账凭证"
+                  label="上传转账成功凭证"
                   placeholder="点击上传或 Ctrl+V 粘贴"
                   maxImages={5}
                   onError={(error) => toast.error(error)}
@@ -2255,6 +2230,7 @@ export default function FinanceWorkbenchPage() {
                     setSelectedExpenseRequest(expenseDetailData as ExpenseRequest);
                     setExpenseDetailModal({ open: false, requestId: null });
                     if (expenseDetailData) {
+                      setPaymentVoucher("");
                       setExpenseAccountModal({ open: true, requestId: expenseDetailData.id });
                     }
                   }}

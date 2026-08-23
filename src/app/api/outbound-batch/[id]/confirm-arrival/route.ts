@@ -101,6 +101,7 @@ export async function PATCH(
     }
 
     const now = new Date();
+    const variantCost = await prisma.productVariant.findUnique({ where: { id: variantId }, select: { costPrice: true, currency: true } });
 
     await prisma.$transaction(async (tx) => {
       // 4. 查找或创建海外仓的 Stock 记录
@@ -174,6 +175,9 @@ export async function PATCH(
           qty,
           qtyBefore,
           qtyAfter,
+          unitCost: variantCost?.costPrice,
+          totalCost: variantCost?.costPrice ? variantCost.costPrice.mul(qty) : null,
+          currency: variantCost?.currency || "CNY",
           operationDate: now,
           relatedOrderId: batchId,
           relatedOrderType: "OutboundBatch",

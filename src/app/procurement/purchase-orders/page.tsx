@@ -39,15 +39,16 @@ import DateInput from "@/components/DateInput";
 import InventoryDistribution from "@/components/InventoryDistribution";
 import { getSpuListFromAPI, getVariantsBySpuIdFromAPI, getProductsFromAPI, upsertProduct, type Product as ProductType, type SpuListItem } from "@/lib/products-store";
 import { addInventoryMovement } from "@/lib/inventory-movements-store";
-import { getAccountsFromAPI, saveAccounts, type BankAccount } from "@/lib/finance-store";
-import { getCashFlowFromAPI, createCashFlow } from "@/lib/cash-flow-store";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
-import { renderGroupedAccountOptions } from "@/lib/account-grouped-options";
+import { hasVoucher } from "@/lib/procurement-payment-voucher";
 
 type Supplier = SupplierType;
 
 /** 尾款发起：可指定实付金额（如最后一笔扣除已付定金） */
-type HandlePaymentTailOptions = { tailPayAmount?: number };
+type HandlePaymentTailOptions = {
+  tailPayAmount?: number;
+  voucher?: string | string[];
+};
 
 // 兼容新旧产品数据结构（API 返回的每条为 SKU 变体，含 product_id 用于按原型分组）
 type Product = {
@@ -110,17 +111,6 @@ export default function PurchaseOrdersPage() {
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
   const contracts = Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []);
-  const { data: accountsRaw, mutate: mutateAccounts } = useSWR(
-    "procurement-po-accounts",
-    () => getAccountsFromAPI().then((parsed) =>
-      parsed.map((a: any) => ({
-        ...a,
-        originalBalance: a.originalBalance !== undefined ? a.originalBalance : a.balance || 0
-      }))
-    ),
-    { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true }
-  );
-  const accounts = accountsRaw ?? [];
   const { data: deliveryOrdersData, mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[] | { data: DeliveryOrder[]; pagination: unknown }>(
     "/api/delivery-orders?page=1&pageSize=500",
     fetcher,
@@ -145,7 +135,7 @@ export default function PurchaseOrdersPage() {
     trackingNumber: "",
     itemQtys: {}
   });
-  const [paymentModal, setPaymentModal] = useState<{ contractId: string | null; type: "deposit" | "tail" | null; deliveryOrderId?: string; accountId: string; tailPaymentAmount?: number }>({
+  const [paymentModal, setPaymentModal] = useState<{ contractId: string | null; type: "deposit" | "tail" | null; deliveryOrderId?: string; accountId: string; tailPaymentAmount?: number; voucher?: string | string[] }>({
     contractId: null,
     type: null,
     accountId: ""
@@ -356,12 +346,6 @@ export default function PurchaseOrdersPage() {
   }, []);
 
   const products = productsForResolve;
-
-  useEffect(() => {
-    if (accounts.length && !paymentModal.accountId) {
-      setPaymentModal((m) => ({ ...m, accountId: accounts[0].id }));
-    }
-  }, [accounts.length, paymentModal.accountId]);
 
   const selectedSupplier = useMemo(() => {
     const supplierId = form.supplierId || suppliers[0]?.id;
@@ -892,6 +876,11 @@ export default function PurchaseOrdersPage() {
         return;
       }
 
+      if (!hasVoucher(tailOptions?.voucher)) {
+        setPaymentModal({ contractId, type: "deposit", accountId: "", voucher: "" });
+        return;
+      }
+
       const depositAmount = contract.depositAmount - (contract.depositPaid || 0);
       // 从供应商档案带出工厂/供应商收款信息，便于财务打款
       const { payeeName, payeeAccount, payeeBankName } = resolveSupplierPayeeInfo(contract);
@@ -912,7 +901,9 @@ export default function PurchaseOrdersPage() {
         departmentId: undefined, // 可以从用户系统获取
         departmentName: "全球供应链部", // 可以从用户系统获取
         payeeName,
-        payeeAccount
+        payeeAccount,
+        businessNumber: contract.contractNumber,
+        voucher: tailOptions?.voucher,
       };
 
       // 创建支出申请
@@ -947,7 +938,7 @@ export default function PurchaseOrdersPage() {
       const order = deliveryOrders.find((o) => o.contractId === contractId && o.id === deliveryOrderId);
       if (!contract || !order) return;
       const displayTail = computeDeliveryOrderTailAmount(contract, order);
-      const remaining = displayTail - (Number((order as { tailPaid?: number }).tailPaid) || 0);
+      const remaining = displayTail - (Number((order as { tailPaid?: number; settlementCoverage?: number }).settlementCoverage ?? order.tailPaid) || 0);
       if (remaining <= 0) {
         toast.error("该笔尾款已付清", { icon: "⚠️" });
         return;
@@ -984,6 +975,17 @@ export default function PurchaseOrdersPage() {
       }
       const { payeeName, payeeAccount, payeeBankName } = resolveSupplierPayeeInfo(contract);
       const deliveryNumber = (order as { deliveryNumber?: string }).deliveryNumber || order.id;
+      if (!hasVoucher(tailOptions?.voucher)) {
+        setPaymentModal({
+          contractId,
+          type: "tail",
+          deliveryOrderId,
+          accountId: "",
+          tailPaymentAmount: payAmount,
+          voucher: "",
+        });
+        return;
+      }
       const newExpenseRequest: ExpenseRequest = {
         id: `temp_${Date.now()}`,
         summary: `采购尾款 - ${contract.contractNumber} - ${deliveryNumber}`,
@@ -1002,6 +1004,7 @@ export default function PurchaseOrdersPage() {
         payeeAccount,
         businessNumber: contract.contractNumber,
         relatedId: deliveryOrderId,
+        voucher: tailOptions?.voucher,
       };
       const created = await createExpenseRequest(newExpenseRequest);
       toast.success("尾款付款申请已发起，等待审批", { icon: "✅" });
@@ -1026,113 +1029,6 @@ export default function PurchaseOrdersPage() {
         window.history.replaceState({}, "", url.pathname + (url.search || ""));
       }
     }
-  };
-
-  // 确认支付
-  const confirmPayment = async () => {
-    if (!paymentModal.contractId || !paymentModal.type || !paymentModal.accountId) return;
-    const contract = contracts.find((c) => c.id === paymentModal.contractId);
-    const account = accounts.find((a) => a.id === paymentModal.accountId);
-    if (!contract || !account) {
-      toast.error("数据错误", { icon: "❌" });
-      return;
-    }
-
-    let amount = 0;
-    let relatedId: string | undefined;
-    let category = "";
-
-    if (paymentModal.type === "deposit") {
-      amount = contract.depositAmount - (contract.depositPaid || 0);
-      category = "采购货款";
-      relatedId = `${contract.id}-deposit`;
-    } else if (paymentModal.type === "tail" && paymentModal.deliveryOrderId) {
-      const contractOrders = deliveryOrders.filter((o: DeliveryOrder) => o.contractId === contract.id);
-      const order = contractOrders.find((o: DeliveryOrder) => o.id === paymentModal.deliveryOrderId);
-      if (!order) {
-        toast.error("拿货单不存在", { icon: "❌" });
-        return;
-      }
-      const displayTail = contract ? computeDeliveryOrderTailAmount(contract, order) : (order.tailAmount || 0);
-      const remaining = displayTail - (order.tailPaid || 0);
-      amount = Number(paymentModal.tailPaymentAmount);
-      if (!Number.isFinite(amount) || amount <= 0) amount = remaining;
-      if (amount > remaining) amount = remaining;
-      category = "采购货款";
-      relatedId = paymentModal.deliveryOrderId;
-    }
-
-    if (amount <= 0) {
-      toast.error("支付金额需大于 0", { icon: "⚠️" });
-      return;
-    }
-
-    const accountBalance = account.originalBalance !== undefined ? account.originalBalance : account.balance || 0;
-    if (accountBalance < amount) {
-      toast.error("账户余额不足", { icon: "⚠️" });
-      return;
-    }
-
-    // 更新账户余额
-    const updatedAccounts = accounts.map((acc) => {
-      if (acc.id === paymentModal.accountId) {
-        const currentBalance = acc.originalBalance !== undefined ? acc.originalBalance : acc.balance || 0;
-        const newBalance = currentBalance - amount;
-        if (acc.originalBalance !== undefined) {
-          return { ...acc, originalBalance: Math.max(0, newBalance) };
-        } else {
-          return { ...acc, balance: Math.max(0, newBalance) };
-        }
-      }
-      return acc;
-    });
-    await saveAccounts(updatedAccounts as BankAccount[]);
-    mutateAccounts();
-
-    // 生成收支明细（API）
-    const paymentType = paymentModal.type === "deposit" ? "支付定金" : "支付尾款";
-    await createCashFlow({
-      date: new Date().toISOString().slice(0, 10),
-      summary: `${paymentType} - ${contract.supplierName}`,
-      type: "expense",
-      category: "采购",
-      amount: -amount,
-      accountId: paymentModal.accountId,
-      accountName: account.name,
-      currency: account.currency,
-      remark: `${paymentType} - ${contract.contractNumber}`,
-      businessNumber: contract.contractNumber,
-      relatedId
-    });
-
-    // 更新合同财务信息
-    if (paymentModal.type === "deposit") {
-      contract.depositPaid = (contract.depositPaid || 0) + amount;
-    } else if (paymentModal.type === "tail" && paymentModal.deliveryOrderId) {
-      const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
-      const order = contractOrders.find((o) => o.id === paymentModal.deliveryOrderId);
-      if (order) {
-        const updatedOrder = { ...order, tailPaid: (order.tailPaid || 0) + amount, updatedAt: new Date().toISOString() };
-        const { upsertDeliveryOrder } = await import("@/lib/delivery-orders-store");
-        const { updateContractPayment } = await import("@/lib/purchase-contracts-store");
-        await upsertDeliveryOrder(updatedOrder);
-        await updateContractPayment(contract.id, amount, "tail");
-        mutateDeliveryOrders();
-      }
-    }
-    contract.totalPaid = (contract.totalPaid || 0) + amount;
-    contract.totalOwed = contract.totalAmount - contract.totalPaid;
-    if (contract.totalPaid >= contract.totalAmount) {
-      contract.status = "已结清";
-    }
-    await upsertPurchaseContract(contract);
-    mutateContracts();
-
-    setPaymentModal({ contractId: null, type: null, accountId: "" });
-    toast.success("支付成功！已自动生成收支明细并更新账户余额。", { 
-      icon: "✅", 
-      duration: 3000 
-    });
   };
 
   // 获取合同详情（包含子单列表）。优先使用单独拉取的带 items 的合同，以便展示具体 SKU 明细
@@ -1192,7 +1088,7 @@ export default function PurchaseOrdersPage() {
       if (!contract) return sum;
       if (isContractFinanciallySettled(contract)) return sum;
       const displayTail = computeDeliveryOrderTailAmount(contract, order);
-      const remaining = displayTail - (order.tailPaid || 0);
+      const remaining = displayTail - (order.settlementCoverage ?? order.tailPaid ?? 0);
       return remaining > 0 ? sum + remaining : sum;
     }, 0);
 
@@ -1609,12 +1505,10 @@ export default function PurchaseOrdersPage() {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-slate-100">
-                    {paymentModal.type === "deposit" ? "申请支付定金" : "支付尾款"}
+                    {paymentModal.type === "deposit" ? "申请支付定金" : "申请支付尾款"}
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {paymentModal.type === "deposit" 
-                      ? "将创建付款申请并推送到审批中心" 
-                      : "支付后将自动生成收支明细并更新账户余额"}
+                    将创建付款申请并推送到审批中心
                   </p>
                 </div>
               </div>
@@ -1634,15 +1528,13 @@ export default function PurchaseOrdersPage() {
                 const contractOrders = deliveryOrders.filter((o) => o.contractId === contract.id);
                 const tailOrder = paymentModal.deliveryOrderId ? contractOrders.find((o) => o.id === paymentModal.deliveryOrderId) : null;
                 const displayTailAmountForOrder = tailOrder && contract ? computeDeliveryOrderTailAmount(contract, tailOrder) : (tailOrder?.tailAmount ?? 0);
-                const tailRemaining = tailOrder ? displayTailAmountForOrder - (tailOrder.tailPaid || 0) : 0;
+                const tailRemaining = tailOrder ? displayTailAmountForOrder - (tailOrder.settlementCoverage ?? tailOrder.tailPaid ?? 0) : 0;
                 if (paymentModal.type === "deposit") {
                   amount = contract.depositAmount - (contract.depositPaid || 0);
                 } else if (paymentModal.type === "tail" && tailOrder) {
                   const raw = paymentModal.tailPaymentAmount;
                   amount = Number.isFinite(raw) && raw !== undefined ? Math.min(Math.max(0, raw), tailRemaining) : tailRemaining;
                 }
-                const account = accounts.find((a) => a.id === paymentModal.accountId);
-                
                 // 检查是否已创建定金付款申请
                 const existingRequest = paymentModal.type === "deposit" && contract
                   ? expenseRequestsList.find((r) => {
@@ -1733,48 +1625,19 @@ export default function PurchaseOrdersPage() {
                       )}
                     </div>
 
-                    {/* 账户选择（仅尾款需要） */}
-                    {paymentModal.type === "tail" && (
-                      <div className="space-y-2">
-                        <label className="block">
-                          <span className="text-sm font-medium text-slate-300 mb-2 block">选择支付账户</span>
-                          <select
-                            value={paymentModal.accountId}
-                            onChange={(e) => setPaymentModal((m) => ({ ...m, accountId: e.target.value }))}
-                            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-100 outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-400/30 transition-all"
-                            required
-                          >
-                            <option value="">请选择账户</option>
-                            {renderGroupedAccountOptions(accounts)}
-                          </select>
-                        </label>
-                        {account && (() => {
-                          const accountBalance = account.originalBalance !== undefined ? account.originalBalance : account.balance || 0;
-                          const isInsufficient = accountBalance < amount;
-                          return (
-                            <div className={`rounded-lg border p-3 ${
-                              isInsufficient
-                                ? "border-rose-500/40 bg-rose-500/10"
-                                : "border-slate-800 bg-slate-900/60"
-                            }`}>
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-slate-400">账户余额</span>
-                                <span className={`font-medium ${
-                                  isInsufficient ? "text-rose-300" : "text-slate-100"
-                                }`}>
-                                  {currency(accountBalance, account.currency)}
-                                </span>
-                              </div>
-                              {isInsufficient && (
-                                <div className="mt-1 text-xs text-rose-300 flex items-center gap-1">
-                                  <span>⚠️</span>
-                                  <span>余额不足，无法完成支付</span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
+                    {!hasExistingDepositRequest && (
+                      <ImageUploader
+                        value={paymentModal.voucher || ""}
+                        onChange={(voucher) => setPaymentModal((modal) => ({ ...modal, voucher }))}
+                        multiple
+                        required
+                        label="发起付款凭证"
+                        placeholder="上传付款申请单、供应商账单等凭证，审批中心将显示同一份凭证"
+                        maxImages={5}
+                        maxSizeKB={350}
+                        acceptPdf
+                        onError={(error) => toast.error(error)}
+                      />
                     )}
 
                     {/* 提示信息（仅定金） */}
@@ -1837,32 +1700,26 @@ export default function PurchaseOrdersPage() {
                       >
                         取消
                       </button>
-                      {paymentModal.type === "deposit" ? (
-                        <button
-                          onClick={() => {
-                            handlePayment(paymentModal.contractId!, "deposit");
-                            // 注意：handlePayment 内部会关闭模态框，这里不需要重复关闭
-                          }}
-                          disabled={hasExistingDepositRequest}
+                      <button
+                          onClick={() => handlePayment(
+                            paymentModal.contractId!,
+                            paymentModal.type!,
+                            paymentModal.deliveryOrderId,
+                            {
+                              tailPayAmount: paymentModal.tailPaymentAmount,
+                              voucher: paymentModal.voucher,
+                            },
+                          )}
+                          disabled={hasExistingDepositRequest || !hasVoucher(paymentModal.voucher)}
                           className={`rounded-lg px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all flex items-center gap-2 ${
-                            hasExistingDepositRequest
+                            hasExistingDepositRequest || !hasVoucher(paymentModal.voucher)
                               ? "bg-slate-600 cursor-not-allowed opacity-50"
                               : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:translate-y-px"
                           }`}
                         >
                           <Wallet className="h-4 w-4" />
-                          {hasExistingDepositRequest ? "申请已存在" : "创建付款申请"}
+                          {hasExistingDepositRequest ? "申请已存在" : "发起付款审批"}
                         </button>
-                      ) : (
-                        <button
-                          onClick={confirmPayment}
-                          disabled={!paymentModal.accountId || (account ? (account.originalBalance !== undefined ? account.originalBalance : account.balance || 0) < amount : true)}
-                          className="rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 px-6 py-2.5 text-sm font-medium text-white shadow-lg hover:from-primary-600 hover:to-primary-700 active:translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-primary-500 disabled:hover:to-primary-600 flex items-center gap-2"
-                        >
-                          <Wallet className="h-4 w-4" />
-                          确认支付
-                        </button>
-                      )}
                     </div>
                   </>
                 );

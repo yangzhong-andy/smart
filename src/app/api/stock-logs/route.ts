@@ -85,38 +85,9 @@ export async function GET(request: NextRequest) {
 
 // POST - 创建（清除缓存）
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const qty = Number(body.qty) || 0;
-    const qtyBefore = body.qtyBefore != null ? Number(body.qtyBefore) : (body.balance != null ? Number(body.balance) - qty : 0);
-    const qtyAfter = body.qtyAfter != null ? Number(body.qtyAfter) : (body.balance != null ? Number(body.balance) : qtyBefore + qty);
-    const log = await prisma.stockLog.create({
-      data: {
-        variantId: body.variantId,
-        warehouseId: body.warehouseId ?? "",
-        reason: (body.reason ?? "OTHER") as any,
-        movementType: (body.type ?? body.movementType ?? "OTHER") as any,
-        qty,
-        qtyBefore,
-        qtyAfter,
-        operationDate: body.operationDate ? new Date(body.operationDate) : new Date(),
-        relatedOrderId: body.relatedOrderId ?? null,
-        relatedOrderType: body.relatedOrderType ?? null,
-        notes: body.notes ?? null,
-        operator: body.operator ?? null,
-      },
-    });
-
-    // 清除库存日志缓存
-    await clearCacheByPrefix(CACHE_KEY_PREFIX);
-
-    return NextResponse.json({
-      id: log.id,
-      variantId: log.variantId,
-      type: log.movementType,
-      createdAt: log.createdAt.toISOString(),
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "创建失败" }, { status: 500 });
-  }
+  void request;
+  return NextResponse.json(
+    { error: "库存流水不能单独创建；请通过入库、出库或正式盘点操作生成" },
+    { status: 410 },
+  );
 }

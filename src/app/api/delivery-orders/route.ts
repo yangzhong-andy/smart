@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 import { DeliveryOrderStatus } from "@prisma/client";
+import { autoGenerateSupplierBills } from "@/lib/auto-generate-bills";
+import { calculateDeliveryOrderPaymentBreakdown } from "@/lib/procurement-payment-coverage";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +23,7 @@ export async function GET(request: NextRequest) {
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
+      'payment-breakdown-v2',
       contractId || 'all',
       status || 'all',
       String(page),
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
     if (contractId) where.contractId = contractId;
     if (status) where.status = status;
 
-    const [orders, total] = await prisma.$transaction([
+    const [orders, total, purchaseTailRequests] = await prisma.$transaction([
       prisma.deliveryOrder.findMany({
         where,
         select: {
@@ -47,12 +50,40 @@ export async function GET(request: NextRequest) {
           qty: true, itemQtys: true, domesticTrackingNumber: true,
           shippedDate: true, status: true, tailAmount: true, tailPaid: true,
           tailDueDate: true, createdAt: true, updatedAt: true,
+          contract: {
+            select: {
+              totalQty: true,
+              pickedQty: true,
+              depositPaid: true,
+              deliveryOrders: { select: { id: true, createdAt: true } },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.deliveryOrder.count({ where }),
+      prisma.expenseRequest.findMany({
+        where: {
+          status: "Paid",
+          OR: [
+            { category: "采购/采购尾款" },
+            { summary: { contains: "采购尾款" } },
+            { summary: { contains: "purchase tail", mode: "insensitive" } },
+          ],
+        },
+        select: {
+          id: true,
+          relatedId: true,
+          status: true,
+          summary: true,
+          category: true,
+          amount: true,
+          currency: true,
+          businessNumber: true,
+        },
+      }),
     ]);
 
     const STATUS_MAP_DB_TO_FRONT: Record<string, string> = {
@@ -64,7 +95,23 @@ export async function GET(request: NextRequest) {
     };
 
     const response = {
-      data: orders.map(o => ({
+      data: orders.map(o => {
+        const finalOrder = o.contract.pickedQty >= o.contract.totalQty
+          ? [...o.contract.deliveryOrders].sort((a, b) => {
+              const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+              return byTime || b.id.localeCompare(a.id);
+            })[0]
+          : undefined;
+        const payment = calculateDeliveryOrderPaymentBreakdown(
+          o.id,
+          o.deliveryNumber,
+          o.tailPaid,
+          o.tailAmount,
+          purchaseTailRequests.map((item) => ({ ...item, amount: Number(item.amount) })),
+          o.contract.depositPaid,
+          finalOrder?.id === o.id
+        );
+        return ({
         id: o.id,
         deliveryNumber: o.deliveryNumber,
         contractId: o.contractId || undefined,
@@ -75,11 +122,14 @@ export async function GET(request: NextRequest) {
         shippedDate: o.shippedDate?.toISOString(),
         status: STATUS_MAP_DB_TO_FRONT[o.status] || o.status,
         tailAmount: Number(o.tailAmount),
-        tailPaid: Number(o.tailPaid),
+        tailPaid: payment.actualPaidAmount,
+        settlementCoverage: payment.settlementCoverageAmount,
+        actualTailPaid: payment.actualPaidAmount,
+        depositDeduction: payment.depositDeductionAmount,
         tailDueDate: o.tailDueDate?.toISOString(),
         createdAt: o.createdAt.toISOString(),
         updatedAt: o.updatedAt.toISOString(),
-      })),
+      }); }),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 

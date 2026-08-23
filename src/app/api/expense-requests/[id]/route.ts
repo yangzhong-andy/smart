@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { clearCacheByPrefix } from '@/lib/redis';
+import { syncLogisticsMonthlyBills, syncSupplierMonthlyBills } from '@/lib/monthly-bill-sync';
 
 const EXPENSE_REQUESTS_CACHE_PREFIX = 'expense-requests';
 
@@ -75,6 +76,10 @@ export async function PUT(
 ) {
   try {
     const body = await req.json();
+    const previous = await prisma.expenseRequest.findUnique({
+      where: { id: params.id },
+      select: { status: true },
+    });
     
     const updateData: any = {};
     if (body.status !== undefined) updateData.status = body.status;
@@ -100,7 +105,8 @@ export async function PUT(
     });
 
     // 当支出申请被标记为「已支付」且为采购合同定金时，同步更新合同的财务状态
-    const isDepositPaid = body.status === 'Paid' && updated.summary && updated.summary.includes('采购合同定金');
+    const newlyPaid = body.status === 'Paid' && previous?.status !== 'Paid';
+    const isDepositPaid = newlyPaid && updated.summary && updated.summary.includes('采购合同定金');
     if (isDepositPaid) {
       const contractNumber = (updated.summary
         .replace(/^采购合同定金\s*[-\－:：]\s*/i, '')
@@ -128,6 +134,7 @@ export async function PUT(
                 updatedAt: new Date()
               }
             });
+            await syncSupplierMonthlyBills();
           }
         } catch (err) {
         }
@@ -135,7 +142,7 @@ export async function PUT(
       }
 
     // 当支出申请被标记为「已支付」时，同步更新关联的物流费状态
-    if (body.status === "Paid") {
+    if (newlyPaid) {
       try {
         // 批量更新所有关联的物流费（一个审批单可能对应多条物流费）
         await prisma.logisticsCost.updateMany({
@@ -146,12 +153,19 @@ export async function PUT(
             cashFlowId: body.paymentFlowId || null,
           }
         });
+        await syncLogisticsMonthlyBills();
       } catch (err) {
         // 静默失败，不影响支出申请更新
       }
     }
 
     await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);
+    if (
+      updated.relatedId &&
+      (updated.category === "采购/采购尾款" || updated.summary.includes("采购尾款"))
+    ) {
+      await clearCacheByPrefix("monthly-bills");
+    }
 
     return NextResponse.json({
       id: updated.id,
@@ -200,6 +214,12 @@ export async function DELETE(
       where: { id: params.id },
     });
     await clearCacheByPrefix(EXPENSE_REQUESTS_CACHE_PREFIX);
+    if (
+      existing.relatedId &&
+      (existing.category === "采购/采购尾款" || existing.summary.includes("采购尾款"))
+    ) {
+      await clearCacheByPrefix("monthly-bills");
+    }
 
     return NextResponse.json({ ok: true, id: params.id });
   } catch (error: any) {

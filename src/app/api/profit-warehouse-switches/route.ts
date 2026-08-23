@@ -6,43 +6,6 @@ import { extractTikTokWarehouseId } from "@/lib/profit-warehouse-mapping";
 
 export const dynamic = "force-dynamic";
 
-const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-function timeZoneForRegion(region: string | null | undefined): string {
-  if (region === "US") return "America/Denver";
-  if (region === "BR") return "America/Sao_Paulo";
-  return "UTC";
-}
-
-function startOfDateInTimeZone(value: string, timeZone: string): Date {
-  const [year, month, day] = value.split("-").map(Number);
-  const localMidnightAsUtc = new Date(Date.UTC(year, month - 1, day));
-  const offsetAt = (instant: Date) => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(instant);
-    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return Date.UTC(
-      Number(values.year),
-      Number(values.month) - 1,
-      Number(values.day),
-      Number(values.hour),
-      Number(values.minute),
-      Number(values.second),
-    ) - instant.getTime();
-  };
-  let instant = new Date(localMidnightAsUtc.getTime() - offsetAt(localMidnightAsUtc));
-  instant = new Date(localMidnightAsUtc.getTime() - offsetAt(instant));
-  return instant;
-}
-
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireApiUser(request);
@@ -109,10 +72,9 @@ export async function POST(request: NextRequest) {
     const shopId = String(body?.shopId || "").trim();
     const warehouseId = String(body?.warehouseId || "").trim();
     const effectiveOrderId = String(body?.effectiveOrderId || "").trim();
-    const effectiveDate = String(body?.effectiveDate || "").trim();
-    let externalWarehouseId = String(body?.externalWarehouseId || "").trim();
-    if (!shopId || !warehouseId || (!effectiveOrderId && !effectiveDate)) {
-      return NextResponse.json({ error: "请选择店铺、目标仓库，并填写首笔订单号或生效日期" }, { status: 400 });
+    const externalWarehouseId = "*";
+    if (!shopId || !warehouseId || !effectiveOrderId) {
+      return NextResponse.json({ error: "请选择店铺、目标仓库，并填写首笔新仓订单号" }, { status: 400 });
     }
 
     const [shop, warehouse, boundaryOrder] = await Promise.all([
@@ -128,22 +90,9 @@ export async function POST(request: NextRequest) {
     if (!shop) return NextResponse.json({ error: "店铺不存在" }, { status: 400 });
     if (!warehouse || warehouse.type !== "OVERSEAS") return NextResponse.json({ error: "目标海外仓不存在" }, { status: 400 });
 
-    let effectiveFrom: Date;
-    if (effectiveOrderId) {
-      if (!boundaryOrder || !boundaryOrder.createTime) return NextResponse.json({ error: "首笔新仓订单不存在或缺少下单时间" }, { status: 400 });
-      if (boundaryOrder.shopId !== shopId) return NextResponse.json({ error: "首笔新仓订单不属于所选店铺" }, { status: 400 });
-      const orderWarehouseId = extractTikTokWarehouseId(boundaryOrder.rawData);
-      if (!orderWarehouseId) return NextResponse.json({ error: "首笔新仓订单缺少仓库编号" }, { status: 400 });
-      if (externalWarehouseId && externalWarehouseId !== orderWarehouseId) {
-        return NextResponse.json({ error: `订单仓库编号为 ${orderWarehouseId}，与填写值不一致` }, { status: 400 });
-      }
-      externalWarehouseId = orderWarehouseId;
-      effectiveFrom = boundaryOrder.createTime;
-    } else {
-      if (!VALID_DATE.test(effectiveDate)) return NextResponse.json({ error: "生效日期格式无效" }, { status: 400 });
-      if (!externalWarehouseId) return NextResponse.json({ error: "按日期切换时必须填写订单仓库编号" }, { status: 400 });
-      effectiveFrom = startOfDateInTimeZone(effectiveDate, timeZoneForRegion(shop.region));
-    }
+    if (!boundaryOrder || !boundaryOrder.createTime) return NextResponse.json({ error: "首笔新仓订单不存在或缺少下单时间" }, { status: 400 });
+    if (boundaryOrder.shopId !== shopId) return NextResponse.json({ error: "首笔新仓订单不属于所选店铺" }, { status: 400 });
+    const effectiveFrom = boundaryOrder.createTime;
 
     const data = {
       region: shop.region,

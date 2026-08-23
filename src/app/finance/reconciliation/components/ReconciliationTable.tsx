@@ -2,6 +2,7 @@
 
 import { formatCurrency } from "./types";
 import type { MonthlyBill, BillStatus, BillType } from "./types";
+import { procurementPaymentCoverageLabel } from "@/lib/procurement-payment-coverage";
 
 const statusColors: Record<BillStatus, string> = {
   Draft: "bg-slate-500/20 text-slate-300 border-slate-500/40",
@@ -122,11 +123,37 @@ export function ReconciliationTable({
                     activeCategory === "Receivable" ? "income" : "expense"
                   )}
                   {bill.billType === "广告返点" && <span className="ml-1 text-xs text-slate-500">返点</span>}
+                  {bill.billType === "工厂订单" && (
+                    <div className="mt-1 space-y-0.5 text-xs font-normal">
+                      {(bill.actualPaidAmount || 0) > 0 && (
+                        <div className="text-emerald-300">拿货单已付 {formatCurrency(bill.actualPaidAmount || 0, bill.currency, "expense")}</div>
+                      )}
+                      {(bill.depositDeductionAmount || 0) > 0 && (
+                        <div className="text-cyan-300">定金抵扣 {formatCurrency(bill.depositDeductionAmount || 0, bill.currency, "expense")}</div>
+                      )}
+                      <div className={(bill.netAmount || 0) > 0.005 && bill.status !== "Paid" ? "text-rose-300" : "text-slate-500"}>
+                        待付 {formatCurrency(bill.status === "Paid" ? 0 : Math.max(0, bill.netAmount || 0), bill.currency, "expense")}
+                      </div>
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className={`px-2 py-1 rounded text-xs border ${bill.billCategory === "Receivable" && bill.status === "Paid" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors[bill.status]}`}>
-                    {bill.billCategory === "Receivable" && bill.status === "Paid" ? "已回款" : statusLabels[bill.status]}
-                  </span>
+                  {bill.status === "Paid" ? (
+                    <span className={`px-2 py-1 rounded text-xs border ${bill.billCategory === "Receivable" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors.Paid}`}>
+                      {bill.billCategory === "Receivable" ? "已回款" : "已支付"}
+                    </span>
+                  ) : bill.procurementPaymentCoverage?.blocked ? (
+                    <span
+                      className="inline-block max-w-[150px] rounded border border-blue-500/40 bg-blue-500/15 px-2 py-1 text-xs leading-5 text-blue-200"
+                      title={`已关联 ${bill.procurementPaymentCoverage.activeRequestCount} 条拿货单付款申请`}
+                    >
+                      {procurementPaymentCoverageLabel(bill.procurementPaymentCoverage)}
+                    </span>
+                  ) : (
+                    <span className={`px-2 py-1 rounded text-xs border ${statusColors[bill.status]}`}>
+                      {statusLabels[bill.status]}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-slate-300 text-xs">{bill.paidBy || bill.approvedBy || bill.financeReviewedBy || bill.createdBy}</td>
                 <td className="px-4 py-3 text-slate-400 text-xs max-w-[150px] truncate" title={bill.notes || bill.paymentRemarks || ""}>
@@ -148,13 +175,18 @@ export function ReconciliationTable({
                         返点明细
                       </button>
                     )}
-                    {bill.status === "Draft" && userRole === "dept" && (
+                    {bill.status === "Draft" && userRole === "dept" && !bill.procurementPaymentCoverage?.blocked && (
                       <button
                         onClick={() => onSubmitForApproval(bill.id)}
                         className="px-2 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-xs text-amber-100 hover:bg-amber-500/20"
                       >
                         提交给财务
                       </button>
+                    )}
+                    {bill.status === "Draft" && userRole === "dept" && bill.procurementPaymentCoverage?.blocked && (
+                      <span className="px-2 py-1 text-xs text-slate-500" title="请在已发起的拿货单付款流程中继续处理">
+                        无需重复提交
+                      </span>
                     )}
                     {bill.status === "Pending_Finance_Review" && userRole === "finance" && (
                       <>

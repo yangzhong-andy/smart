@@ -61,42 +61,43 @@ model Product {
 }
 
 model ProductVariant {
-  id                  String                      @id @default(uuid())
-  productId           String
-  skuId               String                      @unique
-  color               String?
-  size                String?
-  weightKg            Decimal?                    @db.Decimal(10, 3)
-  barcode             String?
-  costPrice           Decimal?                    @db.Decimal(18, 2)
-  stockQuantity       Int                         @default(0)
-  currency            String                      @default("CNY")
-  targetRoi           Decimal?                    @db.Decimal(5, 2)
-  lengthCm            Decimal?                    @db.Decimal(10, 2)
-  widthCm             Decimal?                    @db.Decimal(10, 2)
-  heightCm            Decimal?                    @db.Decimal(10, 2)
-  volumetricDivisor   Int?
-  atFactory           Int                         @default(0)
-  atDomestic          Int                         @default(0)
-  inTransit           Int                         @default(0)
-  platformSkuMapping  Json?
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
-  inventoryLogs       InventoryLog[]
-  movements           InventoryMovement[]
-  ownershipLedgers    InventoryOwnershipLedger[]
-  inventories         InventoryStock[]
-  outboundBatchItems  OutboundBatchItem[]
-  outboundOrders      OutboundOrder[]
-  outboundOrderItems  OutboundOrderItem[]
-  pendingInbound      PendingInbound[]
-  pendingInboundItems PendingInboundItem[]
-  product             Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  profitCalculations  ProfitCalculation[]
-  profitSkuComponents ProfitSkuMappingComponent[]
-  contractItems       PurchaseContractItem[]
-  stocks              Stock[]
-  stockLogs           StockLog[]
+  id                     String                         @id @default(uuid())
+  productId              String
+  skuId                  String                         @unique
+  color                  String?
+  size                   String?
+  weightKg               Decimal?                       @db.Decimal(10, 3)
+  barcode                String?
+  costPrice              Decimal?                       @db.Decimal(18, 2)
+  stockQuantity          Int                            @default(0)
+  currency               String                         @default("CNY")
+  targetRoi              Decimal?                       @db.Decimal(5, 2)
+  lengthCm               Decimal?                       @db.Decimal(10, 2)
+  widthCm                Decimal?                       @db.Decimal(10, 2)
+  heightCm               Decimal?                       @db.Decimal(10, 2)
+  volumetricDivisor      Int?
+  atFactory              Int                            @default(0)
+  atDomestic             Int                            @default(0)
+  inTransit              Int                            @default(0)
+  platformSkuMapping     Json?
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  inventoryLogs          InventoryLog[]
+  movements              InventoryMovement[]
+  ownershipLedgers       InventoryOwnershipLedger[]
+  inventories            InventoryStock[]
+  outboundBatchItems     OutboundBatchItem[]
+  outboundOrders         OutboundOrder[]
+  outboundOrderItems     OutboundOrderItem[]
+  pendingInbound         PendingInbound[]
+  pendingInboundItems    PendingInboundItem[]
+  product                Product                        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  profitCalculations     ProfitCalculation[]
+  profitSkuComponents    ProfitSkuMappingComponent[]
+  warehouseSkuComponents WarehouseSkuMappingComponent[]
+  contractItems          PurchaseContractItem[]
+  stocks                 Stock[]
+  stockLogs              StockLog[]
 
   @@index([productId])
   @@index([skuId])
@@ -292,10 +293,60 @@ model Warehouse {
   stockLogs         StockLog[]
   profitFeeRules    WarehouseFulfillmentRule[]
   profitSwitchRules ProfitWarehouseSwitchRule[]
+  skuMappings       WarehouseSkuMapping[]
+  fundAccounts      WarehouseFundAccount[]
+  fundEntries       WarehouseFundEntry[]
 
   @@index([code])
   @@index([location])
   @@index([type])
+}
+
+// Prepaid cash held by a warehouse. Product stock is tracked separately in
+// Stock/StockLog; this account only tracks money by original currency.
+model WarehouseFundAccount {
+  id          String               @id @default(uuid())
+  warehouseId String
+  currency    String
+  balance     Decimal              @default(0) @db.Decimal(18, 2)
+  totalCredit Decimal              @default(0) @db.Decimal(18, 2)
+  totalDebit  Decimal              @default(0) @db.Decimal(18, 2)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  warehouse   Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  entries     WarehouseFundEntry[]
+
+  @@unique([warehouseId, currency])
+  @@index([warehouseId])
+}
+
+model WarehouseFundEntry {
+  id               String                 @id @default(uuid())
+  accountId        String
+  warehouseId      String
+  currency         String
+  entryType        WarehouseFundEntryType
+  amount           Decimal                @db.Decimal(18, 2)
+  balanceBefore    Decimal                @db.Decimal(18, 2)
+  balanceAfter     Decimal                @db.Decimal(18, 2)
+  sourceType       String
+  sourceId         String
+  expenseRequestId String?
+  cashFlowId       String?
+  orderId          String?
+  occurredAt       DateTime
+  notes            String?
+  createdBy        String?
+  createdAt        DateTime               @default(now())
+  account          WarehouseFundAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  warehouse        Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceType, sourceId])
+  @@index([accountId, occurredAt])
+  @@index([warehouseId, currency, occurredAt])
+  @@index([expenseRequestId])
+  @@index([cashFlowId])
+  @@index([orderId])
 }
 
 model Stock {
@@ -348,6 +399,7 @@ model StockLog {
   relatedOrderType   String?
   relatedOrderNumber String?
   notes              String?
+  evidence           String?
   createdAt          DateTime              @default(now())
   variant            ProductVariant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
   warehouse          Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
@@ -2188,6 +2240,17 @@ enum CashFlowStatus {
   PENDING
 }
 
+enum WarehouseFundEntryType {
+  OPENING_BALANCE
+  RECHARGE
+  FULFILLMENT_DEBIT
+  STORAGE_DEBIT
+  SERVICE_DEBIT
+  REFUND
+  ADJUSTMENT
+  REVERSAL
+}
+
 enum RiskControlStatus {
   PENDING
   PASSED
@@ -2611,6 +2674,8 @@ model ProfitSkuMapping {
   platform   String                      @default("TIKTOK")
   shopId     String
   sellerSku  String
+  enabled    Boolean                     @default(true)
+  notes      String?
   createdAt  DateTime                    @default(now())
   updatedAt  DateTime                    @updatedAt
   components ProfitSkuMappingComponent[]
@@ -2629,6 +2694,39 @@ model ProfitSkuMappingComponent {
   updatedAt DateTime         @updatedAt
   mapping   ProfitSkuMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
   variant   ProductVariant   @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([mappingId, variantId])
+  @@index([variantId])
+}
+
+// A warehouse may use a different SKU code from the internal product SKU.
+// Components support warehouse-side bundle codes without changing the
+// platform seller-SKU mapping or historical inventory records.
+model WarehouseSkuMapping {
+  id           String                         @id @default(uuid())
+  warehouseId  String
+  warehouseSku String
+  enabled      Boolean                        @default(true)
+  notes        String?
+  createdAt    DateTime                       @default(now())
+  updatedAt    DateTime                       @updatedAt
+  warehouse    Warehouse                      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  components   WarehouseSkuMappingComponent[]
+
+  @@unique([warehouseId, warehouseSku])
+  @@index([warehouseId, enabled])
+  @@index([warehouseSku])
+}
+
+model WarehouseSkuMappingComponent {
+  id        String              @id @default(uuid())
+  mappingId String
+  variantId String
+  quantity  Int                 @default(1)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  mapping   WarehouseSkuMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  variant   ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
 
   @@unique([mappingId, variantId])
   @@index([variantId])

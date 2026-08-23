@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from '@/lib/redis';
+import { syncLogisticsMonthlyBills } from "@/lib/monthly-bill-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,8 @@ export async function PATCH(
         logisticsChannel: true,
       },
     });
+
+    await syncLogisticsMonthlyBills();
 
     return NextResponse.json({
       id: updated.id,
@@ -93,6 +96,8 @@ export async function DELETE(
       where: { id },
     });
 
+    await syncLogisticsMonthlyBills();
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2025") {
@@ -104,4 +109,3 @@ export async function DELETE(
     );
   }
 }
-

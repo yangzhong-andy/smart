@@ -4,17 +4,21 @@ import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import {
+  createExpenseRequest,
   getActiveTailExpenseRequests,
   findActiveTailExpenseRequestForDeliveryOrder,
+  type ExpenseRequest,
   type TailExpenseRequest,
 } from "@/lib/expense-income-request-store";
 import { type PurchaseContract } from "@/lib/purchase-contracts-store";
 import { formatCurrency } from "@/lib/currency-utils";
 import MoneyDisplay from "@/components/ui/MoneyDisplay";
-import { Truck, Search, X, Download, Eye, Package, PackageCheck, ReceiptText, Wallet } from "lucide-react";
+import { Truck, Search, X, Download, Eye, Package, PackageCheck, Receipt, ReceiptText, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
+import ImageUploader from "@/components/ImageUploader";
+import { hasVoucher } from "@/lib/procurement-payment-voucher";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -55,6 +59,7 @@ export default function DeliveryOrdersPage() {
   const [payTailConfirmOrder, setPayTailConfirmOrder] = useState<DeliveryOrder | null>(null);
   /** 本次尾款申请金额（可小于本单应付，用于最后一笔扣定金） */
   const [payTailAmountInput, setPayTailAmountInput] = useState("");
+  const [payTailVoucher, setPayTailVoucher] = useState<string | string[]>("");
   const [generatingBills, setGeneratingBills] = useState(false);
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -134,7 +139,7 @@ export default function DeliveryOrdersPage() {
       // 简单处理：直接用 tailAmount
       return sum + (o.tailAmount || 0);
     }, 0);
-    const totalTailPaid = deliveryOrders.reduce((sum, o) => sum + (o.tailPaid || 0), 0);
+    const totalTailPaid = deliveryOrders.reduce((sum, o) => sum + (o.actualTailPaid || o.tailPaid || 0), 0);
 
     return {
       totalCount,
@@ -238,7 +243,8 @@ export default function DeliveryOrdersPage() {
       "数量",
       "状态",
       "尾款金额",
-      "已付尾款",
+      "实际尾款付款",
+      "定金抵扣",
       "尾款到期日",
       "国内物流单号",
       "发货日期",
@@ -255,7 +261,8 @@ export default function DeliveryOrdersPage() {
         String(order.qty),
         order.status,
         String(formatCurrency(order.tailAmount || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
-        String(formatCurrency(order.tailPaid || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
+        String(formatCurrency(order.actualTailPaid || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
+        String(formatCurrency(order.depositDeduction || 0, "CNY", "expense") || "").replace("¥", "").replace(",", ""),
         order.tailDueDate || "-",
         order.domesticTrackingNumber || "-",
         order.shippedDate || "-",
@@ -324,9 +331,10 @@ export default function DeliveryOrdersPage() {
       return;
     }
     const displayTail = computeDeliveryOrderTailAmount(contract, order);
-    const tailRemaining = Math.max(0, displayTail - (Number(order.tailPaid) || 0));
+    const tailRemaining = Math.max(0, displayTail - (Number(order.settlementCoverage ?? order.tailPaid) || 0));
     const defaultAmt = Math.round(tailRemaining * 100) / 100;
     setPayTailAmountInput(defaultAmt > 0 ? String(defaultAmt) : "");
+    setPayTailVoucher("");
     setPayTailConfirmOrder(order);
   };
 
@@ -336,11 +344,11 @@ export default function DeliveryOrdersPage() {
     const contract = contracts.find((c) => c.id === order.contractId);
     if (!contract) return null;
     const displayTail = computeDeliveryOrderTailAmount(contract, order);
-    const tailRemaining = Math.max(0, displayTail - (Number(order.tailPaid) || 0));
+    const tailRemaining = Math.max(0, displayTail - (Number(order.settlementCoverage ?? order.tailPaid) || 0));
     const othersUnpaidCount = deliveryOrders.filter((o) => {
       if (o.contractId !== contract.id || o.id === order.id) return false;
       const dt = computeDeliveryOrderTailAmount(contract, o);
-      return dt - (Number(o.tailPaid) || 0) > 1e-6;
+      return dt - (Number(o.settlementCoverage ?? o.tailPaid) || 0) > 1e-6;
     }).length;
     const depositPaid = Number(contract.depositPaid) || 0;
     const depositAmount = Number(contract.depositAmount) || 0;
@@ -355,7 +363,7 @@ export default function DeliveryOrdersPage() {
     };
   }, [payTailConfirmOrder, contracts, deliveryOrders]);
 
-  const handleConfirmPayTail = () => {
+  const handleConfirmPayTail = async () => {
     if (!payTailConfirmOrder || payTailSubmitting) return;
     const activeTail = findActiveTailExpenseRequestForDeliveryOrder(expenseRequests, payTailConfirmOrder.id);
     if (activeTail) {
@@ -378,12 +386,41 @@ export default function DeliveryOrdersPage() {
       toast.error(`本次支付不能超过本单剩余应付 ${formatCurrency(tailRemaining, "CNY", "expense")}`);
       return;
     }
+    if (!hasVoucher(payTailVoucher)) {
+      toast.error("请上传发起付款凭证");
+      return;
+    }
     setPayTailSubmitting(true);
-    const url = new URL(window.location.origin + "/procurement/purchase-orders");
-    url.searchParams.set("payTailContractId", payTailConfirmOrder.contractId);
-    url.searchParams.set("payTailDeliveryOrderId", payTailConfirmOrder.id);
-    url.searchParams.set("payTailAmount", String(amount));
-    window.location.href = url.toString();
+    try {
+      const deliveryNumber = info.order.deliveryNumber || info.order.id;
+      const request: ExpenseRequest = {
+        id: `temp_${Date.now()}`,
+        summary: `采购尾款 - ${info.contract.contractNumber} - ${deliveryNumber}`,
+        date: new Date().toISOString().slice(0, 10),
+        category: "采购/采购尾款",
+        amount,
+        currency: "CNY",
+        status: "Pending_Approval",
+        createdBy: "当前用户",
+        createdAt: new Date().toISOString(),
+        submittedAt: new Date().toISOString(),
+        businessNumber: info.contract.contractNumber,
+        relatedId: info.order.id,
+        departmentName: "全球供应链部",
+        voucher: payTailVoucher,
+        remark: `拿货单：${deliveryNumber}\n合同：${info.contract.contractNumber}\n供应商：${info.contract.supplierName}\n本单剩余应付：${tailRemaining.toFixed(2)}\n本次申请支付：${amount.toFixed(2)}${amount < tailRemaining - 1e-6 ? "（已少于本单应付，请财务核对定金抵扣）" : ""}`,
+      };
+      await createExpenseRequest(request);
+      toast.success("尾款付款申请已发起，凭证已同步到审批中心");
+      setPayTailConfirmOrder(null);
+      setPayTailAmountInput("");
+      setPayTailVoucher("");
+      await globalMutate("procurement-delivery-expense-requests");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "发起付款失败，请重试");
+    } finally {
+      setPayTailSubmitting(false);
+    }
   };
 
   return (
@@ -573,7 +610,7 @@ export default function DeliveryOrdersPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">拿货数量（按变体）</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">状态</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">尾款金额</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">已付尾款</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">实际付款 / 定金抵扣</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">尾款到期日</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">物流单号</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">创建时间</th>
@@ -596,7 +633,10 @@ export default function DeliveryOrdersPage() {
                   const displayTailAmount = contract
                     ? computeDeliveryOrderTailAmount(contract, order)
                     : order.tailAmount;
-                  const isTailPaid = (order.tailPaid || 0) >= displayTailAmount;
+                  const settlementCoverage = Number(order.settlementCoverage ?? order.tailPaid) || 0;
+                  const isTailPaid = settlementCoverage >= displayTailAmount;
+                  const actualTailPaid = Number(order.actualTailPaid) || 0;
+                  const depositDeduction = Number(order.depositDeduction) || 0;
                   const activeTailReq = findActiveTailExpenseRequestForDeliveryOrder(expenseRequests, order.id);
 
                   return (
@@ -711,11 +751,16 @@ export default function DeliveryOrdersPage() {
                         <MoneyDisplay amount={displayTailAmount} currency="CNY" variant="highlight" />
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {isTailPaid ? (
-                          <span className="text-emerald-300">{formatCurrency(order.tailPaid, "CNY", "expense")}</span>
-                        ) : (
-                          <span className="text-amber-300">{formatCurrency(order.tailPaid || 0, "CNY", "expense")}</span>
-                        )}
+                        <div className="space-y-0.5 whitespace-nowrap">
+                          <div className={isTailPaid ? "text-emerald-300" : "text-amber-300"}>
+                            {formatCurrency(actualTailPaid, "CNY", "expense")}
+                          </div>
+                          {depositDeduction > 0 ? (
+                            <div className="text-xs text-cyan-300">
+                              抵扣 {formatCurrency(depositDeduction, "CNY", "expense")}
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-400 text-xs">
                         {order.tailDueDate ? formatDate(order.tailDueDate) : "-"}
@@ -778,6 +823,16 @@ export default function DeliveryOrdersPage() {
                               已付款
                             </span>
                           )}
+                          {actualTailPaid > 0 ? (
+                            <Link
+                              href={`/finance/cash-flow?search=${encodeURIComponent(order.deliveryNumber)}`}
+                              className="inline-flex items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-xs font-medium text-sky-100 hover:bg-sky-500/20 transition-colors whitespace-nowrap"
+                              title="查看该拿货单关联的实际付款流水"
+                            >
+                              <Receipt className="h-3 w-3" />
+                              查看流水
+                            </Link>
+                          ) : null}
                           <Link
                             href={`/procurement/purchase-orders`}
                             className="inline-flex items-center gap-1 rounded-md border border-primary-500/40 bg-primary-500/10 px-2 py-1 text-xs font-medium text-primary-100 hover:bg-primary-500/20 transition-colors"
@@ -1011,8 +1066,8 @@ export default function DeliveryOrdersPage() {
                   </span>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <span className="text-slate-400">本单已付尾款</span>
-                  <span>{formatCurrency(payTailDialogInfo.order.tailPaid || 0, "CNY", "expense")}</span>
+                  <span className="text-slate-400">本单实际尾款付款</span>
+                  <span>{formatCurrency(payTailDialogInfo.order.actualTailPaid || 0, "CNY", "expense")}</span>
                 </div>
                 <div className="flex justify-between gap-2 border-t border-slate-700/80 pt-1.5">
                   <span className="text-slate-400">本单剩余应付</span>
@@ -1074,8 +1129,20 @@ export default function DeliveryOrdersPage() {
                   placeholder="输入金额"
                 />
               </div>
+              <ImageUploader
+                value={payTailVoucher}
+                onChange={setPayTailVoucher}
+                multiple
+                required
+                label="发起付款凭证"
+                placeholder="上传付款申请单、供应商账单等凭证，审批中心将显示同一份凭证"
+                maxImages={5}
+                maxSizeKB={350}
+                acceptPdf
+                onError={(error) => toast.error(error)}
+              />
               <p className="text-xs text-slate-500">
-                确认后将跳转到采购合同页并自动发起「采购尾款」审批，金额以上方填写为准。
+                确认后将直接发起「采购尾款」审批；审批通过后由财务上传转账成功凭证并生成流水。
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-700 px-4 py-3">
@@ -1084,6 +1151,7 @@ export default function DeliveryOrdersPage() {
                 onClick={() => {
                   setPayTailConfirmOrder(null);
                   setPayTailAmountInput("");
+                  setPayTailVoucher("");
                 }}
                 className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
               >
@@ -1092,7 +1160,7 @@ export default function DeliveryOrdersPage() {
               <button
                 type="button"
                 onClick={handleConfirmPayTail}
-                disabled={payTailSubmitting}
+                disabled={payTailSubmitting || !hasVoucher(payTailVoucher)}
                 className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
               >
                 {payTailSubmitting ? "处理中…" : "确认发起"}

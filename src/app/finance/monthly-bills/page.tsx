@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo } from "react";
 import useSWR, { mutate } from "swr";
 import { FileText, Plus, Search, Eye, TrendingUp, Zap, Wallet } from "lucide-react";
 import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui";
-import { getMonthlyBills, saveMonthlyBills, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { getMonthlyBills, saveMonthlyBills, getMonthlyBillPaymentAmount, getMonthlyBillSettledAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { procurementPaymentCoverageLabel } from "@/lib/procurement-payment-coverage";
 import { formatCurrency } from "@/lib/currency-utils";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -453,72 +454,15 @@ export default function MonthlyBillsPage() {
       // 3. 生成物流月账单
       let logisticsCount = 0;
       try {
-        const logisticsRes = await fetch("/api/logistics-cost?pageSize=9999");
-        const logisticsData = logisticsRes.ok ? await logisticsRes.json() : { data: [] };
-        const logisticsCosts = Array.isArray(logisticsData?.data) ? logisticsData.data : [];
-
-        type LogisticsCostData = { id: string; costType: string; amount: number; currency: string; logisticsChannelId?: string; paymentStatus?: string; dueDate?: string; outboundBatch?: { shippedDate?: string }; createdAt: string };
-        
-        // 按物流渠道+月份分组（优先用出库发货日期）
-        const channelMap = new Map<string, { costs: LogisticsCostData[]; channelId: string; month: string }>();
-        (logisticsCosts as LogisticsCostData[]).forEach((cost: LogisticsCostData) => {
-          const channelId = cost.logisticsChannelId || '_no_channel';
-          let month = '';
-          if ((cost as any).outboundBatch?.shippedDate) {
-            const d = new Date((cost as any).outboundBatch.shippedDate);
-            month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-          } else if (cost.dueDate) {
-            month = `${new Date(cost.dueDate).getFullYear()}-${String(new Date(cost.dueDate).getMonth() + 1).padStart(2, "0")}`;
-          } else {
-            month = `${new Date(cost.createdAt).getFullYear()}-${String(new Date(cost.createdAt).getMonth() + 1).padStart(2, "0")}`;
-          }
-          const key = `${channelId}|${month}`;
-          if (!channelMap.has(key)) channelMap.set(key, { costs: [], channelId, month });
-          channelMap.get(key)!.costs.push(cost);
+        const logisticsRes = await fetch("/api/monthly-bills/sync-logistics", {
+          method: "POST",
         });
-
-        if (channelMap.size > 0) {
-          // 获取物流渠道名称
-          const channelsRes = await fetch("/api/logistics-channels?pageSize=999");
-          const channelsData = channelsRes.ok ? await channelsRes.json() : { data: [] };
-          const channels = Array.isArray(channelsData?.data) ? channelsData.data : [];
-
-          channelMap.forEach((group) => {
-            // 只生成目标月份的账单
-            if (group.month !== targetMonth) return;
-            const channelId = group.channelId;
-            const channel = channels.find((c: any) => c.id === channelId);
-            const channelName = channel?.name || "未知渠道";
-            const totalAmount = group.costs.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-            if (totalAmount <= 0) return;
-
-            // 检查是否已存在
-            const existing = existingBills.find(
-              (b) => b.billType === "物流" && b.month === targetMonth && b.notes?.includes(channelName)
-            );
-            if (existing) return;
-
-            const allPaid = group.costs.every(c => c.paymentStatus === "已付" || c.paymentStatus === "已支付");
-            const newBill: MonthlyBill = {
-              id: `bill-logistics-auto-${Date.now()}-${channelId}`,
-              month: targetMonth,
-              billCategory: "Payable",
-              billType: "物流",
-              supplierName: channelName,
-              totalAmount: totalAmount,
-              currency: (group.costs[0]?.currency || "CNY") as "USD" | "CNY" | "HKD",
-              rebateAmount: 0,
-              netAmount: totalAmount,
-              consumptionIds: [],
-              status: allPaid ? "Paid" : "Draft",
-              createdBy: "系统自动生成",
-              createdAt: new Date().toISOString(),
-              notes: `自动生成：${targetMonth}月物流月账单 - ${channelName}（${group.costs.length}笔）`
-            };
-            newBills.push(newBill);
-            logisticsCount++;
-          });
+        const logisticsData = await logisticsRes.json();
+        if (!logisticsRes.ok) {
+          throw new Error(logisticsData?.error || "物流月账单生成失败");
         }
+        logisticsCount =
+          Number(logisticsData.created || 0) + Number(logisticsData.updated || 0);
       } catch (error) {
         console.error("生成物流月账单失败", error);
       }
@@ -530,9 +474,12 @@ export default function MonthlyBillsPage() {
         mutateBills();
         
         toast.success(
-          `自动生成完成！供应商：${supplierCount}，广告：${adCount}，物流：${logisticsCount}，共 ${newBills.length} 个`,
+          `自动生成完成！供应商：${supplierCount}，广告：${adCount}，物流：${logisticsCount}`,
           { id: "auto-generate", duration: 4000 }
         );
+      } else if (logisticsCount > 0) {
+        mutateBills();
+        toast.success(`物流月账单已同步 ${logisticsCount} 条`, { id: "auto-generate" });
       } else {
         toast.success("没有需要生成的账单（可能都已存在）");
       }
@@ -861,7 +808,11 @@ export default function MonthlyBillsPage() {
                         </div>
                       )}
                       <div className={bill.billType === "广告返点" ? "text-emerald-300" : ""}>
-                        {formatCurrency(bill.billType === "广告返点" ? bill.netAmount : bill.totalAmount, bill.currency, bill.billCategory === "Receivable" ? "income" : "expense")}
+                        {formatCurrency(
+                          bill.billType === "工厂订单" ? bill.totalAmount : getMonthlyBillPaymentAmount(bill),
+                          bill.currency,
+                          bill.billCategory === "Receivable" ? "income" : "expense"
+                        )}
                         {bill.billType === "广告返点" && <span className="ml-1 text-xs text-slate-500">返点</span>}
                       </div>
                       {bill.billType === "工厂订单" && (
@@ -873,19 +824,42 @@ export default function MonthlyBillsPage() {
                           )}
                         </div>
                       )}
-                      {(bill.offsetAmount || 0) > 0 && (
-                        <div className="text-xs text-emerald-400">抵扣 -{formatCurrency(bill.offsetAmount, bill.currency, "income")}</div>
-                      )}
+                      {bill.billType === "工厂订单" ? (
+                        <div className="mt-1 space-y-0.5 text-xs">
+                          {(bill.actualPaidAmount || 0) > 0 && (
+                            <div className="text-emerald-400">拿货单已付 {formatCurrency(bill.actualPaidAmount || 0, bill.currency, "expense")}</div>
+                          )}
+                          {(bill.depositDeductionAmount || 0) > 0 && (
+                            <div className="text-cyan-300">定金抵扣 {formatCurrency(bill.depositDeductionAmount || 0, bill.currency, "expense")}</div>
+                          )}
+                          <div className={(bill.netAmount || 0) > 0.005 ? "text-rose-400" : "text-slate-500"}>
+                            待付 {formatCurrency(bill.status === "Paid" ? 0 : Math.max(0, bill.netAmount || 0), bill.currency, "expense")}
+                          </div>
+                        </div>
+                      ) : (bill.offsetAmount || 0) > 0 ? (
+                        <div className="text-xs text-emerald-400">抵扣 -{formatCurrency(bill.offsetAmount || 0, bill.currency, "income")}</div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
                       {(() => {
                         if (bill.billType === "工厂订单") {
-                          // 工厂订单：显示已付和未付
-                          const paid = bill.status === "Paid" ? bill.totalAmount : 0;
-                          const unpaid = bill.totalAmount - paid;
+                          // 定金也是已付款的一部分，结清金额需包含尾款实付和定金抵扣。
+                          const payable = getMonthlyBillPaymentAmount(bill);
+                          const paid = getMonthlyBillSettledAmount(bill);
+                          const unpaid = bill.status === "Paid" ? 0 : payable;
                           return (
                             <div className="space-y-0.5">
                               <div className="text-emerald-300">{formatCurrency(paid, bill.currency, "expense")}</div>
+                              {(bill.actualPaidAmount || 0) > 0 && (
+                                <div className="text-[10px] text-emerald-400">
+                                  尾款实付 {formatCurrency(bill.actualPaidAmount || 0, bill.currency, "expense")}
+                                </div>
+                              )}
+                              {(bill.depositDeductionAmount || 0) > 0 && (
+                                <div className="text-[10px] text-cyan-300">
+                                  定金抵扣 {formatCurrency(bill.depositDeductionAmount || 0, bill.currency, "expense")}
+                                </div>
+                              )}
                               {unpaid > 0.01 && (
                                 <div className="text-rose-400 text-xs">{formatCurrency(unpaid, bill.currency, "expense")}</div>
                               )}
@@ -900,17 +874,26 @@ export default function MonthlyBillsPage() {
                           return <span className="text-emerald-300">{formatCurrency(bill.rebateAmount, bill.currency, "income")}</span>;
                         }
                         if (bill.status !== "Paid") return <span className="text-slate-500">-</span>;
-                        const actualPaid = bill.totalAmount - (bill.offsetAmount || 0);
-                        return <span className="text-emerald-300">{formatCurrency(actualPaid, bill.currency, "expense")}</span>;
+                        return <span className="text-emerald-300">{formatCurrency(getMonthlyBillPaymentAmount(bill), bill.currency, "expense")}</span>;
                       })()}
                     </td>
                     <td className="px-4 py-3 text-slate-300">{bill.currency}</td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${bill.billCategory === "Receivable" && bill.status === "Paid" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors[bill.status]}`}
-                      >
-                        {bill.billCategory === "Receivable" && bill.status === "Paid" ? "已回款" : statusLabels[bill.status]}
-                      </span>
+                      {bill.status === "Paid" ? (
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${bill.billCategory === "Receivable" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : statusColors.Paid}`}>
+                          {bill.billCategory === "Receivable" ? "已回款" : "已支付"}
+                        </span>
+                      ) : bill.procurementPaymentCoverage?.blocked ? (
+                        <span className="inline-flex max-w-[150px] items-center rounded border border-blue-500/40 bg-blue-500/15 px-2 py-1 text-xs font-medium leading-5 text-blue-200">
+                          {procurementPaymentCoverageLabel(bill.procurementPaymentCoverage)}
+                        </span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${statusColors[bill.status]}`}
+                        >
+                          {statusLabels[bill.status]}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-300 text-sm font-mono">
                       {bill.paymentVoucherNumber || "-"}
@@ -941,7 +924,7 @@ export default function MonthlyBillsPage() {
                           <Eye className="h-4 w-4 inline mr-1" />
                           查看
                         </button>
-                        {bill.status === "Draft" && (
+                        {bill.status === "Draft" && !bill.procurementPaymentCoverage?.blocked && (
                           <Link href={`/finance/reconciliation?billId=${bill.id}&action=submit`}>
                             <button className="px-3 py-1 rounded border border-blue-500/40 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 text-sm transition">
                               提交给财务
@@ -1024,7 +1007,7 @@ export default function MonthlyBillsPage() {
                   </div>
                   <div className={selectedBill.billType === "广告返点" ? "text-emerald-400 font-medium" : "text-rose-400 font-medium"}>
                     {formatCurrency(
-                      selectedBill.billType === "广告返点" ? selectedBill.netAmount : selectedBill.totalAmount,
+                      selectedBill.billType === "工厂订单" ? selectedBill.totalAmount : getMonthlyBillPaymentAmount(selectedBill),
                       selectedBill.currency,
                       selectedBill.billType === "广告返点" ? "income" : "expense"
                     )}

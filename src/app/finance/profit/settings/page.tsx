@@ -125,10 +125,8 @@ export default function ProfitSettingsPage() {
   });
   const [warehouseSwitchForm, setWarehouseSwitchForm] = useState({
     shopId: "",
-    externalWarehouseId: "",
     warehouseId: "",
     effectiveOrderId: "",
-    effectiveDate: today,
     notes: "",
   });
 
@@ -250,17 +248,15 @@ export default function ProfitSettingsPage() {
   };
 
   const selectWarehouseSwitchShop = (shopId: string) => {
-    const latestWarehouse = switchData?.latestWarehouseIds.find((item) => item.shopId === shopId);
     setWarehouseSwitchForm((current) => ({
       ...current,
       shopId,
-      externalWarehouseId: latestWarehouse?.externalWarehouseId || "",
     }));
   };
 
   const saveWarehouseSwitch = async () => {
     if (!warehouseSwitchForm.shopId || !warehouseSwitchForm.warehouseId) return toast.error("请选择店铺和切换后的仓库");
-    if (!warehouseSwitchForm.effectiveOrderId && !warehouseSwitchForm.effectiveDate) return toast.error("请填写首笔新仓订单号或生效日期");
+    if (!warehouseSwitchForm.effectiveOrderId) return toast.error("请填写首笔新仓订单号");
     setSaving(true);
     try {
       const response = await fetch("/api/profit-warehouse-switches", {
@@ -271,7 +267,7 @@ export default function ProfitSettingsPage() {
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "仓库切换记录保存失败");
       await mutateSwitches();
-      setWarehouseSwitchForm((current) => ({ ...current, externalWarehouseId: body.externalWarehouseId, effectiveOrderId: "", notes: "" }));
+      setWarehouseSwitchForm((current) => ({ ...current, effectiveOrderId: "", notes: "" }));
       toast.success("仓库切换记录已保存");
     } catch (saveError: any) {
       toast.error(saveError?.message || "仓库切换记录保存失败");
@@ -346,14 +342,11 @@ export default function ProfitSettingsPage() {
         </section>
 
         {switchData && <section className="border-b border-slate-800 py-6">
-          <div className="mb-4"><h2 className="text-base font-semibold">仓库切换历史</h2><p className="mt-1 text-xs text-slate-500">按店铺、订单仓库编号和生效时间匹配实际发货仓</p></div>
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="mb-4"><h2 className="text-base font-semibold">店铺切仓</h2><p className="mt-1 text-xs text-slate-500">以首笔新仓订单为边界，从该订单开始归入新仓；切换当天允许两个仓库并存</p></div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="店铺"><select value={warehouseSwitchForm.shopId} onChange={(event) => selectWarehouseSwitchShop(event.target.value)} className="input"><option value="">请选择</option>{data.shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}</select></Field>
-            <Field label="订单仓库编号"><input list="profit-warehouse-ids" value={warehouseSwitchForm.externalWarehouseId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, externalWarehouseId: event.target.value })} className="input" /></Field>
-            <datalist id="profit-warehouse-ids">{[...new Set([...switchData.latestWarehouseIds.map((item) => item.externalWarehouseId), ...switchData.mappings.map((item) => item.tiktokWarehouseId)])].map((warehouseId) => <option key={warehouseId} value={warehouseId} />)}</datalist>
             <Field label="切换到"><select value={warehouseSwitchForm.warehouseId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, warehouseId: event.target.value })} className="input"><option value="">请选择</option>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></Field>
-            <Field label="首笔新仓订单号"><input value={warehouseSwitchForm.effectiveOrderId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveOrderId: event.target.value })} className="input" /></Field>
-            <Field label="生效日期（无订单号）"><input type="date" value={warehouseSwitchForm.effectiveDate} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveDate: event.target.value })} className="input" /></Field>
+            <Field label="首笔新仓订单号（必填）"><input value={warehouseSwitchForm.effectiveOrderId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveOrderId: event.target.value })} className="input" /></Field>
             <Field label="备注"><input value={warehouseSwitchForm.notes} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, notes: event.target.value })} className="input" /></Field>
           </div>
           <button type="button" onClick={saveWarehouseSwitch} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />保存切换记录</button>
@@ -475,7 +468,7 @@ function WarehouseSwitchTable({
     <table className="w-full min-w-[1000px] text-sm">
       <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
         <th className="px-3 py-3 text-left">店铺</th>
-        <th className="px-3 py-3 text-left">订单仓库编号</th>
+        <th className="px-3 py-3 text-left">适用范围</th>
         <th className="px-3 py-3 text-left">实际发货仓</th>
         <th className="px-3 py-3 text-left">生效起点</th>
         <th className="px-3 py-3 text-left">备注</th>
@@ -483,7 +476,7 @@ function WarehouseSwitchTable({
       </tr></thead>
       <tbody>{rows.map((rule) => <tr key={rule.id} className="border-b border-slate-900">
         <td className="px-3 py-3 text-slate-300">{shops.find((shop) => shop.id === rule.shopId)?.name || rule.shopId}</td>
-        <td className="px-3 py-3 font-mono text-xs text-slate-400">{rule.externalWarehouseId}</td>
+        <td className="px-3 py-3 text-slate-400">{rule.externalWarehouseId === "*" ? "店铺全部订单" : `旧编号 ${rule.externalWarehouseId}`}</td>
         <td className="px-3 py-3 text-slate-200">{rule.warehouse.name}</td>
         <td className="px-3 py-3 text-slate-400"><div>{warehouseSwitchTime(rule.effectiveFrom, rule.region)}</div>{rule.effectiveOrderId && <div className="mt-0.5 font-mono text-[11px] text-slate-600">订单 {rule.effectiveOrderId}</div>}</td>
         <td className="max-w-[280px] px-3 py-3 text-slate-500"><div className="truncate" title={rule.notes || ""}>{rule.notes || "-"}</div></td>

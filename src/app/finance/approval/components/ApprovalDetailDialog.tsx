@@ -3,6 +3,7 @@
 import { formatCurrency } from "@/lib/currency-utils";
 import { STATUS_COLORS, STATUS_LABELS } from "./types";
 import type { MonthlyBill } from "@/lib/reconciliation-store";
+import { getMonthlyBillPaymentAmount } from "@/lib/reconciliation-store";
 import type { ExpenseRequest, IncomeRequest } from "@/lib/expense-income-request-store";
 import type { RebateReceivable } from "@/lib/rebate-receivable-store";
 import type { RejectModalState } from "./types";
@@ -140,7 +141,7 @@ export function ApprovalDetailDialog({
                       }`}
                     >
                       {formatCurrency(
-                        selectedBill.billType === "广告返点" ? selectedBill.netAmount : selectedBill.totalAmount,
+                        getMonthlyBillPaymentAmount(selectedBill),
                         selectedBill.currency,
                         selectedBill.billCategory === "Receivable" ? "income" : "expense"
                       )}
@@ -701,7 +702,12 @@ export function ApprovalDetailDialog({
                   )}
                   {(selectedExpenseRequest as any).voucher && (
                     <div className="mt-4 p-3 rounded-lg border border-slate-700 bg-slate-800/30">
-                      <div className="text-sm font-medium text-slate-300 mb-2">📋 物流账单凭证 - 点击查看大图</div>
+                      <div className="text-sm font-medium text-slate-300 mb-2">
+                        {String(selectedExpenseRequest.category || "").startsWith("采购") ||
+                        String(selectedExpenseRequest.summary || "").startsWith("采购")
+                          ? "发起付款凭证 - 点击查看大图"
+                          : "业务凭证 - 点击查看大图"}
+                      </div>
                       <VoucherThumbnails
                         voucher={(selectedExpenseRequest as any).voucher}
                         onView={(_src, images, index) => onVoucherView({ images, index })}

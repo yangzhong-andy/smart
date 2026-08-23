@@ -49,7 +49,11 @@ export async function GET(request: NextRequest) {
           id: true, code: true, name: true, address: true,
           contact: true, phone: true, manager: true,
           location: true, type: true, isActive: true,
-          createdAt: true, updatedAt: true, balance: true,
+          createdAt: true, updatedAt: true,
+          fundAccounts: {
+            select: { currency: true, balance: true, totalCredit: true, totalDebit: true, updatedAt: true },
+            orderBy: { currency: 'asc' },
+          },
         },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
@@ -59,7 +63,16 @@ export async function GET(request: NextRequest) {
     ])
 
     const response = {
-      data: warehouses,
+      data: warehouses.map((warehouse) => ({
+        ...warehouse,
+        fundAccounts: warehouse.fundAccounts.map((account) => ({
+          currency: account.currency,
+          balance: Number(account.balance),
+          totalCredit: Number(account.totalCredit),
+          totalDebit: Number(account.totalDebit),
+          updatedAt: account.updatedAt.toISOString(),
+        })),
+      })),
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) }
     };
 
