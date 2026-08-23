@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthUrl } from "@/lib/tiktok-shop-api";
 import { randomUUID } from "crypto";
-import { createHmac } from "crypto";
 import { requireApiUser } from "@/lib/api-auth";
+import { hashTikTokOAuthState } from "@/lib/tiktok-secrets";
+import { recordTikTokAuthEvent } from "@/lib/tiktok-auth-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,7 @@ export const dynamic = "force-dynamic";
  * GET /api/tiktok/auth?appKey=xxx
  * 生成授权URL，可指定 appKey（多店铺场景）
  *
- * state 格式: {uuid}_{appKey}
- * TikTok 会原样返回 state，回调时解析出 appKey
+ * state 是一次性随机值；服务端只保存哈希，回调时从数据库取回 App 配置。
  */
 export async function GET(request: NextRequest) {
   const auth = await requireApiUser(request);
@@ -37,8 +37,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: `App Key ${appKey} 不存在，请先在配置页面添加` }, { status: 400 });
     }
 
-    // state 里编码 appKey，格式: uuid_appKey
-    const state = `${randomUUID().replace(/-/g, "").substring(0, 16)}_${appKey}`;
+    // state 只作为一次性随机凭证，App Key 不再暴露在回调参数中。
+    const state = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    await prisma.tikTokOAuthState.create({
+      data: {
+        stateHash: hashTikTokOAuthState(state),
+        appKey,
+        userId: auth.user.id,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+    await recordTikTokAuthEvent({ eventType: "AUTHORIZE_STARTED", status: "INFO", appKey, userId: auth.user.id });
     const authUrl = getAuthUrl(state, appKey);
 
     return NextResponse.json({ authUrl, appKey, appName: config.appName });

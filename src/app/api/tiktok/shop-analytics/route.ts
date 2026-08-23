@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getShopPerformance, getShopVideoPerformance, getShopVideoList, refreshAccessToken } from "@/lib/tiktok-shop-api";
+import { decryptTikTokSecret, encryptTikTokSecret } from "@/lib/tiktok-secrets";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -27,18 +28,18 @@ export async function GET(request: NextRequest) {
 
     const appConfig = shop.appKey ? await prisma.tikTokAppConfig.findUnique({ where: { appKey: shop.appKey } }) : null;
     const appKey = appConfig?.appKey || process.env.TIKTOK_APP_KEY || "";
-    const appSecret = appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+    const appSecret = decryptTikTokSecret(appConfig?.appSecret) || process.env.TIKTOK_APP_SECRET || "";
 
     // 刷新 token
-    let accessToken = shop.accessToken;
+    let accessToken = decryptTikTokSecret(shop.accessToken)!;
     if (shop.tokenExpireAt && shop.tokenExpireAt < new Date(Date.now() + 60000)) {
-      const refreshed = await refreshAccessToken(shop.refreshToken!, appKey, appSecret);
+      const refreshed = await refreshAccessToken(decryptTikTokSecret(shop.refreshToken)!, appKey, appSecret);
       accessToken = refreshed.accessToken;
       await prisma.tikTokShopSetting.update({
         where: { shopId },
         data: {
-          accessToken: refreshed.accessToken,
-          refreshToken: refreshed.refreshToken,
+          accessToken: encryptTikTokSecret(refreshed.accessToken),
+          refreshToken: encryptTikTokSecret(refreshed.refreshToken),
           tokenExpireAt: new Date(Date.now() + refreshed.accessTokenExpireIn * 1000),
         },
       });

@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAccessToken, getAuthorizedShops } from "@/lib/tiktok-shop-api";
 import { ensureTikTokStoreBinding } from "@/lib/tiktok-shop-binding";
-import { normalizeTikTokRegion } from "@/lib/tiktok-shop-identity";
+import { extractTikTokRegion, normalizeTikTokRegion } from "@/lib/tiktok-shop-identity";
+import { hashTikTokOAuthState, encryptTikTokSecret, decryptTikTokSecret } from "@/lib/tiktok-secrets";
+import { recordTikTokAuthEvent } from "@/lib/tiktok-auth-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +20,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${BASE_URL}/settings/tiktok?error=no_code`);
     }
 
-    // 从 state 中解析 appKey（格式: uuid_appKey）
-    const stateParts = state.split("_");
-    const appKey = stateParts.length > 1 ? stateParts[stateParts.length - 1] : "";
-    console.log("[TikTok] callback appKey:", appKey, "state:", state.substring(0, 30));
+    const stateRow = state
+      ? await prisma.tikTokOAuthState.findUnique({ where: { stateHash: hashTikTokOAuthState(state) } })
+      : null;
+    if (!stateRow || stateRow.consumedAt || stateRow.expiresAt < new Date()) {
+      await recordTikTokAuthEvent({ eventType: "AUTHORIZE_CALLBACK", status: "FAILED", message: "invalid_or_expired_state" });
+      return NextResponse.redirect(`${BASE_URL}/settings/tiktok?error=invalid_state`);
+    }
+    // 原子消费，防止同一个授权回调被重放。
+    const consumed = await prisma.tikTokOAuthState.updateMany({
+      where: { id: stateRow.id, consumedAt: null, expiresAt: { gte: new Date() } },
+      data: { consumedAt: new Date() },
+    });
+    if (consumed.count !== 1) {
+      await recordTikTokAuthEvent({ eventType: "AUTHORIZE_CALLBACK", status: "FAILED", appKey: stateRow.appKey, message: "state_replayed" });
+      return NextResponse.redirect(`${BASE_URL}/settings/tiktok?error=state_replayed`);
+    }
+    const appKey = stateRow.appKey;
+    console.log("[TikTok] callback appKey:", appKey);
 
     // 获取对应的 App Secret
     const appConfig = appKey
@@ -29,7 +45,7 @@ export async function GET(request: NextRequest) {
       : null;
 
     const finalAppKey = appConfig?.appKey || process.env.TIKTOK_APP_KEY || "";
-    const finalAppSecret = appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+    const finalAppSecret = decryptTikTokSecret(appConfig?.appSecret) || process.env.TIKTOK_APP_SECRET || "";
 
     // 1. 获取 token
     const tokenData = await getAccessToken(code, finalAppKey, finalAppSecret);
@@ -56,16 +72,16 @@ export async function GET(request: NextRequest) {
           region: "UNSET",
           regionSource: "PENDING",
           appKey: finalAppKey,
-          accessToken: tokenData.accessToken,
-          refreshToken: tokenData.refreshToken,
+          accessToken: encryptTikTokSecret(tokenData.accessToken),
+          refreshToken: encryptTikTokSecret(tokenData.refreshToken),
           tokenExpireAt: expireAt,
           openId: tokenData.openId,
           status: "active",
         },
         update: {
           appKey: finalAppKey,
-          accessToken: tokenData.accessToken,
-          refreshToken: tokenData.refreshToken,
+          accessToken: encryptTikTokSecret(tokenData.accessToken),
+          refreshToken: encryptTikTokSecret(tokenData.refreshToken),
           tokenExpireAt: expireAt,
           openId: tokenData.openId,
           status: "active",
@@ -82,7 +98,7 @@ export async function GET(request: NextRequest) {
         where: { shopId: shop.id },
         select: { region: true, regionSource: true, regionVerifiedAt: true, storeId: true, bankAccountId: true },
       });
-      const authorizedRegion = normalizeTikTokRegion(shop.region);
+      const authorizedRegion = extractTikTokRegion(shop) || normalizeTikTokRegion(shop.region);
       const existingRegion = normalizeTikTokRegion(existing?.region);
       const region = authorizedRegion || existingRegion || "UNSET";
       const regionSource = authorizedRegion ? "TIKTOK" : existing?.regionSource || "PENDING";
@@ -107,8 +123,8 @@ export async function GET(request: NextRequest) {
           sellerType: shop.seller_type || null,
           shopCipher: shop.cipher || null,
           appKey: finalAppKey,
-          accessToken: tokenData.accessToken,
-          refreshToken: tokenData.refreshToken,
+          accessToken: encryptTikTokSecret(tokenData.accessToken),
+          refreshToken: encryptTikTokSecret(tokenData.refreshToken),
           tokenExpireAt: expireAt,
           openId: tokenData.openId,
           status: "active",
@@ -122,8 +138,8 @@ export async function GET(request: NextRequest) {
           sellerType: shop.seller_type || null,
           shopCipher: shop.cipher || null,
           appKey: finalAppKey,
-          accessToken: tokenData.accessToken,
-          refreshToken: tokenData.refreshToken,
+          accessToken: encryptTikTokSecret(tokenData.accessToken),
+          refreshToken: encryptTikTokSecret(tokenData.refreshToken),
           tokenExpireAt: expireAt,
           openId: tokenData.openId,
           status: "active",
@@ -131,9 +147,19 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    await recordTikTokAuthEvent({
+      eventType: "AUTHORIZE_CALLBACK",
+      status: "SUCCESS",
+      appKey,
+      metadata: {
+        shopCount: shops.length,
+        regions: shops.map((shop) => extractTikTokRegion(shop)).filter(Boolean),
+      },
+    });
     return NextResponse.redirect(`${BASE_URL}/settings/tiktok?success=1&shops=${shops.length}`);
   } catch (error: any) {
     console.error("[TikTok] callback error:", error.message);
+    await recordTikTokAuthEvent({ eventType: "AUTHORIZE_CALLBACK", status: "FAILED", message: error.message });
     return NextResponse.redirect(`${BASE_URL}/settings/tiktok?error=${encodeURIComponent(error.message)}`);
   }
 }

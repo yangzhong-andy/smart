@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { lineItemQuantity, totalOrderQuantity } from "@/lib/tiktok-order-quantity";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
       } else {
         totalSales += amt;
         validOrders++;
-        totalItems += raw?.line_items?.length || 0;
+        totalItems += totalOrderQuantity(raw?.line_items);
       }
     }
 
@@ -134,8 +135,9 @@ export async function GET(request: NextRequest) {
           productMap.set(sku, { sku, name: item.product_name?.substring(0, 50) || sku, qty: 0, sales: 0, image: item.sku_image });
         }
         const p = productMap.get(sku)!;
-        p.qty += 1;
-        p.sales += parseFloat(item.sale_price || "0");
+        const quantity = lineItemQuantity(item);
+        p.qty += quantity;
+        p.sales += parseFloat(item.sale_price || "0") * quantity;
       }
     }
     const productRanking = Array.from(productMap.values())
@@ -232,7 +234,7 @@ export async function GET(request: NextRequest) {
       } else if (o.status !== "UNPAID" && !isSample) {
         todaySales += parseFloat(o.totalAmount || "0");
         todayOrders++;
-        todayItems += raw?.line_items?.length || 0;
+        todayItems += totalOrderQuantity(raw?.line_items);
       }
     }
 

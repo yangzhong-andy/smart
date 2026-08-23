@@ -507,6 +507,7 @@ export async function GET(request: NextRequest) {
           externalWarehouseId: true,
           warehouseId: true,
           effectiveFrom: true,
+          effectiveOrderId: true,
         },
         orderBy: { effectiveFrom: "desc" },
       }),

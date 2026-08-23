@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
+import { encryptTikTokSecret } from "@/lib/tiktok-secrets";
+import { recordTikTokAuthEvent } from "@/lib/tiktok-auth-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -66,10 +68,11 @@ export async function POST(request: NextRequest) {
     }
 
     const app = await prisma.tikTokAppConfig.create({
-      data: { appKey, appSecret, appName: appName || null, remark: remark || null },
+      data: { appKey, appSecret: encryptTikTokSecret(appSecret)!, appName: appName || null, remark: remark || null },
     });
 
     console.log("[TikTok] 新增 App 配置:", appKey, appName);
+    await recordTikTokAuthEvent({ eventType: "APP_CREATED", status: "SUCCESS", appKey, userId: auth.user.id });
     return NextResponse.json({ success: true, id: app.id });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -101,6 +104,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await prisma.tikTokAppConfig.delete({ where: { id } });
+    await recordTikTokAuthEvent({ eventType: "APP_DELETED", status: "SUCCESS", appKey: app?.appKey || null, userId: auth.user.id });
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

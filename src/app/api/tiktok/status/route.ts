@@ -8,6 +8,7 @@ import {
   expectedCurrencyForRegion,
   normalizeTikTokRegion,
 } from "@/lib/tiktok-shop-identity";
+import { recordTikTokAuthEvent } from "@/lib/tiktok-auth-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -157,6 +158,7 @@ export async function PATCH(request: NextRequest) {
     });
     await clearCacheByPrefix("tiktok");
     await clearCacheByPrefix("stores");
+    await recordTikTokAuthEvent({ eventType: "COUNTRY_CONFIRMED", status: "SUCCESS", shopId, userId: auth.user.id, metadata: { region } });
     return NextResponse.json({ success: true, shop: updated });
   } catch (error: any) {
     console.error("[TikTok status PATCH]", error);
@@ -191,6 +193,8 @@ export async function DELETE(request: NextRequest) {
     });
 
     await clearCacheByPrefix("tiktok");
+
+    await recordTikTokAuthEvent({ eventType: "AUTHORIZATION_DISCONNECTED", status: "SUCCESS", shopId, userId: auth.user.id });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

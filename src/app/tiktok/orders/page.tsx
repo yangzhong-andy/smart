@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Package, Truck, MapPin, CreditCard, CalendarDays, TriangleAlert } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
@@ -18,6 +18,7 @@ type Order = {
   updateTime: string | null;
   lineItems: any[];
   itemSummary: any[];
+  itemCount: number;
   shippingProvider: string | null;
   trackingNumber: string | null;
   rtsTime: string | null;
@@ -81,6 +82,7 @@ const fmtDate = (d: string | Date | null, region?: string | null) => {
 export default function TikTokOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
+  const [statusStats, setStatusStats] = useState<Record<string, number>>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
@@ -97,29 +99,38 @@ export default function TikTokOrdersPage() {
   const [filterOptions, setFilterOptions] = useState<{ skus: string[]; shippingTypes: string[] }>({ skus: [], shippingTypes: [] });
   const [shopFilter, setShopFilter] = useState("");
   const [shops, setShops] = useState<{shopId:string; shopName:string}[]>([]);
+  const [shopsReady, setShopsReady] = useState(false);
+  const requestId = useRef(0);
 
   // 加载店铺列表，默认选中第一个店铺
   useEffect(() => {
-    fetch("/api/tiktok/data?type=shops").then(r => r.json()).then(d => {
+    const controller = new AbortController();
+    fetch("/api/tiktok/data?type=shops", { signal: controller.signal }).then(r => r.json()).then(d => {
       const list = d.shops || [];
       setShops(list);
       // 多店铺时默认选第一个，避免数据混在一起
       if (list.length > 1 && !shopFilter) {
         setShopFilter(list[0].shopId);
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setShopsReady(true));
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
+    if (!shopsReady) return;
+    const controller = new AbortController();
     const params = new URLSearchParams({ type: "orderFilters" });
     if (shopFilter) params.set("shopId", shopFilter);
-    fetch(`/api/tiktok/data?${params}`)
+    fetch(`/api/tiktok/data?${params}`, { signal: controller.signal })
       .then(r => r.json())
       .then(d => setFilterOptions({ skus: d.skus || [], shippingTypes: d.shippingTypes || [] }))
-      .catch(() => {});
-  }, [shopFilter]);
+      .catch((error) => { if (error.name !== "AbortError") setFilterOptions({ skus: [], shippingTypes: [] }); });
+    return () => controller.abort();
+  }, [shopFilter, shopsReady]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
+    if (!shopsReady) return;
+    const currentRequest = ++requestId.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ type: "orders", page: String(page), pageSize: String(pageSize) });
@@ -131,26 +142,24 @@ export default function TikTokOrdersPage() {
       if (orderStartDate) params.set("orderStartDate", orderStartDate);
       if (orderEndDate) params.set("orderEndDate", orderEndDate);
       if (deliveryAlertOnly) params.set("deliveryAlert", "1");
-      const res = await fetch(`/api/tiktok/data?${params}`);
+      const res = await fetch(`/api/tiktok/data?${params}`, { signal });
       const d = await res.json();
+      if (signal?.aborted || currentRequest !== requestId.current) return;
       setOrders(d.data || []);
       setTotal(d.total || 0);
       setDeliveryAlertCount(d.deliveryAlertCount || 0);
-    } catch {
-      toast.error("加载订单失败");
+      setStatusStats(d.statusStats || {});
+    } catch (error: any) {
+      if (error?.name !== "AbortError") toast.error("加载订单失败");
     }
-    setLoading(false);
-  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderStartDate, orderEndDate, shopFilter, deliveryAlertOnly]);
+    if (!signal?.aborted && currentRequest === requestId.current) setLoading(false);
+  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderStartDate, orderEndDate, shopFilter, deliveryAlertOnly, shopsReady]);
 
-
-  // 访问页面自动同步最近1天订单
   useEffect(() => {
-    fetch("/api/tiktok/sync", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataType: "orders", days: 1 }),
-    }).catch(() => {});
-  }, []);
-  useEffect(() => { fetchData(); }, [fetchData]);
+    const controller = new AbortController();
+    void fetchData(controller.signal);
+    return () => controller.abort();
+  }, [fetchData]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -172,12 +181,10 @@ export default function TikTokOrdersPage() {
     setSyncing(false);
   };
 
-  const stats = orders.reduce((acc, o) => {
-    acc.total += 1;
-    if (o.status === "COMPLETED") acc.completed += 1;
-    if (o.status === "CANCELLED") acc.cancelled += 1;
-    return acc;
-  }, { total: 0, completed: 0, cancelled: 0 });
+  const stats = {
+    completed: statusStats.COMPLETED || 0,
+    cancelled: statusStats.CANCELLED || 0,
+  };
 
   return (
     <div className="space-y-4 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
@@ -392,7 +399,7 @@ export default function TikTokOrdersPage() {
                         {o.itemSummary?.[0]?.name || "-"}
                       </td>
                       <td className="px-4 py-3 text-center text-slate-200 font-medium">
-                        {o.lineItems?.length || 0}
+                        {o.itemCount || 0}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col items-start gap-1">
@@ -431,7 +438,7 @@ export default function TikTokOrdersPage() {
                                     )}
                                     <div className="flex-1 min-w-0">
                                       <div className="text-xs text-slate-200 truncate">{item.name}</div>
-                                      <div className="text-xs text-slate-500">SKU: {item.sku}</div>
+                                      <div className="text-xs text-slate-500">SKU: {item.sku} x {item.qty || 1}</div>
                                     </div>
                                     <div className="text-right">
                                       <div className="text-xs text-slate-300">{fmtMoney(item.price, o.currency)}</div>
