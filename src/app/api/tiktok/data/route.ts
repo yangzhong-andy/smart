@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
 import { Prisma } from "@prisma/client";
+import { totalOrderQuantity } from "@/lib/tiktok-order-quantity";
+import { generateCacheKey, getCache, setCache } from "@/lib/redis";
 import {
   deliveryAlertAgeDays,
   deliveryAlertCutoff,
@@ -109,8 +111,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "summary";
     const shopId = searchParams.get("shopId");
-    const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "20");
+    const requestedPage = parseInt(searchParams.get("page") || "1", 10);
+    const requestedPageSize = parseInt(searchParams.get("pageSize") || "20", 10);
+    const page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
+    const pageSize = Number.isFinite(requestedPageSize) ? Math.min(100, Math.max(1, requestedPageSize)) : 20;
     const status = searchParams.get("status");
     const keyword = searchParams.get("keyword");
     const sku = searchParams.get("sku");
@@ -163,7 +167,7 @@ export async function GET(request: NextRequest) {
         const timeZone = timeZoneForRegion(shop.region);
         shopsByTimeZone.set(timeZone, [...(shopsByTimeZone.get(timeZone) || []), shop.shopId]);
       }
-      const dateConditions = [...shopsByTimeZone.entries()].map(([timeZone, shopIds]) => ({
+      const dateConditions: any[] = [...shopsByTimeZone.entries()].map(([timeZone, shopIds]) => ({
         shopId: { in: shopIds },
         createTime: orderTimeRange(orderStartDate, orderEndDate, timeZone),
       }));
@@ -210,6 +214,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === "orderFilters") {
+      const cacheKey = generateCacheKey("tiktok-order-filters", shopId || "all");
+      const cached = await getCache<{ skus: string[]; shippingTypes: string[] }>(cacheKey);
+      if (cached) return NextResponse.json(cached);
       const shopCondition = shopId
         ? Prisma.sql`AND o."shopId" = ${shopId}`
         : Prisma.empty;
@@ -232,10 +239,12 @@ export async function GET(request: NextRequest) {
           ORDER BY value
         `),
       ]);
-      return NextResponse.json({
+      const filters = {
         skus: skuRows.map(row => row.value),
         shippingTypes: shippingTypeRows.map(row => row.value),
-      });
+      };
+      await setCache(cacheKey, filters, 300);
+      return NextResponse.json(filters);
     }
 
     if (type === "summary") {
@@ -323,7 +332,7 @@ export async function GET(request: NextRequest) {
         ...(shopId ? { shopId } : {}),
         ...deliveryAlertCondition,
       };
-      const [data, total, deliveryAlertCount] = await Promise.all([
+      const [data, total, deliveryAlertCount, statusCounts] = await Promise.all([
         prisma.tikTokOrder.findMany({
           where,
           orderBy: { createTime: "desc" },
@@ -332,6 +341,11 @@ export async function GET(request: NextRequest) {
         }),
         prisma.tikTokOrder.count({ where }),
         prisma.tikTokOrder.count({ where: deliveryAlertScope }),
+        prisma.tikTokOrder.groupBy({
+          by: ["status"],
+          where,
+          _count: { _all: true },
+        }),
       ]);
 
       // 从 rawData 提取完整字段
@@ -346,6 +360,7 @@ export async function GET(request: NextRequest) {
           status: o.status,
           totalAmount: o.totalAmount,
           currency: raw?.payment?.currency || raw?.currency || "BRL",
+          itemCount: o.itemCount ?? totalOrderQuantity(raw?.line_items),
           createTime: o.createTime,
           updateTime: o.updateTime,
           // 商品详情
@@ -391,7 +406,8 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      return NextResponse.json({ data: enriched, total, page, pageSize, deliveryAlertCount });
+      const statusStats = Object.fromEntries(statusCounts.map((row) => [row.status || "UNKNOWN", row._count._all]));
+      return NextResponse.json({ data: enriched, total, page, pageSize, deliveryAlertCount, statusStats });
     }
 
     if (type === "statements") {

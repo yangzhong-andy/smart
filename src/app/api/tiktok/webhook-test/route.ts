@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
+import { decryptTikTokSecret } from "@/lib/tiktok-secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
   const appConfig = appKey
     ? await prisma.tikTokAppConfig.findUnique({ where: { appKey }, select: { appSecret: true } })
     : null;
-  const appSecret = appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+  const appSecret = decryptTikTokSecret(appConfig?.appSecret) || process.env.TIKTOK_APP_SECRET || "";
 
   // 模拟 TikTok 会发送的数据
   const testBody = JSON.stringify({

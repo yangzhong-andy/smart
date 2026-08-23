@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Trash2, Plus, Key, Store } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Trash2, Plus, Key, Store, History } from "lucide-react";
 import { COUNTRIES } from "@/lib/country-config";
 
 type Shop = {
@@ -24,6 +24,11 @@ type AppConfig = {
   remark: string | null; status: string; shopCount: number;
 };
 
+type AuthEvent = {
+  id: string; eventType: string; status: string; appKey: string | null;
+  shopId: string | null; message: string | null; metadata: unknown; createdAt: string;
+};
+
 export default function TikTokSettingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -36,6 +41,7 @@ export default function TikTokSettingsPage() {
   const [confirmingShopId, setConfirmingShopId] = useState<string | null>(null);
   const [showAddApp, setShowAddApp] = useState(false);
   const [newApp, setNewApp] = useState({ appKey: "", appSecret: "", appName: "", remark: "" });
+  const [authEvents, setAuthEvents] = useState<AuthEvent[]>([]);
 
   useEffect(() => {
     const success = searchParams.get("success");
@@ -57,17 +63,20 @@ export default function TikTokSettingsPage() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const [statusRes, appsRes] = await Promise.all([
+      const [statusRes, appsRes, eventsRes] = await Promise.all([
         fetch("/api/tiktok/status"),
         fetch("/api/tiktok/apps"),
+        fetch("/api/tiktok/auth-events?limit=20"),
       ]);
       const statusData = await statusRes.json();
       const appsData = await appsRes.json();
+      const eventsData = await eventsRes.json();
       setShops(statusData.shops || []);
       setCountrySelections((current) => Object.fromEntries(
         (statusData.shops || []).map((shop: Shop) => [shop.shopId, current[shop.shopId] || (shop.region !== "UNSET" ? shop.region : "")]),
       ));
       setApps(appsData.apps || []);
+      setAuthEvents(eventsData.events || []);
       if (appsData.apps?.length > 0 && !selectedAppKey) {
         setSelectedAppKey(appsData.apps[0].appKey);
       }
@@ -248,6 +257,36 @@ export default function TikTokSettingsPage() {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* 授权历史：只读审计记录，不展示任何凭证或 Token */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+        <h2 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
+          <History className="h-5 w-5 text-violet-400" />
+          授权历史
+        </h2>
+        {authEvents.length === 0 ? (
+          <p className="text-sm text-slate-500 py-3">暂无授权操作记录</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-slate-500 border-b border-slate-800">
+                <tr><th className="py-2 pr-3">时间</th><th className="py-2 pr-3">操作</th><th className="py-2 pr-3">结果</th><th className="py-2 pr-3">店铺 / App</th><th className="py-2">说明</th></tr>
+              </thead>
+              <tbody>
+                {authEvents.map((event) => (
+                  <tr key={event.id} className="border-b border-slate-800/60 last:border-0">
+                    <td className="py-2 pr-3 whitespace-nowrap text-slate-400">{new Date(event.createdAt).toLocaleString("zh-CN")}</td>
+                    <td className="py-2 pr-3 text-slate-200">{event.eventType}</td>
+                    <td className={`py-2 pr-3 ${event.status === "SUCCESS" ? "text-emerald-400" : event.status === "FAILED" ? "text-rose-400" : "text-amber-400"}`}>{event.status}</td>
+                    <td className="py-2 pr-3 text-slate-400">{event.shopId || event.appKey || "-"}</td>
+                    <td className="py-2 text-slate-500">{event.message || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

@@ -7,6 +7,7 @@ import {
   getUnsettledTransactions,
   refreshAccessToken,
 } from "@/lib/tiktok-shop-api";
+import { decryptTikTokSecret, encryptTikTokSecret } from "@/lib/tiktok-secrets";
 
 const PLATFORM = "TIKTOK";
 
@@ -141,19 +142,19 @@ async function getShopApiContext(shopId: string): Promise<ShopApiContext> {
     ? await prisma.tikTokAppConfig.findUnique({ where: { appKey: shop.appKey } })
     : null;
   const appKey = appConfig?.appKey || process.env.TIKTOK_APP_KEY || "";
-  const appSecret = appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+  const appSecret = decryptTikTokSecret(appConfig?.appSecret) || process.env.TIKTOK_APP_SECRET || "";
   if (!appKey || !appSecret) throw new Error("店铺应用配置不完整");
 
-  let accessToken = shop.accessToken;
+  let accessToken = decryptTikTokSecret(shop.accessToken)!;
   if (shop.tokenExpireAt && shop.tokenExpireAt < new Date(Date.now() + 60000)) {
     if (!shop.refreshToken) throw new Error("店铺授权已过期");
-    const refreshed = await refreshAccessToken(shop.refreshToken, appKey, appSecret);
+    const refreshed = await refreshAccessToken(decryptTikTokSecret(shop.refreshToken)!, appKey, appSecret);
     accessToken = refreshed.accessToken;
     await prisma.tikTokShopSetting.update({
       where: { shopId },
       data: {
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken,
+        accessToken: encryptTikTokSecret(refreshed.accessToken),
+        refreshToken: encryptTikTokSecret(refreshed.refreshToken),
         tokenExpireAt: new Date(Date.now() + refreshed.accessTokenExpireIn * 1000),
       },
     });

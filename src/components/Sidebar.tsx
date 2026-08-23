@@ -123,6 +123,7 @@ import {
   Building2,
   GripVertical,
   Shield,
+  ClipboardCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
@@ -220,6 +221,7 @@ const navItems: NavItem[] = [
       { label: "工厂端管理", labelEn: "", icon: Factory, href: "/supply-chain/factories" },
       { label: "库存查询", labelEn: "", icon: Factory, href: "/inventory" },
       { label: "仓库库存", labelEn: "", icon: Package, href: "/inventory/warehouse" },
+      { label: "库存归属核对", labelEn: "", icon: ClipboardCheck, href: "/inventory/warehouse-audit" },
       { label: "库存看板", labelEn: "", icon: Package, href: "/inventory/dashboard" },
       { label: "库存对账", labelEn: "", icon: Package, href: "/inventory/reconciliation" }
     ]

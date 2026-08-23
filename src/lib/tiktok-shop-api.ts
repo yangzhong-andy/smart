@@ -1,6 +1,7 @@
 import { createHmac } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizeTikTokTokenLifetime } from "@/lib/tiktok-token-expiry";
+import { decryptTikTokSecret } from "@/lib/tiktok-secrets";
 
 const BASE_URL = "https://open-api.tiktokglobalshop.com";
 const AUTH_URL = "https://auth.tiktok-shops.com";
@@ -12,7 +13,7 @@ async function getAppConfig(appKey?: string) {
       where: { appKey },
     });
     if (config) {
-      return { appKey: config.appKey, appSecret: config.appSecret };
+      return { appKey: config.appKey, appSecret: decryptTikTokSecret(config.appSecret) || "" };
     }
   }
   // 回退到 .env 默认配置

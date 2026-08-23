@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
+import { quantityBySellerSku } from "@/lib/tiktok-order-quantity";
 
 /**
  * TikTok 订单库存扣减逻辑
  *
  * 触发条件：订单状态为 AWAITING_COLLECTION（待揽收）且有物流信息
  * 扣减规则：
- *   1. 根据 TikTok warehouse_id 找到系统仓库
- *   2. 根据订单商品的 seller_sku 找到系统 variant（通过 SKU 映射表）
+ *   1. 使用利润核算相同的仓库切换历史确定实际发货仓
+ *   2. 根据订单商品的 seller_sku 找到系统 variant（组合 SKU 优先拆成内部组件）
  *   3. 扣减 Stock 表的 qty 和 availableQty
  *   4. 记录 StockLog 和 TikTokStockDeduction
  *   5. 已扣减过的订单不会重复扣（通过 TikTokStockDeduction 唯一约束）
@@ -31,53 +33,64 @@ export async function deductStockForOrder(orderId: string, shopId: string, order
   // 2. 获取订单完整详情（含 line_items）
   const order = await prisma.tikTokOrder.findUnique({
     where: { orderId },
-    select: { rawData: true },
+    select: { rawData: true, createTime: true },
   });
   if (!order?.rawData) {
     return { skipped: true, reason: "订单详情不存在" };
   }
 
   const raw = order.rawData as any;
-  const tiktokWarehouseId = raw.warehouse_id;
   const lineItems = raw.line_items || [];
 
-  if (!tiktokWarehouseId) {
-    return { skipped: true, reason: "订单无 warehouse_id" };
-  }
   if (lineItems.length === 0) {
     return { skipped: true, reason: "订单无商品明细" };
   }
 
-  // 按 seller_sku 统计数量（每个line_item代表1件，相同SKU累加）
-  const skuQtyMap = new Map<string, number>();
-  for (const item of lineItems) {
-    const sellerSku = item.seller_sku;
-    if (!sellerSku) continue;
-    skuQtyMap.set(sellerSku, (skuQtyMap.get(sellerSku) || 0) + 1);
+  const [shop, warehouseMappings, warehouseSwitchRules, profitSkuMappings, legacySkuMappings] = await Promise.all([
+    prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { region: true } }),
+    prisma.tikTokWarehouseMapping.findMany({ select: { tiktokWarehouseId: true, tiktokShopId: true, warehouseId: true } }),
+    prisma.profitWarehouseSwitchRule.findMany({
+      select: { platform: true, region: true, shopId: true, externalWarehouseId: true, warehouseId: true, effectiveFrom: true, effectiveOrderId: true },
+    }),
+    prisma.profitSkuMapping.findMany({
+      where: { platform: "TIKTOK", shopId },
+      include: { components: { select: { variantId: true, quantity: true } } },
+    }),
+    prisma.tikTokSkuMapping.findMany({ where: { tiktokShopId: shopId }, select: { sellerSku: true, variantId: true } }),
+  ]);
+  const resolveWarehouse = createWarehouseResolver(warehouseMappings, warehouseSwitchRules);
+  const warehouse = resolveWarehouse(raw, shopId, order.createTime, "TIKTOK", shop?.region || undefined, orderId);
+  if (!warehouse.warehouseId) {
+    return { skipped: true, reason: `订单仓库未匹配（${warehouse.status}）` };
   }
+  const warehouseId = warehouse.warehouseId;
+  const profitSkuBySellerSku = new Map(profitSkuMappings.map((mapping) => [mapping.sellerSku, mapping]));
+  const legacyVariantBySellerSku = new Map(legacySkuMappings.map((mapping) => [mapping.sellerSku, mapping.variantId]));
 
-  // 3. 查仓库映射
-  const warehouseMapping = await prisma.tikTokWarehouseMapping.findUnique({
-    where: { tiktokWarehouseId },
-  });
-  if (!warehouseMapping) {
-    return { skipped: true, reason: `warehouse_id ${tiktokWarehouseId} 未配置映射` };
-  }
-  const warehouseId = warehouseMapping.warehouseId;
-
-  // 4. 按 SKU 数量逐个扣库存
+  // 4. 先汇总内部 SKU。不同销售 SKU 包含同一内部 SKU 时只扣一次总数量。
   const results: any[] = [];
-  for (const [sellerSku, qty] of skuQtyMap) {
-    // 查 SKU 映射
-    const skuMapping = await prisma.tikTokSkuMapping.findFirst({
-      where: { tiktokShopId: shopId, sellerSku },
-    });
-    if (!skuMapping) {
+  const variantQuantities = new Map<string, number>();
+  const sellerSkusByVariant = new Map<string, string[]>();
+  for (const [sellerSku, sellerQty] of quantityBySellerSku(lineItems)) {
+    const profitMapping = profitSkuBySellerSku.get(sellerSku);
+    const components = profitMapping?.components.length
+      ? profitMapping.components.map((component) => ({ variantId: component.variantId, qty: sellerQty * component.quantity }))
+      : legacyVariantBySellerSku.has(sellerSku)
+        ? [{ variantId: legacyVariantBySellerSku.get(sellerSku)!, qty: sellerQty }]
+        : [];
+    if (components.length === 0) {
       results.push({ sku: sellerSku, status: "no_mapping", reason: "SKU 未配置映射" });
       continue;
     }
-    const variantId = skuMapping.variantId;
 
+    for (const component of components) {
+      variantQuantities.set(component.variantId, (variantQuantities.get(component.variantId) || 0) + component.qty);
+      sellerSkusByVariant.set(component.variantId, [...(sellerSkusByVariant.get(component.variantId) || []), sellerSku]);
+    }
+  }
+
+  for (const [variantId, qty] of variantQuantities) {
+    const sellerSku = [...new Set(sellerSkusByVariant.get(variantId) || [])].join(" + ");
     // 库存、日志和防重复记录必须一起成功或一起回滚。
     const result = await prisma.$transaction(async (tx) => {
       const existingDeduction = await tx.tikTokStockDeduction.findFirst({

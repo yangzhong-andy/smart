@@ -2487,6 +2487,34 @@ model TikTokShopSetting {
   @@index([status])
 }
 
+model TikTokOAuthState {
+  id         String    @id @default(uuid())
+  stateHash  String    @unique
+  appKey     String
+  userId     String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+
+model TikTokAuthEvent {
+  id        String   @id @default(uuid())
+  eventType String
+  status    String
+  appKey    String?
+  shopId    String?
+  userId    String?
+  message   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([shopId])
+  @@index([eventType])
+}
+
 // TikTok 订单数据
 model TikTokOrder {
   id               String    @id @default(uuid())

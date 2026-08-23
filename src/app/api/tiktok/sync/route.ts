@@ -8,19 +8,47 @@ import {
   getPayments,
   searchProducts,
 } from "@/lib/tiktok-shop-api";
-import { clearCacheByPrefix } from "@/lib/redis";
+import { clearCacheByPrefix, getRedisClient } from "@/lib/redis";
 import { syncTikTokProfitFinancials } from "@/lib/tiktok-profit-financial-sync";
 import { fetchExchangeRates } from "@/lib/exchange";
 import { resolveCashFlowExchangeRateToCny } from "@/lib/cash-flow-exchange-rate";
+import { decryptTikTokSecret, encryptTikTokSecret } from "@/lib/tiktok-secrets";
+import { requireApiUser } from "@/lib/api-auth";
+import { totalOrderQuantity } from "@/lib/tiktok-order-quantity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+const SYNC_LOCK_KEY = "smart:erp:tiktok:sync:lock";
+let localSyncInProgress = false;
+
+async function acquireSyncLock() {
+  const client = getRedisClient();
+  if (client) {
+    const token = crypto.randomUUID();
+    const acquired = await client.set(SYNC_LOCK_KEY, token, "EX", maxDuration + 30, "NX");
+    if (acquired !== "OK") return null;
+    return async () => {
+      // Do not release a lock obtained by a later request after this one expires.
+      if (await client.get(SYNC_LOCK_KEY) === token) await client.del(SYNC_LOCK_KEY);
+    };
+  }
+  if (localSyncInProgress) return null;
+  localSyncInProgress = true;
+  return async () => { localSyncInProgress = false; };
+}
 
 /**
  * POST /api/tiktok/sync
  * 同步数据，每个店铺使用对应的 App Key/Secret
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
+  const releaseLock = await acquireSyncLock();
+  if (!releaseLock) {
+    return NextResponse.json({ error: "订单同步正在执行，请稍后再试" }, { status: 409 });
+  }
   try {
     const body = await request.json().catch(() => ({}));
     const { dataType = "all", days = 7 } = body;
@@ -58,19 +86,19 @@ export async function POST(request: NextRequest) {
         // 获取这个店铺对应的 App 配置
         const appConfig = shop.appKey ? appMap.get(shop.appKey) : null;
         const appKey = appConfig?.appKey || process.env.TIKTOK_APP_KEY || "";
-        const appSecret = appConfig?.appSecret || process.env.TIKTOK_APP_SECRET || "";
+        const appSecret = decryptTikTokSecret(appConfig?.appSecret) || process.env.TIKTOK_APP_SECRET || "";
 
         // 刷新 token
-        let accessToken = shop.accessToken!;
+        let accessToken = decryptTikTokSecret(shop.accessToken)!;
         if (shop.tokenExpireAt && shop.tokenExpireAt < new Date(Date.now() + 60000)) {
           console.log("[TikTok Sync] Token 即将过期，刷新中...");
-          const refreshed = await refreshAccessToken(shop.refreshToken!, appKey, appSecret);
+          const refreshed = await refreshAccessToken(decryptTikTokSecret(shop.refreshToken)!, appKey, appSecret);
           accessToken = refreshed.accessToken;
           await prisma.tikTokShopSetting.update({
             where: { shopId: shop.shopId },
             data: {
-              accessToken: refreshed.accessToken,
-              refreshToken: refreshed.refreshToken,
+              accessToken: encryptTikTokSecret(refreshed.accessToken),
+              refreshToken: encryptTikTokSecret(refreshed.refreshToken),
               tokenExpireAt: new Date(Date.now() + refreshed.accessTokenExpireIn * 1000),
             },
           });
@@ -133,7 +161,7 @@ export async function POST(request: NextRequest) {
                       shopId: shop.shopId, orderId: o.id, status: o.status, orderStatus: o.status,
                       totalAmount: o.payment?.total_amount || o.total_amount || null,
                       currency: o.payment?.currency || o.currency || null,
-                      itemCount: o.line_items?.length || null,
+                      itemCount: totalOrderQuantity(o.line_items),
                       createTime: o.create_time ? new Date(o.create_time * 1000) : null,
                       updateTime: o.update_time ? new Date(o.update_time * 1000) : null,
                       rawData: o,
@@ -141,6 +169,8 @@ export async function POST(request: NextRequest) {
                     update: {
                       status: o.status, orderStatus: o.status,
                       totalAmount: o.payment?.total_amount || o.total_amount || null,
+                      currency: o.payment?.currency || o.currency || null,
+                      itemCount: totalOrderQuantity(o.line_items),
                       updateTime: o.update_time ? new Date(o.update_time * 1000) : null,
                       rawData: o,
                     },
@@ -432,11 +462,16 @@ export async function POST(request: NextRequest) {
 
     // The accounts page caches the full cash-flow list.  Clear it after a
     // payment sync so a newly paid or corrected payment is visible immediately.
-    await clearCacheByPrefix("cash-flow");
+    await Promise.all([
+      clearCacheByPrefix("cash-flow"),
+      clearCacheByPrefix("tiktok-order-filters"),
+    ]);
 
     return NextResponse.json({ success: true, results });
   } catch (error: any) {
     console.error("[TikTok Sync] 全局错误:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
+  } finally {
+    await releaseLock();
   }
 }

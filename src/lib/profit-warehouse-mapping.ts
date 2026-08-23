@@ -80,23 +80,17 @@ export function createWarehouseResolver(
     const tiktokWarehouseId = extractTikTokWarehouseId(rawData);
     const orderTime = orderCreateTime ? new Date(orderCreateTime) : null;
     if (shopId && orderTime && !Number.isNaN(orderTime.getTime())) {
-      const switchRule = normalizedSwitches.find((rule) => {
-        if (
-          rule.platform !== platform
-          || rule.shopId !== shopId
-          || (rule.externalWarehouseId !== "*" && rule.externalWarehouseId !== tiktokWarehouseId)
-          || (region && rule.region !== region)
-        ) return false;
-
-        const timeDifference = orderTime.getTime() - rule.effectiveFrom.getTime();
-        if (timeDifference !== 0) return timeDifference > 0;
-
-        // The first new-warehouse order is the exact boundary on a mixed
-        // switch day. Order id breaks ties for equal order timestamps.
-        const boundaryOrderId = String(rule.effectiveOrderId || "").trim();
-        const currentOrderId = String(orderId || "").trim();
-        return !boundaryOrderId || (currentOrderId && currentOrderId.localeCompare(boundaryOrderId) >= 0);
+      const eligibleRules = normalizedSwitches.filter((rule) => {
+        if (rule.platform !== platform || rule.shopId !== shopId || (region && rule.region !== region)) return false;
+        if (rule.effectiveOrderId && orderId && /^\d+$/.test(rule.effectiveOrderId) && /^\d+$/.test(orderId)) {
+          return BigInt(orderId) >= BigInt(rule.effectiveOrderId);
+        }
+        return rule.effectiveFrom.getTime() <= orderTime.getTime();
       });
+      // A switch is the source of truth. Prefer an exact warehouse id when
+      // available, otherwise retain the latest switch for newly changed ids.
+      const switchRule = eligibleRules.find((rule) => rule.externalWarehouseId === "*" || rule.externalWarehouseId === tiktokWarehouseId)
+        || eligibleRules[0];
       if (switchRule) {
         const mapping = {
           tiktokWarehouseId: tiktokWarehouseId || "*",
