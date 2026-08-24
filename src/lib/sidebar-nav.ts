@@ -90,6 +90,11 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { section: "Mercado Livre", label: "售后管理（待接入）", href: "/platforms/mercado-livre/after-sales", disabled: true },
       { section: "Mercado Livre", label: "履约物流（待接入）", href: "/platforms/mercado-livre/fulfillment", disabled: true },
       { section: "Mercado Livre", label: "结算财务（待接入）", href: "/platforms/mercado-livre/finance", disabled: true },
+      { section: "Amazon", label: "店铺与授权（待接入）", href: "/platforms/amazon/stores", disabled: true },
+      { section: "Amazon", label: "订单管理（待接入）", href: "/platforms/amazon/orders", disabled: true },
+      { section: "Amazon", label: "售后管理（待接入）", href: "/platforms/amazon/after-sales", disabled: true },
+      { section: "Amazon", label: "履约物流（待接入）", href: "/platforms/amazon/fulfillment", disabled: true },
+      { section: "Amazon", label: "结算财务（待接入）", href: "/platforms/amazon/finance", disabled: true },
     ],
   },
   {
