@@ -7,6 +7,7 @@ export const SIDEBAR_TOP_LEVEL_LABELS = [
   "产品中心",
   "供应链",
   "物流中心",
+  "平台中心",
   "营销与店铺",
   "财务中心",
   "运营工具",

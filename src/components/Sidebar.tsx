@@ -123,6 +123,7 @@ import {
   Upload,
   BarChart3,
   Building2,
+  Layers3,
   GripVertical,
   Shield,
 } from "lucide-react";
@@ -245,6 +246,23 @@ const navItems: NavItem[] = [
     ]
   },
   {
+    label: "平台中心",
+    labelEn: "Platform Center",
+    icon: Layers3,
+    children: [
+      { label: "TikTok Shop · 平台总览", labelEn: "", icon: Layers3, href: "/platforms/tiktok" },
+      { label: "TikTok Shop · 店铺与授权", labelEn: "", icon: Building2, href: "/settings/tiktok" },
+      { label: "TikTok Shop · 订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
+      { label: "TikTok Shop · 售后管理", labelEn: "", icon: MessageSquare, href: "/platforms/tiktok/after-sales" },
+      { label: "TikTok Shop · 履约物流", labelEn: "", icon: Truck, href: "/logistics/tracking" },
+      { label: "TikTok Shop · 结算财务", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
+      { label: "TikTok Shop · 商品管理", labelEn: "", icon: Package, href: "/product-center/products" },
+      { label: "TikTok Shop · 营销推广", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
+      { label: "TikTok Shop · 达人合作", labelEn: "", icon: MessageSquare, href: "/tiktok/affiliate" },
+      { label: "TikTok Shop · 数据分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
+    ]
+  },
+  {
     label: "营销与店铺",
     labelEn: "Marketing & Store",
     icon: Megaphone,
@@ -256,11 +274,6 @@ const navItems: NavItem[] = [
       { label: "物流费用分摊", labelEn: "", icon: BarChart3, href: "/finance/logistics-cost-allocation" },
       { label: "达人 BD 管理", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
       { label: "广告代理管理", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
-      { label: "TikTok订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
-      { label: "TikTok订单分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
-      { label: "TikTok商店分析", labelEn: "", icon: BarChart3, href: "/tiktok/shop-analytics" },
-      { label: "TikTok联盟营销", labelEn: "", icon: MessageSquare, href: "/tiktok/affiliate" },
-      { label: "TikTok财务回款", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
     ]
   },
   {
