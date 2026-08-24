@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
+import { VoucherViewerModal } from "@/components/VoucherImage";
 import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText, FileImage } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
 import { approvePurchaseOrder, type PurchaseOrder } from "@/lib/purchase-orders-store";
@@ -37,6 +38,7 @@ export default function ApprovalPage() {
   const [selectedContract, setSelectedContract] = useState<PurchaseContract | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
+  const [contractVoucherView, setContractVoucherView] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [approvalForm, setApprovalForm] = useState({
     result: "通过" as "通过" | "拒绝",
@@ -623,7 +625,7 @@ export default function ApprovalPage() {
                             src={imgSrc}
                             alt={`凭证 ${index + 1}`}
                             className="w-full h-20 object-cover rounded border border-slate-600 cursor-pointer hover:border-primary-400"
-                            onClick={() => window.open(imgSrc, "_blank")}
+                            onClick={() => setContractVoucherView(imgSrc)}
                             onError={(e) => {
                               const t = e.target as HTMLImageElement;
                               if (typeof v === "string" && !v.startsWith("data:") && !v.startsWith("http")) {
@@ -691,6 +693,7 @@ export default function ApprovalPage() {
           </div>
         </div>
       )}
+      <VoucherViewerModal src={contractVoucherView} onClose={() => setContractVoucherView(null)} />
     </div>
   );
 }
