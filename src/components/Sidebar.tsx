@@ -375,12 +375,20 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    "TikTok Shop": true,
+    Shopee: false,
+    "Mercado Livre": false,
+    Amazon: false,
+  });
+  const [sectionsHydrated, setSectionsHydrated] = useState(false);
   const [customChildOrder, setCustomChildOrder] = useState<Record<string, string[]>>({});
   const [showChangelog, setShowChangelog] = useState(false);
   const [draggingChildHref, setDraggingChildHref] = useState<string | null>(null);
   const [dragOverChildHref, setDragOverChildHref] = useState<string | null>(null);
   const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const SIDEBAR_CHILD_ORDER_KEY = "sidebarChildOrderV1";
+  const SIDEBAR_SECTION_STATE_KEY = "sidebarPlatformSectionsV1";
 
   // 部门权限过滤：根据 DB 配置过滤一级菜单
   const departmentCode = session?.user?.departmentCode ?? null;
@@ -417,6 +425,18 @@ export default function Sidebar() {
           setCustomChildOrder(safe);
         }
       }
+
+      const savedSections = localStorage.getItem(SIDEBAR_SECTION_STATE_KEY);
+      if (savedSections) {
+        const parsed = JSON.parse(savedSections) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const safe: Record<string, boolean> = {};
+          for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+            if (typeof v === "boolean") safe[k] = v;
+          }
+          setExpandedSections((prev) => ({ ...prev, ...safe }));
+        }
+      }
       
       // 默认展开当前路径所在的父级菜单
       const currentPath = pathname || "";
@@ -439,6 +459,8 @@ export default function Sidebar() {
       setExpandedItems(expanded);
     } catch (e) {
       console.error("Failed to initialize sidebar:", e);
+    } finally {
+      setSectionsHydrated(true);
     }
   }, [pathname, visibleNavItems, departmentCode, departmentName, departmentAccessOpts]);
 
@@ -446,6 +468,11 @@ export default function Sidebar() {
     if (typeof window === "undefined") return;
     localStorage.setItem(SIDEBAR_CHILD_ORDER_KEY, JSON.stringify(customChildOrder));
   }, [customChildOrder]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !sectionsHydrated) return;
+    localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(expandedSections));
+  }, [expandedSections, sectionsHydrated]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -484,6 +511,12 @@ export default function Sidebar() {
       return list.includes(label) ? list.filter((l) => l !== label) : [...list, label];
     });
   };
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !(prev[section] ?? true) }));
+  };
+
+  const isSectionExpanded = (section?: string) => !section || (expandedSections[section] ?? true);
 
   const handleCollapse = () => {
     const newState = !isCollapsed;
@@ -761,15 +794,26 @@ export default function Sidebar() {
                               const active = isActive(child.href);
                               const childKey = child.href || `__${child.label}`;
                               const sectionHeader = child.section && child.section !== lastSection ? child.section : null;
+                              const sectionExpanded = isSectionExpanded(child.section);
                               lastSection = child.section;
+                              if (!sectionExpanded && !sectionHeader) return null;
                               return (
                                 <div key={childKey}>
                                   {sectionHeader && (
-                                    <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-cyan-300/80">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSection(sectionHeader)}
+                                      aria-expanded={sectionExpanded}
+                                      className="w-full flex items-center justify-between px-3 pt-3 pb-1 text-left text-[11px] font-semibold uppercase tracking-wider text-cyan-300/80 hover:text-cyan-200 transition-colors"
+                                    >
                                       {sectionHeader}
-                                    </div>
+                                      <ChevronRight
+                                        size={14}
+                                        className={`transition-transform duration-200 ${sectionExpanded ? "rotate-90" : ""}`}
+                                      />
+                                    </button>
                                   )}
-                                  <Link
+                                  {sectionExpanded && <Link
                                   href={child.disabled ? "#" : (child.href || "#")}
                                   prefetch={!child.disabled}
                                   aria-disabled={child.disabled || undefined}
@@ -858,7 +902,7 @@ export default function Sidebar() {
                                       {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
                                     </span>
                                   )}
-                                  </Link>
+                                  </Link>}
                                 </div>
                               );
                               });
