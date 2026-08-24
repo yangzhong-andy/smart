@@ -181,6 +181,9 @@ type NavItem = {
   labelEn: string; // 英文副标题
   icon: LucideIcon;
   href?: string;
+  /** 平台中心内的分组标题；同一分组只在第一项前显示一次 */
+  section?: string;
+  disabled?: boolean;
   children?: NavItem[];
 };
 
@@ -250,16 +253,26 @@ const navItems: NavItem[] = [
     labelEn: "Platform Center",
     icon: Layers3,
     children: [
-      { label: "TikTok Shop · 平台总览", labelEn: "", icon: Layers3, href: "/platforms/tiktok" },
-      { label: "TikTok Shop · 店铺与授权", labelEn: "", icon: Building2, href: "/settings/tiktok" },
-      { label: "TikTok Shop · 订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
-      { label: "TikTok Shop · 售后管理", labelEn: "", icon: MessageSquare, href: "/platforms/tiktok/after-sales" },
-      { label: "TikTok Shop · 履约物流", labelEn: "", icon: Truck, href: "/logistics/tracking" },
-      { label: "TikTok Shop · 结算财务", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
-      { label: "TikTok Shop · 商品管理", labelEn: "", icon: Package, href: "/product-center/products" },
-      { label: "TikTok Shop · 营销推广", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
-      { label: "TikTok Shop · 达人合作", labelEn: "", icon: MessageSquare, href: "/tiktok/affiliate" },
-      { label: "TikTok Shop · 数据分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
+      { section: "TikTok Shop", label: "平台总览", labelEn: "", icon: Layers3, href: "/platforms/tiktok" },
+      { section: "TikTok Shop", label: "店铺与授权", labelEn: "", icon: Building2, href: "/settings/tiktok" },
+      { section: "TikTok Shop", label: "订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
+      { section: "TikTok Shop", label: "售后管理", labelEn: "", icon: MessageSquare, href: "/platforms/tiktok/after-sales" },
+      { section: "TikTok Shop", label: "履约物流", labelEn: "", icon: Truck, href: "/logistics/tracking" },
+      { section: "TikTok Shop", label: "结算财务", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
+      { section: "TikTok Shop", label: "商品管理", labelEn: "", icon: Package, href: "/product-center/products" },
+      { section: "TikTok Shop", label: "营销推广", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
+      { section: "TikTok Shop", label: "达人合作", labelEn: "", icon: MessageSquare, href: "/tiktok/affiliate" },
+      { section: "TikTok Shop", label: "数据分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
+      { section: "Shopee", label: "店铺与授权（待接入）", labelEn: "", icon: Building2, href: "/platforms/shopee/stores", disabled: true },
+      { section: "Shopee", label: "订单管理（待接入）", labelEn: "", icon: ShoppingBag, href: "/platforms/shopee/orders", disabled: true },
+      { section: "Shopee", label: "售后管理（待接入）", labelEn: "", icon: MessageSquare, href: "/platforms/shopee/after-sales", disabled: true },
+      { section: "Shopee", label: "履约物流（待接入）", labelEn: "", icon: Truck, href: "/platforms/shopee/fulfillment", disabled: true },
+      { section: "Shopee", label: "结算财务（待接入）", labelEn: "", icon: Wallet, href: "/platforms/shopee/finance", disabled: true },
+      { section: "Mercado Livre", label: "店铺与授权（待接入）", labelEn: "", icon: Building2, href: "/platforms/mercado-livre/stores", disabled: true },
+      { section: "Mercado Livre", label: "订单管理（待接入）", labelEn: "", icon: ShoppingBag, href: "/platforms/mercado-livre/orders", disabled: true },
+      { section: "Mercado Livre", label: "售后管理（待接入）", labelEn: "", icon: MessageSquare, href: "/platforms/mercado-livre/after-sales", disabled: true },
+      { section: "Mercado Livre", label: "履约物流（待接入）", labelEn: "", icon: Truck, href: "/platforms/mercado-livre/fulfillment", disabled: true },
+      { section: "Mercado Livre", label: "结算财务（待接入）", labelEn: "", icon: Wallet, href: "/platforms/mercado-livre/finance", disabled: true },
     ]
   },
   {
@@ -736,22 +749,35 @@ export default function Sidebar() {
                           <div className="absolute left-0 top-0 bottom-0 w-px bg-white/10" />
                           
                           <div className="space-y-0.5 pl-5">
-                            {getOrderedChildren(item).map((child) => {
+                            {(() => {
+                              let lastSection: string | undefined;
+                              return getOrderedChildren(item).map((child) => {
                               const isApprovalLink = child.href === "/finance/approval";
                               const active = isActive(child.href);
                               const childKey = child.href || `__${child.label}`;
+                              const sectionHeader = child.section && child.section !== lastSection ? child.section : null;
+                              lastSection = child.section;
                               return (
-                                <Link
-                                  key={childKey}
-                                  href={child.href || "#"}
-                                  prefetch
-                                  draggable
+                                <div key={childKey}>
+                                  {sectionHeader && (
+                                    <div className="px-3 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-cyan-300/80">
+                                      {sectionHeader}
+                                    </div>
+                                  )}
+                                  <Link
+                                  href={child.disabled ? "#" : (child.href || "#")}
+                                  prefetch={!child.disabled}
+                                  aria-disabled={child.disabled || undefined}
+                                  tabIndex={child.disabled ? -1 : undefined}
+                                  draggable={!child.disabled}
                                   onDragStart={(e) => {
+                                    if (child.disabled) return;
                                     e.dataTransfer.effectAllowed = "move";
                                     e.dataTransfer.setData("text/plain", childKey);
                                     setDraggingChildHref(childKey);
                                   }}
                                   onDragOver={(e) => {
+                                    if (child.disabled) return;
                                     e.preventDefault();
                                     e.dataTransfer.dropEffect = "move";
                                     setDragOverChildHref(childKey);
@@ -760,6 +786,7 @@ export default function Sidebar() {
                                     setDragOverChildHref((prev) => (prev === childKey ? null : prev));
                                   }}
                                   onDrop={(e) => {
+                                    if (child.disabled) return;
                                     e.preventDefault();
                                     const from = e.dataTransfer.getData("text/plain") || draggingChildHref;
                                     if (from) reorderChildren(item.label, from, childKey);
@@ -770,17 +797,25 @@ export default function Sidebar() {
                                     setDragOverChildHref(null);
                                     setDraggingChildHref(null);
                                   }}
-                                  onMouseEnter={() => prefetchRoute(child.href)}
-                                  onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
+                                  onMouseEnter={() => !child.disabled && prefetchRoute(child.href)}
+                                  onClick={(e) => {
+                                    if (child.disabled) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    sidebarLinkClick(router, e, child.href, pathname || "");
+                                  }}
                                   className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
-                                    active
+                                    child.disabled
+                                      ? "text-slate-600 cursor-default"
+                                      : active
                                       ? "text-blue-400 font-medium bg-blue-500/10"
                                       : "text-gray-400 hover:text-white hover:bg-white/5"
                                   }`}
                                   style={dragOverChildHref === childKey ? { outline: "1px dashed rgba(56, 189, 248, 0.7)" } : undefined}
                                 >
                                   <div
-                                    className="text-slate-500/70 group-hover:text-slate-300"
+                                    className={`${child.disabled ? "text-slate-700" : "text-slate-500/70 group-hover:text-slate-300"}`}
                                     title="拖拽排序"
                                     onMouseDown={(e) => e.stopPropagation()}
                                   >
@@ -818,9 +853,11 @@ export default function Sidebar() {
                                       {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
                                     </span>
                                   )}
-                                </Link>
+                                  </Link>
+                                </div>
                               );
-                            })}
+                              });
+                            })()}
                           </div>
                         </div>
                       </motion.div>

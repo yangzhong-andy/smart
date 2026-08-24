@@ -5,6 +5,8 @@
 export type NavChild = {
   label: string;
   href: string;
+  section?: string;
+  disabled?: boolean;
 };
 
 export type NavGroup = {
@@ -68,16 +70,26 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
   {
     label: "平台中心",
     children: [
-      { label: "TikTok Shop · 平台总览", href: "/platforms/tiktok" },
-      { label: "TikTok Shop · 店铺与授权", href: "/settings/tiktok" },
-      { label: "TikTok Shop · 订单管理", href: "/tiktok/orders" },
-      { label: "TikTok Shop · 售后管理", href: "/platforms/tiktok/after-sales" },
-      { label: "TikTok Shop · 履约物流", href: "/logistics/tracking" },
-      { label: "TikTok Shop · 结算财务", href: "/tiktok/finance" },
-      { label: "TikTok Shop · 商品管理", href: "/product-center/products" },
-      { label: "TikTok Shop · 营销推广", href: "/advertising/agencies" },
-      { label: "TikTok Shop · 达人合作", href: "/tiktok/affiliate" },
-      { label: "TikTok Shop · 数据分析", href: "/tiktok/analytics" },
+      { section: "TikTok Shop", label: "平台总览", href: "/platforms/tiktok" },
+      { section: "TikTok Shop", label: "店铺与授权", href: "/settings/tiktok" },
+      { section: "TikTok Shop", label: "订单管理", href: "/tiktok/orders" },
+      { section: "TikTok Shop", label: "售后管理", href: "/platforms/tiktok/after-sales" },
+      { section: "TikTok Shop", label: "履约物流", href: "/logistics/tracking" },
+      { section: "TikTok Shop", label: "结算财务", href: "/tiktok/finance" },
+      { section: "TikTok Shop", label: "商品管理", href: "/product-center/products" },
+      { section: "TikTok Shop", label: "营销推广", href: "/advertising/agencies" },
+      { section: "TikTok Shop", label: "达人合作", href: "/tiktok/affiliate" },
+      { section: "TikTok Shop", label: "数据分析", href: "/tiktok/analytics" },
+      { section: "Shopee", label: "店铺与授权（待接入）", href: "/platforms/shopee/stores", disabled: true },
+      { section: "Shopee", label: "订单管理（待接入）", href: "/platforms/shopee/orders", disabled: true },
+      { section: "Shopee", label: "售后管理（待接入）", href: "/platforms/shopee/after-sales", disabled: true },
+      { section: "Shopee", label: "履约物流（待接入）", href: "/platforms/shopee/fulfillment", disabled: true },
+      { section: "Shopee", label: "结算财务（待接入）", href: "/platforms/shopee/finance", disabled: true },
+      { section: "Mercado Livre", label: "店铺与授权（待接入）", href: "/platforms/mercado-livre/stores", disabled: true },
+      { section: "Mercado Livre", label: "订单管理（待接入）", href: "/platforms/mercado-livre/orders", disabled: true },
+      { section: "Mercado Livre", label: "售后管理（待接入）", href: "/platforms/mercado-livre/after-sales", disabled: true },
+      { section: "Mercado Livre", label: "履约物流（待接入）", href: "/platforms/mercado-livre/fulfillment", disabled: true },
+      { section: "Mercado Livre", label: "结算财务（待接入）", href: "/platforms/mercado-livre/finance", disabled: true },
     ],
   },
   {
