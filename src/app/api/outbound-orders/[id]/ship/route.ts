@@ -70,7 +70,7 @@ export async function POST(
 
     const result = await prisma.$transaction(async (tx) => {
       if (order.pendingInboundId) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`inbound-outbound:${order.pendingInboundId}`}))`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`inbound-outbound:${order.pendingInboundId}`}))`;
         const inboundBatches = await tx.inboundBatch.findMany({
           where: { pendingInboundId: order.pendingInboundId },
           select: { batchNumber: true },

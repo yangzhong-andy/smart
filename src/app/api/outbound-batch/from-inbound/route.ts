@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     const result = await prisma.$transaction(async (tx) => {
       if (batch.pendingInboundId) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`inbound-outbound:${batch.pendingInboundId}`}))`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`inbound-outbound:${batch.pendingInboundId}`}))`;
         const linkedOrder = await tx.outboundOrder.findUnique({
           where: { pendingInboundId: batch.pendingInboundId },
           select: { shippedQty: true },
