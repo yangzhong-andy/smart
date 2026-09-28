@@ -120,6 +120,16 @@ export async function POST(request: NextRequest) {
     const batchNumber = `OB-${batch.batchNumber}-${Date.now().toString(36).slice(-4)}`;
 
     const result = await prisma.$transaction(async (tx) => {
+      if (batch.pendingInboundId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`inbound-outbound:${batch.pendingInboundId}`}))`;
+        const linkedOrder = await tx.outboundOrder.findUnique({
+          where: { pendingInboundId: batch.pendingInboundId },
+          select: { shippedQty: true },
+        });
+        if (linkedOrder && linkedOrder.shippedQty > 0) {
+          throw new Error("该入库单已有已出库记录，不能从入库批次重复出库");
+        }
+      }
       // Allow partial shipment, but never let a second click ship the same
       // inbound batch quantity again.
       const existingOutbound = await tx.outboundBatch.findMany({

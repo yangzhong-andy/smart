@@ -69,6 +69,24 @@ export async function POST(
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      if (order.pendingInboundId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`inbound-outbound:${order.pendingInboundId}`}))`;
+        const inboundBatches = await tx.inboundBatch.findMany({
+          where: { pendingInboundId: order.pendingInboundId },
+          select: { batchNumber: true },
+        });
+        if (inboundBatches.length > 0) {
+          const directShipment = await tx.outboundBatch.findFirst({
+            where: {
+              sourceBatchNumber: { in: inboundBatches.map((row) => row.batchNumber) },
+            },
+            select: { id: true },
+          });
+          if (directShipment) {
+            throw new Error("该入库批次已有出库记录，不能从出库单再次扣减库存");
+          }
+        }
+      }
       const orderWithItems = await tx.outboundOrder.findUnique({
         where: { id },
         include: { items: true },
@@ -256,7 +274,7 @@ export async function POST(
     console.error("出库失败:", error);
     return NextResponse.json(
       { error: error.message || "出库失败" },
-      { status: 500 }
+      { status: String(error.message || "").includes("不能从出库单再次扣减库存") ? 409 : 500 }
     );
   }
 }
