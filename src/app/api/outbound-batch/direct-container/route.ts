@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildOutboundBatchSkuPayload } from "@/lib/outbound-batch-serialize";
+import { claimOutboundBatchesForContainer, ContainerBatchAlreadyLoadedError } from "@/lib/container-batch-guard";
 import { badRequest, serverError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -167,16 +168,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const now = new Date();
-      await tx.outboundBatch.updateMany({
-        where: { id: { in: orderedBatches.map((b) => b.id) } },
-        data: {
-          containerId: c.id,
-          status: "已装柜",
-          lastEvent: "已装柜",
-          lastEventTime: now,
-        },
-      });
+      await claimOutboundBatchesForContainer(tx, orderedBatches.map((b) => b.id), c.id);
 
       return c;
     });
@@ -196,6 +188,12 @@ export async function POST(request: NextRequest) {
       createdAt: container.createdAt.toISOString(),
     });
   } catch (error) {
+    if (error instanceof ContainerBatchAlreadyLoadedError) {
+      return badRequest(error.message);
+    }
+    if ((error as { code?: string })?.code === "P2002") {
+      return badRequest("该柜号已存在");
+    }
     return serverError("直接生成柜子失败", error, { includeDetailsInDev: true });
   }
 }
