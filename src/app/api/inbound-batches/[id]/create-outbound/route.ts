@@ -51,6 +51,22 @@ export async function POST(
       );
     }
 
+    const existing = await prisma.outboundOrder.findFirst({
+      where: { pendingInboundId: pending.id },
+      select: { id: true, outboundNumber: true, createdAt: true },
+    });
+    if (existing) {
+      return NextResponse.json({
+        success: true,
+        alreadyExists: true,
+        outboundOrder: {
+          id: existing.id,
+          outboundNumber: existing.outboundNumber,
+          createdAt: existing.createdAt.toISOString(),
+        },
+      });
+    }
+
     const order = await createOutboundOrderFromPendingInbound({
       pendingInboundId: pending.id,
       variantId,

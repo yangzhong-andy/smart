@@ -13,6 +13,8 @@ type InboundBatchItem = {
   warehouseId: string;
   warehouseName: string;
   qty: number;
+  shippedQty?: number;
+  remainingQty?: number;
   receivedDate: string;
   inboundNumber?: string;
   sku?: string;
@@ -74,12 +76,17 @@ export default function InboundBatchListPage() {
   const loading = false;
 
   const openModal = (batch: InboundBatchItem) => {
+    const remainingQty = batch.remainingQty ?? batch.qty;
+    if (remainingQty <= 0) {
+      toast.info("该入库批次已经全部出库，不能重复出库");
+      return;
+    }
     setModalBatch(batch);
     const domestic = warehouses.find((w) => w.type === "DOMESTIC");
     setForm({
       warehouseId: domestic?.id ?? warehouses[0]?.id ?? "",
       destination: "",
-      qty: String(batch.qty),
+      qty: String(remainingQty),
     });
   };
 
@@ -196,8 +203,9 @@ export default function InboundBatchListPage() {
                         size="sm"
                         icon={Truck}
                         onClick={() => openModal(b)}
+                        disabled={(b.remainingQty ?? b.qty) <= 0}
                       >
-                        生成出库单
+                        {(b.remainingQty ?? b.qty) <= 0 ? "已全部出库" : "生成出库单"}
                       </ActionButton>
                     </td>
                   </tr>

@@ -61,6 +61,9 @@ export async function GET(request: NextRequest) {
           qty: true, receivedQty: true, domesticTrackingNumber: true,
           shippedDate: true, status: true, createdAt: true, updatedAt: true,
           _count: { select: { batches: true } },
+          outboundOrder: {
+            select: { id: true, outboundNumber: true, status: true, shippedQty: true, qty: true },
+          },
           batches: {
             take: 1,
             orderBy: { createdAt: 'desc' as const },
@@ -125,6 +128,15 @@ export async function GET(request: NextRequest) {
         createdAt: item.createdAt.toISOString(),
         updatedAt: item.updatedAt.toISOString(),
         batchCount: item._count.batches,
+        outboundOrder: item.outboundOrder
+          ? {
+              id: item.outboundOrder.id,
+              outboundNumber: item.outboundOrder.outboundNumber,
+              status: item.outboundOrder.status,
+              shippedQty: item.outboundOrder.shippedQty,
+              qty: item.outboundOrder.qty,
+            }
+          : undefined,
         warehouseName: item.batches?.[0]?.warehouseName ?? undefined,
         // 多SKU明细
         items: item.items.map(i => ({

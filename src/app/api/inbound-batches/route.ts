@@ -69,6 +69,19 @@ export async function GET(request: NextRequest) {
       prisma.inboundBatch.count({ where }),
     ]);
 
+    const shippedBySource = new Map<string, number>();
+    const sourceBatchNumbers = batches.map((batch) => batch.batchNumber);
+    if (sourceBatchNumbers.length > 0) {
+      const shipped = await prisma.outboundBatch.groupBy({
+        by: ["sourceBatchNumber"],
+        where: { sourceBatchNumber: { in: sourceBatchNumbers } },
+        _sum: { qty: true },
+      });
+      for (const row of shipped) {
+        if (row.sourceBatchNumber) shippedBySource.set(row.sourceBatchNumber, row._sum.qty || 0);
+      }
+    }
+
     // 为多SKU待入库单做“批次 -> SKU明细”的就近匹配，避免列表里显示“多款”
     const usedInboundItemIds = new Set<string>();
     const response = {
@@ -104,6 +117,8 @@ export async function GET(request: NextRequest) {
           warehouseId: b.warehouseId,
           warehouseName: b.warehouseName ?? "",
           qty: b.qty,
+          shippedQty: shippedBySource.get(b.batchNumber) || 0,
+          remainingQty: Math.max(0, b.qty - (shippedBySource.get(b.batchNumber) || 0)),
           receivedDate: b.receivedDate.toISOString(),
           notes: b.notes || undefined,
           createdAt: b.createdAt.toISOString(),

@@ -39,6 +39,27 @@ export async function createOutboundOrderFromPendingInbound(
     return existing;
   }
 
+  // The initial lookup handles normal repeated clicks. The unique
+  // pendingInboundId constraint below also needs a race-safe fallback when
+  // two requests arrive at the same time.
+  const createSafely = async (data: any) => {
+    try {
+      return await prisma.outboundOrder.create({
+        data,
+        select: { id: true, outboundNumber: true, createdAt: true },
+      });
+    } catch (error: any) {
+      if (error?.code === "P2002") {
+        const raced = await prisma.outboundOrder.findFirst({
+          where: { pendingInboundId },
+          select: { id: true, outboundNumber: true, createdAt: true },
+        });
+        if (raced) return raced;
+      }
+      throw error;
+    }
+  };
+
   // 获取待入库单的items明细
   const pending = await prisma.pendingInbound.findUnique({
     where: { id: pendingInboundId },
@@ -82,8 +103,7 @@ export async function createOutboundOrderFromPendingInbound(
     }
     const firstItem = shippedItems[0];
     
-    const order = await prisma.outboundOrder.create({
-      data: {
+    const order = await createSafely({
         outboundNumber,
         // 单SKU字段用第一个item（兼容）
         variantId: firstItem?.variantId || null,
@@ -96,11 +116,7 @@ export async function createOutboundOrderFromPendingInbound(
         status: "待出库",
         reason: "入库完成后自动创建",
         pendingInboundId,
-        items: {
-          create: shippedItems
-        }
-      },
-      select: { id: true, outboundNumber: true, createdAt: true },
+        items: { create: shippedItems }
     });
 
     return order;
@@ -108,8 +124,7 @@ export async function createOutboundOrderFromPendingInbound(
     // 单SKU模式（兼容旧版本）
     const { variantId, sku, qty } = params;
     
-    const order = await prisma.outboundOrder.create({
-      data: {
+    const order = await createSafely({
         outboundNumber,
         variantId: variantId || null,
         sku: sku || null,
@@ -121,8 +136,6 @@ export async function createOutboundOrderFromPendingInbound(
         status: "待出库",
         reason: "入库完成后自动创建",
         pendingInboundId,
-      },
-      select: { id: true, outboundNumber: true, createdAt: true },
     });
 
     return order;

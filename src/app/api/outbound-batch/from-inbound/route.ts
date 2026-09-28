@@ -120,6 +120,21 @@ export async function POST(request: NextRequest) {
     const batchNumber = `OB-${batch.batchNumber}-${Date.now().toString(36).slice(-4)}`;
 
     const result = await prisma.$transaction(async (tx) => {
+      // Allow partial shipment, but never let a second click ship the same
+      // inbound batch quantity again.
+      const existingOutbound = await tx.outboundBatch.findMany({
+        where: { sourceBatchNumber: batch.batchNumber },
+        select: { qty: true },
+      });
+      const alreadyShipped = existingOutbound.reduce((sum, row) => sum + row.qty, 0);
+      const remainingFromBatch = Math.max(0, batch.qty - alreadyShipped);
+      if (remainingFromBatch <= 0) {
+        throw new Error("该入库批次已全部出库，不能重复出库");
+      }
+      if (qty > remainingFromBatch) {
+        throw new Error(`该入库批次剩余可出库 ${remainingFromBatch}，不能重复出库`);
+      }
+
       // 1. 扣减库存
       const stock = await tx.stock.findUnique({
         where: { variantId_warehouseId: { variantId, warehouseId } },
@@ -291,6 +306,7 @@ export async function POST(request: NextRequest) {
       msg.includes("可用库存不足") ||
       msg.includes("入库批次不存在") ||
       msg.includes("出库数量不能超过") ||
+      msg.includes("不能重复出库") ||
       msg.includes("未找到国内仓");
     return NextResponse.json(
       { error: msg },

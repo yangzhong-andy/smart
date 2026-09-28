@@ -137,6 +137,13 @@ export interface InboundOrder {
   
   createdAt: string;
   updatedAt: string;
+  outboundOrder?: {
+    id: string;
+    outboundNumber: string;
+    status: string;
+    shippedQty: number;
+    qty: number;
+  };
 }
 
 // 入库订单SKU明细

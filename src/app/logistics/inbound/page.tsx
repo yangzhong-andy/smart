@@ -241,6 +241,10 @@ export default function InboundPage() {
       toast.error("仅已入库的单据可生成出库单");
       return;
     }
+    if (order.outboundOrder) {
+      toast.info(`该入库单已有出库单：${order.outboundOrder.outboundNumber}`);
+      return;
+    }
     setCreatingOutboundId(order.id);
     try {
       const batchRes = await fetch(
@@ -261,7 +265,12 @@ export default function InboundPage() {
         throw new Error((data as { error?: string }).error || "生成出库单失败");
       }
       const ob = (data as { outboundOrder?: { outboundNumber?: string } }).outboundOrder;
-      toast.success(ob?.outboundNumber ? `出库单已生成：${ob.outboundNumber}` : "出库单已生成");
+      const alreadyExists = (data as { alreadyExists?: boolean }).alreadyExists;
+      toast.success(
+        alreadyExists
+          ? (ob?.outboundNumber ? `该入库单已有出库单：${ob.outboundNumber}` : "该入库单已有出库单，未重复创建")
+          : (ob?.outboundNumber ? `出库单已生成：${ob.outboundNumber}` : "出库单已生成")
+      );
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "生成出库单失败");
@@ -629,9 +638,9 @@ function InboundCard({ order, warehouses, isSubmitting, isCreatingOutbound, onVi
           {order.status === "已入库" && onCreateOutbound && (
             <button
               onClick={onCreateOutbound}
-              disabled={isCreatingOutbound}
+              disabled={isCreatingOutbound || Boolean(order.outboundOrder)}
               className="p-2 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="生成出库单"
+              title={order.outboundOrder ? `已有出库单：${order.outboundOrder.outboundNumber}` : "生成出库单"}
             >
               <Truck className="h-5 w-5" />
             </button>
@@ -759,9 +768,9 @@ function InboundDetailModal({ order, warehouses, isSubmitting, isCreatingOutboun
               onClick={onCreateOutbound}
               variant="secondary"
               icon={Truck}
-              disabled={isCreatingOutbound}
+              disabled={isCreatingOutbound || Boolean(order.outboundOrder)}
             >
-              {isCreatingOutbound ? "生成中..." : "生成出库单"}
+              {isCreatingOutbound ? "生成中..." : order.outboundOrder ? `已有出库单：${order.outboundOrder.outboundNumber}` : "生成出库单"}
             </ActionButton>
           )}
           {remaining > 0 && order.status !== "已取消" && (
