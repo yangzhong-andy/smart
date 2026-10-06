@@ -1670,7 +1670,7 @@ export default function ContainersPage() {
                 取消
               </ActionButton>
               <ActionButton type="button" onClick={submitChangeStatus} disabled={statusConfirm.toStatus === "IN_WAREHOUSE" && !toWarehouseId}>
-                确认到货
+                {statusConfirm.toStatus === "IN_WAREHOUSE" ? "确认到货" : "确认变更"}
               </ActionButton>
             </div>
           </div>
@@ -1820,4 +1820,3 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
