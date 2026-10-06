@@ -10,8 +10,8 @@ Write-Host "`n1. 生成 Prisma Client..." -ForegroundColor Green
 npx prisma generate
 if ($LASTEXITCODE -ne 0) { exit 1 }
 
-Write-Host "`n2. 推送 schema 到数据库 (db push)..." -ForegroundColor Green
-npx prisma db push
+Write-Host "`n2. 应用版本化迁移..." -ForegroundColor Green
+npx prisma migrate deploy
 if ($LASTEXITCODE -ne 0) {
     Write-Host "失败: 请检查 DATABASE_URL 及数据库连接" -ForegroundColor Red
     exit 1

@@ -34,11 +34,13 @@ export function DepartmentAccessProvider({ children }: { children: ReactNode }) 
   const [bypass, setBypass] = useState(false);
   const [config, setConfig] = useState<DepartmentAccessRuleConfig | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const sessionUserId = session?.user?.id;
+  const sessionUserRole = session?.user?.role;
+  const sessionDepartmentId = session?.user?.departmentId;
 
   const load = useCallback(async () => {
-    if (status !== "authenticated" || !session?.user) return;
-    const role = session.user.role;
-    if (role === "SUPER_ADMIN" || role === "ADMIN") {
+    if (status !== "authenticated" || !sessionUserId) return;
+    if (sessionUserRole === "SUPER_ADMIN" || sessionUserRole === "ADMIN") {
       setBypass(true);
       setConfig(null);
       setLoaded(true);
@@ -66,7 +68,7 @@ export function DepartmentAccessProvider({ children }: { children: ReactNode }) 
       setConfig(null);
       setLoaded(true);
     }
-  }, [session?.user?.departmentId, session?.user?.id, session?.user?.role, status]);
+  }, [sessionUserId, sessionUserRole, status]);
 
   useEffect(() => {
     const onUpdated = () => {
@@ -78,7 +80,7 @@ export function DepartmentAccessProvider({ children }: { children: ReactNode }) 
 
   useEffect(() => {
     if (status === "loading") return;
-    if (status !== "authenticated" || !session?.user) {
+    if (status !== "authenticated" || !sessionUserId) {
       setBypass(false);
       setConfig(null);
       setLoaded(false);
@@ -92,7 +94,7 @@ export function DepartmentAccessProvider({ children }: { children: ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [load, session?.user?.id, session?.user?.departmentId, session?.user?.role, status]);
+  }, [load, sessionDepartmentId, sessionUserId, sessionUserRole, status]);
 
   const refresh = useCallback(async () => {
     setLoaded(false);

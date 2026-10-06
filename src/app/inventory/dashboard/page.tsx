@@ -69,8 +69,14 @@ export default function InventoryDashboardPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const stockData = Array.isArray(stockDataRaw) ? stockDataRaw : (stockDataRaw?.data ?? []);
-  const warehousesData = (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[];
+  const stockData = useMemo(
+    () => Array.isArray(stockDataRaw) ? stockDataRaw : (stockDataRaw?.data ?? []),
+    [stockDataRaw],
+  );
+  const warehousesData = useMemo(
+    () => (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[],
+    [warehousesDataRaw],
+  );
 
   // 筛选状态
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
@@ -145,7 +151,7 @@ export default function InventoryDashboardPage() {
     }
 
     return filtered;
-  }, [stockData, selectedWarehouse, searchSku, statusFilter]);
+  }, [stockData, warehousesData, selectedWarehouse, searchSku, statusFilter]);
 
   // 导出数据
   const handleExportData = () => {

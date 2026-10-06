@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
+import {
+  normalizeProfitSkuPlatform,
+  PROFIT_SKU_PLATFORMS,
+} from "@/lib/profit-sku-platforms";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +31,7 @@ export async function GET(request: NextRequest) {
     const auth = await requireApiUser(request);
     if (auth.response) return auth.response;
 
-    const [mappings, shops, variants] = await Promise.all([
+    const [mappings, tiktokShops, shopeeShops, mercadoLivreShops, variants] = await Promise.all([
       prisma.profitSkuMapping.findMany({
         include: {
           components: {
@@ -34,12 +39,22 @@ export async function GET(request: NextRequest) {
             orderBy: { createdAt: "asc" },
           },
         },
-        orderBy: [{ shopId: "asc" }, { sellerSku: "asc" }],
+        orderBy: [{ platform: "asc" }, { shopId: "asc" }, { sellerSku: "asc" }],
       }),
       prisma.tikTokShopSetting.findMany({
         where: { status: "active" },
         select: { shopId: true, shopName: true, region: true },
         orderBy: { shopName: "asc" },
+      }),
+      prisma.shopeeShopSetting.findMany({
+        where: { status: "active" },
+        select: { shopId: true, shopName: true, region: true },
+        orderBy: { shopName: "asc" },
+      }),
+      prisma.mercadoLivreAccount.findMany({
+        where: { status: "active" },
+        select: { userId: true, nickname: true, country: true },
+        orderBy: { nickname: "asc" },
       }),
       prisma.productVariant.findMany({
         select: { id: true, skuId: true, product: { select: { name: true } } },
@@ -47,7 +62,22 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    return NextResponse.json({ mappings, shops, variants });
+    const shops = [
+      ...tiktokShops.map((shop) => ({ ...shop, platform: "TIKTOK" as const })),
+      ...shopeeShops.map((shop) => ({ ...shop, platform: "SHOPEE" as const })),
+      ...mercadoLivreShops.map((shop) => ({
+        shopId: shop.userId,
+        shopName: shop.nickname,
+        region: shop.country,
+        platform: "MERCADO_LIVRE" as const,
+      })),
+    ];
+    return NextResponse.json({
+      mappings,
+      shops,
+      variants,
+      platforms: PROFIT_SKU_PLATFORMS,
+    });
   } catch (error: any) {
     console.error("[Profit SKU Mapping]", error);
     return NextResponse.json({ error: error?.message || "店铺销售 SKU 映射读取失败" }, { status: 500 });
@@ -61,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const id = String(body?.id || "").trim();
-    const platform = String(body?.platform || "TIKTOK").trim().toUpperCase();
+    const platform = normalizeProfitSkuPlatform(body?.platform || "TIKTOK");
     const shopId = String(body?.shopId || "").trim();
     const sellerSku = String(body?.sellerSku || "").trim();
     const notes = String(body?.notes || "").trim() || null;
@@ -72,14 +102,24 @@ export async function POST(request: NextRequest) {
     }
 
     const [shop, variants, existingMapping] = await Promise.all([
-      prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } }),
+      platform === "TIKTOK"
+        ? prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } })
+        : platform === "SHOPEE"
+          ? prisma.shopeeShopSetting.findFirst({
+            where: { shopId, status: "active" },
+            select: { shopId: true },
+          })
+          : prisma.mercadoLivreAccount.findFirst({
+            where: { userId: shopId, status: "active" },
+            select: { userId: true },
+          }),
       prisma.productVariant.findMany({
         where: { id: { in: components.map((component) => component.variantId) } },
         select: { id: true },
       }),
       id ? prisma.profitSkuMapping.findUnique({ where: { id }, select: { id: true } }) : Promise.resolve(null),
     ]);
-    if (!shop) return NextResponse.json({ error: "店铺不存在" }, { status: 400 });
+    if (!shop) return NextResponse.json({ error: "所选平台下的授权店铺不存在" }, { status: 400 });
     if (id && !existingMapping) return NextResponse.json({ error: "要编辑的映射不存在，请刷新页面后重试" }, { status: 404 });
     if (variants.length !== components.length) {
       return NextResponse.json({ error: "成本组成中包含不存在的内部 SKU" }, { status: 400 });
@@ -105,6 +145,7 @@ export async function POST(request: NextRequest) {
       return saved;
     });
 
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true, id: mapping.id });
   } catch (error: any) {
     console.error("[Profit SKU Mapping]", error);
@@ -122,6 +163,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "状态参数无效" }, { status: 400 });
     }
     await prisma.profitSkuMapping.update({ where: { id }, data: { enabled: body.enabled } });
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("[Profit SKU Mapping]", error);
@@ -134,14 +176,15 @@ export async function DELETE(request: NextRequest) {
     const auth = await requireApiUser(request);
     if (auth.response) return auth.response;
 
-    const platform = (request.nextUrl.searchParams.get("platform") || "TIKTOK").trim().toUpperCase();
+    const platform = normalizeProfitSkuPlatform(request.nextUrl.searchParams.get("platform") || "TIKTOK");
     const shopId = (request.nextUrl.searchParams.get("shopId") || "").trim();
     const sellerSku = (request.nextUrl.searchParams.get("sellerSku") || "").trim();
-    if (!shopId || !sellerSku) {
-      return NextResponse.json({ error: "缺少店铺或销售 SKU" }, { status: 400 });
+    if (!platform || !shopId || !sellerSku) {
+      return NextResponse.json({ error: "平台、店铺或销售 SKU 无效" }, { status: 400 });
     }
 
     await prisma.profitSkuMapping.deleteMany({ where: { platform, shopId, sellerSku } });
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("[Profit SKU Mapping]", error);

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
-import { AUTH_SECRET } from '@/lib/auth-secret'
+import { getAuthSecret } from '@/lib/auth-secret'
 import { AUTH_COOKIE_NAMES, AUTH_COOKIE_SECURE } from '@/lib/auth-cookies'
 
 // 简单内存限流：IP -> { count, firstAttempt }
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
         departmentName: departmentName,
         departmentCode: departmentCode
       },
-      AUTH_SECRET,
+      getAuthSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     )
 

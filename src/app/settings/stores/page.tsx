@@ -62,8 +62,8 @@ export default function StoresPage() {
     keepPreviousData: true,
     dedupingInterval: 600000,
   });
-  const accounts = (Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? [])) as BankAccount[];
-  const stores = (Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? [])) as Store[];
+  const accounts = useMemo<BankAccount[]>(() => (Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? [])) as BankAccount[], [accountsDataRaw]);
+  const stores = useMemo<Store[]>(() => (Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? [])) as Store[], [storesDataRaw]);
 
   const countriesByRegion = useMemo(() => getCountriesByRegion(), []);
 
@@ -466,7 +466,9 @@ export default function StoresPage() {
           >
             <option value="all">全部平台</option>
             <option value="TikTok">TikTok</option>
+            <option value="Shopee">Shopee</option>
             <option value="Amazon">Amazon</option>
+            <option value="Mercado Livre">Mercado Livre</option>
             <option value="其他">其他</option>
           </select>
           <select
@@ -711,7 +713,9 @@ export default function StoresPage() {
                     className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   >
                     <option value="TikTok">TikTok</option>
+                    <option value="Shopee">Shopee</option>
                     <option value="Amazon">Amazon</option>
+                    <option value="Mercado Livre">Mercado Livre</option>
                     <option value="其他">其他</option>
                   </select>
                 </label>

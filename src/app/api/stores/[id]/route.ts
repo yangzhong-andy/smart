@@ -27,7 +27,9 @@ export async function GET(
     // 转换平台格式：数据库枚举转前端字符串
     const platformToFrontend: Record<Platform, string> = {
       [Platform.TIKTOK]: 'TikTok',
+      [Platform.SHOPEE]: 'Shopee',
       [Platform.AMAZON]: 'Amazon',
+      [Platform.MERCADO_LIVRE]: 'Mercado Livre',
       [Platform.INSTAGRAM]: 'Instagram',
       [Platform.YOUTUBE]: 'YouTube',
       [Platform.OTHER]: '其他'
@@ -36,7 +38,7 @@ export async function GET(
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: platformToFrontend[store.platform] as 'TikTok' | 'Amazon' | '其他',
+      platform: platformToFrontend[store.platform] as 'TikTok' | 'Shopee' | 'Amazon' | 'Mercado Livre' | '其他',
       country: store.country,
       currency: store.currency,
       accountId: store.accountId,
@@ -72,7 +74,9 @@ export async function PUT(
     // 转换平台格式：前端使用 "TikTok", "Amazon" 等，数据库使用 Platform 枚举
     const platformToEnum: Record<string, Platform> = {
       'TikTok': Platform.TIKTOK,
+      'Shopee': Platform.SHOPEE,
       'Amazon': Platform.AMAZON,
+      'Mercado Livre': Platform.MERCADO_LIVRE,
       'Instagram': Platform.INSTAGRAM,
       'YouTube': Platform.YOUTUBE,
       '其他': Platform.OTHER
@@ -100,7 +104,9 @@ export async function PUT(
     // 转换平台格式：数据库枚举转前端字符串
     const platformToFrontend: Record<Platform, string> = {
       [Platform.TIKTOK]: 'TikTok',
+      [Platform.SHOPEE]: 'Shopee',
       [Platform.AMAZON]: 'Amazon',
+      [Platform.MERCADO_LIVRE]: 'Mercado Livre',
       [Platform.INSTAGRAM]: 'Instagram',
       [Platform.YOUTUBE]: 'YouTube',
       [Platform.OTHER]: '其他'
@@ -109,7 +115,7 @@ export async function PUT(
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: platformToFrontend[store.platform] as 'TikTok' | 'Amazon' | '其他',
+      platform: platformToFrontend[store.platform] as 'TikTok' | 'Shopee' | 'Amazon' | 'Mercado Livre' | '其他',
       country: store.country,
       currency: store.currency,
       accountId: store.accountId,

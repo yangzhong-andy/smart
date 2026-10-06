@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { generateCacheKey, getCache, setCache } from "@/lib/redis";
 import { fetchExchangeRates, getRateToCNY } from "@/lib/exchange";
 import {
   allocateActualFeeTotal,
@@ -31,10 +32,17 @@ import type {
   ProfitReportResponse,
   ProfitSampleRow,
   ProfitSkuRow,
+  ProfitStorePeriodRow,
   ProfitStoreRow,
 } from "@/lib/profit-report-types";
+import { normalizeCommercePlatform } from "@/lib/platform-orders/contract";
+import { orderBusinessDate, orderTimeZone, relativeBusinessDate } from "@/lib/order-business-time";
+import { buildMercadoLivreProfitReport } from "@/lib/mercado-livre-profit-report";
 
 export const dynamic = "force-dynamic";
+
+const PROFIT_REPORT_CACHE_PREFIX = "profit-report";
+const PROFIT_REPORT_CACHE_TTL_SECONDS = 180;
 
 type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage" | "components"> & {
   productCoveredUnits: number;
@@ -123,23 +131,6 @@ function monthEnd(date: string): string {
   parsed.setUTCMonth(parsed.getUTCMonth() + 1);
   parsed.setUTCDate(0);
   return parsed.toISOString().slice(0, 10);
-}
-
-function timeZoneForRegion(region: string | null | undefined): string {
-  if (region === "US") return "America/Denver";
-  if (region === "BR") return "America/Sao_Paulo";
-  return "UTC";
-}
-
-function dateInTimeZone(date: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function periodFor(date: string, groupBy: ProfitGroupBy) {
@@ -380,7 +371,11 @@ function chunks<T>(items: T[], size: number): T[][] {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const today = new Date().toISOString().slice(0, 10);
+    const requestedPlatform = normalizeCommercePlatform(searchParams.get("platform") || "TIKTOK");
+    if (!requestedPlatform) {
+      return NextResponse.json({ error: "Invalid platform" }, { status: 400 });
+    }
+    const today = relativeBusinessDate(searchParams.get("countryCode"), 0);
     const startDate = searchParams.get("startDate") || addDays(today, -89);
     const endDate = searchParams.get("endDate") || today;
     const requestedGroup = searchParams.get("groupBy") as ProfitGroupBy | null;
@@ -391,6 +386,11 @@ export async function GET(request: NextRequest) {
       ? normalizeCountryCode(requestedCountryValue)
       : null;
     const includeOrders = searchParams.get("includeOrders") === "1";
+    // The profit dashboard does not render the influencer sample ledger. Keep
+    // that expensive order-level detail opt-in for the dedicated influencer
+    // page while preserving its existing data contract there.
+    const includeSamples = searchParams.get("includeSamples") === "1";
+    const noCache = searchParams.get("noCache") === "true";
 
     if (!VALID_DATE.test(startDate) || !VALID_DATE.test(endDate) || startDate > endDate) {
       return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
@@ -399,6 +399,39 @@ export async function GET(request: NextRequest) {
     if (rangeDays > 366) return NextResponse.json({ error: "Date range exceeds 366 days" }, { status: 400 });
     if (includeOrders && (startDate !== endDate || groupBy !== "day")) {
       return NextResponse.json({ error: "Order details support one day only" }, { status: 400 });
+    }
+
+    if (requestedPlatform === "MERCADO_LIVRE") {
+      const response = await buildMercadoLivreProfitReport({
+        startDate,
+        endDate,
+        groupBy,
+        shopId: selectedShopId,
+        countryCode: requestedCountryCode,
+        includeOrders,
+      });
+      return NextResponse.json(response, { headers: { "x-profit-cache": "BYPASS" } });
+    }
+    if (requestedPlatform !== "TIKTOK") {
+      return NextResponse.json({ error: `${requestedPlatform} profit report is not connected` }, { status: 409 });
+    }
+
+    const cacheKey = generateCacheKey(
+      PROFIT_REPORT_CACHE_PREFIX,
+      "v3-store-periods",
+      requestedPlatform,
+      startDate,
+      endDate,
+      groupBy,
+      selectedShopId || "all",
+      requestedCountryCode || "all",
+    );
+    const cacheable = !includeOrders && !includeSamples && !noCache;
+    if (cacheable) {
+      const cached = await getCache<ProfitReportResponse>(cacheKey);
+      if (cached) {
+        return NextResponse.json(cached, { headers: { "x-profit-cache": "HIT" } });
+      }
     }
 
     const allShops = await prisma.tikTokShopSetting.findMany({
@@ -467,9 +500,15 @@ export async function GET(request: NextRequest) {
         select: { variantId: true, unitPrice: true, qty: true, totalAmount: true },
       }),
       prisma.logisticsCost.findMany({
-        include: {
+        select: {
+          amount: true,
+          currency: true,
+          costType: true,
+          containerId: true,
+          outboundBatchId: true,
           outboundBatch: {
-            include: {
+            select: {
+              containerId: true,
               container: { select: { id: true } },
               outboundBatchItems: {
                 select: {
@@ -528,10 +567,12 @@ export async function GET(request: NextRequest) {
         include: { platformFeeTiers: { orderBy: { minOrderAmount: "asc" } } },
         orderBy: { effectiveFrom: "desc" },
       }),
-      prisma.influencer.findMany({
-        where: { sampleOrderNumber: { not: null } },
-        select: { id: true, accountName: true, sampleOrderNumber: true },
-      }),
+      includeSamples
+        ? prisma.influencer.findMany({
+            where: { sampleOrderNumber: { not: null } },
+            select: { id: true, accountName: true, sampleOrderNumber: true },
+          })
+        : Promise.resolve([]),
       prisma.profitScheme.findMany({
         where: { status: { in: ["PUBLISHED", "ARCHIVED"] } },
         include: { components: { orderBy: [{ sortOrder: "asc" }, { code: "asc" }] } },
@@ -540,6 +581,15 @@ export async function GET(request: NextRequest) {
     ]);
 
     const shopById = new Map(allShops.map((shop) => [shop.shopId, shop]));
+    const businessDateByOrderId = new Map<string, string>();
+    const businessDateForOrder = (order: (typeof ordersRaw)[number]) => {
+      const cached = businessDateByOrderId.get(order.orderId);
+      if (cached) return cached;
+      const shop = shopById.get(order.shopId);
+      const businessDate = orderBusinessDate(order.createTime || new Date(0), shop?.region);
+      businessDateByOrderId.set(order.orderId, businessDate);
+      return businessDate;
+    };
     const storeByAccountId = new Map(stores.map((store) => [store.accountId, store]));
     const shopStore = new Map(allShops.map((shop) => [shop.shopId, shop.bankAccountId ? storeByAccountId.get(shop.bankAccountId) || null : null]));
     const shopByStoreId = new Map<string, string>();
@@ -565,7 +615,7 @@ export async function GET(request: NextRequest) {
         ? [...definitions, affiliate].sort((left, right) => left.sortOrder - right.sortOrder)
         : definitions;
     };
-    const resolveProfitScheme = (shopId: string, businessDate: string) => {
+    const resolveProfitSchemeUncached = (shopId: string, businessDate: string) => {
       const store = shopStore.get(shopId);
       const shop = shopById.get(shopId);
       const countryCode = normalizeCountryCode(store?.country || shop?.region);
@@ -588,23 +638,50 @@ export async function GET(request: NextRequest) {
         definitions: withRequiredInformationalComponents(countryCode, definitions),
       };
     };
+    const profitSchemeCache = new Map<string, ReturnType<typeof resolveProfitSchemeUncached>>();
+    const resolveProfitScheme = (shopId: string, businessDate: string) => {
+      const key = `${shopId}\u0000${businessDate}`;
+      const cached = profitSchemeCache.get(key);
+      if (cached) return cached;
+      const resolved = resolveProfitSchemeUncached(shopId, businessDate);
+      profitSchemeCache.set(key, resolved);
+      return resolved;
+    };
     const reportComponentDefinitions = selectedShopId
       ? resolveProfitScheme(selectedShopId, endDate).definitions
       : defaultProfitComponents(resolvedCountryCode, "TIKTOK");
 
     const orders = ordersRaw.filter((order) => {
       if (!order.createTime) return false;
-      const shop = shopById.get(order.shopId);
-      const businessDate = dateInTimeZone(order.createTime, timeZoneForRegion(shop?.region));
+      const businessDate = businessDateForOrder(order);
       return businessDate >= startDate && businessDate <= endDate;
     });
     const orderIds = orders.map((order) => order.orderId);
     const [orderFinancials, sampleCostRows, orderSettlementTransactions] = await Promise.all([
-      prisma.tikTokOrderFinancial.findMany({ where: { orderId: { in: orderIds } } }),
-      prisma.influencerSampleCost.findMany({
+      prisma.tikTokOrderFinancial.findMany({
         where: { orderId: { in: orderIds } },
-        include: { influencer: { select: { id: true, accountName: true } } },
+        select: {
+          orderId: true,
+          currency: true,
+          revenueAmount: true,
+          feeTaxAmount: true,
+          referralFeeAmount: true,
+          smartPromotionFeeAmount: true,
+          shippingCostAmount: true,
+          actualShippingFeeAmount: true,
+          fbtFulfillmentFeeAmount: true,
+          adjustmentAmount: true,
+          settlementAmount: true,
+          source: true,
+          statementIds: true,
+        },
       }),
+      includeSamples
+        ? prisma.influencerSampleCost.findMany({
+            where: { orderId: { in: orderIds } },
+            include: { influencer: { select: { id: true, accountName: true } } },
+          })
+        : Promise.resolve([]),
       prisma.platformSettlementTransaction.findMany({
         where: { platform: "TIKTOK", orderId: { in: orderIds } },
         select: { orderId: true, currency: true, rawData: true },
@@ -847,20 +924,62 @@ export async function GET(request: NextRequest) {
     // Warehouse selection belongs to the order. A shop may switch fulfillment
     // providers, so never use shopId as the primary warehouse key.
     const resolveWarehouse = createWarehouseResolver(warehouseMappings, warehouseSwitchRules);
-    const activeShopRule = (shopId: string, costType: string, date: string) => shopCostRules.find((rule) => (
-      rule.shopId === shopId
-      && rule.costType === costType
-      && rule.effectiveFrom.toISOString().slice(0, 10) <= date
-      && (!rule.effectiveTo || rule.effectiveTo.toISOString().slice(0, 10) >= date)
-    ));
+    // Rules are stable configuration during a request. Index their effective
+    // ranges once instead of scanning and formatting every rule for every
+    // order in the selected date range.
+    const shopRulesByKey = new Map<string, Array<{
+      rule: (typeof shopCostRules)[number];
+      from: string;
+      to: string | null;
+    }>>();
+    for (const rule of shopCostRules) {
+      const key = `${rule.shopId}\u0000${rule.costType}`;
+      const rows = shopRulesByKey.get(key) || [];
+      rows.push({
+        rule,
+        from: rule.effectiveFrom.toISOString().slice(0, 10),
+        to: rule.effectiveTo ? rule.effectiveTo.toISOString().slice(0, 10) : null,
+      });
+      shopRulesByKey.set(key, rows);
+    }
+    const activeShopRuleCache = new Map<string, (typeof shopCostRules)[number] | null>();
+    const activeShopRule = (shopId: string, costType: string, date: string) => {
+      const key = `${shopId}\u0000${costType}\u0000${date}`;
+      if (activeShopRuleCache.has(key)) return activeShopRuleCache.get(key) || null;
+      const rule = shopRulesByKey.get(`${shopId}\u0000${costType}`)?.find((candidate) => (
+        candidate.from <= date && (!candidate.to || candidate.to >= date)
+      ))?.rule || null;
+      activeShopRuleCache.set(key, rule);
+      return rule;
+    };
+    const warehouseRulesById = new Map<string, Array<{
+      rule: (typeof warehouseRules)[number];
+      from: string;
+      to: string | null;
+    }>>();
+    for (const rule of warehouseRules) {
+      const rows = warehouseRulesById.get(rule.warehouseId) || [];
+      rows.push({
+        rule,
+        from: rule.effectiveFrom.toISOString().slice(0, 10),
+        to: rule.effectiveTo ? rule.effectiveTo.toISOString().slice(0, 10) : null,
+      });
+      warehouseRulesById.set(rule.warehouseId, rows);
+    }
+    const activeWarehouseRuleCache = new Map<string, (typeof warehouseRules)[number] | null>();
     const activeWarehouseRule = (warehouseId: string, shopId: string, date: string) => {
-      const candidates = warehouseRules.filter((rule) => (
-        rule.warehouseId === warehouseId
-        && (!rule.shopId || rule.shopId === shopId)
-        && rule.effectiveFrom.toISOString().slice(0, 10) <= date
-        && (!rule.effectiveTo || rule.effectiveTo.toISOString().slice(0, 10) >= date)
+      const key = `${warehouseId}\u0000${shopId}\u0000${date}`;
+      if (activeWarehouseRuleCache.has(key)) return activeWarehouseRuleCache.get(key) || null;
+      const candidates = (warehouseRulesById.get(warehouseId) || []).filter((candidate) => (
+        (!candidate.rule.shopId || candidate.rule.shopId === shopId)
+        && candidate.from <= date
+        && (!candidate.to || candidate.to >= date)
       ));
-      return candidates.find((rule) => rule.shopId === shopId) || candidates[0] || null;
+      const rule = candidates.find((candidate) => candidate.rule.shopId === shopId)?.rule
+        || candidates[0]?.rule
+        || null;
+      activeWarehouseRuleCache.set(key, rule);
+      return rule;
     };
     const platformRuleCost = (
       rule: (typeof shopCostRules)[number],
@@ -974,6 +1093,9 @@ export async function GET(request: NextRequest) {
             maxLengthCm: Math.max(total.maxLengthCm, dimensions[0]),
             maxWidthCm: Math.max(total.maxWidthCm, dimensions[1]),
             maxHeightCm: Math.max(total.maxHeightCm, dimensions[2]),
+            summedLengthCm: total.summedLengthCm + dimensions[0] * componentQty,
+            summedWidthCm: total.summedWidthCm + dimensions[1] * componentQty,
+            summedHeightCm: total.summedHeightCm + dimensions[2] * componentQty,
             covered: total.covered
               && number(component.variant.weightKg) > 0
               && dimensions.every((dimension) => dimension > 0),
@@ -984,6 +1106,9 @@ export async function GET(request: NextRequest) {
           maxLengthCm: 0,
           maxWidthCm: 0,
           maxHeightCm: 0,
+          summedLengthCm: 0,
+          summedWidthCm: 0,
+          summedHeightCm: 0,
           covered: resolvedComponents.length > 0,
         });
         return {
@@ -998,7 +1123,8 @@ export async function GET(request: NextRequest) {
         sellerSku: "鏈煡 SKU", skuKey: "鏈煡 sku", qty: Math.max(number((order.rawData as any)?.item_count), 1), variant: undefined,
         internalUnitFactor: 1, internalSku: null, mappingStatus: "unmapped" as const, mappingSource: "unmapped" as const, costComponents: [],
         lineValue: 0, unitSalePrice: 0, productUnitCost: 0, logisticsUnitCost: 0, productCostCovered: false, logisticsCostCovered: false,
-        actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0, covered: false,
+        actualWeightKg: 0, volumeCm3: 0, maxLengthCm: 0, maxWidthCm: 0, maxHeightCm: 0,
+        summedLengthCm: 0, summedWidthCm: 0, summedHeightCm: 0, covered: false,
         logisticsOriginalByCurrency: {},
         imageUrl: null,
         productName: "Unknown product",
@@ -1020,7 +1146,18 @@ export async function GET(request: NextRequest) {
       const internalUnits = lines.reduce((sum, line) => (
         sum + line.qty * Math.max(1, line.costComponents.reduce((componentSum, component) => componentSum + component.quantity, 0))
       ), 0);
-      const billedUnits = rule?.billingUnit === "INTERNAL_COMPONENT" ? internalUnits : sellerUnits;
+      // A bundle seller SKU is one sales line, but the warehouse ships its
+      // mapped internal components separately. It must therefore be billed as
+      // the physical component count even when an older warehouse rule still
+      // says SELLER_UNIT. This also makes multi-unit packaging fees apply to
+      // bundles such as FY-2T3 (F002 x2).
+      const hasBundleComponents = lines.some((line) => (
+        line.costComponents.length > 1
+        || line.costComponents.some((component) => component.quantity > 1)
+      ));
+      const billedUnits = rule?.billingUnit === "INTERNAL_COMPONENT" || hasBundleComponents
+        ? internalUnits
+        : sellerUnits;
       // Multi-SKU handling must use the seller SKU values from the raw TikTok
       // order. Profit lines may be expanded for bundle/internal components,
       // which would incorrectly turn one seller SKU with quantity > 1 into a
@@ -1038,6 +1175,9 @@ export async function GET(request: NextRequest) {
         maxLengthCm: Math.max(total.maxLengthCm, line.maxLengthCm),
         maxWidthCm: Math.max(total.maxWidthCm, line.maxWidthCm),
         maxHeightCm: Math.max(total.maxHeightCm, line.maxHeightCm),
+        summedLengthCm: total.summedLengthCm + line.summedLengthCm * line.qty,
+        summedWidthCm: total.summedWidthCm + line.summedWidthCm * line.qty,
+        summedHeightCm: total.summedHeightCm + line.summedHeightCm * line.qty,
         covered: total.covered && line.covered,
       }), {
         actualWeightKg: 0,
@@ -1045,17 +1185,24 @@ export async function GET(request: NextRequest) {
         maxLengthCm: 0,
         maxWidthCm: 0,
         maxHeightCm: 0,
+        summedLengthCm: 0,
+        summedWidthCm: 0,
+        summedHeightCm: 0,
         covered: lines.length > 0,
       });
       const pricingMode = rule?.pricingMode === "WEIGHT_TIER" || rule?.pricingMode === "PACKAGE_TIER"
         ? rule.pricingMode
         : "FLAT_UNIT";
       const volumetricDivisor = Math.max(1, rule?.volumetricDivisor || 6000);
+      // Volume weight is the sum of each physical SKU volume / divisor. Do
+      // not multiply summed length, width and height: that inflates a bundle
+      // such as F002 + F003 from about 1.15kg to 15kg+ and then pushes it into
+      // the wrong warehouse tier. The parcel dimensions used for tier and
+      // oversize checks are the largest individual item dimensions, matching
+      // the logistics fee test tool and the warehouse quote convention.
+      const packageDimensions = [physical.maxLengthCm, physical.maxWidthCm, physical.maxHeightCm]
+        .sort((left, right) => right - left);
       const volumetricWeightKg = physical.volumeCm3 / volumetricDivisor;
-      // Providers choose their own chargeable-weight basis.环球 uses the
-      // larger of summed actual weight and summed product volume / divisor;
-      // Panlian's current quote uses actual weight and dimensions only
-      // promote a tier.
       const chargeableWeightKg = rule?.useVolumetricWeight
         ? Math.max(physical.actualWeightKg, volumetricWeightKg)
         : physical.actualWeightKg;
@@ -1063,8 +1210,6 @@ export async function GET(request: NextRequest) {
       // turn repeated units of one SKU into a taller virtual package by
       // dividing the order's summed volume by one item's footprint; e.g.
       // F003 x3 remains within the first 20 x 20 x 10 cm tier.
-      const packageDimensions = [physical.maxLengthCm, physical.maxWidthCm, physical.maxHeightCm]
-        .sort((left, right) => right - left);
       const feeResult = rule
         ? calculateWarehouseFulfillmentFee({
             pricingMode,
@@ -1100,8 +1245,27 @@ export async function GET(request: NextRequest) {
               baseFee: number(tier.baseFee),
             })),
           })
-        : { fee: 0, covered: false };
+        : { fee: 0, operationalFee: 0, packagingFee: 0, oversizeFee: 0, covered: false, tier: null };
       const requiresPhysicalData = pricingMode !== "FLAT_UNIT";
+      const feeBreakdown = {
+        ruleId: rule?.id || null,
+        currency: rule?.currency || null,
+        total: rule ? number(feeResult.fee) : 0,
+        // The warehouse statement names this component HQ-订单出库费.
+        orderOutbound: rule ? number(feeResult.operationalFee) : 0,
+        // The warehouse statement names this component HQ-包材费.
+        packaging: rule ? number(feeResult.packagingFee) : 0,
+        oversize: rule ? number(feeResult.oversizeFee) : 0,
+        chargeableWeightKg,
+        packageDimensions: [packageDimensions[0] || 0, packageDimensions[1] || 0, packageDimensions[2] || 0] as [number, number, number],
+        billedUnits,
+        distinctSkuCount,
+        tier: feeResult.tier ? {
+          minWeightKg: feeResult.tier.minWeightKg == null ? null : number(feeResult.tier.minWeightKg),
+          maxWeightKg: feeResult.tier.maxWeightKg == null ? null : number(feeResult.tier.maxWeightKg),
+          baseFee: number(feeResult.tier.baseFee),
+        } : null,
+      };
       return {
         costCny: rule ? toCny(feeResult.fee, rule.currency) : 0,
         costOriginal: rule ? feeResult.fee : 0,
@@ -1110,9 +1274,31 @@ export async function GET(request: NextRequest) {
         warehouseId: mapping?.warehouseId || null,
         warehouseName: rule?.warehouse.name || "未配置切仓规则",
         chargeableWeightKg,
+        feeBreakdown,
         tiktokWarehouseId,
         mappingStatus: resolution.status,
       };
+    };
+    const orderLinesCache = new Map<string, ReturnType<typeof resolveOrderLines>>();
+    const getOrderLines = (order: (typeof orders)[number]) => {
+      const cached = orderLinesCache.get(order.orderId);
+      if (cached) return cached;
+      const lines = resolveOrderLines(order);
+      orderLinesCache.set(order.orderId, lines);
+      return lines;
+    };
+    const fulfillmentCache = new Map<string, ReturnType<typeof fulfillmentForOrder>>();
+    const getFulfillment = (
+      order: (typeof orders)[number],
+      lines: ReturnType<typeof resolveOrderLines>,
+      date: string,
+    ) => {
+      const key = `${order.orderId}\u0000${date}`;
+      const cached = fulfillmentCache.get(key);
+      if (cached) return cached;
+      const fulfillment = fulfillmentForOrder(order, lines, date);
+      fulfillmentCache.set(key, fulfillment);
+      return fulfillment;
     };
 
     const statementRates = new Map<string, { revenue: number; cost: number }>();
@@ -1152,6 +1338,7 @@ export async function GET(request: NextRequest) {
       if (!periods.has(period.id)) periods.set(period.id, emptyMetric(period.id, period.label, period.startDate, period.endDate));
     }
     const storesMap = new Map<string, MutableMetric & { shopId: string; storeId: string | null; countryCode: string; currency: string }>();
+    const storePeriodsMap = new Map<string, MutableMetric & { date: string; shopId: string; storeId: string | null; countryCode: string; currency: string }>();
     let warehouseMappingMappedOrders = 0;
     let warehouseMappingMissingIdOrders = 0;
     const warehouseMappingUnmappedIds = new Set<string>();
@@ -1185,16 +1372,35 @@ export async function GET(request: NextRequest) {
       return storesMap.get(shopId)!;
     };
 
+    const ensureStorePeriod = (shopId: string, businessDate: string) => {
+      const period = periodFor(businessDate, groupBy);
+      const key = `${period.id}\u0000${shopId}`;
+      const shop = shopById.get(shopId);
+      const store = shopStore.get(shopId);
+      if (!storePeriodsMap.has(key)) {
+        storePeriodsMap.set(key, {
+          ...emptyMetric(key, store?.name || shop?.shopName || shopId, period.startDate, period.endDate),
+          date: period.id,
+          shopId,
+          storeId: store?.id || null,
+          countryCode: normalizeCountryCode(store?.country || shop?.region),
+          currency: store?.currency || (shop?.region === "US" ? "USD" : "BRL"),
+        });
+      }
+      return storePeriodsMap.get(key)!;
+    };
+
     for (const order of orders) {
       if (!order.createTime) continue;
       const shop = shopById.get(order.shopId);
-      const businessDate = dateInTimeZone(order.createTime, timeZoneForRegion(shop?.region));
+      const businessDate = businessDateForOrder(order);
       const periodInfo = periodFor(businessDate, groupBy);
       const period = periods.get(periodInfo.id)!;
       const storeMetric = ensureStore(order.shopId);
-      const timeZone = timeZoneForRegion(shop?.region);
+      const storePeriodMetric = ensureStorePeriod(order.shopId, businessDate);
+      const timeZone = orderTimeZone(shop?.region);
       const orderCurrency = order.currency || (order.rawData as any)?.payment?.currency || (shop?.region === "US" ? "USD" : "BRL");
-      const fallbackLines = resolveOrderLines(order);
+      const fallbackLines = getOrderLines(order);
       const totalLineValue = fallbackLines.reduce((sum, line) => sum + line.lineValue, 0);
       const totalQty = fallbackLines.reduce((sum, line) => sum + line.qty, 0);
       const totalInternalQty = fallbackLines.reduce((sum, line) => sum + line.qty * line.internalUnitFactor, 0);
@@ -1218,10 +1424,11 @@ export async function GET(request: NextRequest) {
       if (isCancelled) {
         addMetric(period, { cancelledOrders: 1 });
         addMetric(storeMetric, { cancelledOrders: 1 });
+        addMetric(storePeriodMetric, { cancelledOrders: 1 });
       }
       if (exclusionReason) {
+        const fulfillment = getFulfillment(order, fallbackLines, businessDate);
         if (includeOrders) {
-          const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
           orderDetails.push({
             orderId: order.orderId,
             businessDate,
@@ -1231,6 +1438,7 @@ export async function GET(request: NextRequest) {
             countryCode: normalizeCountryCode(storeMetric.countryCode || shop?.region),
             storeName: storeMetric.label,
             status: order.status || order.orderStatus || "UNKNOWN",
+            isSampleOrder: Boolean((order.rawData as any)?.is_sample_order),
             includedInProfit: false,
             exclusionReason,
             currency: orderCurrency,
@@ -1249,6 +1457,7 @@ export async function GET(request: NextRequest) {
             tiktokWarehouseId: fulfillment.tiktokWarehouseId,
             warehouseId: fulfillment.warehouseId,
             warehouseName: fulfillment.warehouseName,
+            warehouseFeeBreakdown: fulfillment.feeBreakdown,
             gmvCny: 0,
             platformFeeCny: 0,
             fulfillmentFeeCny: 0,
@@ -1287,11 +1496,27 @@ export async function GET(request: NextRequest) {
       const financial = financialByOrder.get(order.orderId);
       const settledCny = settlementByOrder.get(order.orderId);
       const hasExactSettlement = financial?.source === "SETTLED" || settledCny != null;
+      const affiliateOriginalByCurrency = affiliateCommissionByOrder.get(order.orderId) || {};
       // US TikTok uses the settlement revenue as GMV when a settled or
       // estimated transaction exists. It excludes buyer-paid shipping and
       // keeps refunds/credits in the same auditable order aggregate.
       const usSettlementInput = orderCountryCode === "US"
-        ? usTikTokProfitInput(financial, productAmount)
+        ? usTikTokProfitInput(
+            financial
+              ? {
+                  ...financial,
+                  // Published V1 has no affiliate-cost component. Keep that
+                  // fee inside platform cost until a version with a separate
+                  // affiliate component is published, avoiding undercounting.
+                  affiliateCommissionAmount: orderProfitScheme.definitions.some(
+                    (component) => component.code === "AFFILIATE_COMMISSION" && component.includeInProfit,
+                  )
+                    ? (affiliateOriginalByCurrency[financial.currency.toUpperCase()] || 0)
+                    : 0,
+                }
+              : null,
+            productAmount,
+          )
         : null;
       const gmvOriginal = usSettlementInput?.gmvOriginal ?? productAmount;
       const useFinancialGmv = Boolean(usSettlementInput && financial && gmvOriginal !== productAmount);
@@ -1363,7 +1588,7 @@ export async function GET(request: NextRequest) {
         }
         platformCostCny = platformFeeCny + fulfillmentFeeCny;
       }
-      const fulfillment = fulfillmentForOrder(order, fallbackLines, businessDate);
+      const fulfillment = getFulfillment(order, fallbackLines, businessDate);
       if (fulfillment.mappingStatus === "mapped") warehouseMappingMappedOrders += 1;
       else if (fulfillment.mappingStatus === "missing_id") warehouseMappingMissingIdOrders += 1;
       else if (fulfillment.tiktokWarehouseId) warehouseMappingUnmappedIds.add(fulfillment.tiktokWarehouseId);
@@ -1371,9 +1596,12 @@ export async function GET(request: NextRequest) {
       const influencerRule = activeShopRule(order.shopId, "INFLUENCER_COMMISSION", businessDate);
       const taxCostCny = taxRule ? gmvCny * number(taxRule.ratePercent) / 100 : 0;
       const taxCostOriginal = taxRule ? productAmount * number(taxRule.ratePercent) / 100 : 0;
-      const affiliateOriginalByCurrency = affiliateCommissionByOrder.get(order.orderId) || {};
+      // Settlement payloads store affiliate commissions as negative debits,
+      // while profit metrics represent costs as positive amounts that are
+      // subtracted by the component calculator. Keep originalAmounts signed
+      // for audit, but normalize the metric value here.
       const affiliateCommissionCny = Object.entries(affiliateOriginalByCurrency)
-        .reduce((sum, [currency, amount]) => sum + toCny(amount, currency), 0);
+        .reduce((sum, [currency, amount]) => sum - toCny(amount, currency), 0);
       const influencerCommissionCny = influencerRule ? gmvCny * number(influencerRule.ratePercent) / 100 : 0;
       influencerTeamCommissionCny += influencerCommissionCny;
       let orderProductCost = 0;
@@ -1495,6 +1723,7 @@ export async function GET(request: NextRequest) {
       };
       addMetric(period, orderValues);
       addMetric(storeMetric, orderValues);
+      addMetric(storePeriodMetric, orderValues);
       if (includeOrders) {
         orderDetails.push({
           orderId: order.orderId,
@@ -1505,6 +1734,7 @@ export async function GET(request: NextRequest) {
           countryCode: orderCountryCode,
           storeName: storeMetric.label,
           status: order.status || order.orderStatus || "UNKNOWN",
+          isSampleOrder: false,
           includedInProfit: true,
           exclusionReason: null,
           currency: gmvCurrency,
@@ -1523,6 +1753,7 @@ export async function GET(request: NextRequest) {
           tiktokWarehouseId: fulfillment.tiktokWarehouseId,
           warehouseId: fulfillment.warehouseId,
           warehouseName: fulfillment.warehouseName,
+          warehouseFeeBreakdown: fulfillment.feeBreakdown,
           gmvCny,
           platformFeeCny,
           fulfillmentFeeCny,
@@ -1573,16 +1804,16 @@ export async function GET(request: NextRequest) {
     let sampleWarehouseCostCny = 0;
     let sampleShippingCostCny = 0;
     let sampleOtherCostCny = 0;
-    for (const order of orders) {
+    for (const order of includeSamples ? orders : []) {
       if (!order.createTime || !(order.rawData as any)?.is_sample_order) continue;
       if (["CANCELLED", "UNPAID"].includes(order.status || "")) continue;
       const shop = shopById.get(order.shopId);
-      const businessDate = dateInTimeZone(order.createTime, timeZoneForRegion(shop?.region));
+      const businessDate = businessDateForOrder(order);
       const period = periods.get(periodFor(businessDate, groupBy).id);
       if (!period) continue;
       const storeMetric = ensureStore(order.shopId);
-      const lines = resolveOrderLines(order);
-      const fulfillment = fulfillmentForOrder(order, lines, businessDate);
+      const lines = getOrderLines(order);
+      const fulfillment = getFulfillment(order, lines, businessDate);
       const attribution = sampleCostByOrder.get(order.orderId);
       const legacyInfluencer = influencerBySampleOrder.get(order.orderId);
       const financial = financialByOrder.get(order.orderId);
@@ -1638,6 +1869,16 @@ export async function GET(request: NextRequest) {
     let totalAdCny = 0;
     let linkedAdCny = 0;
     const hasShopScope = Boolean(selectedShopId || requestedCountryCode);
+    const selectedShopIdSet = new Set(shopIds);
+    const eligibleOrdersByDate = new Map<string, ProfitOrderDetailRow[]>();
+    if (includeOrders) {
+      for (const order of orderDetails) {
+        if (!order.includedInProfit) continue;
+        const rows = eligibleOrdersByDate.get(order.businessDate) || [];
+        rows.push(order);
+        eligibleOrdersByDate.set(order.businessDate, rows);
+      }
+    }
     for (const ad of adConsumptions) {
       if (hasShopScope && (!ad.storeId || !selectedStoreIds.has(ad.storeId))) continue;
       const businessDate = ad.date.toISOString().slice(0, 10);
@@ -1664,16 +1905,15 @@ export async function GET(request: NextRequest) {
       if (period) addMetric(period, { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
 
       const linkedShopId = ad.storeId ? shopByStoreId.get(ad.storeId) : undefined;
-      if (linkedShopId && shopIds.includes(linkedShopId) && (!selectedShopId || linkedShopId === selectedShopId)) {
+      if (linkedShopId && selectedShopIdSet.has(linkedShopId) && (!selectedShopId || linkedShopId === selectedShopId)) {
         linkedAdCny += spendCny;
         addMetric(ensureStore(linkedShopId), { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
+        addMetric(ensureStorePeriod(linkedShopId, businessDate), { adSpendCny: spendCny, rebateCny, netAdCostCny, originalAmounts: adOriginalAmounts });
       }
 
       if (includeOrders) {
-        const eligibleOrders = orderDetails.filter((row) => (
-          row.includedInProfit
-          && row.businessDate === businessDate
-          && (!linkedShopId || row.shopId === linkedShopId)
+        const eligibleOrders = (eligibleOrdersByDate.get(businessDate) || []).filter((row) => (
+          !linkedShopId || row.shopId === linkedShopId
         ));
         eligibleOrders.forEach((row) => {
           // Advertising is an order-level cost: a five-unit order receives the
@@ -1713,6 +1953,14 @@ export async function GET(request: NextRequest) {
       countryCode: store.countryCode,
       currency: store.currency,
     })).sort((a, b) => b.gmvCny - a.gmvCny);
+    const finalizedStorePeriods: ProfitStorePeriodRow[] = [...storePeriodsMap.values()].map((store) => ({
+      ...finalizeMetric(store, resolveProfitScheme(store.shopId, store.date).definitions),
+      date: store.date,
+      shopId: store.shopId,
+      storeId: store.storeId,
+      countryCode: store.countryCode,
+      currency: store.currency,
+    })).sort((a, b) => a.date.localeCompare(b.date) || b.gmvCny - a.gmvCny);
     const finalizedSkus: ProfitSkuRow[] = [...skusMap.values()].map((sku) => ({
       ...finalizeMetric(sku, resolveProfitScheme(sku.shopId, endDate).definitions),
       sellerSku: sku.sellerSku,
@@ -1846,6 +2094,7 @@ export async function GET(request: NextRequest) {
 
     const response: ProfitReportResponse = {
       filters: {
+        platform: requestedPlatform,
         startDate,
         endDate,
         groupBy,
@@ -1857,6 +2106,7 @@ export async function GET(request: NextRequest) {
       summary,
       periods: finalizedPeriods,
       stores: finalizedStores,
+      storePeriods: finalizedStorePeriods,
       skus: finalizedSkus,
       orders: finalizedOrders,
       variants: variants.map((variant) => ({
@@ -1916,7 +2166,8 @@ export async function GET(request: NextRequest) {
       generatedAt: new Date().toISOString(),
     };
 
-    return NextResponse.json(response);
+    if (cacheable) await setCache(cacheKey, response, PROFIT_REPORT_CACHE_TTL_SECONDS);
+    return NextResponse.json(response, { headers: { "x-profit-cache": cacheable ? "MISS" : "BYPASS" } });
   } catch (error: any) {
     console.error("[Profit Report]", error);
     return NextResponse.json({ error: error?.message || "Profit report calculation failed" }, { status: 500 });

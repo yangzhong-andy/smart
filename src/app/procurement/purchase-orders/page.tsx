@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
@@ -11,7 +11,7 @@ import {
   linkPurchaseContract,
   type PurchaseOrder
 } from "@/lib/purchase-orders-store";
-import { createDeliveryOrder, type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
+import { calculateDeliveryOrderTailDueDate, createDeliveryOrder, type DeliveryOrder, computeDeliveryOrderTailAmount } from "@/lib/delivery-orders-store";
 import { createPendingInboundFromDeliveryOrder } from "@/lib/pending-inbound-store";
 import {
   getExpenseRequests,
@@ -110,13 +110,19 @@ export default function PurchaseOrdersPage() {
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
-  const contracts = Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []);
+  const contracts = useMemo(
+    () => Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []),
+    [contractsData],
+  );
   const { data: deliveryOrdersData, mutate: mutateDeliveryOrders } = useSWR<DeliveryOrder[] | { data: DeliveryOrder[]; pagination: unknown }>(
     "/api/delivery-orders?page=1&pageSize=500",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const deliveryOrders = Array.isArray(deliveryOrdersData) ? deliveryOrdersData : (deliveryOrdersData?.data ?? []);
+  const deliveryOrders = useMemo(
+    () => Array.isArray(deliveryOrdersData) ? deliveryOrdersData : (deliveryOrdersData?.data ?? []),
+    [deliveryOrdersData],
+  );
   const [suppliersReady, setSuppliersReady] = useState(false);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -128,11 +134,13 @@ export default function PurchaseOrdersPage() {
     contractId: string | null;
     qty: string;
     trackingNumber: string;
+    pickupDate: string;
     itemQtys: Record<string, string>;
   }>({
     contractId: null,
     qty: "",
     trackingNumber: "",
+    pickupDate: new Date().toISOString().slice(0, 10),
     itemQtys: {}
   });
   const [paymentModal, setPaymentModal] = useState<{ contractId: string | null; type: "deposit" | "tail" | null; deliveryOrderId?: string; accountId: string; tailPaymentAmount?: number; voucher?: string | string[] }>({
@@ -163,6 +171,12 @@ export default function PurchaseOrdersPage() {
     if (typeof window !== "undefined") localStorage.setItem("tk_erp_contract_number_format", value);
   };
   const searchParams = useSearchParams();
+  const handlePaymentRef = useRef<((
+    contractId: string,
+    type: "deposit" | "tail",
+    deliveryOrderId?: string,
+    tailOptions?: HandlePaymentTailOptions,
+  ) => Promise<void>) | null>(null);
 
   useEffect(() => {
     const contractIdFromParam = searchParams?.get("payTailContractId");
@@ -178,7 +192,7 @@ export default function PurchaseOrdersPage() {
       const p = parseFloat(payTailAmountParam);
       if (Number.isFinite(p)) tailOpts = { tailPayAmount: p };
     }
-    handlePayment(contractIdFromParam, "tail", deliveryOrderIdFromParam, tailOpts);
+    void handlePaymentRef.current?.(contractIdFromParam, "tail", deliveryOrderIdFromParam, tailOpts);
   }, [searchParams, contracts, deliveryOrders]);  
 
   const generateContractNumber = () => {
@@ -328,9 +342,9 @@ export default function PurchaseOrdersPage() {
       .then((parsed: any) => {
         const list = Array.isArray(parsed) ? parsed : (parsed?.data ?? []);
         setSuppliers(list);
-        if (list.length && !form.supplierId) {
-          setForm((f) => ({ ...f, supplierId: list[0].id }));
-        }
+        setForm((current) => list.length && !current.supplierId
+          ? { ...current, supplierId: list[0].id }
+          : current);
         setSuppliersReady(true);
       })
       .catch((e) => {
@@ -695,17 +709,28 @@ export default function PurchaseOrdersPage() {
         itemQtys[item.id] = "";
       });
     }
-    setDeliveryModal({ contractId, qty: "", trackingNumber: "", itemQtys });
+    setDeliveryModal({
+      contractId,
+      qty: "",
+      trackingNumber: "",
+      pickupDate: new Date().toISOString().slice(0, 10),
+      itemQtys,
+    });
   };
 
   // 处理发起拿货（支持按变体填写数量）
   const handleDelivery = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (deliverySubmitting) return;
     if (!deliveryModal.contractId) return;
 
     const contract = contracts.find((c) => c.id === deliveryModal.contractId);
     if (!contract) {
       toast.error("合同不存在", { icon: "❌" });
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryModal.pickupDate)) {
+      toast.error("请选择实际拿货日期");
       return;
     }
 
@@ -747,11 +772,36 @@ export default function PurchaseOrdersPage() {
 
     setDeliverySubmitting(true);
     try {
+      const quantitySummary = Array.isArray(payload)
+        ? payload
+            .map(({ itemId, qty }) => {
+              const item = contract.items?.find((candidate) => candidate.id === itemId);
+              return `${item?.sku || itemId}：${qty} 件`;
+            })
+            .join("、")
+        : `${totalQty} 件`;
+      const confirmed = await confirm({
+        title: "确认创建拿货单",
+        message: [
+          `合同：${contract.contractNumber}`,
+          `本次拿货：${quantitySummary}`,
+          `实际拿货日期：${deliveryModal.pickupDate}`,
+          deliveryModal.trackingNumber.trim()
+            ? `国内快递单号：${deliveryModal.trackingNumber.trim()}`
+            : "国内快递单号：未填写",
+          "确认后将创建拿货单并推送到待入库，请确认数量和日期无误。",
+        ].join("\n"),
+        confirmText: "确认创建",
+        cancelText: "返回修改",
+        type: "warning",
+      });
+      if (!confirmed) return;
+
       const result = await createDeliveryOrder(
         deliveryModal.contractId,
         payload,
         deliveryModal.trackingNumber || undefined,
-        new Date().toISOString().slice(0, 10)
+        deliveryModal.pickupDate
       );
 
       if (!result.success) {
@@ -762,7 +812,7 @@ export default function PurchaseOrdersPage() {
       const deliveryContractId = deliveryModal.contractId;
       const orderNumber = result.order?.deliveryNumber ?? "";
       // 拿货单创建成功：立即关闭拿货弹窗并弹出成功提示
-      setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} });
+      setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", pickupDate: new Date().toISOString().slice(0, 10), itemQtys: {} });
       setSuccessModal({
         open: true,
         type: "delivery",
@@ -1030,6 +1080,7 @@ export default function PurchaseOrdersPage() {
       }
     }
   };
+  handlePaymentRef.current = handlePayment;
 
   // 获取合同详情（包含子单列表）。优先使用单独拉取的带 items 的合同，以便展示具体 SKU 明细
   const contractDetail = useMemo(() => {
@@ -1041,7 +1092,7 @@ export default function PurchaseOrdersPage() {
     if (!contract) return null;
     const orders = deliveryOrders.filter((o) => o.contractId === contract.id);
     return { contract, deliveryOrders: orders };
-  }, [detailModal.contractId, detailRefreshKey, detailContractWithItems, contracts, deliveryOrders]);
+  }, [detailModal.contractId, detailContractWithItems, contracts, deliveryOrders]);
 
   // 筛选和排序后的合同列表
   const filteredContracts = useMemo(() => {
@@ -1112,7 +1163,7 @@ export default function PurchaseOrdersPage() {
       avgProgress,
       unpaidTailAmount,
     };
-  }, [filteredContracts, deliveryOrders]);
+  }, [filteredContracts, deliveryOrders, contracts]);
 
   // 处理工厂完工
   const handleFactoryFinished = async (contractId: string) => {
@@ -1372,7 +1423,10 @@ export default function PurchaseOrdersPage() {
         onFactoryFinished={handleFactoryFinished}
         onPaymentTail={(contractId, deliveryOrderId) => handlePayment(contractId, "tail", deliveryOrderId)}
         expenseRequests={expenseRequestsList}
-        onRefresh={mutateContracts}
+        onRefresh={() => {
+          setDetailRefreshKey((value) => value + 1);
+          return mutateContracts();
+        }}
       />
 
       {/* 发起拿货模态框 */}
@@ -1387,7 +1441,7 @@ export default function PurchaseOrdersPage() {
                 </p>
               </div>
               <button
-                onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} })}
+                onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", pickupDate: new Date().toISOString().slice(0, 10), itemQtys: {} })}
                 className="text-slate-400 hover:text-slate-200"
               >
                 ✕
@@ -1400,6 +1454,7 @@ export default function PurchaseOrdersPage() {
                 if (!contract) return null;
                 const remainingQty = contract.totalQty - contract.pickedQty;
                 const hasItems = contract.items && contract.items.length > 0;
+                const tailDueDate = calculateDeliveryOrderTailDueDate(deliveryModal.pickupDate, contract.tailPeriodDays);
                 return (
                   <>
                     <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-300">
@@ -1452,6 +1507,27 @@ export default function PurchaseOrdersPage() {
                         />
                       </label>
                     )}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-slate-300">实际拿货日期 <span className="text-rose-400">*</span></span>
+                        <DateInput
+                          value={deliveryModal.pickupDate}
+                          onChange={(value) => setDeliveryModal((current) => ({ ...current, pickupDate: value }))}
+                          max={new Date().toISOString().slice(0, 10)}
+                          placeholder="选择实际拿货日期"
+                          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
+                        />
+                      </label>
+                      <div className="space-y-1">
+                        <span className="text-slate-300">预计尾款到期日</span>
+                        <div className="flex h-[38px] items-center rounded-md border border-slate-800 bg-slate-950 px-3 tabular-nums text-slate-300">
+                          {tailDueDate || "-"}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-xs leading-5 text-slate-500">
+                      按实际拿货日期加合同账期 {contract.tailPeriodDays || 0} 天计算；历史补录请选择真实业务日期。
+                    </p>
                     <label className="space-y-1">
                       <span className="text-slate-300">国内快递单号（可选）</span>
                       <input
@@ -1469,7 +1545,7 @@ export default function PurchaseOrdersPage() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", itemQtys: {} })}
+                  onClick={() => setDeliveryModal({ contractId: null, qty: "", trackingNumber: "", pickupDate: new Date().toISOString().slice(0, 10), itemQtys: {} })}
                   disabled={deliverySubmitting}
                   className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -1701,15 +1777,42 @@ export default function PurchaseOrdersPage() {
                         取消
                       </button>
                       <button
-                          onClick={() => handlePayment(
-                            paymentModal.contractId!,
-                            paymentModal.type!,
-                            paymentModal.deliveryOrderId,
-                            {
-                              tailPayAmount: paymentModal.tailPaymentAmount,
-                              voucher: paymentModal.voucher,
-                            },
-                          )}
+                          type="button"
+                          onClick={async () => {
+                            const contractId = paymentModal.contractId;
+                            const paymentType = paymentModal.type;
+                            const contract = contractId ? contracts.find((item) => item.id === contractId) : undefined;
+                            if (!contract || !paymentType) {
+                              toast.error("付款申请信息不完整，请关闭后重试");
+                              return;
+                            }
+                            const amount = paymentType === "deposit"
+                              ? Math.max(0, contract.depositAmount - (contract.depositPaid || 0))
+                              : paymentModal.tailPaymentAmount;
+                            const confirmed = await confirm({
+                              title: "确认发起付款申请",
+                              message: [
+                                `合同：${contract.contractNumber}`,
+                                `供应商：${contract.supplierName}`,
+                                `申请类型：${paymentType === "deposit" ? "采购定金" : "采购尾款"}`,
+                                `本次申请金额：${amount != null ? `CNY ${amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "以页面金额为准"}`,
+                                "确认后将提交审批，审批通过后由财务付款。",
+                              ].join("\n"),
+                              confirmText: "确认发起",
+                              cancelText: "返回修改",
+                              type: "warning",
+                            });
+                            if (!confirmed) return;
+                            await handlePayment(
+                              contractId!,
+                              paymentType,
+                              paymentModal.deliveryOrderId,
+                              {
+                                tailPayAmount: paymentModal.tailPaymentAmount,
+                                voucher: paymentModal.voucher,
+                              },
+                            );
+                          }}
                           disabled={hasExistingDepositRequest || !hasVoucher(paymentModal.voucher)}
                           className={`rounded-lg px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all flex items-center gap-2 ${
                             hasExistingDepositRequest || !hasVoucher(paymentModal.voucher)

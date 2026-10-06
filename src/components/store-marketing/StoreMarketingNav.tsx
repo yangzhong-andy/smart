@@ -10,20 +10,23 @@ import {
   Megaphone,
   Settings,
   ShoppingBag,
+  Users,
+  Video,
 } from "lucide-react";
 
 const PRIMARY_LINKS = [
   { label: "经营总览", href: "/finance/settlement-dashboard", icon: LayoutDashboard },
   { label: "订单中心", href: "/tiktok/orders", icon: ShoppingBag },
-  { label: "店铺分析", href: "/tiktok/analytics", icon: BarChart3 },
+  { label: "TikTok 运营", href: "/platforms/tiktok/analytics", icon: BarChart3 },
   { label: "营销增长", href: "/advertising/influencers", icon: Megaphone },
+  { label: "达人中心", href: "/advertising/creator-center", icon: Users },
+  { label: "自营渠道号", href: "/advertising/self-channels", icon: Video },
   { label: "广告代理", href: "/advertising/agencies", icon: Building2 },
   { label: "平台管理", href: "/settings/stores", icon: Settings },
 ];
 
 const MORE_LINKS = [
   { label: "数据导入", href: "/finance/import" },
-  { label: "商店分析", href: "/tiktok/shop-analytics" },
   { label: "联盟营销", href: "/tiktok/affiliate" },
   { label: "TikTok 授权", href: "/settings/tiktok" },
 ];

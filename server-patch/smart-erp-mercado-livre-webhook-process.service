@@ -1,0 +1,9 @@
+[Unit]
+Description=Process Mercado Livre webhook queue
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-mercado-livre-webhook-process
+TimeoutStartSec=300

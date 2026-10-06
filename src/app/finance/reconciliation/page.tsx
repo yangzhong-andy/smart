@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { FileText } from "lucide-react";
-import { getMonthlyBills, saveMonthlyBills, updateMonthlyBill, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
+import { getBillById, getMonthlyBills, saveMonthlyBills, updateMonthlyBill, getMonthlyBillPaymentAmount, type MonthlyBill, type BillStatus, type BillType, type BillCategory } from "@/lib/reconciliation-store";
 import { ReconciliationStats } from "./components/ReconciliationStats";
 import { ReconciliationFilters } from "./components/ReconciliationFilters";
 import { ReconciliationTable } from "./components/ReconciliationTable";
@@ -14,6 +14,21 @@ import { ReconciliationMatchDialog } from "./components/ReconciliationMatchDialo
 import { formatCurrency } from "@/lib/currency-utils";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ImageUploader from "@/components/ImageUploader";
+
+const createInitialPaymentForm = () => ({
+  accountId: "",
+  paymentDate: new Date().toISOString().slice(0, 10),
+  paymentMethod: "转账",
+  paymentPlatform: "",
+  voucher: "" as string | string[],
+  transferVoucher: "" as string | string[],
+  payeeName: "",
+  payeeBank: "",
+  payeeAccount: "",
+  payeeRemark: "",
+  remark: "",
+  paymentExchangeRate: "",
+});
 import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { 
@@ -79,20 +94,7 @@ export default function ReconciliationPage() {
   const [bankAccountsState, setBankAccounts] = useState<BankAccount[]>([]);
   const [selectedPendingPaymentBill, setSelectedPendingPaymentBill] = useState<MonthlyBill | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({
-    accountId: "",
-    paymentDate: new Date().toISOString().slice(0, 10),
-    paymentMethod: "转账",
-    paymentPlatform: "",
-    voucher: "" as string | string[],
-    transferVoucher: "" as string | string[],
-    payeeName: "",
-    payeeBank: "",
-    payeeAccount: "",
-    payeeRemark: "",
-    remark: "",
-    paymentExchangeRate: "",
-  });
+  const [paymentForm, setPaymentForm] = useState(createInitialPaymentForm);
 
   const [voucherViewModal, setVoucherViewModal] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
@@ -234,7 +236,10 @@ export default function ReconciliationPage() {
   const { data: productsData } = useSWR(deferProducts ? "products" : null, fetcher, swrOpt);
 
   // 确保数据是数组并指定类型
-  const bills: MonthlyBill[] = Array.isArray(billsData) ? (billsData as MonthlyBill[]) : [];
+  const bills = useMemo<MonthlyBill[]>(
+    () => Array.isArray(billsData) ? (billsData as MonthlyBill[]) : [],
+    [billsData],
+  );
 
   // 从财务工作台跳转来自动打开付款弹窗
   useEffect(() => {
@@ -288,14 +293,32 @@ export default function ReconciliationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bills.length]);
 
-  const recharges: any[] = Array.isArray(rechargesData) ? rechargesData : [];
-  const consumptions: any[] = Array.isArray(consumptionsData) ? consumptionsData : [];
-  const deliveryOrders: DeliveryOrder[] = Array.isArray(deliveryOrdersData) ? (deliveryOrdersData as DeliveryOrder[]) : [];
-  const contracts: PurchaseContract[] = Array.isArray(contractsData) ? (contractsData as PurchaseContract[]) : [];
-  const rebateReceivables: RebateReceivable[] = Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [];
-  const pendingEntriesFromSWR: PendingEntry[] = Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [];
-  const bankAccountsFromSWR: BankAccount[] = Array.isArray(bankAccountsData) ? (bankAccountsData as BankAccount[]) : [];
-  const products: Array<{ sku_id?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }> = Array.isArray(productsData) ? productsData : [];
+  const recharges = useMemo<any[]>(() => Array.isArray(rechargesData) ? rechargesData : [], [rechargesData]);
+  const consumptions = useMemo<any[]>(() => Array.isArray(consumptionsData) ? consumptionsData : [], [consumptionsData]);
+  const deliveryOrders = useMemo<DeliveryOrder[]>(
+    () => Array.isArray(deliveryOrdersData) ? (deliveryOrdersData as DeliveryOrder[]) : [],
+    [deliveryOrdersData],
+  );
+  const contracts = useMemo<PurchaseContract[]>(
+    () => Array.isArray(contractsData) ? (contractsData as PurchaseContract[]) : [],
+    [contractsData],
+  );
+  const rebateReceivables = useMemo<RebateReceivable[]>(
+    () => Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [],
+    [rebateReceivablesData],
+  );
+  const pendingEntriesFromSWR = useMemo<PendingEntry[]>(
+    () => Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [],
+    [pendingEntriesData],
+  );
+  const bankAccountsFromSWR = useMemo<BankAccount[]>(
+    () => Array.isArray(bankAccountsData) ? (bankAccountsData as BankAccount[]) : [],
+    [bankAccountsData],
+  );
+  const products = useMemo<Array<{ sku_id?: string; at_factory?: number; at_domestic?: number; in_transit?: number; cost_price?: number; currency?: string }>>(
+    () => Array.isArray(productsData) ? productsData : [],
+    [productsData],
+  );
 
   // 更新本地状态：API 已计算好余额，直接使用
   const prevSyncRef = useRef<string>("");
@@ -353,8 +376,9 @@ export default function ReconciliationPage() {
     return result;
   }, [bills, filterStatus, filterType, activeCategory]);
 
-  const handleViewDetail = (bill: MonthlyBill) => {
-    setSelectedBill(bill);
+  const handleViewDetail = async (bill: MonthlyBill) => {
+    const detailedBill = await getBillById(bill.id);
+    setSelectedBill(detailedBill || bill);
     setIsDetailModalOpen(true);
   };
 
@@ -716,7 +740,7 @@ export default function ReconciliationPage() {
     } finally {
       setIsEntrySubmitting(false);
     }
-  }, [selectedPendingEntry, entryForm, bankAccounts]);
+  }, [selectedPendingEntry, entryForm, bankAccounts, currentUserName]);
 
   // 根据板块获取可用的账单类型
   const availableBillTypes = useMemo(() => {
@@ -1079,12 +1103,7 @@ export default function ReconciliationPage() {
                             setSelectedPendingPaymentBill(bill);
                             // 刷新账户列表（API）
                             getAccountsFromAPI().then(setBankAccounts);
-                            setPaymentForm({
-                              accountId: "",
-                              paymentDate: new Date().toISOString().slice(0, 10),
-                              paymentMethod: "转账",
-                              voucher: ""
-                            });
+                            setPaymentForm(createInitialPaymentForm());
                             setIsPaymentModalOpen(true);
                           }}
                           className="px-3 py-1.5 rounded border border-rose-500/40 bg-rose-500/10 text-xs text-rose-100 hover:bg-rose-500/20 transition"
@@ -1513,7 +1532,7 @@ export default function ReconciliationPage() {
                 onClick={() => {
                   setIsPaymentModalOpen(false);
                   setSelectedPendingPaymentBill(null);
-                  setPaymentForm({ accountId: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "转账", paymentPlatform: "", voucher: "", transferVoucher: "", payeeName: "", payeeBank: "", payeeAccount: "", payeeRemark: "", remark: "" });
+                  setPaymentForm(createInitialPaymentForm());
                 }}
                 className="text-slate-400 hover:text-slate-200"
               >
@@ -1725,7 +1744,7 @@ export default function ReconciliationPage() {
                 onClick={() => {
                   setIsPaymentModalOpen(false);
                   setSelectedPendingPaymentBill(null);
-                  setPaymentForm({ accountId: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "转账", paymentPlatform: "", voucher: "", transferVoucher: "", payeeName: "", payeeBank: "", payeeAccount: "", payeeRemark: "", remark: "" });
+                  setPaymentForm(createInitialPaymentForm());
                 }}
                 className="px-4 py-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
               >
@@ -1758,6 +1777,13 @@ export default function ReconciliationPage() {
 
                   // 生成财务流水记录
                   try {
+                    // 列表接口为避免返回大图片，只提供 hasPaymentApplicationVoucher。
+                    // 真正付款前必须读取完整账单，否则申请凭证不会进入流水。
+                    const detailedPaymentBill = await getBillById(selectedPendingPaymentBill.id);
+                    if (!detailedPaymentBill) {
+                      throw new Error("无法读取完整月账单，已停止付款，请刷新后重试");
+                    }
+                    const applicationVoucher = detailedPaymentBill.paymentApplicationVoucher;
                     const voucherValue = Array.isArray(paymentForm.voucher) 
                       ? (paymentForm.voucher.length > 0 ? paymentForm.voucher[0] : "") 
                       : paymentForm.voucher;
@@ -1797,8 +1823,8 @@ export default function ReconciliationPage() {
                       businessNumber: paymentVoucherNumber,
                       status: "confirmed" as const,
                       isReversal: false,
-                      voucher: selectedPendingPaymentBill.paymentApplicationVoucher || undefined,
-                      paymentVoucher: selectedPendingPaymentBill.paymentApplicationVoucher || undefined,
+                      voucher: applicationVoucher || undefined,
+                      paymentVoucher: applicationVoucher || undefined,
                       transferVoucher: (Array.isArray(paymentForm.transferVoucher)
                         ? (paymentForm.transferVoucher.length > 0 ? paymentForm.transferVoucher[0] : "")
                         : paymentForm.transferVoucher) || undefined
@@ -1837,7 +1863,7 @@ export default function ReconciliationPage() {
                             paymentMethod: paymentForm.paymentMethod,
                             paymentAccountId: paymentForm.accountId,
                             paymentAccountName: account.name,
-                            paymentVoucher: paymentForm.voucher,
+                            paymentVoucher: paymentForm.transferVoucher,
                             paymentVoucherNumber: paymentVoucherNumber,
                             paymentFlowId: createdFlow.id,
                             paymentRemarks: `付款单号：${paymentVoucherNumber}`
@@ -1854,7 +1880,7 @@ export default function ReconciliationPage() {
 
                     setIsPaymentModalOpen(false);
                     setSelectedPendingPaymentBill(null);
-                    setPaymentForm({ accountId: "", paymentDate: new Date().toISOString().slice(0, 10), paymentMethod: "转账", paymentPlatform: "", voucher: "", transferVoucher: "", payeeName: "", payeeBank: "", payeeAccount: "", payeeRemark: "", remark: "" });
+                    setPaymentForm(createInitialPaymentForm());
                     
                     toast.success(`付款成功！付款单号：${paymentVoucherNumber}`);
                     setPaying(false);

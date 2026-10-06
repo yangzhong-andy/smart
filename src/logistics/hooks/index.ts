@@ -307,30 +307,30 @@ export function useTrackingActions() {
   };
 }
 
-export function useWarehouseActions() {
+  export function useWarehouseActions() {
   const { mutate: mutateWarehouses } = useWarehouses();
 
   const createWarehouse = async (data: Omit<Warehouse, "id" | "createdAt" | "updatedAt">) => {
     try {
-      await logisticsService.warehouse.create(data);
+      const created = await logisticsService.warehouse.create(data);
       toast.success("创建成功");
       mutateWarehouses();
-      return true;
+      return created;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "创建失败");
-      return false;
+      return null;
     }
   };
 
   const updateWarehouse = async (id: string, data: Partial<Warehouse>) => {
     try {
-      await logisticsService.warehouse.update(id, data);
+      const updated = await logisticsService.warehouse.update(id, data);
       toast.success("更新成功");
       mutateWarehouses();
-      return true;
+      return updated;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "更新失败");
-      return false;
+      return null;
     }
   };
 

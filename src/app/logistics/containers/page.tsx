@@ -273,7 +273,7 @@ export default function ContainersPage() {
 
   // 获取柜子列表
   const { data, isLoading, mutate } = useSWR("/api/containers?page=1&pageSize=200", fetcher);
-  const containers: Container[] = Array.isArray(data?.data) ? data.data : [];
+  const containers = useMemo<Container[]>(() => Array.isArray(data?.data) ? data.data : [], [data?.data]);
 
   // 获取出口公司列表
   const { data: exportersData } = useSWR<{ data: any[] }>("/api/exporters?pageSize=100", fetcher);
@@ -296,7 +296,7 @@ export default function ContainersPage() {
     "/api/countries",
     fetcher
   );
-  const destinationCountries = Array.isArray(countriesData?.data) ? countriesData!.data : [];
+  const destinationCountries = useMemo(() => Array.isArray(countriesData?.data) ? countriesData.data : [], [countriesData?.data]);
   const countryOptionsByRegion = useMemo(() => {
     const grouped = getCountriesByRegion();
     const knownCodes = new Set<string>();
@@ -1190,8 +1190,8 @@ export default function ContainersPage() {
 
       {detailContainer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
+          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-100">
                   柜子详情 · {detailContainer.containerNo}
@@ -1206,7 +1206,7 @@ export default function ContainersPage() {
                 ✕
               </button>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex shrink-0 flex-wrap gap-2">
               <ActionButton type="button" variant="secondary" onClick={openEditModal}>
                 编辑信息
               </ActionButton>
@@ -1227,7 +1227,8 @@ export default function ContainersPage() {
               })()}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
+            <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
               <InfoRow label="柜号" value={detailContainer.containerNo} />
               <InfoRow label="柜型" value={detailContainer.containerType} />
               <InfoRow label="状态" value={statusLabels[detailContainer.status] ?? detailContainer.status} />
@@ -1289,6 +1290,51 @@ export default function ContainersPage() {
               <InfoRow label="批次数" value={String(detailContainer.outboundBatchCount ?? 0)} />
               <InfoRow label="创建时间" value={formatDate(detailContainer.createdAt)} />
             </div>
+
+            {detailData?.shipmentSummary ? (
+              <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium text-cyan-200">出货汇总</div>
+                  <div className="text-[11px] text-slate-500">来自已关联出库批次</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                  <div className="rounded border border-slate-700/70 bg-slate-900/60 p-2">
+                    <div className="text-slate-500">出货批次</div>
+                    <div className="mt-1 text-base font-semibold text-slate-100">{detailData.shipmentSummary.batchCount}</div>
+                  </div>
+                  <div className="rounded border border-slate-700/70 bg-slate-900/60 p-2">
+                    <div className="text-slate-500">出货件数</div>
+                    <div className="mt-1 text-base font-semibold text-cyan-200">{Number(detailData.shipmentSummary.totalPieces || 0).toLocaleString()}</div>
+                  </div>
+                  <div className="rounded border border-slate-700/70 bg-slate-900/60 p-2">
+                    <div className="text-slate-500">SKU 总数</div>
+                    <div className="mt-1 text-base font-semibold text-slate-100">{detailData.shipmentSummary.skuCount}</div>
+                  </div>
+                  <div className="rounded border border-slate-700/70 bg-slate-900/60 p-2">
+                    <div className="text-slate-500">箱子数量</div>
+                    <div className="mt-1 text-base font-semibold text-amber-200">
+                      {detailData.shipmentSummary.cartonCountKnown
+                        ? `${detailData.shipmentSummary.cartonCount} 箱`
+                        : "待确认"}
+                    </div>
+                  </div>
+                </div>
+                {Array.isArray(detailData.shipmentSummary.lines) && detailData.shipmentSummary.lines.length > 0 ? (
+                  <div className="mt-3 space-y-1.5">
+                    {detailData.shipmentSummary.lines.map((line: any) => {
+                      const breakdown = detailData.shipmentSummary.cartonBreakdown?.find((item: any) => item.sku === line.sku);
+                      return (
+                        <div key={line.variantId || line.sku} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-800/80 bg-slate-900/40 px-2.5 py-1.5 text-[11px]">
+                          <span className="font-mono text-slate-200">{line.sku}</span>
+                          <span className="text-slate-400">{line.skuName} · {Number(line.qty || 0).toLocaleString()} 件</span>
+                          {breakdown ? <span className="text-slate-500">{breakdown.detail}</span> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <LogisticsProgressAxis container={detailContainer} />
 
@@ -1411,6 +1457,7 @@ export default function ContainersPage() {
               ) : (
                 <div className="text-sm text-slate-500">暂无关联批次</div>
               )}
+            </div>
             </div>
           </div>
         </div>
@@ -1670,7 +1717,7 @@ export default function ContainersPage() {
                 取消
               </ActionButton>
               <ActionButton type="button" onClick={submitChangeStatus} disabled={statusConfirm.toStatus === "IN_WAREHOUSE" && !toWarehouseId}>
-                确认到货
+                {statusConfirm.toStatus === "IN_WAREHOUSE" ? "确认到货" : "确认变更"}
               </ActionButton>
             </div>
           </div>
@@ -1820,4 +1867,3 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

@@ -143,7 +143,7 @@ export default function ImageUploader({
     } finally {
       setIsUploading(false);
     }
-  }, [multiple, maxImages, onChange, onError]);
+  }, [multiple, maxImages, maxSizeKB, acceptPdf, onChange, onError]);
 
   // 全局粘贴：焦点在本上传区内、或粘贴事件 target 在本区内时处理（先点一下虚线框再 Ctrl+V 最可靠）
   useEffect(() => {

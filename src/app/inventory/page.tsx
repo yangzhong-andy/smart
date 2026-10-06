@@ -184,7 +184,7 @@ export default function InventoryPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const products = (Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? [])) as InventoryProductRow[];
+  const products = useMemo<InventoryProductRow[]>(() => (Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? [])) as InventoryProductRow[], [productsRaw]);
 
   /** 全库汇总 + 合同累计（与列表行同一公式，避免只拉部分产品导致卡片偏差） */
   const { data: overviewPayload, mutate: mutateOverview } = useSWR<InventoryOverviewPayload | undefined>(

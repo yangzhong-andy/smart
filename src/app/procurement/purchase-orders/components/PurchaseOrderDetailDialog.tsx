@@ -46,7 +46,7 @@ interface PurchaseOrderDetailDialogProps {
   onPaymentTail: (contractId: string, deliveryOrderId: string) => void;
   /** 用于判断尾款是否已发起付款申请（可选，不传则仅依赖父级 handlePayment 内校验） */
   expenseRequests?: ExpenseRequest[];
-  onRefresh?: () => void;
+  onRefresh?: () => void | Promise<unknown>;
 }
 
 export function PurchaseOrderDetailDialog({
@@ -80,18 +80,32 @@ export function PurchaseOrderDetailDialog({
   const [depositAmountInput, setDepositAmountInput] = useState(stringifyNum(contract?.depositAmount));
   const [depositSaving, setDepositSaving] = useState(false);
   const [settleSaving, setSettleSaving] = useState(false);
+  const [quantityEditing, setQuantityEditing] = useState(false);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [quantitySaving, setQuantitySaving] = useState(false);
   const canManuallySettle = !!contract && contract.status !== "已结清" && contract.status !== "已取消";
+  const contractId = contract?.id;
+  const contractVoucher = contract?.contractVoucher;
+  const contractDepositRate = contract?.depositRate;
+  const contractDepositAmount = contract?.depositAmount;
   useEffect(() => {
-    if (!contract) return;
-    setVoucherDraft(contract.contractVoucher ?? "");
-    setVoucherDisplay(contract.contractVoucher);
-  }, [contract?.id, contract?.contractVoucher]);
+    if (!contractId) return;
+    setVoucherDraft(contractVoucher ?? "");
+    setVoucherDisplay(contractVoucher);
+  }, [contractId, contractVoucher]);
   useEffect(() => {
-    if (!contract) return;
-    setDepositType((contract.depositRate ?? 0) > 0 ? "ratio" : "fixed");
-    setDepositRateInput(stringifyNum(contract.depositRate));
-    setDepositAmountInput(stringifyNum(contract.depositAmount));
-  }, [contract?.id, contract?.depositRate, contract?.depositAmount]);
+    if (!contractId) return;
+    setDepositType((contractDepositRate ?? 0) > 0 ? "ratio" : "fixed");
+    setDepositRateInput(stringifyNum(contractDepositRate));
+    setDepositAmountInput(stringifyNum(contractDepositAmount));
+  }, [contractId, contractDepositRate, contractDepositAmount]);
+  useEffect(() => {
+    if (!contractId || !contract?.items) return;
+    setQuantityDrafts(
+      Object.fromEntries(contract.items.map((item) => [item.id, String(item.qty)])),
+    );
+    setQuantityEditing(false);
+  }, [contractId, contract?.updatedAt, contract?.items]);
   function stringifyNum(n: number | undefined) {
     if (n == null || !Number.isFinite(n)) return "";
     return String(n);
@@ -123,6 +137,88 @@ export function PurchaseOrderDetailDialog({
     modal.appendChild(closeBtn);
     modal.appendChild(img);
     document.body.appendChild(modal);
+  };
+
+  const canEditQuantities =
+    contract.items &&
+    contract.items.length > 0 &&
+    contract.status !== "已结清" &&
+    contract.status !== "已取消";
+
+  const saveQuantities = async () => {
+    if (!contract.items || contract.items.length === 0 || quantitySaving) return;
+
+    const nextItems: Array<{ itemId: string; qty: number }> = [];
+    for (const item of contract.items) {
+      const qty = Number(quantityDrafts[item.id] ?? item.qty);
+      if (!Number.isInteger(qty) || qty <= 0) {
+        toast.error(`SKU ${item.sku} 的数量必须是大于 0 的整数`);
+        return;
+      }
+      if (qty < item.pickedQty) {
+        toast.error(`SKU ${item.sku} 的数量不能低于已取货数量 ${item.pickedQty}`);
+        return;
+      }
+      if (qty < item.finishedQty) {
+        toast.error(`SKU ${item.sku} 的数量不能低于已完工数量 ${item.finishedQty}`);
+        return;
+      }
+      nextItems.push({ itemId: item.id, qty });
+    }
+
+    const changes = contract.items
+      .map((item, index) => ({ item, nextQty: nextItems[index].qty }))
+      .filter(({ item, nextQty }) => item.qty !== nextQty);
+    if (changes.length === 0) {
+      setQuantityEditing(false);
+      return;
+    }
+
+    const nextTotalQty = nextItems.reduce((sum, item) => sum + item.qty, 0);
+    const nextTotalAmount = contract.items.reduce((sum, item, index) => {
+      return sum + item.unitPrice * nextItems[index].qty;
+    }, 0);
+    const changeSummary = changes
+      .map(({ item, nextQty }) => `${item.sku}：${item.qty} → ${nextQty} 件`)
+      .join("\n");
+    const confirmed = await confirm({
+      title: "确认修改合同数量",
+      message: [
+        `合同：${contract.contractNumber}`,
+        changeSummary,
+        `修改后合同总数：${nextTotalQty} 件`,
+        `修改后合同金额：${currency(nextTotalAmount)}`,
+        "已取货、已完工数量不会被修改，拿货单和库存流水也不会被删除。",
+      ].join("\n"),
+      confirmText: "确认保存",
+      cancelText: "返回修改",
+      type: "warning",
+    });
+    if (!confirmed) return;
+
+    setQuantitySaving(true);
+    try {
+      const res = await fetch(`/api/purchase-contracts/${contract.id}/quantities`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: nextItems }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error?.error || "修改合同数量失败");
+      }
+      const updated = await res.json();
+      setQuantityDrafts(
+        Object.fromEntries((updated.items ?? nextItems).map((item: { id?: string; itemId?: string; qty: number }) => [item.id ?? item.itemId, String(item.qty)])),
+      );
+      setQuantityEditing(false);
+      toast.success("合同数量已更新，金额已同步");
+      await onRefresh?.();
+    } catch (error: any) {
+      toast.error(error?.message || "修改合同数量失败");
+    } finally {
+      setQuantitySaving(false);
+    }
   };
 
   return (
@@ -259,7 +355,24 @@ export function PurchaseOrderDetailDialog({
               </div>
             </div>
             <div>
-              <span className="text-slate-400 text-sm">SKU / 变体明细：</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-400 text-sm">SKU / 变体明细：</span>
+                {canEditQuantities && !quantityEditing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuantityDrafts(
+                        Object.fromEntries(contract.items!.map((item) => [item.id, String(item.qty)])),
+                      );
+                      setQuantityEditing(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-primary-500/40 bg-primary-500/10 px-2.5 py-1.5 text-xs font-medium text-primary-200 hover:bg-primary-500/20"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                    修改数量
+                  </button>
+                )}
+              </div>
               {contract.items && contract.items.length > 0 ? (
                 <div className="mt-2 rounded border border-slate-700 overflow-hidden">
                   <table className="w-full text-sm">
@@ -284,7 +397,25 @@ export function PurchaseOrderDetailDialog({
                           <td className="px-3 py-1.5 text-right text-slate-300">
                             {currency(item.unitPrice)}
                           </td>
-                          <td className="px-3 py-1.5 text-right text-slate-300">{item.qty}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-300">
+                          {quantityEditing ? (
+                            <input
+                              type="number"
+                              min={Math.max(1, item.pickedQty, item.finishedQty)}
+                              step={1}
+                              value={quantityDrafts[item.id] ?? String(item.qty)}
+                              onChange={(event) =>
+                                setQuantityDrafts((drafts) => ({
+                                  ...drafts,
+                                  [item.id]: event.target.value,
+                                }))
+                              }
+                              className="w-24 rounded border border-primary-500/50 bg-slate-800 px-2 py-1 text-right text-slate-100 outline-none focus:border-primary-300"
+                            />
+                          ) : (
+                            item.qty
+                          )}
+                        </td>
                           <td className="px-3 py-1.5 text-right text-slate-400">{item.pickedQty}</td>
                           <td className="px-3 py-1.5 text-right text-slate-200">
                             {currency(item.totalAmount)}
@@ -296,6 +427,36 @@ export function PurchaseOrderDetailDialog({
                 </div>
               ) : (
                 <span className="text-slate-100 ml-2">{contract.sku}</span>
+              )}
+              {quantityEditing && canEditQuantities && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                  <span className="text-xs text-amber-200">
+                    数量不能低于已取货/已完工数量；保存后合同金额会自动重算。
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={quantitySaving}
+                      onClick={() => {
+                        setQuantityDrafts(
+                          Object.fromEntries(contract.items!.map((item) => [item.id, String(item.qty)])),
+                        );
+                        setQuantityEditing(false);
+                      }}
+                      className="rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      disabled={quantitySaving}
+                      onClick={saveQuantities}
+                      className="rounded-md bg-primary-500 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-600 disabled:opacity-50"
+                    >
+                      {quantitySaving ? "保存中…" : "保存数量"}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

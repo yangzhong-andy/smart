@@ -4,7 +4,7 @@ import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 /**
  * TikTok 订单库存扣减逻辑
  *
- * 触发条件：订单状态为 AWAITING_COLLECTION（待揽收）且有物流信息
+ * 触发条件：订单已进入待揽收或更后的发货状态
  * 扣减规则：
  *   1. 根据利润核算的店铺切仓历史找到系统仓库
  *   2. 根据利润 SKU BOM 把 seller_sku 展开为内部 variant 组件
@@ -12,12 +12,24 @@ import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
  *   4. 记录 StockLog 和 TikTokStockDeduction
  *   5. 已扣减过的订单不会重复扣（通过 TikTokStockDeduction 唯一约束）
  */
-export async function deductStockForOrder(orderId: string, shopId: string, orderData: any) {
-  // 1. The order is physically handed to the fulfillment flow at awaiting collection.
-  const status = orderData.order_status || orderData.status;
+const TIKTOK_STOCK_OUTBOUND_STATUSES = new Set([
+  "AWAITING_COLLECTION",
+  "IN_TRANSIT",
+  "DELIVERED",
+  "COMPLETED",
+]);
 
-  if (status !== "AWAITING_COLLECTION") {
-    return { skipped: true, reason: `状态 ${status} 不是待揽收，跳过` };
+export function isTikTokStockOutboundStatus(status: string | null | undefined) {
+  return TIKTOK_STOCK_OUTBOUND_STATUSES.has(String(status || "").trim().toUpperCase());
+}
+
+export async function deductStockForOrder(orderId: string, shopId: string, orderData: any) {
+  // 1. A delayed webhook/sync may first observe an order after awaiting collection.
+  // Accept every later shipped state; the deduction table remains idempotent.
+  const status = String(orderData.order_status || orderData.status || "").trim().toUpperCase();
+
+  if (!isTikTokStockOutboundStatus(status)) {
+    return { skipped: true, reason: `状态 ${status || "未知"} 尚未达到出库状态，跳过` };
   }
 
   // 2. 获取订单完整详情（含 line_items）
@@ -94,6 +106,8 @@ export async function deductStockForOrder(orderId: string, shopId: string, order
 
     // 库存、日志和防重复记录必须一起成功或一起回滚。
     const result = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`platform-stock:${warehouseId}:${variantId}`}))`;
+
       const existingDeduction = await tx.tikTokStockDeduction.findFirst({
         where: { tiktokOrderId: orderId, variantId },
       });
@@ -191,6 +205,8 @@ export async function restoreStockForCancelledOrder(orderId: string) {
 
     const results: any[] = [];
     for (const deduction of deductions) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`platform-stock:${deduction.warehouseId}:${deduction.variantId}`}))`;
+
       const stock = await tx.stock.findUnique({
         where: {
           variantId_warehouseId: {

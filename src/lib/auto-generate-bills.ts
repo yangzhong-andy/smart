@@ -1,9 +1,11 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 import {
   syncLogisticsMonthlyBills,
   syncSupplierMonthlyBills,
 } from "@/lib/monthly-bill-sync";
+import { calculateAdvertisingBillDueDate } from "@/lib/monthly-bill-due-date";
 
 type AdvertisingBillSyncResult = {
   created: number;
@@ -156,6 +158,7 @@ export async function syncAdvertisingMonthlyBills(
     const rebateAmount = roundMoney(Math.max(0, group.rebateAmount));
     const netAmount = roundMoney(Math.max(0, totalAmount - rebateAmount));
     const ids = JSON.stringify(group.consumptionIds);
+    const dueDate = calculateAdvertisingBillDueDate(group.month);
     const billData = {
       month: group.month,
       billCategory: "Payable",
@@ -170,6 +173,7 @@ export async function syncAdvertisingMonthlyBills(
       netAmount,
       consumptionIds: ids,
       rebateRate: group.rebateRate,
+      dueDate,
       status: "Draft",
       createdBy: "系统自动生成",
       notes: `信用消耗账单（${group.month}）- 自动生成`,
@@ -180,6 +184,7 @@ export async function syncAdvertisingMonthlyBills(
       billType: "广告返点",
       totalAmount,
       netAmount: rebateAmount,
+      dueDate: null,
       notes: `返点应收账单（${group.month}）- 自动生成`,
     } as const;
 
@@ -189,17 +194,29 @@ export async function syncAdvertisingMonthlyBills(
     ] as const) {
       if (billType === "广告返点" && rebateAmount <= 0) continue;
       const candidates = findBills(group, billType);
+      const locked = candidates.find((bill) => bill.status !== "Draft");
+      if (locked) {
+        matchedBillIds.add(locked.id);
+        for (const duplicate of candidates) {
+          if (
+            duplicate.id !== locked.id &&
+            duplicate.status === "Draft" &&
+            isSystemGeneratedBill(duplicate)
+          ) {
+            await prisma.monthlyBill.delete({ where: { id: duplicate.id } });
+            updated += 1;
+            cacheDirty = true;
+          } else {
+            matchedBillIds.add(duplicate.id);
+          }
+        }
+        skippedLocked += 1;
+        continue;
+      }
       const existing = candidates.find(
         (bill) => bill.status === "Draft" && isSystemGeneratedBill(bill),
       );
       if (existing) {
-        if (
-          existing.status !== "Draft" ||
-          !isSystemGeneratedBill(existing)
-        ) {
-          skippedLocked += 1;
-          continue;
-        }
         await prisma.monthlyBill.update({
           where: { id: existing.id },
           data: {
@@ -212,6 +229,7 @@ export async function syncAdvertisingMonthlyBills(
             netAmount: data.netAmount,
             consumptionIds: data.consumptionIds,
             rebateRate: data.rebateRate,
+            dueDate: data.dueDate,
             notes: data.notes,
             updatedAt: new Date(),
           },
@@ -232,9 +250,20 @@ export async function syncAdvertisingMonthlyBills(
         updated += 1;
         cacheDirty = true;
       } else {
-        await prisma.monthlyBill.create({ data });
-        created += 1;
-        cacheDirty = true;
+        try {
+          await prisma.monthlyBill.create({ data });
+          created += 1;
+          cacheDirty = true;
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            skippedLocked += 1;
+          } else {
+            throw error;
+          }
+        }
       }
     }
   }

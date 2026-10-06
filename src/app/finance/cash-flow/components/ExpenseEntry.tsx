@@ -26,6 +26,7 @@ import ImageUploader from "@/components/ImageUploader";
 import DateInput from "@/components/DateInput";
 import { createExpenseRequest, type ExpenseRequest } from "@/lib/expense-income-request-store";
 import InteractiveButton from "@/components/ui/InteractiveButton";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type ExpenseEntryProps = {
   accounts: BankAccount[];
@@ -38,6 +39,7 @@ type ExpenseEntryProps = {
 const CURRENCY_OPTIONS = ["CNY", "USD", "BRL", "JPY", "EUR", "GBP", "HKD", "SGD"];
 
 export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSelection = false }: ExpenseEntryProps) {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -153,13 +155,13 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
   const isForeignCurrency = selectedAccount && selectedAccount.currency !== "CNY" && selectedAccount.currency !== "RMB";
   // 选了外币账户时自动带入账户汇率
   useEffect(() => {
-    if (isForeignCurrency && selectedAccount && !form.exchangeRate) {
-      setForm((f) => ({ ...f, exchangeRate: String(selectedAccount.exchangeRate || 7) }));
-    }
-    if (!isForeignCurrency) {
-      setForm((f) => ({ ...f, exchangeRate: "" }));
-    }
-  }, [selectedAccount?.id, isForeignCurrency]);
+    const nextRate = isForeignCurrency && selectedAccount
+      ? String(selectedAccount.exchangeRate || 7)
+      : "";
+    setForm((current) => current.exchangeRate === nextRate
+      ? current
+      : { ...current, exchangeRate: nextRate });
+  }, [selectedAccount, isForeignCurrency]);
   const selectedAdAccount = adAccounts.find((a) => a.id === form.adAccountId);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -293,8 +295,26 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
     }
     const requestWithUID = expenseRequest;
     
-    // 防止重复提交
+    // 发起付款申请前必须二次确认。这里在创建申请前拦截，回车只会打开确认框，不会直接写入数据。
     setIsSubmitting(true);
+    const confirmed = await confirm({
+      title: "确认发起付款申请",
+      message: [
+        "请核对以下付款申请信息：",
+        `摘要：${requestWithUID.summary}`,
+        `金额：${requestWithUID.currency} ${requestWithUID.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `分类：${requestWithUID.category}`,
+        "确认后将提交审批，审批通过后才能出账。",
+      ].join("\n"),
+      confirmText: "确认发起",
+      cancelText: "返回修改",
+      type: "warning",
+    });
+    if (!confirmed) {
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       // 创建支出申请
       await createExpenseRequest(requestWithUID);
@@ -734,6 +754,7 @@ export default function ExpenseEntry({ accounts, onClose, onSave, skipAccountSel
           </div>
         </form>
       </div>
+      {confirmDialog}
     </div>
   );
 }

@@ -104,6 +104,13 @@ export type SpuListItem = {
   mainImage?: string
   status?: string
   category?: string
+  createdAt?: string
+  suppliers?: Array<{ id: string; name: string }>
+  skuIndex?: Array<{
+    sku_id: string; color?: string | null; size?: string | null;
+    cost_price: number | null; currency: string;
+    weight_kg?: number | null; length?: number | null; width?: number | null; height?: number | null;
+  }>
 }
 
 /**

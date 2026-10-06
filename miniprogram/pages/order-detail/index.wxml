@@ -1,0 +1,35 @@
+<view class="page-shell detail-page" wx:if="{{order}}">
+  <view class="headline surface">
+    <view class="headline-top"><text class="store">{{order.shopName}}</text><text class="status status-{{order.status}}">{{order.statusText}}</text></view>
+    <view class="order-id" bindtap="copyOrderId">{{order.orderId}} <text>复制</text></view>
+    <view class="amount">{{order.amountText}}</view>
+    <view class="source">{{order.sourceText}}</view>
+  </view>
+
+  <view wx:if="{{order.deliveryAlert}}" class="warning">该订单运输已超过 {{order.deliveryAlertAgeDays}} 天，请安排同事跟进。</view>
+
+  <view class="section surface">
+    <view class="section-title">商品明细</view>
+    <view wx:for="{{order.itemSummary}}" wx:key="sku" class="product-row">
+      <image class="product-image" src="{{item.image}}" mode="aspectFill"></image>
+      <view class="product-content"><view class="product-name">{{item.name || item.sku}}</view><view class="product-sku">SKU {{item.sku || '-'}}</view><view class="product-price">{{order.currency}} {{item.price || '-'}}</view></view>
+      <text class="product-qty">×{{item.qty}}</text>
+    </view>
+  </view>
+
+  <view class="section surface">
+    <view class="section-title">物流信息</view>
+    <view class="info-row"><text>物流方式</text><text>{{order.shippingType || '-'}}</text></view>
+    <view class="info-row"><text>物流商</text><text>{{order.shippingProvider || '-'}}</text></view>
+    <view class="info-row tracking" bindtap="copyTracking"><text>运单号</text><text>{{order.trackingNumber || '-'}}</text></view>
+    <view class="info-row"><text>收件人</text><text>{{order.buyerName || '-'}}</text></view>
+    <view class="address">{{order.buyerAddress || '暂无地址信息'}}</view>
+  </view>
+
+  <view class="section surface">
+    <view class="section-title">订单时间</view>
+    <view class="info-row"><text>下单时间</text><text>{{order.createTimeText}}</text></view>
+    <view class="info-row"><text>更新时间</text><text>{{order.updateTimeText}}</text></view>
+    <view class="info-row"><text>送达时间</text><text>{{order.deliveryTimeText}}</text></view>
+  </view>
+</view>

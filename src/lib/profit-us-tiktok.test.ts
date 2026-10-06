@@ -37,3 +37,28 @@ test("keeps settlement credits as negative costs", () => {
 test("uses the order GMV when a financial estimate has no revenue yet", () => {
   assert.equal(usTikTokProfitInput({ source: "ESTIMATED", revenueAmount: 0 }, 18.5).gmvOriginal, 18.5);
 });
+
+test("splits the official fee total without double deducting affiliate commission", () => {
+  const result = usTikTokProfitInput({
+    source: "SETTLED",
+    revenueAmount: "23.76",
+    feeTaxAmount: "-4.82",
+    referralFeeAmount: "-1.43",
+    smartPromotionFeeAmount: "-0.83",
+    affiliateCommissionAmount: "-1.20",
+    shippingCostAmount: "-5.97",
+  }, 99);
+  assert.equal(result.platformFeeOriginal, 2.79);
+  assert.equal(result.smartPromotionFeeOriginal, 0.83);
+  assert.ok(Math.abs(result.platformFeeOriginal + result.smartPromotionFeeOriginal + 1.20 - 4.82) < 1e-9);
+});
+
+test("a positive official fee reversal reduces platform cost", () => {
+  const result = usTikTokProfitInput({
+    source: "SETTLED",
+    feeTaxAmount: "0.50",
+    smartPromotionFeeAmount: "0.20",
+    affiliateCommissionAmount: "0.10",
+  }, 0);
+  assert.ok(Math.abs(result.platformFeeOriginal + 0.20) < 1e-9);
+});

@@ -320,6 +320,7 @@ export function getWarehouseFlashyTheme(w: WarehouseType): FlashyLogisticsTheme 
 type FlashyLogisticsCardShellProps = {
   theme: FlashyLogisticsTheme;
   seed: string;
+  staticMode?: boolean;
   as?: "button" | "div";
   type?: "button" | "submit";
   onClick?: () => void;
@@ -331,6 +332,7 @@ type FlashyLogisticsCardShellProps = {
 export function FlashyLogisticsCardShell({
   theme,
   seed,
+  staticMode = false,
   as = "div",
   type = "button",
   onClick,
@@ -338,44 +340,38 @@ export function FlashyLogisticsCardShell({
   contentMinHeightClass = "min-h-[240px]",
   children,
 }: FlashyLogisticsCardShellProps) {
-  const shineDelay = (seed.charCodeAt(0) % 8) * 0.4;
-
   const innerDecor = (
     <>
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+        {!staticMode && <>
+          <div className={`absolute -right-24 -top-24 h-52 w-52 rounded-full blur-3xl motion-reduce:animate-none animate-gradient-drift ${theme.orb1}`} />
+          <div className={`absolute -bottom-20 -left-20 h-44 w-44 rounded-full blur-3xl motion-reduce:animate-none animate-gradient-drift ${theme.orb2}`} style={{ animationDelay: "1.2s" }} />
+        </>}
         <div
-          className={`absolute -right-24 -top-24 h-52 w-52 rounded-full blur-3xl motion-reduce:animate-none animate-gradient-drift ${theme.orb1}`}
+          className={`absolute left-0 right-0 top-0 z-20 h-[3px] bg-gradient-to-r ${theme.topBarFrom} ${theme.topBarVia} to-transparent ${staticMode ? "opacity-70" : "bg-[length:220%_100%] motion-reduce:animate-none animate-border-flow opacity-90"}`}
         />
-        <div
-          className={`absolute -bottom-20 -left-20 h-44 w-44 rounded-full blur-3xl motion-reduce:animate-none animate-gradient-drift ${theme.orb2}`}
-          style={{ animationDelay: "1.2s" }}
-        />
-        <div
-          className={`absolute left-0 right-0 top-0 z-20 h-[3px] bg-gradient-to-r ${theme.topBarFrom} ${theme.topBarVia} to-transparent bg-[length:220%_100%] motion-reduce:animate-none animate-border-flow opacity-90`}
-        />
-        <div className="absolute inset-0 motion-reduce:hidden" aria-hidden>
+        {!staticMode && <div className="absolute inset-0 motion-reduce:hidden" aria-hidden>
           <div
             className="absolute -left-1/2 top-0 h-full w-1/2 bg-gradient-to-r from-transparent via-white/25 to-transparent motion-reduce:animate-none animate-shine-sweep"
-            style={{ animationDelay: `${shineDelay}s` }}
           />
-        </div>
+        </div>}
         {scanlines()}
         {corrugatedBg("mix-blend-soft-light")}
-        {theme.showTransitWaves && (
+        {!staticMode && theme.showTransitWaves && (
           <div className="absolute bottom-0 left-0 right-0 text-cyan-400/85">
             <WaveLayer />
           </div>
         )}
-        {theme.showArrivedWaves && (
+        {!staticMode && theme.showArrivedWaves && (
           <div className="absolute bottom-0 left-0 right-0 text-blue-400/75 motion-reduce:animate-none animate-wave-y">
             <WaveLayer opacity="0.55" />
           </div>
         )}
-        {theme.showParticles && <TransitParticles seed={seed} />}
+        {!staticMode && theme.showParticles && <TransitParticles seed={seed} />}
       </div>
       <HudCorners colorClass={theme.hudBorder} />
-      {theme.showSparks && <LoadingSparks />}
-      {theme.cornerIcon === "ship" && (
+      {!staticMode && theme.showSparks && <LoadingSparks />}
+      {!staticMode && theme.cornerIcon === "ship" && (
         <div
           className="pointer-events-none absolute bottom-7 right-7 z-[5] motion-reduce:animate-none animate-float drop-shadow-[0_0_20px_rgba(34,211,238,0.65)]"
           aria-hidden
@@ -383,7 +379,7 @@ export function FlashyLogisticsCardShell({
           <Ship className="h-9 w-9 text-cyan-100" strokeWidth={1.35} />
         </div>
       )}
-      {theme.cornerIcon === "package" && (
+      {!staticMode && theme.cornerIcon === "package" && (
         <div
           className="pointer-events-none absolute bottom-7 right-7 z-[5] motion-reduce:animate-none animate-float drop-shadow-[0_0_20px_rgba(34,211,238,0.55)]"
           aria-hidden
@@ -391,7 +387,7 @@ export function FlashyLogisticsCardShell({
           <Package className="h-9 w-9 text-cyan-100" strokeWidth={1.35} />
         </div>
       )}
-      {theme.showCustomsDot && (
+      {!staticMode && theme.showCustomsDot && (
         <div
           className="pointer-events-none absolute right-6 top-20 z-[5] h-2 w-2 rounded-full bg-violet-300 motion-reduce:opacity-80 motion-reduce:animate-none animate-hud-blink shadow-[0_0_12px_rgba(196,181,253,0.9)]"
           aria-hidden
@@ -401,9 +397,8 @@ export function FlashyLogisticsCardShell({
   );
 
   const shellClasses = [
-    "group relative w-full rounded-2xl border-2 text-left shadow-xl transition-all duration-500 ease-out motion-reduce:transition-colors",
-    "transform-gpu motion-reduce:transform-none",
-    "hover:[transform:translateY(-14px)_scale(1.035)_rotateX(4deg)] motion-reduce:hover:transform-none",
+    "group relative w-full rounded-2xl border-2 text-left shadow-xl",
+    ...(staticMode ? ["shadow-black/20"] : ["transition-all duration-500 ease-out motion-reduce:transition-colors", "transform-gpu motion-reduce:transform-none", "hover:[transform:translateY(-14px)_scale(1.035)_rotateX(4deg)] motion-reduce:hover:transform-none"]),
     theme.shell,
     theme.glowHover,
     theme.pulseAnim,
@@ -433,7 +428,7 @@ export function FlashyLogisticsCardShell({
   }
 
   return (
-    <div className={shellClasses} style={{ transformStyle: "preserve-3d" }}>
+    <div className={shellClasses}>
       {body}
     </div>
   );

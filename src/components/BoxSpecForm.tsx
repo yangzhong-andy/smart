@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Trash, Package } from "lucide-react";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
@@ -38,13 +38,7 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
     weightKg: "",
   });
 
-  // 加载箱规列表
-  useEffect(() => {
-    if (!variantId) return;
-    loadBoxSpecs();
-  }, [variantId]);
-
-  const loadBoxSpecs = async () => {
+  const loadBoxSpecs = useCallback(async () => {
     if (!variantId) return;
     setLoading(true);
     try {
@@ -57,7 +51,13 @@ export function BoxSpecForm({ variantId }: BoxSpecFormProps) {
       console.error("加载箱规失败", e);
     }
     setLoading(false);
-  };
+  }, [variantId]);
+
+  // 加载箱规列表
+  useEffect(() => {
+    if (!variantId) return;
+    void loadBoxSpecs();
+  }, [loadBoxSpecs, variantId]);
 
   const handleSubmit = async () => {
     if (!variantId) return;

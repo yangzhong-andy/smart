@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Smart ERP release retention
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=smart-erp-release-retention.service
+
+[Install]
+WantedBy=timers.target

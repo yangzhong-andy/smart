@@ -1,0 +1,9 @@
+[Unit]
+Description=Retain the latest Smart ERP releases
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-release-retention
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -10,11 +10,11 @@ const nextConfig = {
   },
   // 关键：让 Prisma 不被 webpack 打包，运行时直接从 node_modules 加载引擎文件
   experimental: {
+    serverComponentsExternalPackages: ['@prisma/client', 'bcrypt'],
     serverActions: {
       bodySizeLimit: '20mb',
     },
     optimizePackageImports: [
-      '@prisma/client',
       'lucide-react',
       '@radix-ui/react-icons',
     ],

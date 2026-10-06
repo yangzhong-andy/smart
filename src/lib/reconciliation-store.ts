@@ -13,7 +13,7 @@ export type MonthlyBill = {
   id: string;
   uid?: string; // 全局唯一业务ID（业财一体化）
   month: string; // 账单月份，格式：YYYY-MM
-  dueDate?: string; // 到期日，格式：YYYY-MM-DD（账期：月份+2个月）
+  dueDate?: string; // 到期日，广告账单为经过2个完整自然月后的次月1日
   billCategory: BillCategory; // 账单分类：应付款/应收款
   billType: BillType; // 账单类型：广告、物流、工厂订单、店铺回款、广告返点等
   agencyId?: string; // 关联代理商ID（可选，广告账单使用）
@@ -45,6 +45,7 @@ export type MonthlyBill = {
   createdAt: string; // 创建时间
   submittedToFinanceAt?: string; // 提交给财务审批时间
   paymentApplicationVoucher?: string | string[]; // 付款申请书凭证（提交给财务审批时上传）
+  hasPaymentApplicationVoucher?: boolean; // 列表接口仅返回是否存在，原图在详情接口按需加载
   financeReviewedBy?: string; // 财务审批人
   financeReviewedAt?: string; // 财务审批时间
   submittedAt?: string; // 提交给主管审批时间
@@ -61,6 +62,7 @@ export type MonthlyBill = {
   paymentAccountId?: string; // 付款账户ID
   paymentAccountName?: string; // 付款账户名称
   paymentVoucher?: string | string[]; // 付款凭证（图片URL）
+  hasPaymentVoucher?: boolean; // 列表接口仅返回是否存在，原图在详情接口按需加载
   paymentFlowId?: string; // 关联的财务流水ID
   paymentVoucherNumber?: string; // 付款单号（自动生成）
   paymentRemarks?: string; // 付款备注

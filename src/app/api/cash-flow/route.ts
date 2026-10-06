@@ -165,23 +165,41 @@ export async function GET(request: NextRequest) {
     ]);
 
     const flowIds = flows.map((flow) => flow.id);
-    const [paymentVoucherRows, transferVoucherRows] = !includeVouchers && flowIds.length
+    const [paymentVoucherRows, transferVoucherRows, reversalRows] = flowIds.length
       ? await Promise.all([
+          !includeVouchers
+            ? prisma.cashFlow.findMany({
+                where: {
+                  id: { in: flowIds },
+                  OR: [
+                    { paymentVoucher: { not: null } },
+                    // 旧流水只有 voucher；如果已有转账凭证，则不能再把
+                    // voucher 当成发起付款凭证，避免同一张图显示在两列。
+                    { paymentVoucher: null, voucher: { not: null }, transferVoucher: null },
+                  ],
+                },
+                select: { id: true },
+              })
+            : Promise.resolve([]),
+          !includeVouchers
+            ? prisma.cashFlow.findMany({
+                where: { id: { in: flowIds }, transferVoucher: { not: null } },
+                select: { id: true },
+              })
+            : Promise.resolve([]),
           prisma.cashFlow.findMany({
-            where: {
-              id: { in: flowIds },
-              OR: [{ paymentVoucher: { not: null } }, { voucher: { not: null } }],
-            },
-            select: { id: true },
-          }),
-          prisma.cashFlow.findMany({
-            where: { id: { in: flowIds }, transferVoucher: { not: null } },
-            select: { id: true },
+            where: { isReversal: true, reversedById: { in: flowIds } },
+            select: { id: true, reversedById: true },
           }),
         ])
-      : [[], []];
+      : [[], [], []];
     const paymentVoucherIds = new Set(paymentVoucherRows.map((flow) => flow.id));
     const transferVoucherIds = new Set(transferVoucherRows.map((flow) => flow.id));
+    const reversalByOriginalId = new Map(
+      reversalRows
+        .filter((flow) => flow.reversedById)
+        .map((flow) => [flow.reversedById as string, flow.id]),
+    );
 
     const response: Record<string, any> = {
       data: flows.map((f: any) => ({
@@ -207,6 +225,8 @@ export async function GET(request: NextRequest) {
         notes: f.remark || undefined,
         isReversal: f.isReversal,
         reversedById: f.reversedById || undefined,
+        isReversed: reversalByOriginalId.has(f.id),
+        reversalId: reversalByOriginalId.get(f.id),
         ...(includeVouchers ? {
           voucher: f.voucher || undefined,
           paymentVoucher: f.paymentVoucher || undefined,
@@ -308,10 +328,44 @@ export async function POST(request: NextRequest) {
       if (typeof v === "string") return v.trim() || null;
       return null;
     };
-    const paymentVoucherVal = body.paymentVoucher !== undefined ? toVoucherStr(body.paymentVoucher) : null;
+    const requestPaymentVoucherVal = body.paymentVoucher !== undefined ? toVoucherStr(body.paymentVoucher) : null;
     const transferVoucherVal = body.transferVoucher !== undefined ? toVoucherStr(body.transferVoucher) : null;
-    const voucherVal = body.voucher !== undefined ? toVoucherStr(body.voucher) : (paymentVoucherVal ?? transferVoucherVal ?? null);
+    const explicitVoucherVal = body.voucher !== undefined ? toVoucherStr(body.voucher) : null;
+    const relatedIdVal = body.relatedOrderId ?? body.relatedId ?? null;
     const flow = await prisma.$transaction(async (tx) => {
+      let paymentVoucherVal = requestPaymentVoucherVal;
+      if (!paymentVoucherVal && relatedIdVal && type === CashFlowType.EXPENSE) {
+        // 月账单列表接口只返回“是否有凭证”，不会返回大图内容。
+        // 付款流水必须以服务端月账单为准，避免前端列表对象缺字段时漏带申请凭证。
+        const monthlyBill = await tx.monthlyBill.findUnique({
+          where: { id: String(relatedIdVal) },
+          select: { paymentApplicationVoucher: true },
+        });
+        paymentVoucherVal = toVoucherStr(monthlyBill?.paymentApplicationVoucher);
+      }
+      const voucherVal = paymentVoucherVal ?? explicitVoucherVal ?? transferVoucherVal ?? null;
+      const isReversal = body.isReversal === true;
+      const reversedById = isReversal ? String(body.reversedById || "").trim() : null;
+      if (isReversal) {
+        if (!reversedById) throw new Error("冲销记录缺少原流水 ID");
+        const original = await tx.cashFlow.findUnique({ where: { id: reversedById } });
+        if (!original) throw new Error("原流水不存在，不能冲销");
+        if (original.isReversal) throw new Error("冲销记录不能再次冲销");
+        if (original.status !== CashFlowStatus.CONFIRMED) throw new Error("待核对流水不能冲销");
+        const existing = await tx.cashFlow.findFirst({
+          where: { isReversal: true, reversedById },
+          select: { id: true },
+        });
+        if (existing) throw new Error("该流水已经冲销，不能重复冲销");
+        if (
+          original.accountId !== body.accountId ||
+          original.currency !== (body.currency || "CNY") ||
+          original.type !== type ||
+          Number(body.amount) !== -Number(original.amount)
+        ) {
+          throw new Error("冲销金额、账户或币种与原流水不匹配");
+        }
+      }
       const created = await tx.cashFlow.create({
         data: {
         uid: body.uid || null,
@@ -324,7 +378,7 @@ export async function POST(request: NextRequest) {
         amount: body.amount,
         currency: body.currency || "CNY",
         remark: body.notes ?? body.remark ?? "",
-        relatedId: body.relatedOrderId ?? body.relatedId ?? null,
+        relatedId: relatedIdVal,
         businessNumber: body.businessNumber ?? null,
         voucher: voucherVal,
         paymentVoucher: paymentVoucherVal,
@@ -334,6 +388,8 @@ export async function POST(request: NextRequest) {
         platform: body.platform || null,
         storeId: body.storeId || null,
         storeName: body.storeName || null,
+        isReversal,
+        reversedById,
         },
       });
 

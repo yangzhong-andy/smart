@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize Shopee settlement data
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-shopee-settlement-sync
+TimeoutStartSec=720

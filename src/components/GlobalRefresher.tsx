@@ -87,7 +87,7 @@ export default function GlobalRefresher() {
         console.log('[GlobalRefresher] 已停止');
       }
     };
-  }, []); // 修复：移除 mutate 依赖，使用 ref 防止重复执行
+  }, [mutate]);
 
   // 不渲染任何 UI 内容
   return null;

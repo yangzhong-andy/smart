@@ -240,7 +240,7 @@ export function ApprovalDetailDialog({
                                 String(recharge.voucher).length > 10 ? (
                                   <button
                                     onClick={() =>
-                                      onVoucherView(String(recharge.voucher) || null)
+                                      onVoucherView({ images: parseVoucher(recharge.voucher), index: 0 })
                                     }
                                     className="px-2 py-1 rounded border border-primary-500/40 bg-primary-500/10 text-xs text-primary-100 hover:bg-primary-500/20 transition"
                                   >

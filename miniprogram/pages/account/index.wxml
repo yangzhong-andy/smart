@@ -1,0 +1,17 @@
+<view class="page-shell account-page" wx:if="{{user}}">
+  <view class="profile surface">
+    <view class="avatar">{{user.name ? user.name.substring(0, 1) : '水'}}</view>
+    <view class="profile-main"><view class="name">{{user.name || 'ERP 用户'}}</view><view class="email">{{user.email}}</view></view>
+  </view>
+  <view class="section surface">
+    <view class="info-row"><text>所属部门</text><text>{{user.departmentName || '-'}}</text></view>
+    <view class="info-row"><text>账号角色</text><text>{{user.role || '-'}}</text></view>
+    <view class="info-row"><text>当前系统</text><text>3001 巴西系统</text></view>
+  </view>
+  <view class="environment surface">
+    <view class="environment-title">开发环境</view>
+    <view class="environment-url">{{apiBaseUrl}}</view>
+    <view class="environment-note">正式发布前将切换到备案的 HTTPS 域名</view>
+  </view>
+  <button class="logout-button" bindtap="logout">退出登录</button>
+</view>

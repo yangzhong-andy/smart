@@ -35,7 +35,7 @@ export default function SKUMappingPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const products = (Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? [])) as Product[];
+  const products = useMemo<Product[]>(() => (Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? [])) as Product[], [productsRaw]);
 
   const productsWithMappings = useMemo(() => {
     let result = products;

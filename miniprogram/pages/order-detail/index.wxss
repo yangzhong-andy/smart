@@ -1,0 +1,25 @@
+.detail-page { display: flex; flex-direction: column; gap: 18rpx; padding-bottom: 48rpx; }
+.headline { padding: 30rpx; }
+.headline-top { display: flex; align-items: center; justify-content: space-between; }
+.store { font-weight: 650; color: #27313d; }
+.status { padding: 7rpx 14rpx; border-radius: 6rpx; background: #eef1f4; color: #566173; font-size: 22rpx; }
+.status-COMPLETED, .status-DELIVERED { color: #087f5b; background: #e9f7f1; }
+.status-CANCELLED { color: #b42318; background: #fff0f0; }
+.status-IN_TRANSIT, .status-AWAITING_SHIPMENT { color: #9a6700; background: #fff7dc; }
+.order-id { margin-top: 24rpx; color: #697386; font-family: monospace; font-size: 24rpx; }
+.order-id text { margin-left: 12rpx; color: #087f5b; font-family: sans-serif; }
+.amount { margin-top: 22rpx; color: #17202a; font-size: 42rpx; font-weight: 750; }
+.source { display: inline-block; margin-top: 14rpx; padding: 6rpx 12rpx; border-radius: 6rpx; color: #566173; background: #eef1f4; font-size: 22rpx; }
+.warning { padding: 22rpx 26rpx; background: #fff0f0; border: 1rpx solid #f2b8b5; border-radius: 8rpx; color: #b42318; font-size: 24rpx; }
+.section { padding: 28rpx; }
+.section-title { margin-bottom: 22rpx; color: #17202a; font-size: 29rpx; font-weight: 650; }
+.product-row { display: flex; align-items: center; gap: 18rpx; padding: 16rpx 0; border-top: 1rpx solid #edf0f2; }
+.product-image { width: 92rpx; height: 92rpx; flex: none; border-radius: 7rpx; background: #eef1f4; }
+.product-content { flex: 1; min-width: 0; }
+.product-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #27313d; font-size: 25rpx; }
+.product-sku, .product-price { margin-top: 5rpx; color: #8993a4; font-size: 21rpx; }
+.product-qty { color: #4c5667; font-weight: 650; }
+.info-row { display: flex; justify-content: space-between; gap: 30rpx; padding: 17rpx 0; border-top: 1rpx solid #edf0f2; color: #697386; font-size: 25rpx; }
+.info-row text:last-child { color: #27313d; text-align: right; word-break: break-all; }
+.tracking text:last-child { color: #087f5b; }
+.address { margin-top: 10rpx; padding: 20rpx; border-radius: 7rpx; background: #f7f8fa; color: #697386; line-height: 1.55; font-size: 24rpx; }

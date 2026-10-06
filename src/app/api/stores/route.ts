@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic'
 
 const PLATFORM_MAP_DB_TO_FRONT: Record<Platform, string> = {
   [Platform.TIKTOK]: 'TikTok',
+  [Platform.SHOPEE]: 'Shopee',
   [Platform.AMAZON]: 'Amazon',
+  [Platform.MERCADO_LIVRE]: 'Mercado Livre',
   [Platform.INSTAGRAM]: 'Instagram',
   [Platform.YOUTUBE]: 'YouTube',
   [Platform.OTHER]: '\u5176\u4ed6',
@@ -77,7 +79,9 @@ export async function GET(request: NextRequest) {
         name: s.name,
         platform: PLATFORM_MAP_DB_TO_FRONT[s.platform] as
           | 'TikTok'
+          | 'Shopee'
           | 'Amazon'
+          | 'Mercado Livre'
           | 'Instagram'
           | 'YouTube'
           | '\u5176\u4ed6',
@@ -118,7 +122,9 @@ export async function POST(request: NextRequest) {
 
     const PLATFORM_MAP_FRONT_TO_DB: Record<string, Platform> = {
       TikTok: Platform.TIKTOK,
+      Shopee: Platform.SHOPEE,
       Amazon: Platform.AMAZON,
+      'Mercado Livre': Platform.MERCADO_LIVRE,
       Instagram: Platform.INSTAGRAM,
       YouTube: Platform.YOUTUBE,
       '\u5176\u4ed6': Platform.OTHER,

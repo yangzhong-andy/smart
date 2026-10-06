@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import InteractiveButton from "@/components/ui/InteractiveButton";
 import { CheckCircle2, XCircle, Search, Eye, FileCheck, FileText, FileImage, History } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, SearchBar, EmptyState } from "@/components/ui";
+import { VoucherViewerModal } from "@/components/VoucherImage";
 import { approvePurchaseOrder, type PurchaseOrder } from "@/lib/purchase-orders-store";
 import { approvePurchaseContract, type PurchaseContract } from "@/lib/purchase-contracts-store";
 
@@ -41,7 +42,7 @@ function getContractApprovalResult(contract: PurchaseContract): "通过" | "拒�
   return contract.status === "已取消" ? "拒绝" : "通过";
 }
 
-const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
+const fetcher = (url: string) => fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : []));
 
 // 当前登录用户显示名（用于预填审批人）
 function getCurrentApproverName(session: { user?: { name?: string | null; email?: string | null } } | null): string {
@@ -57,6 +58,7 @@ export default function ApprovalPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [selectedContract, setSelectedContract] = useState<PurchaseContract | null>(null);
+  const [contractVoucherPreview, setContractVoucherPreview] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [contractModalMode, setContractModalMode] = useState<"approval" | "history" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,10 +78,10 @@ export default function ApprovalPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
-  const contractsData: PurchaseContract[] = Array.isArray(contractsDataRaw)
+  const ordersData = useMemo<PurchaseOrder[]>(() => Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []), [ordersDataRaw]);
+  const contractsData = useMemo<PurchaseContract[]>(() => Array.isArray(contractsDataRaw)
     ? contractsDataRaw
-    : (contractsDataRaw?.data ?? []);
+    : (contractsDataRaw?.data ?? []), [contractsDataRaw]);
   const orders = useMemo(
     () => ordersData.filter((o: PurchaseOrder) => o.status === "待审批"),
     [ordersData]
@@ -225,18 +227,31 @@ export default function ApprovalPage() {
     }
     setIsSubmitting(true);
     try {
-      const success = await approvePurchaseContract(
+      const updatedContract = await approvePurchaseContract(
         selectedContract.id,
         approvalForm.result,
         approvalForm.notes,
         approvalForm.approvedBy.trim()
       );
-      if (success) {
+      if (updatedContract) {
+        await mutateContracts((current: any) => {
+          const replaceApprovedContract = (contracts: PurchaseContract[]) => contracts.map((contract) =>
+            contract.id === updatedContract.id
+              ? { ...contract, ...updatedContract }
+              : contract
+          );
+
+          if (Array.isArray(current)) return replaceApprovedContract(current);
+          if (Array.isArray(current?.data)) {
+            return { ...current, data: replaceApprovedContract(current.data) };
+          }
+          return current;
+        }, { revalidate: false });
         toast.success(`合同审批${approvalForm.result === "通过" ? "通过" : "已拒绝"}`);
-        mutateContracts();
         setContractModalMode(null);
         setSelectedContract(null);
         setApprovalForm({ result: "通过", notes: "", approvedBy: "" });
+        void mutateContracts();
       } else {
         toast.error("审批失败，请重试");
       }
@@ -770,7 +785,7 @@ export default function ApprovalPage() {
                             <div
                               key={index}
                               className="flex flex-col items-center justify-center rounded border border-slate-600 bg-slate-800 h-20 cursor-pointer hover:border-primary-400"
-                              onClick={() => window.open(v, "_blank")}
+                              onClick={() => window.open(v, "_blank", "noopener,noreferrer")}
                             >
                               <FileText className="h-6 w-6 text-rose-400 mb-0.5" />
                               <span className="text-[10px] text-slate-400">PDF</span>
@@ -786,7 +801,7 @@ export default function ApprovalPage() {
                             src={imgSrc}
                             alt={`凭证 ${index + 1}`}
                             className="w-full h-20 object-cover rounded border border-slate-600 cursor-pointer hover:border-primary-400"
-                            onClick={() => window.open(imgSrc, "_blank")}
+                            onClick={() => setContractVoucherPreview(imgSrc)}
                             onError={(e) => {
                               const t = e.target as HTMLImageElement;
                               if (typeof v === "string" && !v.startsWith("data:") && !v.startsWith("http")) {
@@ -893,6 +908,10 @@ export default function ApprovalPage() {
           </div>
         </div>
       )}
+      <VoucherViewerModal
+        src={contractVoucherPreview}
+        onClose={() => setContractVoucherPreview(null)}
+      />
     </div>
   );
 }

@@ -72,19 +72,6 @@ export async function PUT(request: NextRequest) {
 
     const config = normalizeRuleConfigForSave(rawConfig);
 
-    if (config.menuMode === "whitelist" && (!config.menuLabels || config.menuLabels.length === 0)) {
-      return NextResponse.json(
-        { error: "一级菜单为「白名单」时，请至少勾选一个菜单" },
-        { status: 400 }
-      );
-    }
-    if (config.pathMode === "whitelist" && (!config.pathPrefixes || config.pathPrefixes.length === 0)) {
-      return NextResponse.json(
-        { error: "路径为「白名单」时，请至少填写一个允许访问的路径前缀" },
-        { status: 400 }
-      );
-    }
-
     const row = await prisma.departmentAccessRule.upsert({
       where: { departmentId },
       create: { departmentId, config: config as object },

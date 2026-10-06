@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
  * 按 SKU 计算与「库存对账」业务口径一致的分布：
  * - 工厂：合同明细 remaining = max(qty - pickedQty, 0) 按行汇总（与合同/拿货一致，不用 finishedQty）
  * - 国内：入库明细 receivedQty 合计（父单未取消）− 出库批次明细 qty（批次未取消）
- * - 海运在途：已绑柜且柜状态为装柜中/在途的出库批次明细 qty
+ * - 运输途中：已绑柜且柜状态为装柜中/在途/到港/清关的出库批次明细 qty
  */
 export async function computeVariantInventorySnapshot(variantId: string) {
   const [contractItems, parentsWithLines, headerOnlyInbounds, outboundAgg, transitAgg] =
@@ -47,7 +47,14 @@ export async function computeVariantInventorySnapshot(variantId: string) {
             // 已确认到达海外仓的批次不再算「在途」（与 confirm-arrival 一致）
             arrivalConfirmedAt: null,
             container: {
-              status: { in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT] },
+              status: {
+                in: [
+                  ContainerStatus.LOADING,
+                  ContainerStatus.IN_TRANSIT,
+                  ContainerStatus.ARRIVED_PORT,
+                  ContainerStatus.CUSTOMS_CLEAR,
+                ],
+              },
             },
           },
         },
@@ -129,7 +136,14 @@ export async function aggregateBusinessPipelineLinkedToVariants() {
           status: { not: "已取消" },
           arrivalConfirmedAt: null,
           container: {
-            status: { in: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT] },
+            status: {
+              in: [
+                ContainerStatus.LOADING,
+                ContainerStatus.IN_TRANSIT,
+                ContainerStatus.ARRIVED_PORT,
+                ContainerStatus.CUSTOMS_CLEAR,
+              ],
+            },
           },
         },
       },

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Smart ERP database backup
+
+[Timer]
+OnCalendar=*-*-* 01:30:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=smart-erp-db-backup.service
+
+[Install]
+WantedBy=timers.target

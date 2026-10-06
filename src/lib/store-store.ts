@@ -6,7 +6,7 @@
 export type Store = {
   id: string;
   name: string; // 店铺名称（如 TK-UK-01）
-  platform: "TikTok" | "Amazon" | "其他"; // 所属平台
+  platform: "TikTok" | "Shopee" | "Amazon" | "Mercado Livre" | "其他"; // 所属平台
   country: string; // 国家代码（ISO，如 JP, UK, US）
   currency: "GBP" | "JPY" | "USD" | "RMB" | "EUR" | "HKD" | "SGD" | "AUD" | "BRL"; // 经营币种
   accountId: string; // 关联收款账户ID

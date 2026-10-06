@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize Shopee incremental orders
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-shopee-order-sync
+TimeoutStartSec=600

@@ -1,9 +1,10 @@
 "use client";
 
 import { toast } from "sonner";
-import { Download, TrendingUp, TrendingDown, DollarSign, FileText, Trash2 } from "lucide-react";
+import { Download, TrendingUp, TrendingDown, DollarSign, FileText, PencilLine, Trash2 } from "lucide-react";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import useSWR, { mutate as swrMutate } from "swr";
 import { type BankAccount, calculatePrimaryAccountBalance } from "@/lib/finance-store";
 import { getStores, type Store } from "@/lib/store-store";
@@ -20,6 +21,8 @@ import DateInput from "@/components/DateInput";
 import { useSystemConfirm } from "@/hooks/use-system-confirm";
 import { Pagination, usePaginationState } from "@/components/Pagination";
 import type { CashFlowSummary } from "@/lib/cash-flow-summary";
+import CashFlowAccountChangeDialog from "./components/CashFlowAccountChangeDialog";
+import { cashFlowPlatformLabel } from "@/lib/cash-flow-platform";
 
 export type CashFlow = {
   id: string;
@@ -39,6 +42,8 @@ export type CashFlow = {
   status: "confirmed" | "pending"; // 已确认/待核对
   isReversal?: boolean; // 是否为冲销记录
   reversedById?: string; // 被冲销的记录ID
+  isReversed?: boolean; // 原流水是否已有冲销记录
+  reversalId?: string; // 对应的冲销记录ID
   voucher?: string; // 旧凭证（兼容）
   paymentVoucher?: string; // 付款凭证（发起付款时，JSON 或多图）
   transferVoucher?: string; // 转账成功凭证（财务打款后）
@@ -202,6 +207,7 @@ function voucherImages(raw: unknown): string[] {
 }
 
 export default function CashFlowPage() {
+  const { data: session } = useSession();
   const { confirm, confirmDialog } = useSystemConfirm();
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [relatedFlows, setRelatedFlows] = useState<{ open: boolean; businessNumber: string; flows: any[] }>({ open: false, businessNumber: "", flows: [] });
@@ -223,9 +229,16 @@ export default function CashFlowPage() {
   const [voucherViewLabel, setVoucherViewLabel] = useState<string>("凭证");
   const [currentVoucherIndex, setCurrentVoucherIndex] = useState(0);
   const [voucherLoadingKey, setVoucherLoadingKey] = useState<string | null>(null);
+  const [voucherViewContext, setVoucherViewContext] = useState<{
+    flowId: string;
+    kind: "payment" | "transfer";
+  } | null>(null);
+  const [voucherDeleting, setVoucherDeleting] = useState(false);
   const [supplementVoucherFlow, setSupplementVoucherFlow] = useState<CashFlow | null>(null);
   const [supplementPaymentVoucher, setSupplementPaymentVoucher] = useState<string | string[]>("");
   const [supplementTransferVoucher, setSupplementTransferVoucher] = useState<string | string[]>("");
+  const [accountChangeFlow, setAccountChangeFlow] = useState<CashFlow | null>(null);
+  const canChangePaymentAccount = ["ADMIN", "SUPER_ADMIN", "FINANCE"].includes(session?.user?.role || "");
 
   useEffect(() => {
     const linkedSearch = new URLSearchParams(window.location.search).get("search")?.trim();
@@ -302,9 +315,9 @@ export default function CashFlowPage() {
     keepPreviousData: true,
     dedupingInterval: 600000
   });
-  const stores = Array.isArray(storesData) ? storesData : (storesData?.data ?? []);
+  const stores = useMemo(() => Array.isArray(storesData) ? storesData : (storesData?.data ?? []), [storesData]);
 
-  const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
+  const accountsListRaw = useMemo(() => Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []), [accountsData]);
 
   // The API returns signed, confirmed deltas without transferring full rows.
   const accounts = useMemo(() => {
@@ -391,10 +404,52 @@ export default function CashFlowPage() {
       setVoucherRotation(0);
       setVoucherViewLabel(kind === "payment" ? "发起付款凭证" : "转账成功凭证");
       setCurrentVoucherIndex(0);
+      setVoucherViewContext({ flowId, kind });
     } catch (error: any) {
       toast.error(error?.message || "凭证读取失败");
     } finally {
       setVoucherLoadingKey(null);
+    }
+  };
+
+  const handleDeleteVoucherImage = async () => {
+    if (!voucherViewContext || !voucherViewModal || voucherDeleting) return;
+    const images = voucherImages(voucherViewModal);
+    if (!images[currentVoucherIndex]) return;
+
+    const confirmed = await confirm({
+      title: "删除凭证图片",
+      message: `确定删除当前这张${voucherViewLabel}吗？\n只删除本张图片，不会删除流水、金额或其他凭证。`,
+      confirmText: "删除本张",
+      cancelText: "取消",
+      type: "danger",
+    });
+    if (!confirmed) return;
+
+    setVoucherDeleting(true);
+    try {
+      const response = await fetch(`/api/cash-flow/${voucherViewContext.flowId}/vouchers`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: voucherViewContext.kind, index: currentVoucherIndex }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "删除凭证失败");
+      const remaining = voucherImages(data.images);
+      if (remaining.length === 0) {
+        setVoucherViewModal(null);
+        setVoucherViewContext(null);
+        setCurrentVoucherIndex(0);
+      } else {
+        setVoucherViewModal(JSON.stringify(remaining));
+        setCurrentVoucherIndex((index) => Math.min(index, remaining.length - 1));
+      }
+      await refreshCashFlows();
+      toast.success("凭证图片已删除");
+    } catch (error: any) {
+      toast.error(error?.message || "删除凭证失败");
+    } finally {
+      setVoucherDeleting(false);
     }
   };
 
@@ -500,6 +555,26 @@ export default function CashFlowPage() {
       return;
     }
 
+    if (flow.isReversed) {
+      toast.error("该流水已经冲销，不能重复冲销");
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: "确认冲销流水",
+      message: [
+        `日期：${formatDate(flow.date)}`,
+        `摘要：${flow.summary}`,
+        `账户：${flow.accountName}`,
+        `金额：${currency(Math.abs(flow.amount), flow.currency)}`,
+        "确认后将生成一条反向流水，原流水会标记为“已冲销”。",
+      ].join("\n"),
+      confirmText: "确认冲销",
+      cancelText: "取消",
+      type: "danger",
+    });
+    if (!confirmed) return;
+
     const reversalFlow: CashFlow = {
       id: crypto.randomUUID(),
       date: toLocalDateKey(new Date()),
@@ -544,20 +619,22 @@ export default function CashFlowPage() {
 
   const handleSupplementVoucher = async () => {
     if (!supplementVoucherFlow) return;
-    const toStr = (v: string | string[]): string | null => {
-      if (Array.isArray(v)) return v.length > 0 ? JSON.stringify(v) : null;
-      return typeof v === "string" && v.length > 10 ? v : null;
+    const toImages = (v: string | string[]): string[] => {
+      if (Array.isArray(v)) return v.filter((item) => typeof item === "string" && item.length > 10);
+      return typeof v === "string" && v.length > 10 ? [v] : [];
     };
-    const paymentVal = toStr(supplementPaymentVoucher);
-    const transferVal = toStr(supplementTransferVoucher);
-    if (!paymentVal && !transferVal) {
+    const paymentImages = toImages(supplementPaymentVoucher);
+    const transferImages = toImages(supplementTransferVoucher);
+    if (paymentImages.length === 0 && transferImages.length === 0) {
       toast.error("请上传付款凭证或转账凭证");
       return;
     }
     try {
-      const body: { paymentVoucher?: string; transferVoucher?: string } = {};
-      if (paymentVal) body.paymentVoucher = paymentVal;
-      if (transferVal) body.transferVoucher = transferVal;
+      const body: { appendVouchers: true; paymentVoucher?: string[]; transferVoucher?: string[] } = {
+        appendVouchers: true,
+      };
+      if (paymentImages.length > 0) body.paymentVoucher = paymentImages;
+      if (transferImages.length > 0) body.transferVoucher = transferImages;
       const res = await fetch(`/api/cash-flow/${supplementVoucherFlow.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -568,7 +645,7 @@ export default function CashFlowPage() {
         throw new Error(err.error || "保存失败");
       }
       await refreshCashFlows();
-      toast.success("凭证已保存");
+      toast.success("新凭证已追加，原凭证已保留");
       setSupplementVoucherFlow(null);
       setSupplementPaymentVoucher("");
       setSupplementTransferVoucher("");
@@ -1472,7 +1549,7 @@ export default function CashFlowPage() {
                   <td className="px-2 py-1.5 text-slate-300" title="业务日期（与筛选、统计一致）">{formatDate(flow.date || flow.createdAt)}</td>
                   <td className="px-2 py-1.5 text-slate-400 text-xs">
                     <select
-                      value={flow.platform || ""}
+                      value={cashFlowPlatformLabel(flow.platform)}
                       onChange={async (e) => {
                         const val = e.target.value;
                         try {
@@ -1495,7 +1572,7 @@ export default function CashFlowPage() {
                       className="w-full rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-xs text-slate-300 cursor-pointer hover:border-slate-500"
                     >
                       <option value="">-</option>
-                      {[...new Set((stores as any[]).map((s) => s.platform).filter(Boolean))].sort().map((p) => (
+                      {[...new Set([...((stores as any[]).map((s) => cashFlowPlatformLabel(s.platform))), cashFlowPlatformLabel(flow.platform)].filter(Boolean))].sort().map((p) => (
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
@@ -1526,6 +1603,18 @@ export default function CashFlowPage() {
                   <td className="px-2 py-2">
                     <div className="space-y-1.5">
                       {/* 分类标签 */}
+                      <div className="flex flex-wrap gap-1">
+                        {flow.isReversal && (
+                          <span className="inline-flex items-center rounded border border-rose-400/50 bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-rose-200">
+                            冲销记录
+                          </span>
+                        )}
+                        {flow.isReversed && (
+                          <span className="inline-flex items-center rounded border border-amber-400/50 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                            已冲销
+                          </span>
+                        )}
+                      </div>
                       {flow.category && (() => {
                         try {
                           // 根据类型使用不同的解析函数
@@ -1611,6 +1700,11 @@ export default function CashFlowPage() {
                               {flow.remark}
                             </div>
                           )}
+                          {flow.isReversal && flow.reversedById && (
+                            <div className="text-[10px] font-mono text-rose-300/80">
+                              原流水：{flow.reversedById}
+                            </div>
+                          )}
                         </div>
                     </div>
                   </td>
@@ -1639,10 +1733,10 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5 text-right text-slate-400 text-xs">
                     {(() => {
-                      if (flow.currency === "CNY" || flow.currency === "RMB") return "1.00";
+                      if (flow.currency === "CNY" || flow.currency === "RMB") return "1.000000000";
                       // 优先用流水自带的汇率快照，没有则回退到账户当前汇率
                       const rate = flow.exchangeRate ?? accountsListRaw.find((a: any) => a.id === flow.accountId)?.exchangeRate;
-                      return rate != null ? Number(rate).toFixed(4) : "—";
+                      return rate != null ? Number(rate).toFixed(9) : "—";
                     })()}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs">
@@ -1712,7 +1806,18 @@ export default function CashFlowPage() {
                   </td>
                   <td className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-1 items-center">
-                      {!flow.isReversal && flow.status === "confirmed" && (
+                      {canChangePaymentAccount && flow.type === "expense" && !flow.isReversal && !flow.isReversed && (
+                        <button
+                          type="button"
+                          onClick={() => setAccountChangeFlow(flow)}
+                          className="inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300"
+                          title="修改付款账户"
+                        >
+                          <PencilLine className="h-3.5 w-3.5" />
+                          修改账户
+                        </button>
+                      )}
+                      {!flow.isReversal && !flow.isReversed && flow.status === "confirmed" && (
                         <button
                           type="button"
                           onClick={async () => {
@@ -1722,6 +1827,9 @@ export default function CashFlowPage() {
                         >
                           冲销
                         </button>
+                      )}
+                      {flow.isReversed && (
+                        <span className="text-xs font-medium text-amber-300">已冲销</span>
                       )}
                       {!flow.isReversal && (
                         <button
@@ -1752,6 +1860,18 @@ export default function CashFlowPage() {
           />
         </div>
       </section>
+
+      <CashFlowAccountChangeDialog
+        flow={accountChangeFlow}
+        accounts={accountsListRaw}
+        onClose={() => setAccountChangeFlow(null)}
+        onSuccess={async () => {
+          await Promise.all([
+            refreshCashFlows(),
+            swrMutate("/api/accounts?page=1&pageSize=500"),
+          ]);
+        }}
+      />
 
       {/* 关联流水弹窗 */}
       {relatedFlows.open && (
@@ -1917,6 +2037,7 @@ export default function CashFlowPage() {
             style={{ zIndex: 9999 }}
             onClick={() => {
               setVoucherViewModal(null);
+              setVoucherViewContext(null);
               setCurrentVoucherIndex(0);
             }}
           >
@@ -1935,9 +2056,22 @@ export default function CashFlowPage() {
                   className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
                   title="向右旋转"
                 >↻</button>
+                {voucherViewContext && (
+                  <button
+                    type="button"
+                    disabled={voucherDeleting}
+                    onClick={() => void handleDeleteVoucherImage()}
+                    className="flex h-10 items-center gap-1.5 rounded-full border border-rose-400/50 bg-rose-600/80 px-3 text-xs font-medium text-white transition hover:bg-rose-600 disabled:cursor-wait disabled:opacity-60"
+                    title="删除当前这张凭证图片"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {voucherDeleting ? "删除中" : "删除本张"}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setVoucherViewModal(null);
+                    setVoucherViewContext(null);
                     setCurrentVoucherIndex(0);
                     setVoucherRotation(0);
                   }}
@@ -2065,7 +2199,9 @@ export default function CashFlowPage() {
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-500 mb-4">付款凭证与转账凭证可只填一项或两项都填，保存后生效。</p>
+            <p className="text-xs text-emerald-300/90 mb-4">
+              新上传图片会追加到原凭证后面，不会覆盖原凭证。每类本次最多上传 5 张。
+            </p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"

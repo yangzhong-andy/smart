@@ -88,7 +88,7 @@ const int = (v: number | null | undefined) => {
 
 export default function DailyReportPage() {
   const { data, isLoading, mutate } = useSWR("/api/daily-reports?page=1&pageSize=500", fetcher);
-  const reports: Report[] = data?.data || [];
+  const reports = useMemo<Report[]>(() => Array.isArray(data?.data) ? data.data : [], [data?.data]);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);

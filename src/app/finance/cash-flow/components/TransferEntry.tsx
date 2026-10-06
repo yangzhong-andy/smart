@@ -8,6 +8,7 @@ import { enrichWithUID } from "@/lib/business-utils";
 import ImageUploader from "@/components/ImageUploader";
 import DateInput from "@/components/DateInput";
 import InteractiveButton from "@/components/ui/InteractiveButton";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type TransferEntryProps = {
   accounts: BankAccount[];
@@ -15,9 +16,14 @@ type TransferEntryProps = {
   onSave: (flow: CashFlow) => Promise<void>;
 };
 
+type PendingTransfer = {
+  outFlow: CashFlow;
+  inFlow: CashFlow;
+};
+
 const formatNumber = (n: number) => {
-  if (!Number.isFinite(n)) return "0.000000";
-  return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(n);
+  if (!Number.isFinite(n)) return "0.000000000";
+  return n.toFixed(9);
 };
 
 const currency = (n: number, curr: string = "CNY") =>
@@ -27,6 +33,7 @@ const currency = (n: number, curr: string = "CNY") =>
 
 export default function TransferEntry({ accounts, onClose, onSave }: TransferEntryProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     fromAccountId: "",
@@ -90,7 +97,7 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     e.preventDefault();
     
     // 防止重复提交
-    if (isSubmitting) {
+    if (isSubmitting || pendingTransfer) {
       return;
     }
 
@@ -186,22 +193,27 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
     const outFlowWithUID = enrichWithUID(outFlow, "CASH_FLOW");
     const inFlowWithUID = enrichWithUID(inFlow, "CASH_FLOW");
     
-    // 防止重复提交
+    setPendingTransfer({ outFlow: outFlowWithUID, inFlow: inFlowWithUID });
+  };
+
+  const confirmTransfer = async () => {
+    if (!pendingTransfer || isSubmitting) return;
+
     setIsSubmitting(true);
     try {
       // 保存两条记录（异步处理）
-      await onSave(outFlowWithUID);
+      await onSave(pendingTransfer.outFlow);
       // 延迟保存第二条，确保账户余额正确更新
       await new Promise(resolve => setTimeout(resolve, 100));
-      await onSave(inFlowWithUID);
-      setIsSubmitting(false);
+      await onSave(pendingTransfer.inFlow);
       await new Promise(resolve => setTimeout(resolve, 500));
-      toast.success("划拨/换汇成功");
+      toast.success(pendingTransfer.outFlow.category === "换汇" ? "换汇成功" : "划拨成功");
+      setPendingTransfer(null);
       onClose();
     } catch (error: any) {
-      setIsSubmitting(false);
       toast.error(error.message || '创建划拨记录失败');
-      throw error; // 重新抛出错误，让 InteractiveButton 也能捕获
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -516,12 +528,12 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
                 <span className="text-sm text-slate-300">结算汇率</span>
                 <input
                   type="number"
-                  step="0.000001"
+                  step="0.000000001"
                   min={0}
                   value={form.exchangeRate}
                   onChange={(e) => setForm((f) => ({ ...f, exchangeRate: e.target.value }))}
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                  placeholder="如：7.2500"
+                  placeholder="如：0.190229000"
                   required
                 />
                 <div className="text-xs text-slate-500 mt-1">参考汇率：{formatNumber(calculatedRate)}（自动计算）</div>
@@ -577,11 +589,28 @@ export default function TransferEntry({ accounts, onClose, onSave }: TransferEnt
               className="rounded-md bg-blue-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-blue-600"
               disabled={!form.fromAccountId || !form.toAccountId || !form.amount || isSubmitting}
             >
-              确认划拨
+              {form.transferType === "换汇" ? "下一步：确认换汇" : "下一步：确认划拨"}
             </InteractiveButton>
           </div>
         </form>
       </div>
+      <ConfirmDialog
+        open={Boolean(pendingTransfer)}
+        title={pendingTransfer?.outFlow.category === "换汇" ? "确认创建换汇" : "确认创建划拨"}
+        message={pendingTransfer ? [
+          `请再次核对，确认后将立即生成两条关联流水。`,
+          `转出：${pendingTransfer.outFlow.accountName}（${pendingTransfer.outFlow.currency}） ${currency(Math.abs(pendingTransfer.outFlow.amount), pendingTransfer.outFlow.currency)}`,
+          `转入：${pendingTransfer.inFlow.accountName}（${pendingTransfer.inFlow.currency}） ${currency(pendingTransfer.inFlow.amount, pendingTransfer.inFlow.currency)}`,
+          `汇率：${formatNumber(Number(pendingTransfer.outFlow.exchangeRate || 0))}`,
+        ].join("\n") : ""}
+        confirmText={pendingTransfer?.outFlow.category === "换汇" ? "确认生成换汇" : "确认生成划拨"}
+        cancelText="返回修改"
+        type="warning"
+        onConfirm={confirmTransfer}
+        onCancel={() => {
+          if (!isSubmitting) setPendingTransfer(null);
+        }}
+      />
     </div>
   );
 }

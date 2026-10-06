@@ -35,7 +35,7 @@ export default function InfluencerCostsPage() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({ influencerId: "", teamName: "", manualShippingCost: "0", otherCost: "0", currency: "BRL", notes: "" });
   const query = useMemo(() => {
-    const params = new URLSearchParams({ startDate, endDate, groupBy: "day" });
+    const params = new URLSearchParams({ startDate, endDate, groupBy: "day", includeSamples: "1" });
     if (shopId !== "all") params.set("shopId", shopId);
     return `/api/profit-report?${params.toString()}`;
   }, [startDate, endDate, shopId]);

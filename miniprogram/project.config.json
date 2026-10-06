@@ -1,0 +1,17 @@
+{
+  "appid": "wxc35b5669b6444f0a",
+  "projectname": "smart-erp-miniprogram",
+  "description": "Smart ERP mobile order management",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "./",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true
+  },
+  "condition": {}
+}

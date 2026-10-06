@@ -28,6 +28,7 @@ test("provides the independent US TikTok profit fields", () => {
     "GMV",
     "PLATFORM_FEE",
     "SMART_PROMOTION_FEE",
+    "AFFILIATE_COMMISSION",
     "PRODUCT_COST",
     "FIRST_MILE_LOGISTICS",
     "LAST_MILE_LOGISTICS",
@@ -35,8 +36,34 @@ test("provides the independent US TikTok profit fields", () => {
     "AD_COST",
   ]);
   assert.equal(components.find((item) => item.code === "SMART_PROMOTION_FEE")?.sourceKey, "smartPromotionFeeCny");
+  assert.equal(components.find((item) => item.code === "AFFILIATE_COMMISSION")?.sourceKey, "affiliateCommissionCny");
   assert.equal(components.find((item) => item.code === "LAST_MILE_LOGISTICS")?.sourceKey, "lastMileLogisticsCostCny");
   assert.equal(components.some((item) => item.code === "TAX_COST"), false);
+});
+
+test("keeps Mercado Livre four platform fees separate while deducting their total", () => {
+  const definitions = defaultProfitComponents("BR", "MERCADO_LIVRE");
+  const amounts = buildProfitComponentAmounts({
+    gmvCny: 100,
+    mercadoLivreFinancingFeeCny: 4,
+    mercadoLivreProcessingFeeCny: 3,
+    mercadoLivreSaleCommissionCny: 12,
+    mercadoLivreSellerShippingFeeCny: 21,
+    componentOriginalAmounts: {
+      ML_FINANCING_FEE: { BRL: 4.57 },
+      ML_PROCESSING_FEE: { BRL: 3.51 },
+      ML_SALE_COMMISSION: { BRL: 12.98 },
+      ML_SELLER_SHIPPING: { BRL: 21.65 },
+    },
+  }, definitions);
+  assert.deepEqual(amounts.filter((item) => item.category === "PLATFORM").map((item) => item.code), [
+    "ML_FINANCING_FEE",
+    "ML_PROCESSING_FEE",
+    "ML_SALE_COMMISSION",
+    "ML_SELLER_SHIPPING",
+  ]);
+  assert.equal(contributionProfitFromComponents(amounts), 60);
+  assert.deepEqual(amounts.find((item) => item.code === "ML_PROCESSING_FEE")?.originalAmounts, { BRL: 3.51 });
 });
 
 test("requires a GMV revenue component", () => {

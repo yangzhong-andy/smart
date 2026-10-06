@@ -1,0 +1,11 @@
+[Unit]
+Description=Synchronize Shopee incremental orders every five minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+RandomizedDelaySec=20
+Unit=smart-erp-shopee-order-sync.service
+
+[Install]
+WantedBy=timers.target

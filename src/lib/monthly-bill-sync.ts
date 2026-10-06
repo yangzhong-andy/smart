@@ -184,20 +184,11 @@ export async function syncSupplierMonthlyBills(): Promise<BillSyncResult> {
     if (
       bill.status !== "Draft" ||
       activeKeys.has(key) ||
-      !isSystemGenerated(bill) ||
-      parseIds(bill.consumptionIds).length === 0
+      !isSystemGenerated(bill)
     ) {
       continue;
     }
-    await prisma.monthlyBill.update({
-      where: { id: bill.id },
-      data: {
-        totalAmount: 0,
-        netAmount: 0,
-        consumptionIds: "[]",
-        notes: `系统自动重算：${bill.month} 当前无待付款拿货单`,
-      },
-    });
+    await prisma.monthlyBill.delete({ where: { id: bill.id } });
     result.cleared += 1;
   }
 
@@ -321,20 +312,10 @@ export async function syncLogisticsMonthlyBills(): Promise<BillSyncResult> {
 
   for (const bill of existingBills) {
     if (bill.status !== "Draft" || !isSystemGenerated(bill)) continue;
-    const ids = parseIds(bill.consumptionIds);
-    if (ids.length === 0) continue;
     const inferredChannel = bill.supplierId || "_no_channel";
     const key = `${inferredChannel}\t${bill.month}\t${bill.currency}`;
     if (activeKeys.has(key)) continue;
-    await prisma.monthlyBill.update({
-      where: { id: bill.id },
-      data: {
-        totalAmount: 0,
-        netAmount: 0,
-        consumptionIds: "[]",
-        notes: `系统自动重算：${bill.month} 当前无待付款物流费用`,
-      },
-    });
+    await prisma.monthlyBill.delete({ where: { id: bill.id } });
     result.cleared += 1;
   }
 

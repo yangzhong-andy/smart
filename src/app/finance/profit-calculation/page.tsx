@@ -210,7 +210,6 @@ export default function ProfitCalculationPage() {
     purchaseCostCny,
     firstLegShippingCny,
     adCostCny,
-    shippingMode,
     isCommissionFree,
     targetRoi,
     weightKg,

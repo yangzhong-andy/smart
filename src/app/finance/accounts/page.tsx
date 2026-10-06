@@ -17,6 +17,12 @@ import { Download } from "lucide-react";
 import { AccountsStats } from "./components/AccountsStats";
 import { AccountsFilters } from "./components/AccountsFilters";
 import { AccountsTable } from "./components/AccountsTable";
+import {
+  ShopeePlatformAccounts,
+  type ShopeePlatformShop,
+  type ShopeePlatformWallet,
+  type ShopeePlatformWithdrawal,
+} from "./components/ShopeePlatformAccounts";
 import { AccountFormDialog, type AccountFormState } from "./components/AccountFormDialog";
 import { AccountDetailDialog } from "./components/AccountDetailDialog";
 import { AccountFlowDialog } from "./components/AccountFlowDialog";
@@ -33,6 +39,27 @@ const formatNumber = (n: number) => {
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+type ShopeeWalletResponse = {
+  shops?: ShopeePlatformShop[];
+  wallets?: ShopeePlatformWallet[];
+  withdrawals?: ShopeePlatformWithdrawal[];
+  inTransitWithdrawals?: ShopeePlatformWithdrawal[];
+  error?: string;
+};
+
+function convertPlatformMoneyToRMB(
+  amount: number,
+  walletCurrency: string,
+  rates: { USD: number; JPY: number; BRL?: number } | null,
+) {
+  const normalizedCurrency = walletCurrency === "RMB" ? "CNY" : walletCurrency;
+  if (normalizedCurrency === "CNY") return amount;
+  if (normalizedCurrency === "USD") return amount * (rates?.USD || 1);
+  if (normalizedCurrency === "JPY") return amount * (rates?.JPY || 1);
+  if (normalizedCurrency === "BRL") return amount * (rates?.BRL || 1);
+  return amount;
+}
 
 export default function BankAccountsPage() {
   const { confirm, confirmDialog } = useSystemConfirm();
@@ -56,10 +83,31 @@ export default function BankAccountsPage() {
     keepPreviousData: true,
     dedupingInterval: 30000 // 30秒内去重，保证同步回款后账户列表及时更新
   });
+
+  const {
+    data: shopeeWalletData,
+    error: shopeeWalletRequestError,
+    isLoading: shopeeWalletLoading,
+    mutate: mutateShopeeWallets,
+  } = useSWR<ShopeeWalletResponse>(
+    "/api/shopee/wallets?view=accounts",
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+      dedupingInterval: 30000,
+    },
+  );
   
   // 兼容 API 返回 { data, pagination } 或直接数组
-  const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
-  const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+  const accountsListRaw = useMemo(
+    () => Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []),
+    [accountsData],
+  );
+  const cashFlowListRaw = useMemo(
+    () => Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []),
+    [cashFlowData],
+  );
   const accountBalanceDeltas = Array.isArray(cashFlowData)
     ? undefined
     : cashFlowData?.accountBalanceDeltas;
@@ -169,7 +217,7 @@ export default function BankAccountsPage() {
   }, [accountsListRaw, accountBalanceDeltas, cashFlowList]);
   
   const [stores, setStores] = useState<Store[]>([]);
-  const storesList = Array.isArray(stores) ? stores : [];
+  const storesList = stores;
   const accountsReady = !accountsLoading;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
@@ -250,7 +298,7 @@ export default function BankAccountsPage() {
         }));
       }
     }
-  }, [form.storeId, stores]);
+  }, [form.storeId, storesList]);
 
   // 当选择父账户时，同步币种和国家
   useEffect(() => {
@@ -358,7 +406,7 @@ export default function BankAccountsPage() {
 
   // 计算总资产（使用实时汇率）
   // 注意：跳过 VIRTUAL 子账户，因为它的余额已经被 PRIMARY 主账户汇总了，否则会重复计算
-  const totalAssetsRMB = useMemo(() => {
+  const financialAccountAssetsRMB = useMemo(() => {
     return accounts.reduce((sum, acc) => {
       if (acc.accountCategory === "VIRTUAL") return sum; // 跳过虚拟子账户
       if (acc.currency === "CNY" || acc.currency === "RMB") {
@@ -382,6 +430,33 @@ export default function BankAccountsPage() {
       }
     }, 0);
   }, [accounts, exchangeRates]);
+
+  const shopeeWallets = useMemo(() => shopeeWalletData?.wallets ?? [], [shopeeWalletData?.wallets]);
+  const shopeeWithdrawals = useMemo(
+    () => shopeeWalletData?.inTransitWithdrawals ?? shopeeWalletData?.withdrawals ?? [],
+    [shopeeWalletData?.inTransitWithdrawals, shopeeWalletData?.withdrawals],
+  );
+
+  const platformAssets = useMemo(() => {
+    const enabledWallets = shopeeWallets.filter((wallet) => wallet.enabled);
+    const storeWalletRMB = enabledWallets
+      .filter((wallet) => wallet.walletType === "STORE")
+      .reduce((sum, wallet) => sum + convertPlatformMoneyToRMB(Number(wallet.balance) || 0, wallet.currency, exchangeRates), 0);
+    const advertisingWalletRMB = enabledWallets
+      .filter((wallet) => wallet.walletType === "ADVERTISING")
+      .reduce((sum, wallet) => sum + convertPlatformMoneyToRMB(Number(wallet.balance) || 0, wallet.currency, exchangeRates), 0);
+    const withdrawalInTransitRMB = shopeeWithdrawals
+      .filter((withdrawal) => withdrawal.status === "IN_TRANSIT")
+      .reduce((sum, withdrawal) => sum + convertPlatformMoneyToRMB(Number(withdrawal.amount) || 0, withdrawal.currency, exchangeRates), 0);
+    return {
+      storeWalletRMB,
+      advertisingWalletRMB,
+      withdrawalInTransitRMB,
+      totalRMB: storeWalletRMB + advertisingWalletRMB + withdrawalInTransitRMB,
+    };
+  }, [shopeeWallets, shopeeWithdrawals, exchangeRates]);
+
+  const totalAssetsRMB = financialAccountAssetsRMB + platformAssets.totalRMB;
 
   // 筛选后的账户树（只显示主账户和独立账户，子账号通过树形结构显示）
   const filteredAccountTree = useMemo(() => {
@@ -532,7 +607,7 @@ export default function BankAccountsPage() {
     });
 
     return result;
-  }, [flattenedAccounts, cashFlowList]);
+  }, [flattenedAccountsBase, cashFlowList]);
 
   const [isCreating, setIsCreating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -913,6 +988,11 @@ export default function BankAccountsPage() {
 
       <AccountsStats
         totalAssetsRMB={totalAssetsRMB}
+        financialAccountAssetsRMB={financialAccountAssetsRMB}
+        platformAssetsRMB={platformAssets.totalRMB}
+        platformStoreWalletRMB={platformAssets.storeWalletRMB}
+        platformAdvertisingWalletRMB={platformAssets.advertisingWalletRMB}
+        platformWithdrawalInTransitRMB={platformAssets.withdrawalInTransitRMB}
         totalUSD={totalUSD}
         totalJPY={totalJPY}
         totalBRL={totalBRL}
@@ -925,6 +1005,15 @@ export default function BankAccountsPage() {
         onRefreshRates={mutateRates}
         accountSummary={accountSummary}
         accountsLoading={accountsLoading}
+      />
+
+      <ShopeePlatformAccounts
+        shops={shopeeWalletData?.shops ?? []}
+        wallets={shopeeWallets}
+        withdrawals={shopeeWithdrawals}
+        loading={shopeeWalletLoading}
+        error={shopeeWalletData?.error || (shopeeWalletRequestError instanceof Error ? shopeeWalletRequestError.message : null)}
+        onRefresh={() => void mutateShopeeWallets()}
       />
 
       <AccountsFilters

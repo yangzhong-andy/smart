@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { type Product, type ProductStatus, type SpuListItem, getVariantsBySpuIdFromAPI, getProductsFromAPI } from "@/lib/products-store";
+import { type Product, type ProductStatus, type SpuListItem, getProductsFromAPI } from "@/lib/products-store";
 import { formatCurrency, formatCurrencyString } from "@/lib/currency-utils";
-import { Download, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, X, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { filterProductWorkspace, incompleteSku, productMatchesGroup, skuMatchesKeyword } from "@/lib/product-workspace";
+import { validateVariantRows, serializeVariantRows, variantRowFromProduct } from "@/lib/product-variant-entry";
 import { ProductsStats } from "./components/ProductsStats";
 import { ProductsFilters } from "./components/ProductsFilters";
 import { ProductsTable } from "./components/ProductsTable";
@@ -39,6 +41,9 @@ export default function ProductsPage() {
   const [variantCache, setVariantCache] = useState<Record<string, Product[]>>({});
   const [expandedSpuId, setExpandedSpuId] = useState<string | null>(null);
   const [loadingSpuId, setLoadingSpuId] = useState<string | null>(null);
+  const [variantErrors, setVariantErrors] = useState<Record<string, string>>({});
+  const autoExpanded = useRef(false);
+  const pendingVariants = useRef(new Map<string, Promise<Product[]>>());
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [productsReady, setProductsReady] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,16 +97,21 @@ export default function ProductsPage() {
     suppliers: []
   });
 
-  const { data: swrProductsData, error: productsError, mutate: mutateProducts } = useSWR<any>('/api/products?list=spu&page=1&pageSize=500&includeImages=true');
+  const { data: swrProductsData, error: productsError, mutate: mutateProducts, isValidating } = useSWR<any>(
+    '/api/products?list=spu&workspace=true&includeImages=true',
+    async (url: string) => {
+      const response = await fetch(url + "&noCache=true", { cache: "no-store", signal: AbortSignal.timeout(30000) });
+      if (!response.ok) throw new Error("产品资料加载失败，请重试");
+      const data = await response.json();
+      if (!Array.isArray(data?.list)) throw new Error("产品资料格式异常");
+      return data;
+    }, { revalidateOnFocus: false }
+  );
 
   // 按供应商过滤�?productId 集合（来�?/api/product-suppliers?supplierId=...�?
   const [supplierFilterProductIds, setSupplierFilterProductIds] = useState<Set<string> | null>(null);
   const [supplierFilterName, setSupplierFilterName] = useState<string | null>(null);
 
-  const apiSummary = useMemo(() => {
-    if (!swrProductsData || Array.isArray(swrProductsData)) return null;
-    return swrProductsData.summary ?? null;
-  }, [swrProductsData]);
 
   useEffect(() => {
     if (swrProductsData) {
@@ -148,20 +158,51 @@ export default function ProductsPage() {
     })();
   }, []);
 
-  const loadVariantsForSpu = useCallback(async (productId: string): Promise<Product[]> => {
-    if (variantCache[productId]?.length) return variantCache[productId] ?? [];
-    setLoadingSpuId(productId);
-    try {
-      const variants = await getVariantsBySpuIdFromAPI(productId);
-      setVariantCache((prev) => ({ ...prev, [productId]: variants }));
-      return variants;
-    } catch (e) {
-      toast.error("加载规格失败");
-      return [];
-    } finally {
-      setLoadingSpuId(null);
+  const loadVariantsForSpu = useCallback(async (productId: string, force = false): Promise<Product[]> => {
+    if (!force && variantCache[productId]) return variantCache[productId];
+    const pending = pendingVariants.current.get(productId);
+    if (pending) {
+      if (!force) return pending;
+      // A save-triggered refresh must not reuse an older pre-save response.
+      await pending;
     }
+    const request = (async () => {
+      setLoadingSpuId(productId);
+      setVariantErrors(prev => ({ ...prev, [productId]: "" }));
+      try {
+        const response = await fetch("/api/products?spuId=" + encodeURIComponent(productId), { cache: "no-store", signal: AbortSignal.timeout(30000) });
+        if (!response.ok) throw new Error("SKU 明细加载失败，请重试");
+        const rows = await response.json();
+        if (!Array.isArray(rows)) throw new Error("SKU 明细格式异常");
+        const variants = rows.filter((row: Product) => row.variant_id);
+        setVariantCache(prev => ({ ...prev, [productId]: variants }));
+        return variants;
+      } catch (error) {
+        setVariantErrors(prev => ({ ...prev, [productId]: error instanceof Error ? error.message : "加载失败" }));
+        return [];
+      } finally {
+        pendingVariants.current.delete(productId);
+        setLoadingSpuId(current => current === productId ? null : current);
+      }
+    })();
+    pendingVariants.current.set(productId, request);
+    return request;
   }, [variantCache]);
+
+  useEffect(() => {
+    if (!autoExpanded.current && spuList.length > 0) {
+      autoExpanded.current = true;
+      setExpandedSpuId(spuList[0].productId);
+      void loadVariantsForSpu(spuList[0].productId);
+    }
+  }, [spuList, loadVariantsForSpu]);
+
+  const refreshWorkspace = async (productId?: string) => {
+    try { await mutateProducts(); } catch { toast.error("保存已成功，但列表刷新失败，请点刷新资料；无需重新提交"); }
+    if (productId) await loadVariantsForSpu(productId, true);
+  };
+
+  const existingSkuIds = useMemo(() => spuList.flatMap(item => (item.skuIndex ?? []).map(row => row.sku_id)), [spuList]);
 
   const products = useMemo(() => Object.values(variantCache).flat(), [variantCache]);
 
@@ -177,84 +218,33 @@ export default function ProductsPage() {
   }, [spuList]);
 
   // 绛涢€夊拰鎺掑簭鍚庣�?SPU 鍒楄〃锛堜竴�?SPU 涓€寮犲崱鐗囷級
-  const filteredSpuList = useMemo(() => {
-    let result = [...spuList];
-    if (filterStatus !== "all") {
-      result = result.filter((s) => (s.status as string) === filterStatus);
-    }
-    if (filterCategory !== "all") {
-      result = result.filter((s) => s.category === filterCategory);
-    }
-    if (searchKeyword.trim()) {
-      const keyword = searchKeyword.toLowerCase();
-      result = result.filter((s) =>
-        s.name.toLowerCase().includes(keyword) || (s.category && s.category.toLowerCase().includes(keyword))
-      );
-    }
-    if (supplierFilterProductIds && supplierFilterProductIds.size > 0) {
-      result = result.filter((s) => supplierFilterProductIds.has(s.productId));
-    }
-    result.sort((a, b) => (a.name || "").localeCompare(b.name || "", "zh-Hans-CN"));
-    return result;
-  }, [spuList, filterStatus, filterCategory, searchKeyword, supplierFilterProductIds]);
+  const filteredSpuList = useMemo(() => filterProductWorkspace(spuList, {
+    keyword: searchKeyword, status: filterStatus, category: filterCategory, supplier: filterFactory,
+    sortBy, sortOrder, supplierProductIds: supplierFilterProductIds,
+  }), [spuList, filterStatus, filterCategory, filterFactory, searchKeyword, sortBy, sortOrder, supplierFilterProductIds]);
 
-  const filteredProducts = useMemo(() => products, [products]);
-
-  // 浜у搧缁熻鎽樿锛氭棤绛涢€夋椂浼樺厛鐢ㄦ帴鍙ｈ繑鍥炵殑 summary锛屾湁绛涢€夋椂鐢ㄥ墠绔?filteredSpuList + products 璁＄�?
   const productSummary = useMemo(() => {
-    const noFilter = filterStatus === "all" && filterCategory === "all" && !searchKeyword.trim();
-    if (noFilter && apiSummary) {
-      const costByCurrency = filteredProducts.reduce((acc, p) => {
-        const currency = p.currency ?? "CNY";
-        if (!acc[currency]) acc[currency] = 0;
-        acc[currency] += Number(p.cost_price ?? 0);
-        return acc;
-      }, {} as Record<string, number>);
-      return {
-        totalCount: apiSummary.totalCount,
-        onSaleCount: apiSummary.onSaleCount,
-        offSaleCount: apiSummary.offSaleCount,
-        avgCost: apiSummary.avgCost,
-        costByCurrency
-      };
-    }
-    const totalCount = filteredSpuList.length;
-    const onSaleCount = filteredSpuList.filter((s) => (s.status as string) === "ACTIVE").length;
-    const offSaleCount = filteredSpuList.filter((s) => (s.status as string) === "INACTIVE").length;
-    const totalCost = products.reduce((sum, p) => sum + Number(p.cost_price ?? 0), 0);
-    const avgCost = products.length > 0 ? totalCost / products.length : 0;
-
-    const costByCurrency = filteredProducts.reduce((acc, p) => {
-      const currency = p.currency ?? "CNY";
-      if (!acc[currency]) acc[currency] = 0;
-      acc[currency] += Number(p.cost_price ?? 0);
-      return acc;
-    }, {} as Record<string, number>);
-
+    const rows = filteredSpuList.flatMap(item => item.skuIndex ?? []);
     return {
-      totalCount,
-      onSaleCount,
-      offSaleCount,
-      avgCost,
-      costByCurrency
+      totalCount: filteredSpuList.length,
+      onSaleCount: filteredSpuList.filter(item => item.status === "ACTIVE").length,
+      offSaleCount: filteredSpuList.filter(item => item.status === "INACTIVE").length,
+      skuCount: filteredSpuList.reduce((sum, item) => sum + item.variantCount, 0),
+      incompleteCount: rows.filter(incompleteSku).length,
+      avgCost: 0,
     };
-  }, [apiSummary, filterStatus, filterCategory, searchKeyword, filteredSpuList, products, filteredProducts]);
+  }, [filteredSpuList]);
 
-  // 瀵煎嚭浜у搧鏁版嵁锛堝鍑烘椂鎷夊彇鍏ㄩ噺鍙樹綋锛?
   const handleExportData = async () => {
     const fullList = await getProductsFromAPI();
     if (!fullList?.length) {
       toast.error("没有可导出的数据");
       return;
     }
-    const filtered = fullList.filter((p) => {
-      if (filterStatus !== "all" && p.status !== filterStatus) return false;
-      if (filterCategory !== "all" && p.category !== filterCategory) return false;
-      if (searchKeyword.trim()) {
-        const kw = searchKeyword.toLowerCase();
-        if (!p.name?.toLowerCase().includes(kw) && !p.sku_id?.toLowerCase().includes(kw) && !p.category?.toLowerCase().includes(kw)) return false;
-      }
-      return true;
+    const allowed = new Map(filteredSpuList.map(item => [item.productId, item]));
+    const filtered = fullList.filter(product => {
+      const group = allowed.get(product.product_id ?? "");
+      return group && (productMatchesGroup(group, searchKeyword) || skuMatchesKeyword(product, searchKeyword));
     });
     if (filtered.length === 0) {
       toast.error("没有可导出的数据");
@@ -413,33 +403,13 @@ export default function ProductsPage() {
     }
 
     // 鏂板缓涓斾娇鐢ㄥ鍙樹綋妯″紡
-    if (!editingProduct && formVariants.some((r) => r.sku_id?.trim())) {
-      const valid = formVariants.filter((r) => r.sku_id?.trim());
-      if (valid.length === 0) {
-        toast.error("请至少填写一个变体的 SKU 编码");
+    if (!editingProduct) {
+      const valid = formVariants;
+      if (!validateVariantRows(valid, existingSkuIds).valid) {
+        toast.error("请先修正 SKU 表格中标出的内容；不会跳过填写不完整的行");
         return;
       }
-      if (!form.name.trim()) {
-        toast.error("请填写产品名称");
-        return;
-      }
-      const skuIds = valid.map((r) => r.sku_id.trim());
-      if (new Set(skuIds).size !== skuIds.length) {
-        toast.error("变体 SKU 编码不能重复");
-        return;
-      }
-      const duplicate = products.filter((p) => skuIds.includes(p.sku_id!));
-      if (duplicate.length > 0) {
-        toast.error("SKU 已存在：" + duplicate.map((d) => d.sku_id).join(", "));
-        return;
-      }
-      for (const r of valid) {
-        const cp = Number(r.cost_price);
-        if (Number.isNaN(cp) || cp < 0) {
-          toast.error("变体 " + (r.sku_id || r.color || "未命名") + " 的单价需为有效数字");
-          return;
-        }
-      }
+      if (!form.name.trim()) { toast.error("请填写产品名称"); return; }
 
       const suppliersList = form.suppliers?.filter((s) => s.id) || [];
       type SupplierOption = { id: string; name: string; price?: number; moq?: number; lead_time?: number; isPrimary?: boolean };
@@ -448,10 +418,12 @@ export default function ProductsPage() {
         const s = suppliers.find((x) => x.id === form.factory_id);
         primarySupplier = s ? { id: s.id, name: s.name, price: Number(valid[0].cost_price), isPrimary: true } : undefined;
       }
-      const suppliersData = primarySupplier ? [primarySupplier] : suppliersList;
+      const suppliersData = suppliersList.length ? suppliersList : (primarySupplier ? [primarySupplier] : []);
 
       const galleryList = Array.isArray(form.gallery_images) ? form.gallery_images : [];
       const productData: any = {
+        creation_mode: "new",
+        target_roi: form.target_roi ? Number(form.target_roi) : undefined,
         spu_code: form.spu_code.trim() || undefined,
         name: form.name.trim(),
         main_image: form.main_image,
@@ -475,13 +447,7 @@ export default function ProductsPage() {
         moq: form.moq || undefined,
         lead_time: form.lead_time || undefined,
         suppliers: suppliersData,
-        variants: valid.map((r) => ({
-          sku_id: r.sku_id.trim(),
-          color: r.color.trim() || undefined,
-          cost_price: Number(r.cost_price),
-          size: r.size.trim() || undefined,
-          barcode: r.barcode.trim() || undefined,
-        })),
+        variants: serializeVariantRows(valid),
       };
 
       const PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
@@ -506,7 +472,9 @@ export default function ProductsPage() {
             : (err?.error || "操作失败");
           throw new Error(message);
         }
-        await mutateProducts?.();
+        const created = await response.json();
+        await refreshWorkspace(created.product_id);
+        if (created.product_id) setExpandedSpuId(created.product_id);
         toast.success("已创建产品「" + form.name + "」及 " + valid.length + " 个变体");
         resetForm();
         setIsModalOpen(false);
@@ -563,7 +531,6 @@ export default function ProductsPage() {
     // 缂栬緫鏃朵粎鏀瑰彉浣撳瓧娈碉紙濡傚崟浠枫€佸簱瀛橈級鈫?�?PATCH锛岃姹傚皬銆佷繚瀛樺�?
     const variantOnlyFields = {
       cost_price: costPrice,
-      stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
       color: form.color.trim() || undefined,
       size: form.size.trim() || undefined,
       barcode: form.barcode.trim() || undefined,
@@ -586,14 +553,14 @@ export default function ProductsPage() {
       form.material.trim() === (editingProduct.material ?? "") &&
       form.status === editingProduct.status &&
       form.spu_code.trim() === ((editingProduct as any).spu_code ?? "") &&
-      (!suppliersList.length || (editingProduct as any).suppliers?.length === suppliersList.length)
+      form.customs_name_cn.trim() === (editingProduct.customs_name_cn ?? "") &&
+      form.customs_name_en.trim() === (editingProduct.customs_name_en ?? "") &&
+      form.default_supplier_id.trim() === (editingProduct.default_supplier_id ?? "") &&
+      JSON.stringify(suppliersList) === JSON.stringify(editingProduct.suppliers ?? [])
     );
     if (editingProduct && onlyVariantChanged) {
       const patchPayload: Record<string, unknown> = {};
       if (Number(costPrice) !== Number(editingProduct.cost_price ?? 0)) patchPayload.cost_price = costPrice;
-      const formStock = form.stock_quantity ? Number(form.stock_quantity) : undefined;
-      const origStock = editingProduct.stock_quantity ?? ((editingProduct as any).at_factory ?? 0) + ((editingProduct as any).at_domestic ?? 0) + ((editingProduct as any).in_transit ?? 0);
-      if (formStock !== origStock) patchPayload.stock_quantity = formStock;
       if ((form.color.trim() || "") !== ((editingProduct as any).color ?? "")) patchPayload.color = form.color.trim() || undefined;
       if ((form.size.trim() || "") !== ((editingProduct as any).size ?? "")) patchPayload.size = form.size.trim() || undefined;
       if ((form.barcode.trim() || "") !== ((editingProduct as any).barcode ?? "")) patchPayload.barcode = form.barcode.trim() || undefined;
@@ -616,14 +583,7 @@ export default function ProductsPage() {
             const err = await response.json().catch(() => ({}));
             throw new Error(err?.error || "更新失败");
           }
-          await mutateProducts?.();
-          if (editingProduct.product_id) {
-            setVariantCache((prev) => {
-              const next = { ...prev };
-              delete next[editingProduct.product_id!];
-              return next;
-            });
-          }
+          await refreshWorkspace(editingProduct.product_id);
           toast.success("产品已更新");
           resetForm();
           setIsModalOpen(false);
@@ -663,7 +623,6 @@ export default function ProductsPage() {
       color: form.color.trim() || undefined,
       size: form.size.trim() || undefined,
       barcode: form.barcode.trim() || undefined,
-      stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : undefined,
       suppliers: suppliersList.length > 0 ? suppliersList : undefined,
     };
     if (editingProduct) {
@@ -691,12 +650,9 @@ export default function ProductsPage() {
       if ((form.color.trim() || "") !== (orig.color ?? "")) productData.color = form.color.trim() || undefined;
       if ((form.size.trim() || "") !== (orig.size ?? "")) productData.size = form.size.trim() || undefined;
       if ((form.barcode.trim() || "") !== (orig.barcode ?? "")) productData.barcode = form.barcode.trim() || undefined;
-      const formStock = form.stock_quantity ? Number(form.stock_quantity) : undefined;
-      const origStock = orig.stock_quantity ?? (orig.at_factory ?? 0) + (orig.at_domestic ?? 0) + (orig.in_transit ?? 0);
-      if (formStock !== origStock) productData.stock_quantity = formStock;
       const existingIds = (orig.suppliers ?? []).map((s: any) => s.id).sort().join(",");
       const newIds = suppliersList.map((s) => s.id).sort().join(",");
-      if (existingIds !== newIds || (suppliersList.length > 0 && (orig.suppliers ?? []).length === 0)) {
+      if (existingIds !== newIds || JSON.stringify(suppliersList) !== JSON.stringify(orig.suppliers ?? [])) {
         productData.suppliers = suppliersList.length > 0 ? suppliersList : undefined;
       }
       if (Object.keys(productData).length === 0) {
@@ -733,14 +689,7 @@ export default function ProductsPage() {
             : (error?.error || '操作失败');
         throw new Error(message);
       }
-      await mutateProducts?.();
-      if (editingProduct?.product_id) {
-        setVariantCache((prev) => {
-          const next = { ...prev };
-          delete next[editingProduct.product_id!];
-          return next;
-        });
-      }
+      await refreshWorkspace(editingProduct?.product_id);
       toast.success(editingProduct ? "产品已更新" : "产品已创建");
       resetForm();
       setIsModalOpen(false);
@@ -753,34 +702,16 @@ export default function ProductsPage() {
   };
 
   const handleAddVariants = async () => {
-    if (!addVariantProduct) return;
+    if (!addVariantProduct || isSubmitting) return;
     const spuId = addVariantProduct.productId;
     if (!spuId) {
       toast.error("无法识别所属产品，请刷新页面后重试");
       return;
     }
-    const valid = addVariantFormVariants.filter((r) => r.sku_id?.trim());
-    if (valid.length === 0) {
-      toast.error("请至少填写一个变体的 SKU 编码");
+    const valid = addVariantFormVariants;
+    if (!validateVariantRows(valid, existingSkuIds).valid) {
+      toast.error("请修正 SKU 表格中的错误后再保存");
       return;
-    }
-    const skuIds = valid.map((r) => r.sku_id.trim());
-    if (new Set(skuIds).size !== skuIds.length) {
-      toast.error("变体 SKU 编码不能重复");
-      return;
-    }
-    const existingSkuIds = products.map((p) => p.sku_id);
-    const duplicate = skuIds.filter((id) => existingSkuIds.includes(id));
-    if (duplicate.length > 0) {
-      toast.error("SKU 已存在：" + duplicate.join(", "));
-      return;
-    }
-    for (const r of valid) {
-      const cp = Number(r.cost_price);
-      if (Number.isNaN(cp) || cp < 0) {
-        toast.error("变体 " + (r.sku_id || r.color || "未命名") + " 的单价需为有效数字");
-        return;
-      }
     }
 
     setIsSubmitting(true);
@@ -788,13 +719,7 @@ export default function ProductsPage() {
       const body: Record<string, unknown> = {
         name: addVariantProduct.name,
         product_id: spuId,
-        variants: valid.map((r) => ({
-          sku_id: r.sku_id.trim(),
-          color: r.color.trim() || undefined,
-          cost_price: Number(r.cost_price),
-          size: r.size.trim() || undefined,
-          barcode: r.barcode.trim() || undefined,
-        })),
+        variants: serializeVariantRows(valid),
       };
       const res = await fetch("/api/products", {
         method: "POST",
@@ -805,12 +730,8 @@ export default function ProductsPage() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "添加失败");
       }
-      await mutateProducts?.();
-      setVariantCache((prev) => {
-        const next = { ...prev };
-        delete next[spuId];
-        return next;
-      });
+      await refreshWorkspace(spuId);
+      setExpandedSpuId(spuId);
       toast.success("已为「" + addVariantProduct.name + "」添加 " + valid.length + " 个变体");
       setAddVariantProduct(null);
       setAddVariantFormVariants([newVariantRow()]);
@@ -835,14 +756,7 @@ export default function ProductsPage() {
       const productId = Object.keys(variantCache).find((pid) =>
         variantCache[pid].some((p) => p.sku_id === skuId)
       );
-      if (productId) {
-        setVariantCache((prev) => {
-          const next = { ...prev };
-          delete next[productId];
-          return next;
-        });
-      }
-      await mutateProducts?.();
+      await refreshWorkspace(productId);
       toast.success("SKU 已删除");
     } catch (error: any) {
       console.error('Failed to delete product:', error);
@@ -879,37 +793,16 @@ export default function ProductsPage() {
     }
   };
 
-  const getFactoryName = (factoryId?: string) => {
-    if (!factoryId) return "-";
-    const supplier = suppliers.find((s) => s.id === factoryId);
-    return supplier?.name || "-";
-  };
-
-  // 鏍煎紡鍖栧垱寤烘椂闂?
-  const formatCreatedAt = (dateStr?: string) => {
-    if (!dateStr) return "-";
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleString("zh-CN", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    } catch {
-      return dateStr;
-    }
-  };
 
   return (
     <div className="space-y-4">
-      <header className="flex items-baseline justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">产品档案</h1>
-          <p className="mt-1 text-sm text-slate-400">管理产品 SKU 档案，包含财务、物理、供应等全维度信息</p>
+          <p className="mt-1 text-sm text-slate-400">产品资料统一维护，SKU 规格、成本与物流参数逐行管理。</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={isValidating} onClick={() => void refreshWorkspace(expandedSpuId ?? undefined)} className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 disabled:opacity-50"><RefreshCw className={"h-4 w-4 " + (isValidating ? "animate-spin" : "")} />刷新资料</button>
           <button
             onClick={handleExportData}
             className="flex items-center gap-2 rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-200 shadow hover:bg-slate-700 active:translate-y-px transition-colors"
@@ -921,12 +814,15 @@ export default function ProductsPage() {
             onClick={() => handleOpenModal()}
             className="rounded-md bg-primary-500 px-3 py-1.5 text-sm font-medium text-white shadow hover:bg-primary-600 active:translate-y-px"
           >
-            录入产品
+            <Plus className="mr-1 inline h-4 w-4" />新建产品
           </button>
         </div>
       </header>
 
       <ProductsStats summary={productSummary} />
+      <p className="text-xs text-slate-500">新建产品用于新增一个产品系列；同一产品增加规格，请使用“新增 SKU”或“复制 SKU”。库存由业务单据计算，不在这里修改。</p>
+      {productsError && <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200">产品列表加载失败。请点击“刷新资料”重试；现有数据显示不代表最新结果。</div>}
+      {!productsReady && !productsError && <p role="status" className="p-6 text-slate-400">正在加载产品档案…</p>}
 
       <ProductsFilters
         searchKeyword={searchKeyword}
@@ -944,10 +840,18 @@ export default function ProductsPage() {
           setSortOrder(order);
         }}
         categories={categories}
-        suppliers={suppliers}
+        suppliers={Array.from(new Map([...suppliers, ...spuList.flatMap(item => item.suppliers ?? [])].map(item => [item.id, item])).values())}
       />
 
-      <ProductsTable
+      {productsReady && !(!spuList.length && productsError) && <ProductsTable
+        searchKeyword={searchKeyword}
+        variantErrors={variantErrors}
+        onCopySku={(spu, product) => {
+          const row = variantRowFromProduct(product);
+          if (spu.skuIndex?.find(item => item.sku_id === product.sku_id)?.cost_price === null) row.cost_price = "";
+          setAddVariantProduct(spu);
+          setAddVariantFormVariants([row]);
+        }}
         filteredSpuList={filteredSpuList}
         variantCache={variantCache}
         expandedSpuId={expandedSpuId}
@@ -965,7 +869,7 @@ export default function ProductsPage() {
           setPreviewImages(images);
           setPreviewIndex(index);
         }}
-      />
+      />}
 
       {previewImages.length > 0 && (
         <div
@@ -1019,7 +923,13 @@ export default function ProductsPage() {
 
       <ProductFormDialog
         open={isModalOpen}
-        onClose={() => { resetForm(); setIsModalOpen(false); }}
+        onClose={() => {
+          if (isSubmitting) return;
+          void confirm({ title: "关闭编辑", message: "关闭后未保存的修改将丢失，是否继续？", confirmText: "放弃修改", cancelText: "继续编辑" }).then(ok => {
+            if (ok) { resetForm(); setIsModalOpen(false); }
+          });
+        }}
+        existingSkuIds={editingProduct ? existingSkuIds.filter(id => id !== editingProduct.sku_id) : existingSkuIds}
         editingProduct={editingProduct}
         variantId={editingProduct?.variant_id ?? null}
         form={form}
@@ -1035,7 +945,14 @@ export default function ProductsPage() {
         spu={addVariantProduct}
         variants={addVariantFormVariants}
         onVariantsChange={setAddVariantFormVariants}
-        onClose={() => { setAddVariantProduct(null); setAddVariantFormVariants([newVariantRow()]); }}
+        existingSkuIds={existingSkuIds}
+        onClose={() => {
+          if (isSubmitting) return;
+          const close = () => { setAddVariantProduct(null); setAddVariantFormVariants([newVariantRow()]); };
+          const hasInput = addVariantFormVariants.some(row => [row.sku_id, row.cost_price, row.size, row.color, row.barcode, row.weight_kg, row.length, row.width, row.height].some(value => Boolean(value?.trim())));
+          if (!hasInput) close();
+          else void confirm({ title: "关闭新增 SKU", message: "已填写的 SKU 尚未保存，关闭后将丢失。", confirmText: "放弃填写", cancelText: "继续填写" }).then(ok => { if (ok) close(); });
+        }}
         onSubmit={handleAddVariants}
         isSubmitting={isSubmitting}
       />

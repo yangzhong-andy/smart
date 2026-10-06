@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Loader2, RefreshCw, Wallet, Banknote, TrendingUp, Receipt, ChevronDown, ChevronRight, FileText, Clock, LayoutDashboard } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
@@ -38,11 +38,11 @@ const STATUS_COLORS: Record<string, string> = {
   UNSETTLED: "text-slate-400 bg-slate-500/10 border-slate-500/30",
 };
 
-const fmtMoney = (v: string | number | null, currency = "BRL") => {
+const fmtMoney = (v: string | number | null, currency: string | null = "BRL") => {
   if (v === null || v === undefined) return "-";
   const n = typeof v === "string" ? parseFloat(v) : v;
   if (isNaN(n)) return "-";
-  return `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  return `${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "BRL"}`;
 };
 const fmtDate = (d: string | Date | null) => {
   if (!d) return "-";
@@ -77,12 +77,13 @@ export default function TikTokFinancePage() {
   const [statementView, setStatementView] = useState<"statement" | "order">("statement");
   const [paymentStatus, setPaymentStatus] = useState<string>(""); // ""=全部, PAID, FAILED, PROCESSING, RETURNED
   const [dateRange, setDateRange] = useState<FinanceRange>("all");
+  const autoSyncStarted = useRef(false);
 
   useEffect(() => {
     fetch("/api/tiktok/data?type=shops").then(r => r.json()).then(d => {
       const list = d.shops || [];
       setShops(list);
-      if (list.length > 1 && !shopFilter) setShopFilter(list[0].shopId);
+      setShopFilter((current) => list.length > 1 && !current ? list[0].shopId : current);
     }).catch(() => {});
   }, []);
 
@@ -115,29 +116,25 @@ export default function TikTokFinancePage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // 页面打开时自动从TikTok同步最新财务数据（静默执行，不弹提示）
-  const autoSyncOnLoad = useCallback(async () => {
-    try {
-      fetch("/api/tiktok/sync", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataType: "all", days: 1 }),
-      });
-      fetchSummary(); fetchData();
-    } catch {}
-  }, [shopFilter]);
-
   useEffect(() => {
-    autoSyncOnLoad();
-  }, [autoSyncOnLoad]);
+    if (autoSyncStarted.current) return;
+    autoSyncStarted.current = true;
+    void fetch("/api/tiktok/sync", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataType: "all", days: 1 }),
+    }).then(() => Promise.all([fetchSummary(), fetchData()])).catch(() => undefined);
+  }, [fetchSummary, fetchData]);
 
   const handleSync = async () => {
     setSyncing(true);
     toast.info("同步财务数据中...");
     try {
-      const res = fetch("/api/tiktok/sync", {
+      const res = await fetch("/api/tiktok/sync", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dataType: "all", days: 30 }),
       });
       const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "同步失败");
       if (d.success) {
         for (const r of d.results) toast.success(`${r.shopName}: 结算${r.statements || 0} / 回款${r.payments || 0}`);
         fetchSummary(); fetchData();

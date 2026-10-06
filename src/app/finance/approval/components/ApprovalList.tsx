@@ -137,19 +137,21 @@ function ApprovalListComponent({
                           <div className="text-slate-300 text-sm">{bill.notes}</div>
                         </div>
                       )}
-                      {bill.paymentApplicationVoucher && (() => {
+                      {(bill.paymentApplicationVoucher || bill.hasPaymentApplicationVoucher) && (() => {
                         const imgs = parseVoucher(bill.paymentApplicationVoucher);
-                        return imgs.length > 0 ? (
+                        return (
                           <div className="mb-4">
                             <div className="text-xs text-slate-400 mb-1">{bill.billCategory === "Receivable" ? "收款申请书凭证" : "付款申请书凭证"}</div>
                             <button
-                              onClick={() => setVoucherViewState({ images: imgs, index: 0 })}
+                              onClick={() => imgs.length > 0
+                                ? setVoucherViewState({ images: imgs, index: 0 })
+                                : onViewBillDetail(bill)}
                               className="px-3 py-1.5 rounded border border-primary-500/40 bg-primary-500/10 text-sm text-primary-100 hover:bg-primary-500/20 transition"
                             >
-                              📄 查看{bill.billCategory === "Receivable" ? "收款" : "付款"}申请书凭证 ({imgs.length}张)
+                              查看{bill.billCategory === "Receivable" ? "收款" : "付款"}申请书凭证{imgs.length > 0 ? ` (${imgs.length}张)` : ""}
                             </button>
                           </div>
-                        ) : null;
+                        );
                       })()}
                       <div className="flex gap-2">
                         <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Trash2, Plus, Key, Store } from "lucide-react";
@@ -37,6 +37,25 @@ export default function TikTokSettingsPage() {
   const [showAddApp, setShowAddApp] = useState(false);
   const [newApp, setNewApp] = useState({ appKey: "", appSecret: "", appName: "", remark: "" });
 
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [statusRes, appsRes] = await Promise.all([
+        fetch("/api/tiktok/status"),
+        fetch("/api/tiktok/apps"),
+      ]);
+      const statusData = await statusRes.json();
+      const appsData = await appsRes.json();
+      setShops(statusData.shops || []);
+      setCountrySelections((current) => Object.fromEntries(
+        (statusData.shops || []).map((shop: Shop) => [shop.shopId, current[shop.shopId] || (shop.region !== "UNSET" ? shop.region : "")]),
+      ));
+      setApps(appsData.apps || []);
+      setSelectedAppKey((current) => current || appsData.apps?.[0]?.appKey || "");
+    } catch { toast.error("加载失败"); }
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
     const success = searchParams.get("success");
     const error = searchParams.get("error");
@@ -51,29 +70,8 @@ export default function TikTokSettingsPage() {
       toast.error(`授权失败: ${decodeURIComponent(error)}`);
       router.replace("/settings/tiktok");
     }
-    fetchStatus();
-  }, []);
-
-  const fetchStatus = async () => {
-    setLoading(true);
-    try {
-      const [statusRes, appsRes] = await Promise.all([
-        fetch("/api/tiktok/status"),
-        fetch("/api/tiktok/apps"),
-      ]);
-      const statusData = await statusRes.json();
-      const appsData = await appsRes.json();
-      setShops(statusData.shops || []);
-      setCountrySelections((current) => Object.fromEntries(
-        (statusData.shops || []).map((shop: Shop) => [shop.shopId, current[shop.shopId] || (shop.region !== "UNSET" ? shop.region : "")]),
-      ));
-      setApps(appsData.apps || []);
-      if (appsData.apps?.length > 0 && !selectedAppKey) {
-        setSelectedAppKey(appsData.apps[0].appKey);
-      }
-    } catch { toast.error("加载失败"); }
-    setLoading(false);
-  };
+    void fetchStatus();
+  }, [fetchStatus, router, searchParams]);
 
   const handleAuthorize = async () => {
     if (!selectedAppKey) { toast.error("请先选择或添加 App"); return; }

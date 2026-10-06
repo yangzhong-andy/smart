@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync Smart Sdfy TikTok creator affiliate orders
+After=network-online.target smart-sdfy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-sdfy-creator-orders-sync

@@ -7,13 +7,21 @@ import { ArrowLeft, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 type CostRuleData = {
-  shops: Array<{ id: string; name: string; region: string; currency: string }>;
+  shops: Array<{ platform: string; id: string; name: string; region: string; currency: string }>;
   warehouses: Array<{ id: string; code: string; name: string }>;
   shopRules: Array<any>;
   warehouseRules: Array<any>;
 };
 
 type WarehouseSwitchData = {
+  platforms: Array<{ code: string; label: string; switchEnabled: boolean }>;
+  shops: Array<{
+    platform: string;
+    shopId: string;
+    shopName: string;
+    countryCode: string;
+    storeId: string | null;
+  }>;
   rules: Array<{
     id: string;
     platform: string;
@@ -101,6 +109,13 @@ const costTypeLabel: Record<string, string> = {
   INFLUENCER_COMMISSION: "达人团队佣金",
 };
 
+const DEFAULT_SWITCH_PLATFORMS: WarehouseSwitchData["platforms"] = [
+  { code: "TIKTOK", label: "TikTok Shop", switchEnabled: true },
+  { code: "SHOPEE", label: "Shopee", switchEnabled: true },
+  { code: "AMAZON", label: "Amazon", switchEnabled: false },
+  { code: "MERCADO_LIVRE", label: "Mercado Livre", switchEnabled: true },
+];
+
 export default function ProfitSettingsPage() {
   const { data, error, isLoading, mutate } = useSWR<CostRuleData>("/api/profit-cost-rules", fetcher, { revalidateOnFocus: false });
   const { data: switchData, error: switchError, mutate: mutateSwitches } = useSWR<WarehouseSwitchData>("/api/profit-warehouse-switches", fetcher, { revalidateOnFocus: false });
@@ -109,6 +124,7 @@ export default function ProfitSettingsPage() {
   const [syncing, setSyncing] = useState(false);
   const [warehousePreset, setWarehousePreset] = useState("");
   const [shopForm, setShopForm] = useState({
+    platform: "TIKTOK",
     shopId: "",
     costType: "TAX",
     ratePercent: "6",
@@ -147,11 +163,29 @@ export default function ProfitSettingsPage() {
     notes: "",
   });
   const [warehouseSwitchForm, setWarehouseSwitchForm] = useState({
+    platform: "TIKTOK",
+    countryCode: "",
     shopId: "",
     warehouseId: "",
     effectiveOrderId: "",
     notes: "",
   });
+  const [warehouseBindingForm, setWarehouseBindingForm] = useState({
+    platform: "TIKTOK",
+    countryCode: "",
+    shopId: "",
+    warehouseId: "",
+    notes: "",
+  });
+  const switchPlatforms = switchData?.platforms ?? DEFAULT_SWITCH_PLATFORMS;
+  const switchShops = switchData?.shops ?? (data?.shops ?? []).map((shop) => ({
+    platform: shop.platform,
+    shopId: shop.id,
+    shopName: shop.name,
+    countryCode: shop.region,
+    storeId: null,
+  }));
+  const switchRules = switchData?.rules ?? [];
 
   const applyWarehousePreset = (preset: string) => {
     setWarehousePreset(preset);
@@ -291,13 +325,6 @@ export default function ProfitSettingsPage() {
     toast.success("规则已删除");
   };
 
-  const selectWarehouseSwitchShop = (shopId: string) => {
-    setWarehouseSwitchForm((current) => ({
-      ...current,
-      shopId,
-    }));
-  };
-
   const saveWarehouseSwitch = async () => {
     if (!warehouseSwitchForm.shopId || !warehouseSwitchForm.warehouseId) return toast.error("请选择店铺和切换后的仓库");
     if (!warehouseSwitchForm.effectiveOrderId) return toast.error("请填写首笔新仓订单号");
@@ -306,7 +333,7 @@ export default function ProfitSettingsPage() {
       const response = await fetch("/api/profit-warehouse-switches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: "TIKTOK", ...warehouseSwitchForm }),
+        body: JSON.stringify(warehouseSwitchForm),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "仓库切换记录保存失败");
@@ -315,6 +342,27 @@ export default function ProfitSettingsPage() {
       toast.success("仓库切换记录已保存");
     } catch (saveError: any) {
       toast.error(saveError?.message || "仓库切换记录保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveWarehouseBinding = async () => {
+    if (!warehouseBindingForm.shopId || !warehouseBindingForm.warehouseId) return toast.error("请选择新店铺和初始仓库");
+    setSaving(true);
+    try {
+      const response = await fetch("/api/profit-warehouse-switches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "INITIAL_BINDING", ...warehouseBindingForm }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "店铺仓库绑定失败");
+      await mutateSwitches();
+      setWarehouseBindingForm((current) => ({ ...current, shopId: "", notes: "" }));
+      toast.success("新店铺初始仓库已绑定");
+    } catch (saveError: any) {
+      toast.error(saveError?.message || "店铺仓库绑定失败");
     } finally {
       setSaving(false);
     }
@@ -363,9 +411,10 @@ export default function ProfitSettingsPage() {
 
       {data && <>
         <section className="border-b border-slate-800 py-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-semibold">店铺规则</h2><p className="mt-1 text-xs text-slate-500">税务、达人团队佣金及未结算平台费预估</p></div><button type="button" onClick={syncFinancials} disabled={syncing} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />同步逐单账单</button></div>
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <Field label="店铺"><select value={shopForm.shopId} onChange={(event) => setShopForm({ ...shopForm, shopId: event.target.value })} className="input"><option value="">请选择</option>{data.shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}</select></Field>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-semibold">店铺规则</h2><p className="mt-1 text-xs text-slate-500">按平台、店铺和生效日期维护税务等成本规则</p></div>{shopForm.platform === "TIKTOK" && <button type="button" onClick={syncFinancials} disabled={syncing} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />同步逐单账单</button>}</div>
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+            <Field label="平台"><select value={shopForm.platform} onChange={(event) => setShopForm({ ...shopForm, platform: event.target.value, shopId: "" })} className="input"><option value="TIKTOK">TikTok Shop</option><option value="SHOPEE">Shopee</option><option value="MERCADO_LIVRE">Mercado Livre</option></select></Field>
+            <Field label="店铺"><select value={shopForm.shopId} onChange={(event) => { const selected = data.shops.find((shop) => shop.platform === shopForm.platform && shop.id === event.target.value); setShopForm({ ...shopForm, shopId: event.target.value, currency: selected?.currency || shopForm.currency }); }} className="input"><option value="">请选择</option>{data.shops.filter((shop) => shop.platform === shopForm.platform).map((shop) => <option key={`${shop.platform}-${shop.id}`} value={shop.id}>{shop.name}</option>)}</select></Field>
             <Field label="成本类型"><select value={shopForm.costType} onChange={(event) => setShopForm({ ...shopForm, costType: event.target.value })} className="input">{Object.entries(costTypeLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
             <Field label="生效日期"><input type="date" value={shopForm.effectiveFrom} onChange={(event) => setShopForm({ ...shopForm, effectiveFrom: event.target.value })} className="input" /></Field>
             <Field label="结束日期"><input type="date" value={shopForm.effectiveTo} onChange={(event) => setShopForm({ ...shopForm, effectiveTo: event.target.value })} className="input" /></Field>
@@ -386,15 +435,30 @@ export default function ProfitSettingsPage() {
         </section>
 
         {switchData && <section className="border-b border-slate-800 py-6">
+          <div className="mb-4"><h2 className="text-base font-semibold">店铺仓库绑定</h2><p className="mt-1 text-xs text-slate-500">仅用于新店铺首次绑定默认发货仓；已有规则的店铺换仓请使用下方切仓功能</p></div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <Field label="平台"><select value={warehouseBindingForm.platform} onChange={(event) => setWarehouseBindingForm((current) => ({ ...current, platform: event.target.value, countryCode: "", shopId: "" }))} className="input">{switchPlatforms.map((platform) => <option key={platform.code} value={platform.code}>{platform.label}</option>)}</select></Field>
+            <Field label="国家"><select value={warehouseBindingForm.countryCode} onChange={(event) => setWarehouseBindingForm((current) => ({ ...current, countryCode: event.target.value, shopId: "" }))} className="input"><option value="">请选择</option>{[...new Set(switchShops.filter((shop) => shop.platform === warehouseBindingForm.platform).map((shop) => shop.countryCode))].sort().map((countryCode) => <option key={countryCode} value={countryCode}>{countryCode === "BR" ? "巴西 (BR)" : countryCode === "US" ? "美国 (US)" : countryCode}</option>)}</select></Field>
+            <Field label="未绑定店铺"><select value={warehouseBindingForm.shopId} onChange={(event) => setWarehouseBindingForm((current) => ({ ...current, shopId: event.target.value }))} className="input"><option value="">请选择</option>{switchShops.filter((shop) => shop.platform === warehouseBindingForm.platform && shop.countryCode === warehouseBindingForm.countryCode && !switchRules.some((rule) => rule.platform === shop.platform && rule.shopId === shop.shopId)).map((shop) => <option key={`${shop.platform}-${shop.shopId}`} value={shop.shopId}>{shop.shopName}</option>)}</select></Field>
+            <Field label="初始发货仓"><select value={warehouseBindingForm.warehouseId} onChange={(event) => setWarehouseBindingForm((current) => ({ ...current, warehouseId: event.target.value }))} className="input"><option value="">请选择</option>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></Field>
+            <Field label="备注"><input value={warehouseBindingForm.notes} onChange={(event) => setWarehouseBindingForm((current) => ({ ...current, notes: event.target.value }))} className="input" placeholder="可选" /></Field>
+          </div>
+          <button type="button" onClick={saveWarehouseBinding} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />绑定新店铺仓库</button>
+          <WarehouseBindingTable shops={switchShops} rules={switchRules} platforms={switchPlatforms} />
+        </section>}
+
+        {switchData && <section className="border-b border-slate-800 py-6">
           <div className="mb-4"><h2 className="text-base font-semibold">店铺切仓</h2><p className="mt-1 text-xs text-slate-500">以首笔新仓订单为边界，从该订单开始归入新仓；切换当天允许两个仓库并存</p></div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Field label="店铺"><select value={warehouseSwitchForm.shopId} onChange={(event) => selectWarehouseSwitchShop(event.target.value)} className="input"><option value="">请选择</option>{data.shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}</select></Field>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <Field label="平台"><select value={warehouseSwitchForm.platform} onChange={(event) => setWarehouseSwitchForm((current) => ({ ...current, platform: event.target.value, countryCode: "", shopId: "" }))} className="input">{switchPlatforms.map((platform) => <option key={platform.code} value={platform.code}>{platform.label}{platform.switchEnabled ? "" : "（订单待接入）"}</option>)}</select></Field>
+            <Field label="国家"><select value={warehouseSwitchForm.countryCode} onChange={(event) => setWarehouseSwitchForm((current) => ({ ...current, countryCode: event.target.value, shopId: "" }))} className="input"><option value="">请选择</option>{[...new Set(switchShops.filter((shop) => shop.platform === warehouseSwitchForm.platform).map((shop) => shop.countryCode))].sort().map((countryCode) => <option key={countryCode} value={countryCode}>{countryCode === "BR" ? "巴西 (BR)" : countryCode === "US" ? "美国 (US)" : countryCode}</option>)}</select></Field>
+            <Field label="店铺"><select value={warehouseSwitchForm.shopId} onChange={(event) => setWarehouseSwitchForm((current) => ({ ...current, shopId: event.target.value }))} className="input"><option value="">请选择</option>{switchShops.filter((shop) => shop.platform === warehouseSwitchForm.platform && shop.countryCode === warehouseSwitchForm.countryCode).map((shop) => <option key={`${shop.platform}-${shop.shopId}`} value={shop.shopId}>{shop.shopName}</option>)}</select></Field>
             <Field label="切换到"><select value={warehouseSwitchForm.warehouseId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, warehouseId: event.target.value })} className="input"><option value="">请选择</option>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></Field>
             <Field label="首笔新仓订单号（必填）"><input value={warehouseSwitchForm.effectiveOrderId} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, effectiveOrderId: event.target.value })} className="input" /></Field>
             <Field label="备注"><input value={warehouseSwitchForm.notes} onChange={(event) => setWarehouseSwitchForm({ ...warehouseSwitchForm, notes: event.target.value })} className="input" /></Field>
           </div>
           <button type="button" onClick={saveWarehouseSwitch} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />保存切换记录</button>
-          <WarehouseSwitchTable rows={switchData.rules} shops={data.shops} onDelete={deleteWarehouseSwitch} />
+          <WarehouseSwitchTable rows={switchRules} shops={switchShops} platforms={switchPlatforms} onDelete={deleteWarehouseSwitch} />
         </section>}
 
         <section className="py-6">
@@ -502,7 +566,7 @@ function PackagingFeeTierEditor({
 }
 
 function RuleTable({ rows, shops, onDelete }: { rows: any[]; shops: CostRuleData["shops"]; onDelete: (id: string) => void }) {
-  return <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="text-xs text-slate-500"><tr className="border-b border-slate-800"><th className="px-3 py-3 text-left">店铺</th><th className="px-3 py-3 text-left">类型</th><th className="px-3 py-3 text-left">规则</th><th className="px-3 py-3 text-left">有效期</th><th className="px-3 py-3 text-left">备注</th><th className="w-12" /></tr></thead><tbody>{rows.map((rule) => <tr key={rule.id} className="border-b border-slate-900"><td className="px-3 py-3 text-slate-300">{shops.find((shop) => shop.id === rule.shopId)?.name || rule.shopId}</td><td className="px-3 py-3 text-slate-400">{costTypeLabel[rule.costType] || rule.costType}</td><td className="px-3 py-3 text-slate-300">{rule.platformFeeTiers?.length ? `SFP ${rule.ratePercent}%；` + rule.platformFeeTiers.map((tier: any) => `${tier.maxOrderAmount != null ? `<${tier.maxOrderAmount}` : `≥${tier.minOrderAmount}`}：平台 ${tier.platformRatePercent}% + 每件服务费 ${tier.perUnitFee} ${tier.currency}`).join("；") : `${rule.ratePercent}%`}</td><td className="px-3 py-3 text-slate-400">{rule.effectiveFrom} 至 {rule.effectiveTo || "长期"}</td><td className="px-3 py-3 text-slate-500">{rule.notes || "-"}</td><td><button type="button" onClick={() => onDelete(rule.id)} title="删除规则" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>;
+  return <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="text-xs text-slate-500"><tr className="border-b border-slate-800"><th className="px-3 py-3 text-left">平台 / 店铺</th><th className="px-3 py-3 text-left">类型</th><th className="px-3 py-3 text-left">规则</th><th className="px-3 py-3 text-left">有效期</th><th className="px-3 py-3 text-left">备注</th><th className="w-12" /></tr></thead><tbody>{rows.map((rule) => { const shop = shops.find((item) => item.platform === rule.platform && item.id === rule.shopId); const platformName = rule.platform === "SHOPEE" ? "Shopee" : rule.platform === "MERCADO_LIVRE" ? "Mercado Livre" : "TikTok Shop"; return <tr key={rule.id} className="border-b border-slate-900"><td className="px-3 py-3 text-slate-300"><div>{shop?.name || rule.shopId}</div><div className="mt-1 text-xs text-slate-500">{platformName}</div></td><td className="px-3 py-3 text-slate-400">{costTypeLabel[rule.costType] || rule.costType}</td><td className="px-3 py-3 text-slate-300">{rule.platformFeeTiers?.length ? `SFP ${rule.ratePercent}%；` + rule.platformFeeTiers.map((tier: any) => `${tier.maxOrderAmount != null ? `<${tier.maxOrderAmount}` : `≥${tier.minOrderAmount}`}：平台 ${tier.platformRatePercent}% + 每件服务费 ${tier.perUnitFee} ${tier.currency}`).join("；") : `${rule.ratePercent}%`}</td><td className="px-3 py-3 text-slate-400">{rule.effectiveFrom} 至 {rule.effectiveTo || "长期"}</td><td className="px-3 py-3 text-slate-500">{rule.notes || "-"}</td><td><button type="button" onClick={() => onDelete(rule.id)} title="删除规则" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button></td></tr>; })}</tbody></table></div>;
 }
 
 function WarehouseRuleTable({ rows, shops, onDelete }: { rows: any[]; shops: CostRuleData["shops"]; onDelete: (id: string) => void }) {
@@ -534,15 +598,18 @@ function warehouseSwitchTime(value: string, region: string) {
 function WarehouseSwitchTable({
   rows,
   shops,
+  platforms,
   onDelete,
 }: {
   rows: WarehouseSwitchData["rules"];
-  shops: CostRuleData["shops"];
+  shops: WarehouseSwitchData["shops"];
+  platforms: WarehouseSwitchData["platforms"];
   onDelete: (id: string) => void;
 }) {
   return <div className="mt-5 overflow-x-auto">
-    <table className="w-full min-w-[1000px] text-sm">
+    <table className="w-full min-w-[1100px] text-sm">
       <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
+        <th className="px-3 py-3 text-left">平台</th>
         <th className="px-3 py-3 text-left">店铺</th>
         <th className="px-3 py-3 text-left">适用范围</th>
         <th className="px-3 py-3 text-left">实际发货仓</th>
@@ -551,13 +618,46 @@ function WarehouseSwitchTable({
         <th className="w-12" />
       </tr></thead>
       <tbody>{rows.map((rule) => <tr key={rule.id} className="border-b border-slate-900">
-        <td className="px-3 py-3 text-slate-300">{shops.find((shop) => shop.id === rule.shopId)?.name || rule.shopId}</td>
+        <td className="px-3 py-3 text-slate-400">{platforms.find((platform) => platform.code === rule.platform)?.label || rule.platform}</td>
+        <td className="px-3 py-3 text-slate-300">{shops.find((shop) => shop.platform === rule.platform && shop.shopId === rule.shopId)?.shopName || rule.shopId}</td>
         <td className="px-3 py-3 text-slate-400">{rule.externalWarehouseId === "*" ? "店铺全部订单" : `旧编号 ${rule.externalWarehouseId}`}</td>
         <td className="px-3 py-3 text-slate-200">{rule.warehouse.name}</td>
         <td className="px-3 py-3 text-slate-400"><div>{warehouseSwitchTime(rule.effectiveFrom, rule.region)}</div>{rule.effectiveOrderId && <div className="mt-0.5 font-mono text-[11px] text-slate-600">订单 {rule.effectiveOrderId}</div>}</td>
         <td className="max-w-[280px] px-3 py-3 text-slate-500"><div className="truncate" title={rule.notes || ""}>{rule.notes || "-"}</div></td>
         <td><button type="button" onClick={() => { if (window.confirm("确认删除这条仓库切换记录？")) onDelete(rule.id); }} title="删除切换记录" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-800 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button></td>
       </tr>)}</tbody>
+    </table>
+  </div>;
+}
+
+function WarehouseBindingTable({
+  shops,
+  rules,
+  platforms,
+}: {
+  shops: WarehouseSwitchData["shops"];
+  rules: WarehouseSwitchData["rules"];
+  platforms: WarehouseSwitchData["platforms"];
+}) {
+  return <div className="mt-5 overflow-x-auto">
+    <table className="w-full min-w-[850px] text-sm">
+      <thead className="text-xs text-slate-500"><tr className="border-b border-slate-800">
+        <th className="px-3 py-3 text-left">平台</th>
+        <th className="px-3 py-3 text-left">国家</th>
+        <th className="px-3 py-3 text-left">店铺</th>
+        <th className="px-3 py-3 text-left">当前绑定仓库</th>
+        <th className="px-3 py-3 text-left">最近生效时间</th>
+      </tr></thead>
+      <tbody>{shops.map((shop) => {
+        const currentRule = rules.find((rule) => rule.platform === shop.platform && rule.shopId === shop.shopId);
+        return <tr key={`${shop.platform}-${shop.shopId}`} className="border-b border-slate-900">
+          <td className="px-3 py-3 text-slate-400">{platforms.find((platform) => platform.code === shop.platform)?.label || shop.platform}</td>
+          <td className="px-3 py-3 text-slate-400">{shop.countryCode}</td>
+          <td className="px-3 py-3 text-slate-200">{shop.shopName}</td>
+          <td className={`px-3 py-3 ${currentRule ? "text-emerald-300" : "text-amber-300"}`}>{currentRule?.warehouse.name || "未绑定"}</td>
+          <td className="px-3 py-3 text-slate-500">{currentRule ? warehouseSwitchTime(currentRule.effectiveFrom, currentRule.region) : "-"}</td>
+        </tr>;
+      })}</tbody>
     </table>
   </div>;
 }

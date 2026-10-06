@@ -46,8 +46,8 @@ export default function ProductionProgressPage() {
     fetcher,
     { revalidateOnFocus: true, dedupingInterval: 10000 }
   );
-  const contracts = (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[];
-  const deliveryOrders = (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[];
+  const contracts = useMemo<PurchaseContract[]>(() => (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[], [contractsDataRaw]);
+  const deliveryOrders = useMemo<DeliveryOrder[]>(() => (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[], [deliveryOrdersDataRaw]);
 
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");

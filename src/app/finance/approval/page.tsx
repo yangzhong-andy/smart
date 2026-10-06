@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useState, useCallback, useMemo } from "react";
-import useSWR, { mutate } from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import {
   getMonthlyBills,
+  getBillById,
   saveMonthlyBills,
   getBillsByStatus,
   getMonthlyBillPaymentAmount,
@@ -92,6 +93,9 @@ function historyRequestMatchesStatusFilter(
 
 export default function ApprovalCenterPage() {
   const { data: session } = useSession();
+  // This app uses a custom SWR cache provider. Global `mutate` targets the
+  // default cache, so approval updates must use the mutate bound to this page's provider.
+  const { mutate } = useSWRConfig();
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending"); // 褰撳墠鏍囩锛氬緟瀹℃壒/鍘嗗彶璁板綍
   const [historyFilter, setHistoryFilter] = useState<BillStatus | "all">("all"); // 鍘嗗彶璁板綍鐘舵€佺瓫閫?
   const [billTypeFilter, setBillTypeFilter] = useState<BillType | "all">("all"); // 璐﹀崟绫诲瀷绛涢€夛紙寰呭鎵瑰拰鍘嗗彶璁板綍鍏辩敤锛?
@@ -236,23 +240,50 @@ export default function ApprovalCenterPage() {
     [mutate]
   );
 
+  const updateExpenseRequestSwr = useCallback((requestId: string, updates: Partial<ExpenseRequest>) => {
+    mutate("pending-expense-requests", (current: unknown) => {
+      if (!Array.isArray(current)) return current;
+      return current.filter((request: ExpenseRequest) => request.id !== requestId);
+    }, { revalidate: false });
+    mutate("expense-requests", (current: unknown) => {
+      if (!Array.isArray(current)) return current;
+      return current.map((request: ExpenseRequest) =>
+        request.id === requestId ? { ...request, ...updates } : request
+      );
+    }, { revalidate: false });
+  }, [mutate]);
+
+  const updateIncomeRequestSwr = useCallback((requestId: string, updates: Partial<IncomeRequest>) => {
+    mutate("pending-income-requests", (current: unknown) => {
+      if (!Array.isArray(current)) return current;
+      return current.filter((request: IncomeRequest) => request.id !== requestId);
+    }, { revalidate: false });
+    mutate("income-requests", (current: unknown) => {
+      if (!Array.isArray(current)) return current;
+      return current.map((request: IncomeRequest) =>
+        request.id === requestId ? { ...request, ...updates } : request
+      );
+    }, { revalidate: false });
+  }, [mutate]);
+
   // 纭繚鏁版嵁鏄暟缁勫苟鎸囧畾绫诲瀷
-  const allBills: MonthlyBill[] = Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [];
-  const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
-  const allExpenseRequests: ExpenseRequest[] = Array.isArray(expenseRequestsData) ? (expenseRequestsData as ExpenseRequest[]) : [];
-  const pendingExpenseRequests: ExpenseRequest[] = Array.isArray(pendingExpenseRequestsData) ? (pendingExpenseRequestsData as ExpenseRequest[]) : [];
-  const allIncomeRequests: IncomeRequest[] = Array.isArray(incomeRequestsData) ? (incomeRequestsData as IncomeRequest[]) : [];
-  const pendingIncomeRequests: IncomeRequest[] = Array.isArray(pendingIncomeRequestsData) ? (pendingIncomeRequestsData as IncomeRequest[]) : [];
-  const recharges: any[] = Array.isArray(rechargesData) ? rechargesData : [];
-  const consumptions: any[] = Array.isArray(consumptionsData) ? consumptionsData : [];
-  const rebateReceivables: RebateReceivable[] = Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [];
+  const allBills = useMemo<MonthlyBill[]>(() => Array.isArray(allBillsData) ? (allBillsData as MonthlyBill[]) : [], [allBillsData]);
+  const pendingBills = useMemo<MonthlyBill[]>(() => Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [], [pendingBillsData]);
+  const allExpenseRequests = useMemo<ExpenseRequest[]>(() => Array.isArray(expenseRequestsData) ? (expenseRequestsData as ExpenseRequest[]) : [], [expenseRequestsData]);
+  const pendingExpenseRequests = useMemo<ExpenseRequest[]>(() => Array.isArray(pendingExpenseRequestsData) ? (pendingExpenseRequestsData as ExpenseRequest[]) : [], [pendingExpenseRequestsData]);
+  const allIncomeRequests = useMemo<IncomeRequest[]>(() => Array.isArray(incomeRequestsData) ? (incomeRequestsData as IncomeRequest[]) : [], [incomeRequestsData]);
+  const pendingIncomeRequests = useMemo<IncomeRequest[]>(() => Array.isArray(pendingIncomeRequestsData) ? (pendingIncomeRequestsData as IncomeRequest[]) : [], [pendingIncomeRequestsData]);
+  const recharges = useMemo<any[]>(() => Array.isArray(rechargesData) ? rechargesData : [], [rechargesData]);
+  const consumptions = useMemo<any[]>(() => Array.isArray(consumptionsData) ? consumptionsData : [], [consumptionsData]);
+  const rebateReceivables = useMemo<RebateReceivable[]>(() => Array.isArray(rebateReceivablesData) ? (rebateReceivablesData as RebateReceivable[]) : [], [rebateReceivablesData]);
 
   // 璁＄畻鍘嗗彶璁板綍锛堜娇鐢?useMemo 浼樺寲锛?
   const historyBills = useMemo(() => {
     return allBills.filter((b) => {
-      if (b.status === "Draft" || b.status === "Pending_Approval") {
+      if (b.status === "Pending_Approval") {
         return false;
       }
+      if (b.status === "Draft") return Boolean(b.rejectionReason);
       return b.status === "Approved" || b.status === "Paid" || !!b.rejectionReason;
     });
   }, [allBills]);
@@ -276,8 +307,9 @@ export default function ApprovalCenterPage() {
   }, [allIncomeRequests]);
 
 
-  const handleViewDetail = (bill: MonthlyBill) => {
-    setSelectedBill(bill);
+  const handleViewDetail = async (bill: MonthlyBill) => {
+    const detailedBill = await getBillById(bill.id);
+    setSelectedBill(detailedBill || bill);
     setIsDetailModalOpen(true);
   };
 
@@ -525,16 +557,31 @@ export default function ApprovalCenterPage() {
     setRejectSubmitting(true);
 
     if (rejectModal.type === "bill") {
+      const rejectedBillId = rejectModal.id;
+      const rejectionReason = rejectReason.trim();
       getMonthlyBills()
         .then(async (allBills) => {
           const updatedBills = allBills.map((b) =>
-            b.id === rejectModal.id
-              ? { ...b, status: "Draft" as BillStatus, rejectionReason: rejectReason.trim() }
+            b.id === rejectedBillId
+              ? { ...b, status: "Draft" as BillStatus, rejectionReason }
               : b
           );
           await saveMonthlyBills(updatedBills);
-          mutate("monthly-bills");
-          mutate("pending-bills");
+          mutate("pending-bills", (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            return current.filter((bill: MonthlyBill) => bill.id !== rejectedBillId);
+          }, { revalidate: false });
+          mutate("monthly-bills", (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            return current.map((bill: MonthlyBill) =>
+              bill.id === rejectedBillId
+                ? { ...bill, status: "Draft" as BillStatus, rejectionReason }
+                : bill
+            );
+          }, { revalidate: false });
+          void mutate("monthly-bills");
+          void mutate("pending-bills");
+          window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
@@ -551,8 +598,13 @@ export default function ApprovalCenterPage() {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
       })
-        .then(async () => {
-          await refreshExpenseIncomeSwrAfterMutation();
+        .then(() => {
+          updateExpenseRequestSwr(expenseId, {
+            status: "Rejected",
+            rejectionReason: rejectReason.trim(),
+          });
+          void refreshExpenseIncomeSwrAfterMutation({ stripExpenseId: expenseId });
+          window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
@@ -569,8 +621,13 @@ export default function ApprovalCenterPage() {
         status: "Rejected",
         rejectionReason: rejectReason.trim()
       })
-        .then(async () => {
-          await refreshExpenseIncomeSwrAfterMutation();
+        .then(() => {
+          updateIncomeRequestSwr(incomeId, {
+            status: "Rejected",
+            rejectionReason: rejectReason.trim(),
+          });
+          void refreshExpenseIncomeSwrAfterMutation({ stripIncomeId: incomeId });
+          window.dispatchEvent(new CustomEvent("approval-updated"));
           toast.success("已退回审批");
           setRejectModal({ open: false, type: null, id: null });
           setRejectReason("");
@@ -599,11 +656,15 @@ export default function ApprovalCenterPage() {
       type: "info",
       onConfirm: async () => {
         try {
+          const approvedBy = getCurrentUserDisplayName(session);
+          const approvedAt = new Date().toISOString();
           await updateExpenseRequest(requestId, {
             status: "Approved",
-            approvedBy: getCurrentUserDisplayName(session),
-            approvedAt: new Date().toISOString()
+            approvedBy,
+            approvedAt
           });
+          updateExpenseRequestSwr(requestId, { status: "Approved", approvedBy, approvedAt });
+          void refreshExpenseIncomeSwrAfterMutation({ stripExpenseId: requestId });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();
           toast.success("已批准，已推送给财务人员处理出账");
@@ -612,8 +673,6 @@ export default function ApprovalCenterPage() {
             setSelectedExpenseRequest(null);
             setIsRequestDetailOpen(false);
           }
-          // 强制刷新页面确保列表更新
-          setTimeout(() => window.location.reload(), 500);
         } catch (error: any) {
           toast.error(error.message || "审批失败");
           setConfirmDialog(null);
@@ -635,21 +694,18 @@ export default function ApprovalCenterPage() {
       type: "info",
       onConfirm: async () => {
         try {
+          const approvedBy = getCurrentUserDisplayName(session);
+          const approvedAt = new Date().toISOString();
           await updateIncomeRequest(requestId, {
             status: "Approved",
-            approvedBy: getCurrentUserDisplayName(session),
-            approvedAt: new Date().toISOString()
+            approvedBy,
+            approvedAt
           });
+          updateIncomeRequestSwr(requestId, { status: "Approved", approvedBy, approvedAt });
+          void refreshExpenseIncomeSwrAfterMutation({ stripIncomeId: requestId });
           window.dispatchEvent(new CustomEvent("approval-updated"));
           broadcastFinanceSwrInvalidate();
           toast.success("已批准，已推送给财务人员处理入账");
-          setConfirmDialog(null);
-          if (selectedIncomeRequest?.id === requestId) {
-            setSelectedIncomeRequest(null);
-            setIsRequestDetailOpen(false);
-          }
-          // 强制刷新页面确保列表更新
-          setTimeout(() => window.location.reload(), 500);
           setConfirmDialog(null);
           if (selectedIncomeRequest?.id === requestId) {
             setSelectedIncomeRequest(null);
@@ -742,7 +798,7 @@ export default function ApprovalCenterPage() {
       mutate("expense-requests");
       mutate("income-requests");
     }
-  }, []);
+  }, [mutate]);
 
   const handleOpenRequestDetail = useCallback((request: ExpenseRequest | IncomeRequest, type: "expense" | "income") => {
     if (type === "expense") {

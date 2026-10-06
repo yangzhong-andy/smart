@@ -37,7 +37,7 @@ export default function ConfirmDialog({
     
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [open, onCancel]);
+  }, [open, onCancel, loading]);
 
   // 防止背景滚动
   useEffect(() => {
@@ -69,7 +69,7 @@ export default function ConfirmDialog({
   const messageLines = message.split("\n");
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-200">
       {/* 背景遮罩 */}
       <div 
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -123,6 +123,7 @@ export default function ConfirmDialog({
         {/* 按钮组 */}
         <div className="flex gap-3 mt-6 justify-end">
           <button
+            autoFocus
             onClick={onCancel}
             disabled={loading}
             className="px-5 py-2.5 text-sm font-medium text-slate-300 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 rounded-lg transition-all duration-200 hover:border-slate-600/50 disabled:opacity-50"

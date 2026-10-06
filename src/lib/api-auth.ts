@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import * as jwt from "jsonwebtoken";
 import { authOptions } from "@/lib/auth-options";
 import { AUTH_COOKIE_NAMES } from "@/lib/auth-cookies";
-import { AUTH_SECRET } from "@/lib/auth-secret";
+import { getAuthSecret } from "@/lib/auth-secret";
 import { prisma } from "@/lib/prisma";
 
 export type ApiUser = {
@@ -66,7 +66,7 @@ function getBearerToken(request: NextRequest): string | null {
 
 async function userFromJwt(token: string): Promise<ApiUser | null> {
   try {
-    const decoded = jwt.verify(token, AUTH_SECRET) as {
+    const decoded = jwt.verify(token, getAuthSecret()) as {
       userId?: unknown;
       id?: unknown;
     };

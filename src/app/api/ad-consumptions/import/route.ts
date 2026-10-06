@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     await clearCacheByPrefix("ad-consumptions");
+    await clearCacheByPrefix("profit-report");
     const affectedMonths = Array.from(
       new Set(
         records

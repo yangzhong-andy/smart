@@ -29,9 +29,9 @@ export default function HomePage() {
   const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
   const { data: pendingApprovalCount = 0 } = useSWR("home-pending-approval-count", () => getPendingApprovalCount(), SWR_OPT);
 
-  const storeList = Array.isArray(stores) ? stores : [];
-  const accountList = Array.isArray(accounts) ? accounts : [];
-  const flowListNorm = Array.isArray(cashFlow) ? cashFlow : [];
+  const storeList = useMemo(() => Array.isArray(stores) ? stores : [], [stores]);
+  const accountList = useMemo(() => Array.isArray(accounts) ? accounts : [], [accounts]);
+  const flowListNorm = useMemo(() => Array.isArray(cashFlow) ? cashFlow : [], [cashFlow]);
 
   // 计算店铺贡献排行
   const storeRanking = useMemo(() => {
@@ -288,4 +288,3 @@ export default function HomePage() {
     </div>
   );
 }
-

@@ -1,0 +1,67 @@
+<view class="page-shell orders-page">
+  <view class="summary-row">
+    <view>
+      <view class="page-title">TikTok Shop 订单</view>
+      <view class="page-subtitle">共 {{total}} 笔订单</view>
+    </view>
+    <button class="alert-chip {{deliveryAlertOnly ? 'active' : ''}}" bindtap="toggleDeliveryAlert">
+      <text class="alert-dot"></text>
+      运输预警 {{deliveryAlertCount}}
+    </button>
+  </view>
+
+  <view class="search-row surface">
+    <text class="search-icon">⌕</text>
+    <input class="search-input" placeholder="输入订单号搜索" value="{{keywordInput}}" bindinput="onKeywordInput" bindconfirm="search" confirm-type="search" />
+    <button wx:if="{{keywordInput}}" class="clear-button" bindtap="clearSearch">×</button>
+    <button class="search-button" bindtap="search">搜索</button>
+  </view>
+
+  <view class="filter-row">
+    <picker class="filter-picker surface" mode="selector" range="{{shopOptions}}" range-key="label" value="{{selectedShopIndex}}" bindchange="onShopChange">
+      <view class="picker-value">{{shopOptions[selectedShopIndex].label}} <text>⌄</text></view>
+    </picker>
+    <picker class="filter-picker surface" mode="selector" range="{{statusOptions}}" range-key="label" value="{{selectedStatusIndex}}" bindchange="onStatusChange">
+      <view class="picker-value">{{statusOptions[selectedStatusIndex].label}} <text>⌄</text></view>
+    </picker>
+  </view>
+
+  <view wx:if="{{loading && !orders.length}}" class="loading-block"><view class="spinner"></view><text>正在加载订单</text></view>
+  <view wx:elif="{{error && !orders.length}}" class="error-block surface"><text>{{error}}</text><button bindtap="initialize">重新加载</button></view>
+  <view wx:elif="{{!orders.length}}" class="empty-state surface">没有符合当前条件的订单</view>
+
+  <view class="order-list">
+    <view wx:for="{{orders}}" wx:key="orderId" class="order-card surface" data-index="{{index}}" bindtap="openOrder">
+      <view class="order-head">
+        <view class="store-line">
+          <text class="platform-mark">TK</text>
+          <text class="store-name">{{item.shopName}}</text>
+        </view>
+        <text class="status status-{{item.status}}">{{item.statusText}}</text>
+      </view>
+      <view class="order-meta">
+        <text class="order-number">{{item.orderId}}</text>
+        <text>{{item.createTimeText}}</text>
+      </view>
+      <view class="item-list">
+        <view wx:for="{{item.displayItems}}" wx:for-item="product" wx:key="sku" class="product-row">
+          <image class="product-image" src="{{product.image}}" mode="aspectFill" lazy-load="true"></image>
+          <view class="product-content">
+            <view class="product-name">{{product.name || product.sku}}</view>
+            <view class="product-sku">{{product.sku || '未标记 SKU'}}</view>
+          </view>
+          <text class="product-qty">×{{product.qty}}</text>
+        </view>
+        <view wx:if="{{item.extraItemCount}}" class="more-items">另有 {{item.extraItemCount}} 个商品</view>
+      </view>
+      <view class="order-foot">
+        <view class="source-tag source-{{item.sourceType}}">{{item.sourceText}}</view>
+        <view class="amount-block"><text class="amount-label">订单金额</text><text class="amount">{{item.amountText}}</text></view>
+      </view>
+      <view wx:if="{{item.deliveryAlert}}" class="delivery-warning">运输已超过 {{item.deliveryAlertAgeDays}} 天，请及时跟进</view>
+    </view>
+  </view>
+
+  <view wx:if="{{loadingMore}}" class="load-more"><view class="spinner"></view><text>加载更多</text></view>
+  <view wx:if="{{!hasMore && orders.length}}" class="list-end">已显示全部 {{total}} 笔订单</view>
+</view>

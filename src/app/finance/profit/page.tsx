@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
 import {
@@ -50,7 +51,9 @@ import type { ProfitComponentAmount } from "@/lib/profit-schemes";
 type DetailTab = "period" | "store" | "sku" | "coverage";
 type CostComponentDraft = { variantId: string; quantity: number };
 type DailyOrderSelection = Pick<ProfitMetricRow, "label" | "startDate">;
+type ProfitPlatform = "TIKTOK" | "SHOPEE" | "AMAZON" | "MERCADO_LIVRE";
 type ProfitOrderSearchResult = {
+  platform: ProfitPlatform;
   orderId: string;
   shopId: string;
   shopName: string;
@@ -60,6 +63,13 @@ type ProfitOrderSearchResult = {
   status: string;
   currency: string | null;
 };
+
+const PROFIT_PLATFORM_OPTIONS: Array<{ value: ProfitPlatform; label: string; enabled: boolean }> = [
+  { value: "TIKTOK", label: "TikTok Shop", enabled: true },
+  { value: "SHOPEE", label: "Shopee", enabled: true },
+  { value: "AMAZON", label: "Amazon（订单/利润待接入）", enabled: false },
+  { value: "MERCADO_LIVRE", label: "Mercado Livre", enabled: true },
+];
 
 const fetcher = async (url: string): Promise<ProfitReportResponse> => {
   const response = await fetch(url);
@@ -506,12 +516,14 @@ function OrderProfitPanel({ order, coverageWarnings }: { order: ProfitOrderDetai
 
 function DailyOrdersDialog({
   day,
+  selectedPlatform,
   selectedCountryCode,
   selectedShopId,
   initialSearch = "",
   onClose,
 }: {
   day: DailyOrderSelection;
+  selectedPlatform: ProfitPlatform;
   selectedCountryCode: string;
   selectedShopId: string;
   initialSearch?: string;
@@ -521,6 +533,7 @@ function DailyOrdersDialog({
   const [detailShopId, setDetailShopId] = useState("all");
   const query = useMemo(() => {
     const params = new URLSearchParams({
+      platform: selectedPlatform,
       startDate: day.startDate,
       endDate: day.startDate,
       groupBy: "day",
@@ -529,7 +542,7 @@ function DailyOrdersDialog({
     if (selectedCountryCode !== "all") params.set("countryCode", selectedCountryCode);
     if (selectedShopId !== "all") params.set("shopId", selectedShopId);
     return `/api/profit-report?${params.toString()}`;
-  }, [day.startDate, selectedCountryCode, selectedShopId]);
+  }, [day.startDate, selectedCountryCode, selectedPlatform, selectedShopId]);
   const { data, error, isLoading, mutate } = useSWR<ProfitReportResponse>(query, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60_000,
@@ -548,7 +561,7 @@ function DailyOrdersDialog({
     };
   }, [onClose]);
 
-  const orders = data?.orders || [];
+  const orders = useMemo(() => data?.orders || [], [data?.orders]);
   const orderComponentGroups = useMemo(
     () => groupProfitComponents(data?.summary.components || []),
     [data?.summary.components],
@@ -681,10 +694,16 @@ function DailyOrdersDialog({
 }
 
 export default function ProfitPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [startDate, setStartDate] = useState(() => addDays(new Date().toISOString().slice(0, 10), -89));
   const [endDate, setEndDate] = useState(today);
   const [groupBy, setGroupBy] = useState<ProfitGroupBy>("day");
+  const [platform, setPlatform] = useState<ProfitPlatform>(() => {
+    const requestedPlatform = searchParams.get("platform")?.trim().toUpperCase();
+    return requestedPlatform === "MERCADO_LIVRE" ? "MERCADO_LIVRE" : "TIKTOK";
+  });
   const [countryCode, setCountryCode] = useState("all");
   const [shopId, setShopId] = useState("all");
   const [tab, setTab] = useState<DetailTab>("period");
@@ -699,11 +718,11 @@ export default function ProfitPage() {
   const [isMappingSaving, setIsMappingSaving] = useState(false);
 
   const query = useMemo(() => {
-    const params = new URLSearchParams({ startDate, endDate, groupBy });
+    const params = new URLSearchParams({ platform, startDate, endDate, groupBy });
     if (countryCode !== "all") params.set("countryCode", countryCode);
     if (shopId !== "all") params.set("shopId", shopId);
     return `/api/profit-report?${params.toString()}`;
-  }, [startDate, endDate, groupBy, countryCode, shopId]);
+  }, [platform, startDate, endDate, groupBy, countryCode, shopId]);
   const { data, error, isLoading, isValidating, mutate } = useSWR<ProfitReportResponse>(query, fetcher, {
     keepPreviousData: true,
     revalidateOnFocus: false,
@@ -768,7 +787,7 @@ export default function ProfitPage() {
     }
     setIsOrderSearching(true);
     try {
-      const params = new URLSearchParams({ q: keyword });
+      const params = new URLSearchParams({ q: keyword, platform });
       if (countryCode !== "all") params.set("countryCode", countryCode);
       if (shopId !== "all") params.set("shopId", shopId);
       const response = await fetch(`/api/profit-order-search?${params.toString()}`);
@@ -815,7 +834,7 @@ export default function ProfitPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          platform: "TIKTOK",
+          platform,
           shopId: mappingSku.shopId,
           sellerSku: mappingSku.sellerSku,
           components,
@@ -839,7 +858,7 @@ export default function ProfitPage() {
     setIsMappingSaving(true);
     try {
       const params = new URLSearchParams({
-        platform: "TIKTOK",
+        platform,
         shopId: mappingSku.shopId,
         sellerSku: mappingSku.sellerSku,
       });
@@ -982,14 +1001,27 @@ export default function ProfitPage() {
             ))}
           </div>
         </div>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <label className="min-w-0 text-xs text-slate-500">
-            <span className="mb-1.5 block">开始日期</span>
-            <input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500" />
-          </label>
-          <label className="min-w-0 text-xs text-slate-500">
-            <span className="mb-1.5 block">结束日期</span>
-            <input type="date" value={endDate} min={startDate} max={today} onChange={(event) => setEndDate(event.target.value)} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500" />
+            <span className="mb-1.5 block">平台</span>
+            <select
+              value={platform}
+              onChange={(event) => {
+                const nextPlatform = event.target.value as ProfitPlatform;
+                if (nextPlatform === "SHOPEE") {
+                  router.push("/platforms/shopee/profit");
+                  return;
+                }
+                setPlatform(nextPlatform);
+                setCountryCode("all");
+                setShopId("all");
+              }}
+              className="h-9 w-full rounded-md border border-emerald-500/50 bg-slate-900 px-3 text-sm font-medium text-emerald-200 outline-none focus:border-emerald-400"
+            >
+              {PROFIT_PLATFORM_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value} disabled={!option.enabled}>{option.label}</option>
+              ))}
+            </select>
           </label>
           <label className="min-w-0 text-xs text-slate-500">
             <span className="mb-1.5 block">国家</span>
@@ -1011,6 +1043,14 @@ export default function ProfitPage() {
               <option value="all">全部店铺</option>
               {filteredShops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
             </select>
+          </label>
+          <label className="min-w-0 text-xs text-slate-500">
+            <span className="mb-1.5 block">开始日期</span>
+            <input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500" />
+          </label>
+          <label className="min-w-0 text-xs text-slate-500">
+            <span className="mb-1.5 block">结束日期</span>
+            <input type="date" value={endDate} min={startDate} max={today} onChange={(event) => setEndDate(event.target.value)} className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 outline-none focus:border-emerald-500" />
           </label>
         </div>
         <div className="flex h-9 items-center gap-2 text-xs text-slate-500">
@@ -1055,7 +1095,7 @@ export default function ProfitPage() {
                   original={original || undefined}
                   detail={isRevenue
                     ? `${data.summary.orderCount.toLocaleString()} 单 / ${data.summary.units.toLocaleString()} 销售件 / ${data.summary.internalUnits.toLocaleString()} 实物件`
-                    : `占 GMV ${percent(data.summary.gmvCny > 0 ? total / data.summary.gmvCny * 100 : 0)}${group.key === "PLATFORM" ? ` · 实际账单 ${percent(data.coverage.platformActual)}` : ""}`}
+                    : `占 GMV ${percent(data.summary.gmvCny > 0 ? total / data.summary.gmvCny * 100 : 0)}${group.key === "PLATFORM" ? ` · ${platform === "MERCADO_LIVRE" ? "订单佣金" : "实际账单"} ${percent(data.coverage.platformActual)}` : ""}`}
                   icon={isRevenue ? ShoppingCart : group.key === "AD_COST" ? BarChart3 : group.key === "PLATFORM" ? WalletCards : PackageCheck}
                 />
               );
@@ -1194,7 +1234,13 @@ export default function ProfitPage() {
                 <div>
                   <CoverageBar label="采购成本覆盖" value={data.coverage.productCost} detail={`${data.coverage.missingCostSkuCount} 个 SKU 待补成本`} />
                   <CoverageBar label="头程物流费用覆盖" value={data.coverage.logisticsCost} detail={`${data.coverage.missingLogisticsSkuCount} 个 SKU 待分摊`} />
-                  <CoverageBar label="逐单平台账单" value={data.coverage.platformActual} detail={`${data.coverage.exactSettlementOrders.toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`} />
+                  <CoverageBar
+                    label={platform === "MERCADO_LIVRE" ? "订单 sale_fee 覆盖" : "逐单平台账单"}
+                    value={data.coverage.platformActual}
+                    detail={platform === "MERCADO_LIVRE"
+                      ? `${Math.round(data.coverage.validOrders * data.coverage.platformActual / 100).toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`
+                      : `${data.coverage.exactSettlementOrders.toLocaleString()} / ${data.coverage.validOrders.toLocaleString()} 单`}
+                  />
                   <CoverageBar label="海外仓代发规则" value={data.coverage.warehouseFulfillment} detail="按店铺切仓历史匹配" />
                   {data.summary.components.some((component) => component.code === "TAX_COST") && <CoverageBar label="店铺税率规则" value={data.coverage.taxRule} detail="按主体和生效日期匹配" />}
                   <CoverageBar label="广告店铺覆盖" value={data.coverage.adStore} detail="按广告消耗金额计算" />
@@ -1217,6 +1263,7 @@ export default function ProfitPage() {
         <DailyOrdersDialog
           key={`${selectedDailyPeriod.startDate}-${selectedOrderSearch}`}
           day={selectedDailyPeriod}
+          selectedPlatform={platform}
           selectedCountryCode={countryCode}
           selectedShopId={shopId}
           initialSearch={selectedOrderSearch}

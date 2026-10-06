@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize Shopee after-sales data
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-shopee-after-sales-sync
+TimeoutStartSec=600

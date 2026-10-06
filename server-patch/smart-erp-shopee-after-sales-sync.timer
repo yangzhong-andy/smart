@@ -1,0 +1,11 @@
+[Unit]
+Description=Synchronize Shopee after-sales data every thirty minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=120
+Unit=smart-erp-shopee-after-sales-sync.service
+
+[Install]
+WantedBy=timers.target

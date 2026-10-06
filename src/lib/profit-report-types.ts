@@ -33,6 +33,11 @@ export type ProfitMetricRow = {
   platformCostCny: number;
   platformFeeCny: number;
   fulfillmentFeeCny: number;
+  /** Mercado Livre platform-cost subcomponents, kept optional for other platforms. */
+  mercadoLivreFinancingFeeCny?: number;
+  mercadoLivreProcessingFeeCny?: number;
+  mercadoLivreSaleCommissionCny?: number;
+  mercadoLivreSellerShippingFeeCny?: number;
   smartPromotionFeeCny: number;
   affiliateCommissionCny: number;
   productCostCny: number;
@@ -59,6 +64,10 @@ export type ProfitStoreRow = ProfitMetricRow & {
   countryCode: string;
   storeId: string | null;
   currency: string;
+};
+
+export type ProfitStorePeriodRow = ProfitStoreRow & {
+  date: string;
 };
 
 export type ProfitSkuRow = ProfitMetricRow & {
@@ -123,6 +132,8 @@ export type ProfitOrderDetailRow = {
   countryCode: string;
   storeName: string;
   status: string;
+  /** Free influencer samples are excluded from store profit but still consume warehouse services. */
+  isSampleOrder: boolean;
   includedInProfit: boolean;
   exclusionReason: string | null;
   currency: string;
@@ -138,12 +149,30 @@ export type ProfitOrderDetailRow = {
   gmvCny: number;
   platformFeeCny: number;
   fulfillmentFeeCny: number;
+  /** Mercado Livre platform-cost subcomponents, kept optional for other platforms. */
+  mercadoLivreFinancingFeeCny?: number;
+  mercadoLivreProcessingFeeCny?: number;
+  mercadoLivreSaleCommissionCny?: number;
+  mercadoLivreSellerShippingFeeCny?: number;
   smartPromotionFeeCny: number;
   affiliateCommissionCny: number;
   productCostCny: number;
   logisticsCostCny: number;
   lastMileLogisticsCostCny: number;
   warehouseFulfillmentCostCny: number;
+  warehouseFeeBreakdown?: {
+    ruleId: string | null;
+    currency: string | null;
+    total: number;
+    orderOutbound: number;
+    packaging: number;
+    oversize: number;
+    chargeableWeightKg: number;
+    packageDimensions: [number, number, number];
+    billedUnits: number;
+    distinctSkuCount: number;
+    tier: { minWeightKg: number | null; maxWeightKg: number | null; baseFee: number } | null;
+  };
   netAdCostCny: number;
   taxCostCny: number;
   contributionProfitCny: number;
@@ -171,6 +200,7 @@ export type ProfitOrderDetailRow = {
 
 export type ProfitReportResponse = {
   filters: {
+    platform: "TIKTOK" | "SHOPEE" | "AMAZON" | "MERCADO_LIVRE";
     startDate: string;
     endDate: string;
     groupBy: ProfitGroupBy;
@@ -182,6 +212,7 @@ export type ProfitReportResponse = {
   summary: ProfitMetricRow;
   periods: ProfitMetricRow[];
   stores: ProfitStoreRow[];
+  storePeriods: ProfitStorePeriodRow[];
   skus: ProfitSkuRow[];
   orders?: ProfitOrderDetailRow[];
   variants: Array<{

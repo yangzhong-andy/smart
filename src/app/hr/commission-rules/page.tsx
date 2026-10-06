@@ -90,7 +90,7 @@ export default function CommissionRulesPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const departmentsData = (Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? [])) as DepartmentFromAPI[];
+  const departmentsData = useMemo<DepartmentFromAPI[]>(() => (Array.isArray(departmentsDataRaw) ? departmentsDataRaw : (departmentsDataRaw?.data ?? [])) as DepartmentFromAPI[], [departmentsDataRaw]);
 
   // 将 API 返回的部门数据转换为页面需要的格式
   const departments = useMemo((): string[] => {

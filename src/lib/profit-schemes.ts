@@ -51,6 +51,10 @@ export const PROFIT_SOURCE_KEYS = [
   "gmvCny",
   "platformFeeCny",
   "fulfillmentFeeCny",
+  "mercadoLivreFinancingFeeCny",
+  "mercadoLivreProcessingFeeCny",
+  "mercadoLivreSaleCommissionCny",
+  "mercadoLivreSellerShippingFeeCny",
   "smartPromotionFeeCny",
   "affiliateCommissionCny",
   "productCostCny",
@@ -67,6 +71,10 @@ const SOURCE_ORIGINAL_KEY: Partial<Record<ProfitSourceKey, string>> = {
   gmvCny: "gmv",
   platformFeeCny: "platformFee",
   fulfillmentFeeCny: "fulfillmentFee",
+  mercadoLivreFinancingFeeCny: "fulfillmentFee",
+  mercadoLivreProcessingFeeCny: "fulfillmentFee",
+  mercadoLivreSaleCommissionCny: "platformFee",
+  mercadoLivreSellerShippingFeeCny: "fulfillmentFee",
   smartPromotionFeeCny: "smartPromotionFee",
   affiliateCommissionCny: "affiliateCommission",
   logisticsCostCny: "logisticsCost",
@@ -106,8 +114,9 @@ const BRAZIL_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = BASE_COMPONENTS.m
 
 const US_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = [
   component("GMV", "GMV", "REVENUE", "REVENUE", "gmvCny", 10, { includeInGmv: true }),
-  component("PLATFORM_FEE", "平台佣金", "PLATFORM", "COST", "platformFeeCny", 20),
+  component("PLATFORM_FEE", "平台佣金及其他服务费", "PLATFORM", "COST", "platformFeeCny", 20),
   component("SMART_PROMOTION_FEE", "智能推广费", "PLATFORM", "COST", "smartPromotionFeeCny", 30),
+  component("AFFILIATE_COMMISSION", "达人佣金", "MARKETING", "COST", "affiliateCommissionCny", 35, { required: false }),
   component("PRODUCT_COST", "采购成本", "PRODUCT", "COST", "productCostCny", 40),
   component("FIRST_MILE_LOGISTICS", "头程物流费用", "LOGISTICS", "COST", "logisticsCostCny", 50),
   component("LAST_MILE_LOGISTICS", "尾程物流费用", "LOGISTICS", "COST", "lastMileLogisticsCostCny", 60),
@@ -126,6 +135,19 @@ const MULTI_COUNTRY_TIKTOK_COMPONENTS: ProfitSchemeComponentInput[] = [
   component("WAREHOUSE_FULFILLMENT", "海外仓代发", "WAREHOUSE", "COST", "warehouseFulfillmentCostCny", 80),
   component("AD_COST", "广告实际消耗", "MARKETING", "COST", "netAdCostCny", 90),
   component("TAX_COST", "税务成本", "TAX", "COST", "taxCostCny", 100, { required: false }),
+];
+
+const MERCADO_LIVRE_COMPONENTS: ProfitSchemeComponentInput[] = [
+  component("GMV", "GMV", "REVENUE", "REVENUE", "gmvCny", 10, { includeInGmv: true }),
+  component("ML_FINANCING_FEE", "分期融资费", "PLATFORM", "COST", "mercadoLivreFinancingFeeCny", 20),
+  component("ML_PROCESSING_FEE", "支付处理费", "PLATFORM", "COST", "mercadoLivreProcessingFeeCny", 21),
+  component("ML_SALE_COMMISSION", "平台销售佣金", "PLATFORM", "COST", "mercadoLivreSaleCommissionCny", 22),
+  component("ML_SELLER_SHIPPING", "卖家物流履约费", "PLATFORM", "COST", "mercadoLivreSellerShippingFeeCny", 23),
+  component("PRODUCT_COST", "采购成本", "PRODUCT", "COST", "productCostCny", 40),
+  component("LOGISTICS_COST", "头程物流费用", "LOGISTICS", "COST", "logisticsCostCny", 50),
+  component("WAREHOUSE_FULFILLMENT", "海外仓代发", "WAREHOUSE", "COST", "warehouseFulfillmentCostCny", 60),
+  component("AD_COST", "广告实际消耗", "MARKETING", "COST", "netAdCostCny", 70),
+  component("TAX_COST", "店铺主体税务成本", "TAX", "COST", "taxCostCny", 80),
 ];
 
 function component(
@@ -179,6 +201,8 @@ export function defaultProfitComponents(countryCode: string, platform: string): 
       ? US_TIKTOK_COMPONENTS
       : countryCode === "MIXED" && normalizedPlatform === "TIKTOK"
         ? MULTI_COUNTRY_TIKTOK_COMPONENTS
+        : normalizedPlatform === "MERCADO_LIVRE"
+          ? MERCADO_LIVRE_COMPONENTS
         : BASE_COMPONENTS;
   return source.map((item) => ({ ...item, config: item.config ? { ...item.config } : null }));
 }
@@ -233,6 +257,7 @@ export function validateProfitComponents(value: unknown): { components: ProfitSc
 
 type MetricLike = Partial<Record<ProfitSourceKey, number>> & {
   originalAmounts?: Record<string, Record<string, number>>;
+  componentOriginalAmounts?: Record<string, Record<string, number>>;
   sourceStatus?: Partial<Record<string, ProfitComponentAmount["sourceStatus"]>>;
 };
 
@@ -247,7 +272,8 @@ export function buildProfitComponentAmounts(
       const sourceKey = definition.sourceKey as ProfitSourceKey | null;
       const originalKey = sourceKey ? SOURCE_ORIGINAL_KEY[sourceKey] : null;
       const amountCny = sourceKey ? Number(metric[sourceKey] || 0) : 0;
-      const original = originalKey ? metric.originalAmounts?.[originalKey] || {} : {};
+      const original = metric.componentOriginalAmounts?.[definition.code]
+        || (originalKey ? metric.originalAmounts?.[originalKey] || {} : {});
       const originalAmounts = Object.keys(original).length > 0
         ? { ...original }
         : amountCny !== 0 ? { CNY: amountCny } : {};

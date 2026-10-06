@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { dayBefore } from "@/lib/profit-scheme-resolution";
+import { clearCacheByPrefix } from "@/lib/redis";
 import {
   defaultProfitComponents,
   defaultTimeZone,
@@ -186,6 +187,7 @@ export async function POST(request: NextRequest) {
         });
         createdIds.push(created.id);
       }
+      await clearCacheByPrefix("profit-report");
       return NextResponse.json({ success: true, created: createdIds.length, ids: createdIds });
     }
 
@@ -315,6 +317,7 @@ export async function POST(request: NextRequest) {
         }
         await tx.profitScheme.update({ where: { id: scheme.id }, data: { status: "PUBLISHED" } });
       });
+      await clearCacheByPrefix("profit-report");
       return NextResponse.json({ success: true, id: scheme.id });
     }
 

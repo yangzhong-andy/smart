@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Smart Sdfy TikTok creator affiliate order sync
+
+[Timer]
+OnCalendar=*-*-* 04:25:00
+Persistent=true
+RandomizedDelaySec=180
+Unit=smart-sdfy-creator-orders-sync.service
+
+[Install]
+WantedBy=timers.target

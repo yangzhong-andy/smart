@@ -223,12 +223,18 @@ export function VoucherViewerModal({ src, onClose }: VoucherViewerModalProps) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [renderSrc, setRenderSrc] = useState<string>("");
   const [rotation, setRotation] = useState(0);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
 
   const imageSrc = src ? normalizeImageSrc(src) : "";
 
   // 转换为 Blob URL
   useEffect(() => {
     setRotation(0);
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+    setDragStart(null);
     if (!imageSrc) {
       setRenderSrc("");
       return;
@@ -280,6 +286,34 @@ export function VoucherViewerModal({ src, onClose }: VoucherViewerModalProps) {
     document.body.removeChild(a);
   };
 
+  const zoomIn = () => setScale((value) => Math.min(4, Number((value + 0.25).toFixed(2))));
+  const zoomOut = () => setScale((value) => Math.max(0.5, Number((value - 0.25).toFixed(2))));
+  const resetView = () => {
+    setRotation(0);
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+    setDragStart(null);
+  };
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (scale <= 1 || (event.pointerType === "mouse" && event.button !== 0)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragStart({ pointerX: event.clientX, pointerY: event.clientY, x: position.x, y: position.y });
+  };
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    setPosition({
+      x: dragStart.x + event.clientX - dragStart.pointerX,
+      y: dragStart.y + event.clientY - dragStart.pointerY,
+    });
+  };
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDragStart(null);
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm"
@@ -292,6 +326,26 @@ export function VoucherViewerModal({ src, onClose }: VoucherViewerModalProps) {
       >
         <div className="absolute top-4 right-4 z-10 flex gap-2">
           <button
+            onClick={zoomOut}
+            disabled={scale <= 0.5}
+            className="text-white text-lg bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="缩小"
+            aria-label="缩小图片"
+          >−</button>
+          <button
+            onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }}
+            className="text-white text-xs bg-black/70 rounded-full min-w-10 h-10 px-2 flex items-center justify-center transition hover:bg-black/90"
+            title="还原到100%"
+            aria-label="还原图片大小"
+          >{Math.round(scale * 100)}%</button>
+          <button
+            onClick={zoomIn}
+            disabled={scale >= 4}
+            className="text-white text-lg bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="放大"
+            aria-label="放大图片"
+          >+</button>
+          <button
             onClick={() => setRotation((r) => (r - 90) % 360)}
             className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
             title="向左旋转"
@@ -301,6 +355,12 @@ export function VoucherViewerModal({ src, onClose }: VoucherViewerModalProps) {
             className="text-white text-xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
             title="向右旋转"
           >↻</button>
+          <button
+            onClick={resetView}
+            className="text-white text-xs bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
+            title="还原视图"
+            aria-label="还原旋转和缩放"
+          >1:1</button>
           <button
             onClick={onClose}
             className="text-white text-2xl bg-black/70 rounded-full w-10 h-10 flex items-center justify-center transition hover:bg-black/90"
@@ -333,16 +393,31 @@ export function VoucherViewerModal({ src, onClose }: VoucherViewerModalProps) {
         )}
 
         {renderSrc && (
-          <img
-            src={renderSrc}
-            alt="凭证大图"
-            className={`max-w-full max-h-[95vh] rounded-lg shadow-2xl object-contain bg-white/5 transition-opacity transition-transform duration-300 ${
-              status === "loaded" ? "opacity-100" : "opacity-0 absolute"
-            }`}
-            style={{ transform: `rotate(${rotation}deg)` }}
-            onLoad={() => setStatus("loaded")}
-            onError={() => setStatus("error")}
-          />
+          <div
+            className={`max-w-[90vw] max-h-[85vh] overflow-auto rounded-lg ${scale > 1 ? (dragStart ? "cursor-grabbing" : "cursor-grab") : "cursor-default"}`}
+            style={{ touchAction: "none" }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onWheel={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (event.deltaY < 0) zoomIn();
+              else zoomOut();
+            }}
+          >
+            <img
+              src={renderSrc}
+              alt="凭证大图"
+              className={`max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain bg-white/5 transition-opacity transition-transform duration-300 ${
+                status === "loaded" ? "opacity-100" : "opacity-0 absolute"
+              }`}
+              style={{ transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg) scale(${scale})`, transformOrigin: "center" }}
+              onLoad={() => setStatus("loaded")}
+              onError={() => setStatus("error")}
+            />
+          </div>
         )}
 
         {status === "loaded" && (

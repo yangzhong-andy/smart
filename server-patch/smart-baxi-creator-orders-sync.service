@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync Smart Baxi TikTok creator affiliate orders
+After=network-online.target smart-baxi.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-baxi-creator-orders-sync

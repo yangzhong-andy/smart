@@ -78,12 +78,12 @@ export default function InfluencersPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const influencers = Array.isArray(influencersDataRaw) ? influencersDataRaw : (influencersDataRaw?.data ?? []);
+  const influencers = useMemo<InfluencerBD[]>(() => Array.isArray(influencersDataRaw) ? influencersDataRaw : (influencersDataRaw?.data ?? []), [influencersDataRaw]);
   const { data: productsRaw } = useSWR<any>("/api/products?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const products = Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []);
+  const products = useMemo(() => Array.isArray(productsRaw) ? productsRaw : (productsRaw?.data ?? productsRaw?.list ?? []), [productsRaw]);
 
   const [form, setForm] = useState({
     accountName: "",

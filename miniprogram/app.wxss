@@ -1,0 +1,46 @@
+page {
+  min-height: 100%;
+  background: #f4f6f8;
+  color: #17202a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 28rpx;
+}
+
+button::after {
+  border: 0;
+}
+
+.page-shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 24rpx;
+}
+
+.surface {
+  background: #ffffff;
+  border: 1rpx solid #e4e8ec;
+  border-radius: 12rpx;
+}
+
+.muted {
+  color: #697386;
+}
+
+.empty-state {
+  padding: 96rpx 24rpx;
+  text-align: center;
+  color: #8993a4;
+}
+
+.spinner {
+  width: 34rpx;
+  height: 34rpx;
+  border: 4rpx solid #dce5e1;
+  border-top-color: #087f5b;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

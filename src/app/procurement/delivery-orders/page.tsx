@@ -19,6 +19,7 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import Link from "next/link";
 import ImageUploader from "@/components/ImageUploader";
 import { hasVoucher } from "@/lib/procurement-payment-voucher";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 const formatDate = (dateString?: string) => {
   if (!dateString) return "-";
@@ -49,6 +50,7 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : []));
 type Warehouse = { id: string; code: string; name: string; location: string; isActive: boolean };
 
 export default function DeliveryOrdersPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [inboundOrder, setInboundOrder] = useState<DeliveryOrder | null>(null);
@@ -84,10 +86,10 @@ export default function DeliveryOrdersPage() {
     getActiveTailExpenseRequests,
     { revalidateOnFocus: true, dedupingInterval: 30000, revalidateIfStale: false }
   );
-  const expenseRequests: TailExpenseRequest[] = Array.isArray(expenseRequestsData) ? expenseRequestsData : [];
-  const deliveryOrders = (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[];
-  const contracts = (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[];
-  const warehouses = (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[];
+  const expenseRequests = useMemo<TailExpenseRequest[]>(() => Array.isArray(expenseRequestsData) ? expenseRequestsData : [], [expenseRequestsData]);
+  const deliveryOrders = useMemo<DeliveryOrder[]>(() => (Array.isArray(deliveryOrdersDataRaw) ? deliveryOrdersDataRaw : (deliveryOrdersDataRaw?.data ?? [])) as DeliveryOrder[], [deliveryOrdersDataRaw]);
+  const contracts = useMemo<PurchaseContract[]>(() => (Array.isArray(contractsDataRaw) ? contractsDataRaw : (contractsDataRaw?.data ?? [])) as PurchaseContract[], [contractsDataRaw]);
+  const warehouses = useMemo<Warehouse[]>(() => (Array.isArray(warehousesDataRaw) ? warehousesDataRaw : (warehousesDataRaw?.data ?? [])) as Warehouse[], [warehousesDataRaw]);
 
   // 筛选和排序拿货单
   const filteredOrders = useMemo(() => {
@@ -390,9 +392,25 @@ export default function DeliveryOrdersPage() {
       toast.error("请上传发起付款凭证");
       return;
     }
+
+    const deliveryNumber = info.order.deliveryNumber || info.order.id;
+    const confirmed = await confirm({
+      title: "确认发起尾款付款申请",
+      message: [
+        `拿货单：${deliveryNumber}`,
+        `合同：${info.contract.contractNumber}`,
+        `供应商：${info.contract.supplierName}`,
+        `本次申请金额：CNY ${amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        "确认后将提交审批，审批通过后由财务付款。",
+      ].join("\n"),
+      confirmText: "确认发起",
+      cancelText: "返回修改",
+      type: "warning",
+    });
+    if (!confirmed) return;
+
     setPayTailSubmitting(true);
     try {
-      const deliveryNumber = info.order.deliveryNumber || info.order.id;
       const request: ExpenseRequest = {
         id: `temp_${Date.now()}`,
         summary: `采购尾款 - ${info.contract.contractNumber} - ${deliveryNumber}`,
@@ -1169,6 +1187,7 @@ export default function DeliveryOrdersPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

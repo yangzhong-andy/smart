@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [ "$#" -lt 4 ]; then
+  echo "usage: smart-erp-api-post <app> <port> <endpoint> <json-body> [timeout]" >&2
+  exit 64
+fi
+
+app="$1"
+port="$2"
+endpoint="$3"
+body="$4"
+timeout_seconds="${5:-300}"
+
+case "$app" in
+  baxi|sdfy) ;;
+  *) echo "unsupported application: $app" >&2; exit 64 ;;
+esac
+
+env_file="/etc/smart-erp/${app}.env"
+current_dir="/srv/smart-erp/${app}/current"
+test -r "$env_file"
+test -d "$current_dir"
+
+set -a
+. "$env_file"
+set +a
+
+auth_secret="${NEXTAUTH_SECRET:-${JWT_SECRET:-}}"
+if [ -z "$auth_secret" ]; then
+  echo "authentication secret is not configured for $app" >&2
+  exit 78
+fi
+
+# Generate the short-lived internal JWT with Node's built-in crypto module.
+# This helper must keep working even if a release's node_modules link is
+# temporarily unavailable, otherwise every scheduled marketplace sync stops.
+token="$(INTERNAL_AUTH_SECRET="$auth_secret" node -e '
+  const crypto = require("crypto");
+  const now = Math.floor(Date.now() / 1000);
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const unsigned = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ userId: "system:scheduled-task", iat: now, exp: now + 120 })}`;
+  const signature = crypto.createHmac("sha256", process.env.INTERNAL_AUTH_SECRET).update(unsigned).digest("base64url");
+  process.stdout.write(`${unsigned}.${signature}`);
+')"
+
+curl --fail --silent --show-error \
+  --retry 2 --retry-delay 2 \
+  --max-time "$timeout_seconds" \
+  -X POST \
+  -H "Authorization: Bearer $token" \
+  -H "x-monthly-bill-sync-token: $auth_secret" \
+  -H "content-type: application/json" \
+  --data "$body" \
+  "http://127.0.0.1:${port}${endpoint}"

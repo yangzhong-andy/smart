@@ -1,0 +1,9 @@
+{
+  "desc": "ERP internal pages are not indexed by WeChat search.",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}

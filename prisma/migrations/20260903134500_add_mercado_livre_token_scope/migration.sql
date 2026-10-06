@@ -1,0 +1,1 @@
+ALTER TABLE "MercadoLivreAccount" ADD COLUMN IF NOT EXISTS "scope" TEXT;

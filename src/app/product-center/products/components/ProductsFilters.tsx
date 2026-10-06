@@ -45,7 +45,7 @@ export function ProductsFilters({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
         <input
           type="text"
-          placeholder="搜索 SKU、产品名称、分类或工厂..."
+          placeholder="搜索 SKU 编码、规格、产品名称或供应商…"
           value={searchKeyword}
           onChange={(e) => onSearchKeywordChange(e.target.value)}
           className="w-full rounded-md border border-slate-700 bg-slate-900 pl-10 pr-10 py-2 text-sm text-slate-300 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
@@ -111,7 +111,7 @@ export function ProductsFilters({
 
         {suppliers.length > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">工厂：</span>
+            <span className="text-xs text-slate-400">供应商：</span>
             <select
               value={filterFactory}
               onChange={(e) => onFilterFactoryChange(e.target.value)}
@@ -157,7 +157,7 @@ export function ProductsFilters({
                 sortBy === "cost" ? "bg-primary-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
               }`}
             >
-              价格
+              成本（同币种）
               {sortBy === "cost" && (sortOrder === "asc" ? <SortAsc className="h-3 w-3" /> : <SortDesc className="h-3 w-3" />)}
             </button>
             <button

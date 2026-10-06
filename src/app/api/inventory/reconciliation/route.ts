@@ -23,7 +23,7 @@ const LOCATION_LABELS: Record<string, string> = {
  * - 业务口径（与「全量重算产品库存」一致，仅统计已关联 ProductVariant 的明细）：
  *   - 工厂 = 合同明细 max(qty - pickedQty, 0)（variantId 非空）
  *   - 国内 = 入库 received（明细行 + 无明细头表，父单未取消）− 出库批次明细 qty（variantId 非空、批次未取消）
- *   - 海运在途 = 绑柜且柜状态装柜中/在途的出库明细（variantId 非空）
+ *   - 运输途中 = 绑柜且柜状态装柜中/在途/到港/清关的出库明细（variantId 非空）
  */
 export async function GET(request: NextRequest) {
   try {
@@ -176,7 +176,12 @@ export async function GET(request: NextRequest) {
       variantProfile,
       /** 海运在途：与业务口径 TRANSIT 一致，便于对照 */
       seaTransitFromContainer,
-      seaTransitContainerStatuses: [ContainerStatus.LOADING, ContainerStatus.IN_TRANSIT],
+      seaTransitContainerStatuses: [
+        ContainerStatus.LOADING,
+        ContainerStatus.IN_TRANSIT,
+        ContainerStatus.ARRIVED_PORT,
+        ContainerStatus.CUSTOMS_CLEAR,
+      ],
       businessByLocation,
       businessTotalQty,
       /** 与业务工厂口径对比：合同行未绑定 variantId 的剩余件数（不计入产品档案） */

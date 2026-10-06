@@ -1,271 +1,110 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
+import { RefreshCw } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
-import type { Store } from "@/lib/store-store";
-import type { BankAccount } from "@/lib/finance-store";
-import type { CashFlow } from "@/lib/cash-flow-store";
+import type { StoreRemittanceReport } from "@/lib/store-remittance-report";
+import { resolveStoreReportPeriod, shanghaiToday, type StoreReportQuickPeriod } from "@/lib/store-report-period";
 
-const currency = (n: number, curr: string = "CNY") =>
-  new Intl.NumberFormat("zh-CN", { style: "currency", currency: curr, maximumFractionDigits: 2 }).format(
-    Number.isFinite(n) ? n : 0
-  );
-
-const arrayFetcher = async (url: string) => {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(String(r.status));
-  const j = await r.json();
-  return Array.isArray(j) ? j : (j?.data ?? []);
+const currency = (value: number | null, curr = "CNY"): string => {
+  if (value === null) return "缺少历史汇率，暂不折算";
+  const code = curr === "RMB" ? "CNY" : curr;
+  try {
+    return new Intl.NumberFormat("zh-CN", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(value);
+  } catch {
+    return value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + code;
+  }
 };
 
-const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000, keepPreviousData: true };
+async function reportFetcher(url: string): Promise<StoreRemittanceReport> {
+  const response = await fetch(url, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(30000) });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("登录已过期，请重新登录后刷新统计。");
+    throw new Error(body?.error || "回款统计加载失败，请稍后重试。");
+  }
+  if (!body || !Array.isArray(body.data) || !Array.isArray(body.summary?.currencies)) throw new Error("回款统计响应异常，请重试。");
+  return body;
+}
 
 export default function StoreReportPage() {
-  const { data: stores = [] } = useSWR<Store[]>("/api/stores", arrayFetcher, SWR_OPT);
-  const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
-  const { data: cashFlow = [] } = useSWR<CashFlow[]>("/api/cash-flow?page=1&pageSize=5000", arrayFetcher, SWR_OPT);
-
-  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
-  const [filterDateTo, setFilterDateTo] = useState<string>("");
-  const [filterYear, setFilterYear] = useState<string>("");
-  const [filterMonth, setFilterMonth] = useState<string>("");
-  const [quickFilter, setQuickFilter] = useState<string>("");
-
-  // 根据时间筛选条件过滤流水记录
-  const filteredCashFlow = useMemo(() => {
-    let filtered = Array.isArray(cashFlow) ? [...cashFlow] : [];
-    
-    // 快速筛选（优先级最高）
-    if (quickFilter) {
-      const today = new Date();
-      let fromDate = "";
-      let toDate = "";
-      
-      switch (quickFilter) {
-        case "today":
-          fromDate = toDate = today.toISOString().slice(0, 10);
-          break;
-        case "yesterday": {
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          fromDate = toDate = yesterday.toISOString().slice(0, 10);
-          break;
-        }
-        case "thisWeek": {
-          const weekStart = new Date(today);
-          weekStart.setDate(today.getDate() - today.getDay());
-          fromDate = weekStart.toISOString().slice(0, 10);
-          toDate = today.toISOString().slice(0, 10);
-          break;
-        }
-        case "lastWeek": {
-          const lastWeekEnd = new Date(today);
-          lastWeekEnd.setDate(today.getDate() - today.getDay() - 1);
-          const lastWeekStart = new Date(lastWeekEnd);
-          lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
-          fromDate = lastWeekStart.toISOString().slice(0, 10);
-          toDate = lastWeekEnd.toISOString().slice(0, 10);
-          break;
-        }
-        case "thisMonth": {
-          fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
-          toDate = today.toISOString().slice(0, 10);
-          break;
-        }
-        case "lastMonth": {
-          const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-          const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-          fromDate = lastMonth.toISOString().slice(0, 10);
-          toDate = lastMonthEnd.toISOString().slice(0, 10);
-          break;
-        }
-        case "thisQuarter": {
-          const quarter = Math.floor(today.getMonth() / 3);
-          fromDate = `${today.getFullYear()}-${String(quarter * 3 + 1).padStart(2, "0")}-01`;
-          toDate = today.toISOString().slice(0, 10);
-          break;
-        }
-        case "thisYear":
-          fromDate = `${today.getFullYear()}-01-01`;
-          toDate = today.toISOString().slice(0, 10);
-          break;
-        case "lastYear": {
-          const lastYear = today.getFullYear() - 1;
-          fromDate = `${lastYear}-01-01`;
-          toDate = `${lastYear}-12-31`;
-          break;
-        }
-      }
-      
-      // API 返回的 date 为 ISO 字符串（含时间），比较时取日期部分 YYYY-MM-DD
-      const toDateOnly = (d: string) => d.slice(0, 10);
-      if (fromDate) filtered = filtered.filter((f) => toDateOnly(f.date) >= fromDate);
-      if (toDate) filtered = filtered.filter((f) => toDateOnly(f.date) <= toDate);
-    } else {
-      // 按年筛选
-      if (filterYear) {
-        filtered = filtered.filter((f) => {
-          const year = new Date(f.date).getFullYear();
-          return year === parseInt(filterYear);
-        });
-      }
-      
-      // 按月筛选
-      if (filterMonth) {
-        filtered = filtered.filter((f) => {
-          const date = new Date(f.date);
-          const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-          return monthStr === filterMonth;
-        });
-      }
-      
-      // 日期范围筛选（API 返回的 date 可能含时间，取日期部分比较）
-      const toDateOnly = (d: string) => d.slice(0, 10);
-      if (filterDateFrom) {
-        filtered = filtered.filter((f) => toDateOnly(f.date) >= filterDateFrom);
-      }
-      if (filterDateTo) {
-        filtered = filtered.filter((f) => toDateOnly(f.date) <= filterDateTo);
-      }
-    }
-    
-    return filtered;
-  }, [cashFlow, filterDateFrom, filterDateTo, filterYear, filterMonth, quickFilter]);
-
-  // 计算每个店铺的统计数据
-  const storeStats = useMemo(() => {
-    if (stores.length === 0 || cashFlow.length === 0) {
-      return []; // 如果没有店铺或流水数据，返回空数组
-    }
-    
-    return stores.map((store) => {
-      // 筛选该店铺的收入记录（通过账户ID匹配）
-      // 注意：店铺回款统计的数据来源是 cashFlow，通过 flow.accountId === store.accountId 匹配
-      const storeIncomes = filteredCashFlow.filter(
-        (flow) =>
-          (flow.type === "income" || flow.type === "INCOME") &&
-          flow.accountId &&
-          flow.accountId === store.accountId &&
-          !(flow.isReversal) &&
-          (flow.status === "confirmed" || !flow.status)
-      );
-
-      // 累计回款额（原币）
-      const totalIncome = storeIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
-
-      // 累计回款额（折算RMB）
-      const accountsList = Array.isArray(accounts) ? accounts : [];
-      const account = accountsList.find((a) => a.id === store.accountId);
-      const exchangeRate = account?.exchangeRate || 1;
-      const totalIncomeRMB = store.currency === "RMB" ? totalIncome : totalIncome * exchangeRate;
-
-      // 筛选期间回款：如果用户选择了筛选条件则用筛选结果，否则默认显示本月
-      const filteredIncomes = quickFilter || filterYear || filterMonth || filterDateFrom || filterDateTo
-        ? storeIncomes  // 有筛选条件：用筛选后的数据
-        : storeIncomes.filter((flow) => {
-            // 无筛选条件：默认显示本月
-            if (!flow.date) return false;
-            const d = new Date(flow.date);
-            if (isNaN(d.getTime())) return false;
-            return d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
-          });
-      const filteredIncome = filteredIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
-      const filteredIncomeRMB = store.currency === "RMB" ? filteredIncome : filteredIncome * exchangeRate;
-
-      // 本月回款（基于全量数据，不受筛选影响）
-      const now = new Date();
-      const thisMonthIncomes = (Array.isArray(cashFlow) ? cashFlow : []).filter((flow) => {
-        if (!flow.date) return false;
-        if ((flow.type !== "income" && flow.type !== "INCOME")) return false;
-        if (!flow.accountId || flow.accountId !== store.accountId) return false;
-        if (flow.isReversal) return false;
-        if (flow.status === "pending") return false;
-        const d = new Date(flow.date);
-        if (isNaN(d.getTime())) return false;
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      });
-      const thisMonthIncome = thisMonthIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
-      const thisMonthIncomeRMB = store.currency === "RMB" ? thisMonthIncome : thisMonthIncome * exchangeRate;
-
-      // 待结算金额（如果有未确认的记录）
-      const pendingIncomes = filteredCashFlow.filter(
-        (flow) =>
-          (flow.type === "income" || flow.type === "INCOME") &&
-          flow.accountId === store.accountId &&
-          !flow.isReversal &&
-          flow.status === "pending"
-      );
-      const pendingAmount = pendingIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
-      const pendingAmountRMB = store.currency === "RMB" ? pendingAmount : pendingAmount * exchangeRate;
-
-      // 回款趋势（最近6个月）
-      const trend = [];
-      for (let i = 5; i >= 0; i--) {
-        const date = new Date();
-        date.setMonth(date.getMonth() - i);
-        const month = date.getMonth();
-        const year = date.getFullYear();
-        const monthIncomes = storeIncomes.filter((flow) => {
-          const d = new Date(flow.date);
-          return d.getMonth() === month && d.getFullYear() === year;
-        });
-        const monthTotal = monthIncomes.reduce((sum, flow) => sum + Math.abs(flow.amount), 0);
-        trend.push({
-          month: `${year}-${String(month + 1).padStart(2, "0")}`,
-          displayMonth: `${month + 1}月`,
-          amount: monthTotal,
-          amountRMB: store.currency === "RMB" ? monthTotal : monthTotal * exchangeRate
-        });
-      }
-
-      return {
-        store,
-        totalIncome,
-        totalIncomeRMB,
-        filteredIncome,
-        filteredIncomeRMB,
-        thisMonthIncome,
-        thisMonthIncomeRMB,
-        pendingAmount,
-        pendingAmountRMB,
-        trend,
-        account
-      };
-    });
-  }, [stores, filteredCashFlow, accounts, cashFlow]);
-
-  // 判断当前是否有活跃筛选
-  const hasFilter = !!(quickFilter || filterYear || filterMonth || filterDateFrom || filterDateTo);
-
-  // 按累计回款额排序
-  const sortedStats = useMemo(() => {
-    return [...(Array.isArray(storeStats) ? storeStats : [])].sort((a, b) => b.totalIncomeRMB - a.totalIncomeRMB);
-  }, [storeStats]);
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterYear, setFilterYear] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
+  const [quickFilter, setQuickFilter] = useState<StoreReportQuickPeriod>("");
+  const today = shanghaiToday();
+  const period = useMemo(() => resolveStoreReportPeriod({
+    quick: quickFilter, year: filterYear, month: filterMonth, startDate: filterDateFrom, endDate: filterDateTo,
+  }, new Date(today + "T04:00:00.000Z")), [quickFilter, filterYear, filterMonth, filterDateFrom, filterDateTo, today]);
+  const invalidRange = Boolean(period.startDate && period.endDate && period.startDate > period.endDate);
+  const hasFilter = Boolean(period.startDate || period.endDate);
+  const params = new URLSearchParams();
+  if (period.startDate) params.set("startDate", period.startDate);
+  if (period.endDate) params.set("endDate", period.endDate);
+  const { data, error, isLoading, isValidating, mutate } = useSWR<StoreRemittanceReport>(
+    invalidRange ? null : "/api/store-remittance-report?" + params.toString(), reportFetcher,
+    { keepPreviousData: false, revalidateOnFocus: false, revalidateOnReconnect: true, revalidateOnMount: true, dedupingInterval: 5000, shouldRetryOnError: false },
+  );
+  // One card per store/currency; do not add unlike currencies or mix the period into lifetime totals.
+  const sortedStats = useMemo(() => (data?.data || []).flatMap((row) => row.currencies.map((amounts) => ({
+    ...amounts,
+    store: { ...row.store, currency: amounts.currency },
+    filteredIncome: amounts.periodIncome,
+    filteredIncomeRMB: amounts.periodIncomeRMB,
+  }))).sort((a, b) => (b.totalIncomeRMB ?? 0) - (a.totalIncomeRMB ?? 0)), [data]);
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
-      <header className="flex items-baseline justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">店铺回款统计</h1>
-          <p className="mt-1 text-sm text-slate-400">展示每个店铺的累计回款、待结算金额和回款趋势。</p>
+          <p className="mt-1 text-sm text-slate-400">展示财务已登记的店铺回款、期间金额和近六个月趋势。</p>
         </div>
+        <button type="button" disabled={isValidating || invalidRange} onClick={() => void mutate()} className="flex items-center gap-2 rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+          <RefreshCw className={"h-4 w-4 " + (isValidating ? "animate-spin" : "")} />{isValidating ? "更新中…" : "刷新统计"}
+        </button>
       </header>
 
-      {stores.length === 0 && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          暂无店铺数据，请先前往"系统设置 - 店铺管理"创建店铺。
-        </div>
-      )}
+      <section className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs leading-6 text-slate-300">
+        <p>口径：财务已确认且未冲销的“回款”类收入，含平台钱包已释放收入；不等于银行实收或平台结算总额。</p>
+        <p>按流水关联的店铺归属；无店铺标记时，仅使用唯一的账户绑定。排除内部划拨、换汇及股东投入，不重复统计。</p>
+        <p>累计回款统计全部历史，筛选只影响“期间回款”。人民币按每笔流水登记的历史汇率折算；日期与财务流水明细一致。</p>
+      </section>
 
-      {stores.length > 0 && cashFlow.length === 0 && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <p className="font-medium text-slate-300 mb-1">📊 数据说明</p>
-          <p className="text-xs text-slate-400">店铺回款统计基于"流水明细"中的收入记录（type === "income"）。</p>
-          <p className="text-xs mt-1 text-slate-400">统计已确认收入，匹配规则："流水中的 accountId = 店铺对应银行账户的 accountId"。</p>
-          <p className="text-xs mt-2 text-slate-500">当前没有流水数据，所有店铺的累计回款额均为 0。</p>
-        </div>
-      )}
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+        <span>{error.name === "TimeoutError" ? "加载超时，请重试。" : error.message} {data ? "下方保留上次结果，不代表最新数据。" : "未将加载失败当作回款为 0。"}</span>
+        <button type="button" disabled={isValidating} onClick={() => void mutate()} className="rounded border border-rose-300/30 px-3 py-1.5 disabled:opacity-50">重新加载</button>
+      </div>}
+      {!data && (isLoading || isValidating) && <div role="status" className="rounded-xl border border-slate-700 p-8 text-center text-slate-300">正在统计全部历史回款…</div>}
+      {data && !invalidRange && <>
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <div className="text-sm text-emerald-200">累计已登记回款 · {data.data.length} 个店铺</div>
+            <div className="mt-2 space-y-1">{data.summary.currencies.map((item) => <div key={item.currency} className="text-xl font-semibold text-white">{currency(item.totalIncome, item.currency)}</div>)}</div>
+            <div className="mt-2 text-xs text-slate-400">折合人民币：{currency(data.summary.totalCny)}</div>
+          </div>
+          <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+            <div className="text-sm text-cyan-200">{hasFilter ? "筛选期间回款" : "本月回款"}</div>
+            <div className="mt-2 space-y-1">{data.summary.currencies.map((item) => <div key={item.currency} className="text-xl font-semibold text-white">{currency(hasFilter ? item.periodIncome : item.thisMonthIncome, item.currency)}</div>)}</div>
+            <div className="mt-2 text-xs text-slate-400">折合人民币：{currency(hasFilter ? data.summary.periodCny : data.summary.thisMonthCny)}</div>
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="text-sm text-slate-300">累计回款笔数</div>
+            <div className="mt-2 text-2xl font-semibold text-white">{data.summary.currencies.reduce((sum, item) => sum + item.incomeCount, 0).toLocaleString()} 笔</div>
+            <div className="mt-2 text-xs text-slate-400">更新时间：{new Date(data.generatedAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}（北京时间）</div>
+          </div>
+        </section>
+        {data.diagnostics.unattributedCount > 0 && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          <p>有 {data.diagnostics.unattributedCount} 笔回款无法唯一确定店铺，未计入上述店铺合计，请核对流水的店铺和账户绑定。</p>
+          {data.diagnostics.unattributedCurrencies.map((item) => <p key={item.currency} className="mt-1 text-xs">未归属已确认：{currency(item.amount, item.currency)}；待确认：{currency(item.pendingAmount, item.currency)}</p>)}
+        </div>}
+        {data.diagnostics.missingExchangeRateCount > 0 && <div role="status" className="rounded-xl border border-amber-500/30 p-4 text-sm text-amber-200">有 {data.diagnostics.missingExchangeRateCount} 笔回款缺少历史汇率；原币金额正常统计，相关人民币合计暂不显示，避免误算。</div>}
+        {data.diagnostics.invalidDateCount + data.diagnostics.invalidAmountCount > 0 && <div role="alert" className="rounded-xl border border-amber-500/30 p-4 text-sm text-amber-200">部分流水日期或金额异常，已暂停计入相关记录，请核查原始流水。</div>}
+        {data.data.length === 0 && <div className="rounded-xl border border-slate-700 p-6 text-sm text-slate-300">暂无店铺档案，可前往 <Link href="/settings/stores" className="text-cyan-300 underline">店铺管理</Link> 查看。</div>}
+      </>}
 
       {/* 筛选器 */}
       <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-6">
@@ -297,7 +136,7 @@ export default function StoreReportPage() {
               <button
                 key={option.value}
                 onClick={() => {
-                  setQuickFilter(option.value);
+                  setQuickFilter(option.value as StoreReportQuickPeriod);
                   setFilterYear("");
                   setFilterMonth("");
                   setFilterDateFrom("");
@@ -336,7 +175,7 @@ export default function StoreReportPage() {
                 >
                   <option value="">全部年份</option>
                   {Array.from({ length: 5 }, (_, i) => {
-                    const year = new Date().getFullYear() - i;
+                    const year = Number(today.slice(0, 4)) - i;
                     return (
                       <option key={year} value={year}>
                         {year}年
@@ -422,7 +261,8 @@ export default function StoreReportPage() {
         )}
       </section>
 
-      <section
+      {invalidRange && <div role="alert" className="text-sm text-amber-300">开始日期不能晚于结束日期。</div>}
+      {!invalidRange && data && <section
         className="grid gap-6"
         style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "24px" }}
       >
@@ -440,7 +280,7 @@ export default function StoreReportPage() {
 
           return (
           <div
-            key={stat.store.id}
+            key={`${stat.store.id}-${stat.currency}`}
             className="group relative overflow-hidden rounded-2xl border p-5 transition-all hover:scale-[1.02] hover:shadow-xl"
             style={{
               background: gradient,
@@ -455,7 +295,7 @@ export default function StoreReportPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-white">{stat.store.name}</h3>
                   <p className="text-xs text-white/50 mt-1">
-                    {stat.store.platform} · {stat.store.currency}
+                    {({ TIKTOK: "TikTok", SHOPEE: "Shopee", MERCADO_LIVRE: "Mercado Livre", AMAZON: "Amazon" } as Record<string, string>)[stat.store.platform] || stat.store.platform} · {stat.store.currency}
                   </p>
                 </div>
                 <div className="rounded-full border border-white/20 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur-sm">
@@ -466,7 +306,7 @@ export default function StoreReportPage() {
               {/* 累计回款 */}
               <div className="space-y-3">
                 <div>
-                  <div className="text-xs font-medium text-white/60">累计回款额</div>
+                  <div className="text-xs font-medium text-white/60">累计回款额 · {stat.incomeCount} 笔</div>
                   <div className="text-3xl font-bold text-white drop-shadow-lg mt-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                     {currency(stat.totalIncome, stat.store.currency)}
                   </div>
@@ -489,9 +329,9 @@ export default function StoreReportPage() {
 
                 {stat.pendingAmount > 0 && (
                   <div className="pt-3 border-t border-white/10">
-                    <div className="text-xs font-medium text-amber-300/80">待结算金额</div>
+                    <div className="text-xs font-medium text-amber-300/80">待确认回款（非平台待结算）</div>
                     <div className="text-lg font-semibold text-amber-300 mt-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                      {currency(stat.pendingAmountRMB, "CNY")}
+                      {currency(stat.pendingAmount, stat.currency)}
                     </div>
                   </div>
                 )}
@@ -503,7 +343,7 @@ export default function StoreReportPage() {
                     <ResponsiveContainer width="100%" height={100}>
                       <AreaChart data={stat.trend} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                         <defs>
-                          <linearGradient id={`grad-${stat.store.id}`} x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id={`grad-${stat.store.id}-${stat.currency}`} x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#34d399" stopOpacity={0.3} />
                             <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
                           </linearGradient>
@@ -520,7 +360,7 @@ export default function StoreReportPage() {
                                   {currency(data?.amount || 0, stat.store.currency)}
                                 </div>
                                 <div style={{ color: "#94a3b8", fontSize: "10px" }}>
-                                  ≈ {currency(data?.amountRMB || 0, "CNY")}
+                                  ≈ {currency(data?.amountRMB ?? null, "CNY")}
                                 </div>
                               </div>
                             );
@@ -528,10 +368,10 @@ export default function StoreReportPage() {
                         />
                         <Area
                           type="monotone"
-                          dataKey="amountRMB"
+                          dataKey="amount"
                           stroke="#34d399"
                           strokeWidth={2}
-                          fill={`url(#grad-${stat.store.id})`}
+                          fill={`url(#grad-${stat.store.id}-${stat.currency})`}
                           dot={{ r: 3, fill: "#34d399" }}
                         />
                       </AreaChart>
@@ -545,7 +385,7 @@ export default function StoreReportPage() {
           </div>
         );
         })}
-      </section>
+      </section>}
     </div>
   );
 }

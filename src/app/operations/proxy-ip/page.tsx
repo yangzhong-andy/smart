@@ -410,7 +410,7 @@ export default function ProxyIPPage() {
     if (list.length > 0) setSelectedBusiness((prev) => (list.includes(prev) ? prev : list[0]));
   };
 
-  const loadInventory = async () => {
+  const loadInventory = useCallback(async () => {
     if (!selectedBusiness) return;
     setLoadingInventory(true);
     try {
@@ -428,9 +428,9 @@ export default function ProxyIPPage() {
     } finally {
       setLoadingInventory(false);
     }
-  };
+  }, [proxiesType, selectedBusiness]);
 
-  const loadMyIPs = async () => {
+  const loadMyIPs = useCallback(async () => {
     setLoadingList(true);
     try {
       const payload: Record<string, unknown> = { proxies_type: proxiesType };
@@ -447,7 +447,7 @@ export default function ProxyIPPage() {
     } finally {
       setLoadingList(false);
     }
-  };
+  }, [expiringDays, proxiesType, selectedCityName]);
 
   useEffect(() => {
     void (async () => {
@@ -462,12 +462,12 @@ export default function ProxyIPPage() {
   useEffect(() => {
     if (!selectedBusiness) return;
     void loadInventory().catch((e) => toast.error(e instanceof Error ? e.message : "查询库存失败"));
-  }, [selectedBusiness, proxiesType]);
+  }, [loadInventory, selectedBusiness]);
 
   useEffect(() => {
     if (activeTab !== "list") return;
     void loadMyIPs().catch((e) => toast.error(e instanceof Error ? e.message : "获取IP列表失败"));
-  }, [activeTab, proxiesType, selectedCityName, expiringDays]);
+  }, [activeTab, loadMyIPs]);
 
   useEffect(() => {
     setDedicatedPullMap((prev) => {

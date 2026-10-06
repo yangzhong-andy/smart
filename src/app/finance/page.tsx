@@ -43,7 +43,7 @@ export default function MonthlyBillsPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
-  const bills: MonthlyBill[] = Array.isArray(billsData) ? billsData : [];
+  const bills = useMemo<MonthlyBill[]>(() => Array.isArray(billsData) ? billsData : [], [billsData]);
 
   // 根据拿货单批量生成月账单（供已有拿货单但无月账单时使用）
   const handleGenerateFromDelivery = async () => {

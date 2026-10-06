@@ -1,15 +1,15 @@
 "use client";
 
+import React, { useEffect, useId, useState } from "react";
 import type { Product, ProductStatus } from "@/lib/products-store";
 import ImageUploader from "@/components/ImageUploader";
 import { formatCurrency } from "@/lib/currency-utils";
 import { useWeightCalculation } from "@/hooks/use-weight-calculation";
 import type { ProductFormState, VariantRow } from "./types";
-import { newVariantRow } from "./types";
+import { validateVariantRows, VARIANT_SPEC_SUGGESTIONS } from "@/lib/product-variant-entry";
+import { VariantEntryGrid } from "./VariantEntryGrid";
 import {
   VARIANT_COLOR_OPTIONS,
-  VARIANT_SIZE_OPTIONS,
-  OTHER_LABEL,
   formatNumber,
 } from "./constants";
 import { Palette, Plus, Trash, TrendingUp } from "lucide-react";
@@ -27,6 +27,8 @@ export type ProductFormDialogProps = {
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   isSubmitting: boolean;
   suppliers: { id: string; name: string }[];
+  existingSkuIds?: string[];
+  validationRequested?: boolean;
 };
 
 export function ProductFormDialog({
@@ -41,7 +43,12 @@ export function ProductFormDialog({
   onSubmit,
   isSubmitting,
   suppliers,
+  existingSkuIds = [],
+  validationRequested = false,
 }: ProductFormDialogProps) {
+  const listId = useId();
+  const [hasValidated, setHasValidated] = useState(false);
+  useEffect(() => { if (!open) setHasValidated(false); }, [open]);
   const weightCalculation = useWeightCalculation(
     form.length,
     form.width,
@@ -54,25 +61,37 @@ export function ProductFormDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur">
-      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby={`${listId}-title`} className="w-full max-w-7xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">
-              {editingProduct ? "编辑产品" : "录入产品"}
+            <h2 id={`${listId}-title`} className="text-lg font-semibold text-slate-100">
+              {editingProduct ? "编辑SKU与产品资料" : "录入产品与批量 SKU"}
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              填写产品的全维度信息，支持上传主图
+              {editingProduct ? "规格、价格、物流资料仅影响当前 SKU；产品名称、主图等公共资料会影响同产品下全部 SKU。" : "先填写产品公共资料，再逐行录入 SKU；每行可独立设置规格、成本与物流资料。"}
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            disabled={isSubmitting}
+            aria-label="关闭产品表单"
             className="text-slate-400 hover:text-slate-200"
           >
             ✕
           </button>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 text-sm">
+        <form onSubmit={(event) => {
+          if (!editingProduct) {
+            setHasValidated(true);
+            if (!validateVariantRows(formVariants, existingSkuIds).valid) { event.preventDefault(); return; }
+          }
+          onSubmit(event);
+        }} className="space-y-4 text-sm">
+          <fieldset disabled={isSubmitting} className="min-w-0 space-y-4">
+          <datalist id={`${listId}-colors`}>{VARIANT_COLOR_OPTIONS.map((color) => <option key={color} value={color} />)}</datalist>
+          <datalist id={`${listId}-specs`}>{VARIANT_SPEC_SUGGESTIONS.map((spec) => <option key={spec} value={spec} />)}</datalist>
           {/* 基础信息 */}
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-1">
@@ -91,12 +110,11 @@ export function ProductFormDialog({
                 </span>
                 <input
                   value={form.sku_id}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, sku_id: e.target.value }))
-                  }
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                  required
+                  readOnly
+                  title="已有 SKU 编码不可在此修改；新增规格请复制 SKU"
+                  className="w-full cursor-not-allowed rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-slate-400"
                 />
+                <p className="text-xs text-slate-500">已有 SKU 编码不可在此修改；新增规格请复制 SKU。</p>
               </label>
             ) : null}
             <label className="space-y-1">
@@ -212,12 +230,12 @@ export function ProductFormDialog({
           <div className="border-t border-slate-800 pt-4">
             <h3 className="text-slate-300 font-medium mb-3 flex items-center gap-2">
               <Palette className="h-4 w-4" />
-              {editingProduct ? "SKU 变体信息" : "变体列表（可添加多个颜色/规格）"}
+              {editingProduct ? "当前 SKU 信息" : "批量 SKU 列表"}
             </h3>
             {editingProduct ? (
               <div className="space-y-4">
                 <p className="text-xs text-slate-500">
-                  当前变体的规格与库存信息，用于采购与入库区分颜色/尺寸。
+                  当前 SKU 的规格与库存信息；规格支持套装、数量、型号等自由文本，颜色可留空。
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   <label className="space-y-1">
@@ -226,52 +244,28 @@ export function ProductFormDialog({
                       value={form.sku_id}
                       readOnly
                       className="w-full rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-slate-400 cursor-not-allowed"
-                      title="变体 SKU 不可修改"
+                      title="已有 SKU 编码不可在此修改；新增规格请复制 SKU"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-slate-300">颜色</span>
-                    <select
-                      value={VARIANT_COLOR_OPTIONS.includes(form.color) ? form.color : (form.color ? OTHER_LABEL : "")}
-                      onChange={(e) => setForm((f) => ({ ...f, color: e.target.value === OTHER_LABEL ? "" : e.target.value }))}
+                    <input
+                      value={form.color}
+                      list={`${listId}-colors`}
+                      onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                    >
-                      <option value="">请选择</option>
-                      {VARIANT_COLOR_OPTIONS.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                      <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
-                    </select>
-                    {(!form.color || form.color === OTHER_LABEL || !VARIANT_COLOR_OPTIONS.includes(form.color)) && (
-                      <input
-                        value={VARIANT_COLOR_OPTIONS.includes(form.color) ? "" : form.color}
-                        onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm outline-none focus:border-primary-400"
-                        placeholder="自定义颜色"
-                      />
-                    )}
+                      placeholder="可选，自由输入颜色"
+                    />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-slate-300">尺寸</span>
-                    <select
-                      value={VARIANT_SIZE_OPTIONS.includes(form.size) ? form.size : (form.size ? OTHER_LABEL : "")}
-                      onChange={(e) => setForm((f) => ({ ...f, size: e.target.value === OTHER_LABEL ? "" : e.target.value }))}
+                    <span className="text-slate-300">规格 / 套装</span>
+                    <input
+                      value={form.size}
+                      list={`${listId}-specs`}
+                      onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))}
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
-                    >
-                      <option value="">请选择</option>
-                      {VARIANT_SIZE_OPTIONS.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                      <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
-                    </select>
-                    {(!form.size || form.size === OTHER_LABEL || !VARIANT_SIZE_OPTIONS.includes(form.size)) && (
-                      <input
-                        value={VARIANT_SIZE_OPTIONS.includes(form.size) ? "" : form.size}
-                        onChange={(e) => setForm((f) => ({ ...f, size: e.target.value }))}
-                        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm outline-none focus:border-primary-400"
-                        placeholder="自定义尺寸"
-                      />
-                    )}
+                      placeholder="如 Set+3、Set+6、Brush-Head-3Packs"
+                    />
                   </label>
                   <label className="space-y-1">
                     <span className="text-slate-300">条形码</span>
@@ -283,7 +277,7 @@ export function ProductFormDialog({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-slate-300">成本价（元）<span className="text-rose-400">*</span></span>
+                    <span className="text-slate-300">成本价（{form.currency}）<span className="text-rose-400">*</span></span>
                     <input
                       type="number"
                       min={0}
@@ -292,6 +286,7 @@ export function ProductFormDialog({
                       onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))}
                       className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                       placeholder="0.00"
+                      required
                     />
                   </label>
                   <label className="space-y-1">
@@ -309,122 +304,14 @@ export function ProductFormDialog({
                 </div>
               </div>
             ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-slate-500">每个变体一行，填写颜色、SKU 编码、单价</p>
-                  <button
-                    type="button"
-                    onClick={() => setFormVariants((prev) => [...prev, newVariantRow()])}
-                    className="flex items-center gap-1 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
-                  >
-                    <Plus className="h-3 w-3" />
-                    添加变体
-                  </button>
-                </div>
-                <div className="rounded-lg border border-slate-700 overflow-hidden">
-                  <table className="min-w-full text-xs">
-                    <thead className="bg-slate-800/80">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-slate-400 w-10">#</th>
-                        <th className="px-3 py-2 text-left text-slate-400">颜色</th>
-                        <th className="px-3 py-2 text-left text-slate-400">SKU 编码 <span className="text-rose-400">*</span></th>
-                        <th className="px-3 py-2 text-left text-slate-400">单价(元) <span className="text-rose-400">*</span></th>
-                        <th className="px-3 py-2 text-left text-slate-400">尺寸</th>
-                        <th className="px-3 py-2 text-left text-slate-400">条形码</th>
-                        <th className="px-3 py-2 w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800">
-                      {formVariants.map((row, idx) => (
-                        <tr key={row.tempId} className="bg-slate-900/40">
-                          <td className="px-3 py-2 text-slate-500">{idx + 1}</td>
-                          <td className="px-3 py-2">
-                            <select
-                              value={VARIANT_COLOR_OPTIONS.includes(row.color) ? row.color : (row.color ? OTHER_LABEL : "")}
-                              onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, color: e.target.value === OTHER_LABEL ? "" : e.target.value } : r)))}
-                              className="w-full min-w-0 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 text-xs"
-                            >
-                              <option value="">选择</option>
-                              {VARIANT_COLOR_OPTIONS.map((c) => (
-                                <option key={c} value={c}>{c}</option>
-                              ))}
-                              <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
-                            </select>
-                            {row.color && !VARIANT_COLOR_OPTIONS.includes(row.color) && (
-                              <input
-                                value={row.color}
-                                onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, color: e.target.value } : r)))}
-                                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 text-xs"
-                                placeholder="自定义"
-                              />
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              value={row.sku_id}
-                              onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, sku_id: e.target.value } : r)))}
-                              className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200"
-                              placeholder="如：mazha-red"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={row.cost_price}
-                              onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, cost_price: e.target.value } : r)))}
-                              className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-right text-slate-200"
-                              placeholder="0"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <select
-                              value={VARIANT_SIZE_OPTIONS.includes(row.size) ? row.size : (row.size ? OTHER_LABEL : "")}
-                              onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, size: e.target.value === OTHER_LABEL ? "" : e.target.value } : r)))}
-                              className="w-full min-w-0 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 text-xs"
-                            >
-                              <option value="">选择</option>
-                              {VARIANT_SIZE_OPTIONS.map((s) => (
-                                <option key={s} value={s}>{s}</option>
-                              ))}
-                              <option value={OTHER_LABEL}>{OTHER_LABEL}</option>
-                            </select>
-                            {row.size && !VARIANT_SIZE_OPTIONS.includes(row.size) && (
-                              <input
-                                value={row.size}
-                                onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, size: e.target.value } : r)))}
-                                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 text-xs"
-                                placeholder="自定义"
-                              />
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              value={row.barcode}
-                              onChange={(e) => setFormVariants((prev) => prev.map((r) => (r.tempId === row.tempId ? { ...r, barcode: e.target.value } : r)))}
-                              className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200"
-                              placeholder="可选"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            {formVariants.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setFormVariants((prev) => prev.filter((r) => r.tempId !== row.tempId))}
-                                className="text-slate-400 hover:text-rose-400"
-                                title="删除"
-                              >
-                                <Trash className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              <VariantEntryGrid
+                rows={formVariants}
+                onChange={setFormVariants}
+                disabled={isSubmitting}
+                existingSkuIds={existingSkuIds}
+                validationRequested={validationRequested || hasValidated}
+                defaultCurrency={form.currency}
+              />
             )}
           </div>
 
@@ -453,9 +340,10 @@ export function ProductFormDialog({
 
           {/* 财务信息 */}
           <div className="border-t border-slate-800 pt-4">
-            <h3 className="text-slate-300 font-medium mb-3">财务信息</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <label className="space-y-1">
+            <h3 className="text-slate-300 font-medium mb-3">{editingProduct ? "当前 SKU 财务信息" : "公共财务默认值"}</h3>
+            {!editingProduct && <p className="mb-3 text-xs text-slate-400">成本价以上方各 SKU 行为准；统一价格请在表格工具栏显式应用。币种、ROI 作为各 SKU 默认值。</p>}
+            <div className={`grid ${editingProduct ? "grid-cols-3" : "grid-cols-2"} gap-4`}>
+              {editingProduct && <label className="space-y-1">
                 <span className="text-slate-300">参考拿货价 {editingProduct ? <span className="text-rose-400">*</span> : null}</span>
                 <input
                   type="number"
@@ -466,7 +354,7 @@ export function ProductFormDialog({
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
                   required={!!editingProduct}
                 />
-              </label>
+              </label>}
               <label className="space-y-1">
                 <span className="text-slate-300">目标 ROI (%)</span>
                 <input
@@ -498,7 +386,7 @@ export function ProductFormDialog({
 
           {/* 物理信息 */}
           <div className="border-t border-slate-800 pt-4">
-            <h3 className="text-slate-300 font-medium mb-3">物理信息（用于计算运费）</h3>
+            <h3 className="text-slate-300 font-medium mb-3">{editingProduct ? "当前 SKU 物流资料（用于计算运费）" : "公共物流默认值（各 SKU 可单独覆盖）"}</h3>
             <div className="grid grid-cols-4 gap-4 mb-4">
               <label className="space-y-1">
                 <span className="text-slate-300">实际重量 (kg)</span>
@@ -515,7 +403,7 @@ export function ProductFormDialog({
                 <span className="text-slate-300">长度 (cm)</span>
                 <input
                   type="number"
-                  min={0}
+                  min={0.1}
                   step="0.1"
                   value={form.length}
                   onChange={(e) => setForm((f) => ({ ...f, length: e.target.value }))}
@@ -526,7 +414,7 @@ export function ProductFormDialog({
                 <span className="text-slate-300">宽度 (cm)</span>
                 <input
                   type="number"
-                  min={0}
+                  min={0.1}
                   step="0.1"
                   value={form.width}
                   onChange={(e) => setForm((f) => ({ ...f, width: e.target.value }))}
@@ -537,7 +425,7 @@ export function ProductFormDialog({
                 <span className="text-slate-300">高度 (cm)</span>
                 <input
                   type="number"
-                  min={0}
+                  min={0.1}
                   step="0.1"
                   value={form.height}
                   onChange={(e) => setForm((f) => ({ ...f, height: e.target.value }))}
@@ -840,6 +728,7 @@ export function ProductFormDialog({
             <button
               type="button"
               onClick={onClose}
+              disabled={isSubmitting}
               className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
             >
               取消
@@ -852,6 +741,7 @@ export function ProductFormDialog({
               {isSubmitting ? (editingProduct ? "更新中..." : "保存中...") : (editingProduct ? "更新" : "保存")}
             </button>
           </div>
+          </fieldset>
         </form>
       </div>
     </div>

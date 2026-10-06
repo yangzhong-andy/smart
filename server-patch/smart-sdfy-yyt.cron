@@ -1,0 +1,3 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 * * * * root /srv/smart-erp/sdfy/current/scripts/run-yyt-sync-sdfy.sh 2 >> /var/log/smart-sdfy-yyt.log 2>&1

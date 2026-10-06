@@ -1,0 +1,49 @@
+.orders-page { padding-bottom: 48rpx; }
+.summary-row { display: flex; align-items: center; justify-content: space-between; margin: 12rpx 0 24rpx; }
+.page-title { font-size: 38rpx; font-weight: 700; color: #17202a; }
+.page-subtitle { margin-top: 6rpx; color: #697386; font-size: 24rpx; }
+.alert-chip { margin: 0; min-width: 190rpx; height: 62rpx; line-height: 62rpx; padding: 0 20rpx; border: 1rpx solid #f0b8b8; border-radius: 8rpx; background: #fff5f5; color: #b42318; font-size: 24rpx; }
+.alert-chip.active { background: #b42318; color: #fff; border-color: #b42318; }
+.alert-dot { display: inline-block; width: 12rpx; height: 12rpx; border-radius: 50%; background: currentColor; margin-right: 10rpx; }
+.search-row { height: 84rpx; padding: 0 12rpx 0 22rpx; display: flex; align-items: center; gap: 12rpx; }
+.search-icon { font-size: 36rpx; color: #697386; transform: rotate(-15deg); }
+.search-input { flex: 1; min-width: 0; height: 80rpx; font-size: 27rpx; }
+.clear-button { width: 56rpx; padding: 0; background: transparent; color: #8993a4; font-size: 38rpx; }
+.search-button { margin: 0; height: 60rpx; line-height: 60rpx; padding: 0 24rpx; background: #087f5b; color: #fff; border-radius: 7rpx; font-size: 24rpx; }
+.filter-row { display: flex; gap: 16rpx; margin: 16rpx 0 24rpx; }
+.filter-picker { flex: 1; min-width: 0; }
+.picker-value { height: 70rpx; line-height: 70rpx; padding: 0 22rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 25rpx; color: #4c5667; }
+.picker-value text { float: right; color: #8993a4; }
+.loading-block, .load-more { display: flex; align-items: center; justify-content: center; gap: 18rpx; padding: 80rpx 0; color: #697386; }
+.load-more { padding: 30rpx 0; }
+.error-block { padding: 56rpx 28rpx; text-align: center; color: #b42318; }
+.error-block button { width: 180rpx; margin-top: 24rpx; background: #087f5b; color: #fff; font-size: 25rpx; }
+.order-list { display: flex; flex-direction: column; gap: 18rpx; }
+.order-card { padding: 26rpx; overflow: hidden; }
+.order-head, .order-meta, .order-foot { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; }
+.store-line { display: flex; align-items: center; min-width: 0; gap: 14rpx; }
+.platform-mark { flex: none; padding: 5rpx 9rpx; border-radius: 6rpx; background: #111827; color: #fff; font-size: 19rpx; font-weight: 700; }
+.store-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; color: #27313d; }
+.status { flex: none; padding: 7rpx 14rpx; border-radius: 6rpx; background: #eef1f4; color: #566173; font-size: 22rpx; }
+.status-COMPLETED, .status-DELIVERED { color: #087f5b; background: #e9f7f1; }
+.status-CANCELLED { color: #b42318; background: #fff0f0; }
+.status-IN_TRANSIT, .status-AWAITING_SHIPMENT, .status-AWAITING_COLLECTION { color: #9a6700; background: #fff7dc; }
+.order-meta { margin-top: 16rpx; color: #8993a4; font-size: 22rpx; }
+.order-number { color: #4c5667; font-family: monospace; }
+.item-list { margin: 22rpx 0; padding: 18rpx 0; border-top: 1rpx solid #edf0f2; border-bottom: 1rpx solid #edf0f2; }
+.product-row { display: flex; align-items: center; gap: 16rpx; min-height: 82rpx; }
+.product-row + .product-row { margin-top: 14rpx; }
+.product-image { flex: none; width: 76rpx; height: 76rpx; border-radius: 7rpx; background: #eef1f4; }
+.product-content { flex: 1; min-width: 0; }
+.product-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #27313d; font-size: 25rpx; }
+.product-sku { margin-top: 5rpx; color: #8993a4; font-size: 21rpx; }
+.product-qty { flex: none; color: #4c5667; font-weight: 600; }
+.more-items { margin-top: 14rpx; color: #697386; font-size: 22rpx; }
+.source-tag { padding: 6rpx 12rpx; border-radius: 6rpx; background: #eef1f4; color: #566173; font-size: 21rpx; }
+.source-AFFILIATE_ORGANIC, .source-AFFILIATE_ADS { color: #6941c6; background: #f4f0ff; }
+.source-FREE_SAMPLE { color: #9a6700; background: #fff7dc; }
+.amount-block { display: flex; align-items: baseline; gap: 12rpx; }
+.amount-label { color: #8993a4; font-size: 21rpx; }
+.amount { color: #17202a; font-size: 29rpx; font-weight: 700; }
+.delivery-warning { margin: 22rpx -26rpx -26rpx; padding: 16rpx 26rpx; background: #fff5f5; color: #b42318; font-size: 23rpx; }
+.list-end { padding: 36rpx 0 12rpx; text-align: center; color: #a0a8b4; font-size: 23rpx; }

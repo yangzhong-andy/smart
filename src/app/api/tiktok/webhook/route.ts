@@ -3,7 +3,12 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getOrderDetail } from "@/lib/tiktok-shop-api";
 import { deductStockForOrder, restoreStockForCancelledOrder } from "@/lib/tiktok-stock-deduct";
+import {
+  isWarehouseShippedStatus,
+  reconcileWarehouseFeeForOrder,
+} from "@/lib/warehouse-fund-reconciliation";
 import { Buffer } from "buffer";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -134,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     // 异步处理：拉取完整订单详情
     // 不 await，让响应立即返回
-    processEvent(typeNum, shopId, orderId, orderData).then(async () => {
+    processEvent(typeNum, shopId, orderId, orderData, request.nextUrl.origin).then(async () => {
       if (webhookLogId) {
         await prisma.tikTokWebhookLog.update({ where: { id: webhookLogId }, data: { processed: true } });
       }
@@ -158,7 +163,7 @@ export async function POST(request: NextRequest) {
 /**
  * 处理事件：拉取完整订单详情并存储
  */
-async function processEvent(typeNum: number, shopId: string | null, orderId: string | null, orderData: any) {
+async function processEvent(typeNum: number, shopId: string | null, orderId: string | null, orderData: any, origin: string) {
   if (!shopId || !orderId) return;
 
   // 只处理订单相关事件
@@ -182,7 +187,7 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
     if (shop.tokenExpireAt && shop.tokenExpireAt < new Date(Date.now() + 60000)) {
       console.log(`[TikTok Webhook] Token 过期，跳过详情拉取（等待定时同步刷新）`);
       // token 过期了，用 webhook 里的基本数据做个简单更新
-      await updateOrderBasic(orderId, shopId, orderData);
+      await updateOrderBasic(orderId, shopId, orderData, origin);
       return;
     }
 
@@ -213,7 +218,29 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
           rawData: o,
         },
       });
+      await clearCacheByPrefix("profit-report");
       console.log(`[TikTok Webhook] ✅ 订单 ${orderId} 已实时更新: ${o.status}`);
+
+      // Post the warehouse debit from the same per-order profit calculation.
+      // The reconciliation is intentionally isolated so a ledger/API problem
+      // cannot prevent the TikTok order from being stored.
+      if (isWarehouseShippedStatus(o.status) || o.status === "CANCELLED") {
+        try {
+          const createdAt = o.create_time ? new Date(Number(o.create_time) * 1000) : null;
+          const warehouseResult = await reconcileWarehouseFeeForOrder(
+            origin,
+            orderId,
+            shopId,
+            createdAt,
+            shop.region,
+          );
+          console.log(
+            `[TikTok Warehouse] 订单 ${orderId} 自动扣费：新增 ${warehouseResult.deducted || 0}，重复 ${warehouseResult.duplicate || 0}，冲正 ${warehouseResult.reversed || 0}`,
+          );
+        } catch (warehouseError: any) {
+          console.error(`[TikTok Warehouse] 订单 ${orderId} 自动扣费失败:`, warehouseError?.message || warehouseError);
+        }
+      }
 
       // 待揽收时扣减；订单取消时幂等回补。
       try {
@@ -241,7 +268,7 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
       }
     } else {
       // API 没返回详情（可能订单太新），用 webhook 数据做基本更新
-      await updateOrderBasic(orderId, shopId, orderData);
+      await updateOrderBasic(orderId, shopId, orderData, origin);
       console.log(`[TikTok Webhook] 订单 ${orderId} 暂无详情，已记录基本状态`);
     }
   } catch (e: any) {
@@ -250,7 +277,7 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
 }
 
 /** 用 webhook 数据做基本更新（token 过期或 API 无详情时） */
-async function updateOrderBasic(orderId: string, shopId: string, orderData: any) {
+async function updateOrderBasic(orderId: string, shopId: string, orderData: any, origin: string) {
   try {
     const existing = await prisma.tikTokOrder.findUnique({ where: { orderId } });
     if (existing) {
@@ -263,8 +290,17 @@ async function updateOrderBasic(orderId: string, shopId: string, orderData: any)
           updateTime: orderData.update_time ? new Date(orderData.update_time * 1000) : new Date(),
         },
       });
+      await clearCacheByPrefix("profit-report");
       if (nextStatus === "CANCELLED") {
         await restoreStockForCancelledOrder(orderId);
+      }
+      if (isWarehouseShippedStatus(nextStatus) || nextStatus === "CANCELLED") {
+        const shop = await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { region: true } });
+        try {
+          await reconcileWarehouseFeeForOrder(origin, orderId, shopId, existing.createTime, shop?.region);
+        } catch (warehouseError: any) {
+          console.error(`[TikTok Warehouse] 订单 ${orderId} 基本状态自动扣费失败:`, warehouseError?.message || warehouseError);
+        }
       }
     }
   } catch (error: any) {

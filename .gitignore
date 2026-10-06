@@ -18,6 +18,18 @@ node_modules/
 *~
 *.tsbuildinfo
 
+# Local release artifacts and historical snapshots. Keep source, migrations,
+# and canonical operational scripts under version control instead.
+.next-stale-*/
+/backups/
+*.tgz
+*.tar.gz
+*.patch
+*.before-*
+/warehouse-ledger-audit*.json
+/server-patch/*.tgz
+/server-patch/*.tar.gz
+
 # Crash dumps and local databases
 core
 core.*

@@ -1,0 +1,11 @@
+[Unit]
+Description=Synchronize Shopee order income data every ten minutes
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=10min
+RandomizedDelaySec=60
+Unit=smart-erp-shopee-settlement-sync.service
+
+[Install]
+WantedBy=timers.target

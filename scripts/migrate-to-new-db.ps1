@@ -13,9 +13,9 @@ npx prisma generate
 if ($LASTEXITCODE -ne 0) { exit 1 }
 Write-Host "   ✓ 完成" -ForegroundColor Green
 
-# 2. 推送 schema 到新数据库
-Write-Host "`n2. 推送 schema 到新数据库 (prisma db push)..." -ForegroundColor Green
-npx prisma db push
+# 2. 应用版本化迁移到新数据库
+Write-Host "`n2. 应用版本化数据库迁移..." -ForegroundColor Green
+npx prisma migrate deploy
 if ($LASTEXITCODE -ne 0) {
     Write-Host "   ✗ 失败: 请检查 DATABASE_URL 是否正确，以及数据库是否可访问" -ForegroundColor Red
     exit 1

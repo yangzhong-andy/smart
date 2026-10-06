@@ -3,6 +3,16 @@ function positiveNumber(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+/** Preserve the payment-day CNY rate on a cash-flow row. */
+export function normalizeCashFlowExchangeRateToCny(
+  flowCurrency: string | null | undefined,
+  exchangeRate: unknown,
+): number | null {
+  const code = String(flowCurrency || "CNY").trim().toUpperCase();
+  if (code === "CNY" || code === "RMB") return 1;
+  return positiveNumber(exchangeRate);
+}
+
 /** Resolve 1 unit of the source currency to CNY. */
 export function resolveCashFlowExchangeRateToCny(
   currency: string | null | undefined,

@@ -71,6 +71,11 @@ const formatNumber = (n: number) => {
 
 type AccountsStatsProps = {
   totalAssetsRMB: number;
+  financialAccountAssetsRMB: number;
+  platformAssetsRMB: number;
+  platformStoreWalletRMB: number;
+  platformAdvertisingWalletRMB: number;
+  platformWithdrawalInTransitRMB: number;
   totalUSD: number;
   totalJPY: number;
   totalBRL: number;
@@ -87,6 +92,11 @@ type AccountsStatsProps = {
 
 export function AccountsStats({
   totalAssetsRMB,
+  financialAccountAssetsRMB,
+  platformAssetsRMB,
+  platformStoreWalletRMB,
+  platformAdvertisingWalletRMB,
+  platformWithdrawalInTransitRMB,
   totalUSD,
   totalJPY,
   totalBRL,
@@ -191,11 +201,21 @@ export function AccountsStats({
               <div className="rounded-xl bg-white/20 p-3 backdrop-blur-sm">
                 <TrendingUp className="h-6 w-6 text-white" />
               </div>
-              <div className="text-xs font-medium text-white/80">总资产</div>
+              <div className="text-xs font-medium text-white/80">公司总资产</div>
             </div>
             <div className="mb-1 text-xs font-medium text-white/70">折算CNY</div>
             <div className="mb-2 text-3xl font-bold text-white" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
               {currency(totalAssetsRMB, "CNY")}
+            </div>
+            <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-white/10 pt-3 text-[11px] text-white/70">
+              <span>财务账户</span><span className="text-right">{currency(financialAccountAssetsRMB, "CNY")}</span>
+              <span>平台资金</span><span className="text-right">{currency(platformAssetsRMB, "CNY")}</span>
+              {platformAssetsRMB !== 0 && (
+                <>
+                  <span className="pl-2 text-white/45">店铺 / 广告 / 在途</span>
+                  <span className="text-right text-white/45">{currency(platformStoreWalletRMB, "CNY")} / {currency(platformAdvertisingWalletRMB, "CNY")} / {currency(platformWithdrawalInTransitRMB, "CNY")}</span>
+                </>
+              )}
             </div>
             <div className="text-xs text-white/60">
               {exchangeRates ? (

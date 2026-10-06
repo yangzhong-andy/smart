@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
 import { clearCacheByPrefix } from "@/lib/redis";
 import { isWarehouseRechargeCategory, recordWarehouseFundEntry } from "@/lib/warehouse-funds";
+import { normalizeCashFlowExchangeRateToCny } from "@/lib/cash-flow-exchange-rate";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!exchangeRate.isPositive()) return NextResponse.json({ error: "付款汇率必须大于 0" }, { status: 400 });
 
     const result = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`expense-payment:${params.id}`}))`;
+      // pg_advisory_xact_lock returns PostgreSQL's void type. Wrap it in a
+      // subquery and return a scalar so Prisma can deserialize the lock query.
+      await tx.$queryRaw<{ locked: number }[]>`
+        SELECT 1 AS "locked"
+        FROM (SELECT pg_advisory_xact_lock(hashtext(${`expense-payment:${params.id}`}))) AS lock_guard
+      `;
 
       const expense = await tx.expenseRequest.findUnique({ where: { id: params.id } });
       if (!expense) throw new Error("支出申请不存在");
@@ -46,6 +52,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       const flowAmount = expenseCurrency === accountCurrency
         ? expense.amount
         : expense.amount.mul(exchangeRate).toDecimalPlaces(2);
+      const flowExchangeRate = normalizeCashFlowExchangeRateToCny(
+        accountCurrency,
+        exchangeRate.toString(),
+      );
+      if (!flowExchangeRate) throw new Error("付款汇率必须大于 0");
 
       const paymentVoucher = serializeVoucher(expense.voucher);
       const transferVoucher = serializeVoucher(body.transferVoucher);
@@ -66,7 +77,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           paymentVoucher,
           transferVoucher,
           status: CashFlowStatus.CONFIRMED,
-          exchangeRate: expenseCurrency === accountCurrency ? new Prisma.Decimal(1) : exchangeRate,
+          exchangeRate: new Prisma.Decimal(flowExchangeRate),
           storeId: expense.storeId,
           storeName: expense.storeName,
         },

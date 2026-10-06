@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest) {
       });
       return saved;
     });
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true, id: mapping.id });
   } catch (error: any) {
     console.error("[Warehouse SKU Mappings]", error);
@@ -127,6 +129,7 @@ export async function PATCH(request: NextRequest) {
     const id = String(body?.id || "").trim();
     if (!id || typeof body?.enabled !== "boolean") return NextResponse.json({ error: "状态参数无效" }, { status: 400 });
     await prisma.warehouseSkuMapping.update({ where: { id }, data: { enabled: body.enabled } });
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("[Warehouse SKU Mappings]", error);

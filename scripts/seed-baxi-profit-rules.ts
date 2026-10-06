@@ -20,6 +20,14 @@ type WarehouseTier = {
   baseFee: number;
 };
 
+type PackagingTier = {
+  minWeightKg: number | null;
+  maxWeightKg: number | null;
+  minInclusive: boolean;
+  maxInclusive: boolean;
+  baseFee: number;
+};
+
 const globeTiers = [
   [0, 1, 2.5], [1, 3, 3.5], [3, 5, 6], [5, 10, 8], [10, 20, 14],
   [20, 30, 20], [30, 40, 30], [40, 50, 33], [50, 60, 40], [60, 70, 47],
@@ -31,6 +39,16 @@ const globeTiers = [
   maxLengthCm: null,
   maxWidthCm: null,
   maxHeightCm: null,
+  baseFee: Number(baseFee),
+}));
+
+const globePackagingTiers: PackagingTier[] = [
+  [0, 3, 1], [3, 10, 10], [10, 20, 20], [20, 50, 25],
+].map(([minWeightKg, maxWeightKg, baseFee]) => ({
+  minWeightKg,
+  maxWeightKg,
+  minInclusive: false,
+  maxInclusive: true,
   baseFee: Number(baseFee),
 }));
 
@@ -112,6 +130,7 @@ async function upsertWarehouseRule(
     overweightFeePerKg: number;
     notes: string;
     feeTiers: WarehouseTier[];
+    packagingFeeTiers?: PackagingTier[];
   },
 ) {
   const mapping = await db.tikTokWarehouseMapping.findFirst({
@@ -149,6 +168,12 @@ async function upsertWarehouseRule(
   await db.warehouseFulfillmentFeeTier.createMany({
     data: data.feeTiers.map((tier) => ({ ruleId: saved.id, ...tier })),
   });
+  await db.warehouseFulfillmentPackagingFeeTier.deleteMany({ where: { ruleId: saved.id } });
+  if (data.packagingFeeTiers?.length) {
+    await db.warehouseFulfillmentPackagingFeeTier.createMany({
+      data: data.packagingFeeTiers.map((tier) => ({ ruleId: saved.id, ...tier })),
+    });
+  }
 }
 
 async function main() {
@@ -190,12 +215,14 @@ async function main() {
 
     await upsertWarehouseRule(db, WAREHOUSES.globe, "2026-06-05", {
       pricingMode: "WEIGHT_TIER",
+      billingUnit: "INTERNAL_COMPONENT",
       baseOrderFee: 1,
       additionalUnitFee: 0.5,
       multiSkuFee: 0,
       overweightThresholdKg: 70,
       overweightFeePerKg: 0.1,
       feeTiers: globeTiers,
+      packagingFeeTiers: globePackagingTiers,
       notes: "环球盛通：计费重取实重和体积重较大值，体积除数 6000；包材 R$1/单，第二件起 R$0.5/件。",
     });
     await upsertWarehouseRule(db, WAREHOUSES.panlian, "2026-06-03", {

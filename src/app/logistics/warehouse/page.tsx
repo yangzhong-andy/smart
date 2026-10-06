@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { 
   Warehouse, Plus, Download, Pencil, Trash2, 
@@ -28,6 +28,7 @@ import {
   FlashyLogisticsCardShell,
   getWarehouseFlashyTheme,
 } from "@/components/logistics/FlashyLogisticsCardShell";
+import WarehouseFundLedger from "@/components/logistics/WarehouseFundLedger";
 
 // 表单数据类型
 interface WarehouseFormData {
@@ -45,6 +46,24 @@ interface WarehouseFormData {
   rechargeTotal?: string;
   consumedAmount?: string;
   notes: string;
+  storageFreeDays: string;
+  storageDailyRate: string;
+  storageCurrency: string;
+  storageEffectiveFrom: string;
+  storageEffectiveTo: string;
+  storageNotes: string;
+}
+
+interface WarehouseStorageRule {
+  id: string;
+  warehouseId: string;
+  freeDays: number;
+  dailyRate: number;
+  currency: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  enabled: boolean;
+  notes?: string | null;
 }
 
 // 位置反向映射
@@ -68,7 +87,13 @@ const initialFormData: WarehouseFormData = {
   locationType: "国内仓",
   warehouseType: "DOMESTIC",
   status: "启用",
-  notes: ""
+  notes: "",
+  storageFreeDays: "",
+  storageDailyRate: "",
+  storageCurrency: "BRL",
+  storageEffectiveFrom: new Date().toISOString().slice(0, 10),
+  storageEffectiveTo: "",
+  storageNotes: "",
 };
 
 export default function WarehousePage() {
@@ -76,6 +101,7 @@ export default function WarehousePage() {
   // 使用统一 Hook 获取数据
   const { warehouses, isLoading, mutate } = useWarehouses();
   const { createWarehouse, updateWarehouse, deleteWarehouse } = useWarehouseActions();
+  const [storageRules, setStorageRules] = useState<WarehouseStorageRule[]>([]);
 
   // 筛选状态
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -88,7 +114,14 @@ export default function WarehousePage() {
   const [form, setForm] = useState<WarehouseFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const list = Array.isArray(warehouses) ? warehouses : [];
+  const list = useMemo(() => Array.isArray(warehouses) ? warehouses : [], [warehouses]);
+
+  useEffect(() => {
+    fetch("/api/warehouse-storage-rules")
+      .then((response) => response.ok ? response.json() : [])
+      .then((rules) => setStorageRules(Array.isArray(rules) ? rules : []))
+      .catch(() => setStorageRules([]));
+  }, []);
 
   // 统计信息
   const stats = useMemo(() => ({
@@ -152,7 +185,13 @@ export default function WarehousePage() {
         locationType: locLabel,
         warehouseType: warehouse.type,
         status: warehouse.isActive ? "启用" : "停用",
-        notes: warehouse.notes || ""
+        notes: warehouse.notes || "",
+        storageFreeDays: String(storageRules.find((rule) => rule.warehouseId === warehouse.id)?.freeDays ?? ""),
+        storageDailyRate: String(storageRules.find((rule) => rule.warehouseId === warehouse.id)?.dailyRate ?? ""),
+        storageCurrency: storageRules.find((rule) => rule.warehouseId === warehouse.id)?.currency || "BRL",
+        storageEffectiveFrom: storageRules.find((rule) => rule.warehouseId === warehouse.id)?.effectiveFrom || initialFormData.storageEffectiveFrom,
+        storageEffectiveTo: storageRules.find((rule) => rule.warehouseId === warehouse.id)?.effectiveTo || "",
+        storageNotes: storageRules.find((rule) => rule.warehouseId === warehouse.id)?.notes || "",
       });
     } else {
       setEditingWarehouse(null);
@@ -196,10 +235,32 @@ export default function WarehousePage() {
         notes: form.notes.trim() || undefined
       };
 
+      let savedWarehouseId = editingWarehouse?.id;
       if (editingWarehouse) {
-        await updateWarehouse(editingWarehouse.id, payload);
+        const saved = await updateWarehouse(editingWarehouse.id, payload);
+        savedWarehouseId = saved?.id || editingWarehouse.id;
       } else {
-        await createWarehouse(payload);
+        const saved = await createWarehouse(payload);
+        savedWarehouseId = saved?.id;
+      }
+
+      if (form.warehouseType === "OVERSEAS" && savedWarehouseId && form.storageDailyRate.trim()) {
+        const response = await fetch("/api/warehouse-storage-rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            warehouseId: savedWarehouseId,
+            freeDays: Number(form.storageFreeDays || 0),
+            dailyRate: Number(form.storageDailyRate),
+            currency: form.storageCurrency,
+            effectiveFrom: form.storageEffectiveFrom,
+            effectiveTo: form.storageEffectiveTo || null,
+            notes: form.storageNotes.trim() || null,
+          }),
+        });
+        if (!response.ok) throw new Error((await response.json()).error || "仓储费规则保存失败");
+        const rulesResponse = await fetch("/api/warehouse-storage-rules");
+        if (rulesResponse.ok) setStorageRules(await rulesResponse.json());
       }
 
       handleCloseModal();
@@ -349,6 +410,7 @@ export default function WarehousePage() {
           onClose={handleCloseModal}
         />
       )}
+      <WarehouseFundLedger />
       {confirmDialog}
     </div>
   );
@@ -382,6 +444,7 @@ function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProps) {
         as="div"
         theme={theme}
         seed={warehouse.id}
+        staticMode
         contentMinHeightClass="min-h-[280px]"
       >
         <div className="flex items-start justify-between gap-2">
@@ -470,12 +533,19 @@ function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProps) {
             </div>
           )}
           {warehouse.type === "OVERSEAS" && (
-            <div className="border-t border-white/5 pt-3 space-y-1 text-xs text-white/55">
+            <div className="mt-auto border-t border-white/10 pt-3">
               {(warehouse.fundAccounts || []).map((account) => (
-                <div key={account.currency} className="space-y-1 border-b border-white/5 pb-2 last:border-0">
-                  <div className="flex justify-between"><span>累计充值</span><span className="font-mono text-emerald-300/90">{account.currency} {account.totalCredit.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>累计扣费</span><span className="font-mono text-rose-300/80">{account.currency} {account.totalDebit.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span className="text-white/70">可用余额</span><span className="font-mono font-bold text-white/90">{account.currency} {account.balance.toFixed(2)}</span></div>
+                <div key={account.currency} className="rounded-xl border border-cyan-400/20 bg-slate-950/65 px-4 py-3">
+                  <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.12em] text-cyan-200/70">
+                    <span>可用余额</span><span>{account.currency}</span>
+                  </div>
+                  <div className="mt-1 font-mono text-2xl font-bold leading-tight tracking-tight text-white tabular-nums sm:text-3xl">
+                    {account.balance.toFixed(2)}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-white/10 pt-2 text-[11px]">
+                    <div><div className="text-white/45">累计充值</div><div className="mt-0.5 font-mono text-emerald-300 tabular-nums">{account.totalCredit.toFixed(2)}</div></div>
+                    <div className="text-right"><div className="text-white/45">累计扣费</div><div className="mt-0.5 font-mono text-rose-300 tabular-nums">{account.totalDebit.toFixed(2)}</div></div>
+                  </div>
                 </div>
               ))}
               {!warehouse.fundAccounts?.length && <div className="text-white/40">暂无已付款预存资金</div>}
@@ -636,6 +706,39 @@ function WarehouseModal({ form, setForm, isEditing, isSubmitting, onSave, onClos
                 placeholder="可选：仓库相关备注信息"
               />
             </label>
+
+            {form.warehouseType === "OVERSEAS" && (
+              <div className="col-span-2 rounded-xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+                <div className="mb-3">
+                  <div className="text-sm font-semibold text-cyan-100">仓储费规则</div>
+                  <div className="mt-1 text-xs text-slate-500">入库后先享受免仓期；超过免仓期后，按实际库存体积 × 每立方米每天单价计提。</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="block space-y-1">
+                    <span className="text-sm text-slate-300">免仓天数</span>
+                    <input type="number" min={0} value={form.storageFreeDays} onChange={(e) => setForm(f => ({ ...f, storageFreeDays: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400" placeholder="例如 30" />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-sm text-slate-300">每天 / CBM 单价</span>
+                    <input type="number" min={0} step="0.000001" value={form.storageDailyRate} onChange={(e) => setForm(f => ({ ...f, storageDailyRate: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400" placeholder="例如 0.80" />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-sm text-slate-300">计费币种</span>
+                    <select value={form.storageCurrency} onChange={(e) => setForm(f => ({ ...f, storageCurrency: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400">
+                      <option value="BRL">BRL</option><option value="CNY">CNY</option><option value="USD">USD</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-sm text-slate-300">规则生效日期</span>
+                    <input type="date" value={form.storageEffectiveFrom} onChange={(e) => setForm(f => ({ ...f, storageEffectiveFrom: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400" />
+                  </label>
+                  <label className="block space-y-1 col-span-2">
+                    <span className="text-sm text-slate-300">仓储费备注</span>
+                    <input value={form.storageNotes} onChange={(e) => setForm(f => ({ ...f, storageNotes: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400" placeholder="例如：环球盛通报价，按 CBM / 天" />
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">

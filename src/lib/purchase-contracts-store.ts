@@ -175,7 +175,7 @@ export async function approvePurchaseContract(
   result: "通过" | "拒绝",
   notes: string,
   approvedBy: string
-): Promise<boolean> {
+): Promise<PurchaseContract | null> {
   try {
     const res = await fetch(`/api/purchase-contracts/${contractId}/approve`, {
       method: "POST",
@@ -186,9 +186,10 @@ export async function approvePurchaseContract(
         notes: notes.trim() || undefined
       })
     });
-    return res.ok;
+    if (!res.ok) return null;
+    return await res.json() as PurchaseContract;
   } catch {
-    return false;
+    return null;
   }
 }
 

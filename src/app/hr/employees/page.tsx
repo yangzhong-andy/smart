@@ -79,9 +79,9 @@ export default function EmployeesPage() {
       dedupingInterval: 60000,
     }
   );
-  const employees = (Array.isArray(employeesDataRaw)
+  const employees = useMemo<Employee[]>(() => (Array.isArray(employeesDataRaw)
     ? employeesDataRaw
-    : employeesDataRaw?.data ?? []) as Employee[];
+    : employeesDataRaw?.data ?? []) as Employee[], [employeesDataRaw]);
 
   const { data: departmentsDataRaw } = useSWR<any>(
     "/api/departments?page=1&pageSize=500",
@@ -92,9 +92,9 @@ export default function EmployeesPage() {
       dedupingInterval: 600000,
     }
   );
-  const departmentsData = (Array.isArray(departmentsDataRaw)
+  const departmentsData = useMemo<DepartmentFromAPI[]>(() => (Array.isArray(departmentsDataRaw)
     ? departmentsDataRaw
-    : departmentsDataRaw?.data ?? []) as DepartmentFromAPI[];
+    : departmentsDataRaw?.data ?? []) as DepartmentFromAPI[], [departmentsDataRaw]);
 
   const departments = useMemo(
     () => departmentsData.map((dept) => dept.name),

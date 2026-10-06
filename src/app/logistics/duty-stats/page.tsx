@@ -34,7 +34,7 @@ export default function DutyStatsPage() {
   });
 
   const { data, isLoading, mutate } = useSWR("/api/containers?page=1&pageSize=500", fetcher);
-  const containers: Container[] = Array.isArray(data?.data) ? data.data : [];
+  const containers = useMemo<Container[]>(() => Array.isArray(data?.data) ? data.data : [], [data?.data]);
 
   // 过滤有关税记录的柜子
   const dutyContainers = useMemo(() => {

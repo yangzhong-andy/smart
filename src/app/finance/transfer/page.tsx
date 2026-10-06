@@ -5,11 +5,12 @@ import { toast } from "sonner";
 import useSWR, { mutate as swrMutate } from "swr";
 import Link from "next/link";
 import { type BankAccount } from "@/lib/finance-store";
-import { ArrowRight, Search, TrendingUp, TrendingDown, Coins } from "lucide-react";
+import { ArrowRight, Download, Search, TrendingUp, TrendingDown, Coins } from "lucide-react";
 import TransferEntry from "../cash-flow/components/TransferEntry";
 import { renderGroupedAccountOptions } from "@/lib/account-grouped-options";
 import { Pagination, usePaginationState, paginate } from "@/components/Pagination";
 import ImageUploader from "@/components/ImageUploader";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 type CashFlow = {
   id: string;
@@ -55,10 +56,34 @@ type TransferRecord = {
   createdAt: string;
   outFlowId: string;
   inFlowId: string;
+  status: "pending" | "confirmed";
+  businessNumber: string;
 };
 
-// SWR fetcher
-const fetcher = (url: string) => fetch(url).then(res => res.json());
+// 兼容网关/网络异常时的空响应，避免直接 res.json() 触发
+// "Unexpected end of JSON input"，并保留可读的错误信息。
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  const raw = await response.text();
+  if (!response.ok) {
+    let message = `请求失败（${response.status}）`;
+    if (raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw) as { error?: string; message?: string };
+        message = parsed.error || parsed.message || message;
+      } catch {
+        message = raw.trim().slice(0, 200) || message;
+      }
+    }
+    throw new Error(message);
+  }
+  if (!raw.trim()) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("服务器返回的数据格式无效，请稍后重试");
+  }
+};
 const TRANSFER_FLOW_URL = "/api/cash-flow?page=1&pageSize=500&categories=%E5%86%85%E9%83%A8%E5%88%92%E6%8B%A8%2C%E6%8D%A2%E6%B1%87&includeVouchers=false";
 
 const currency = (n: number, curr: string = "CNY") =>
@@ -89,6 +114,7 @@ const formatDate = (d: string) => {
 };
 
 export default function TransferPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   // 使用 SWR 加载流水数据（分页接口返回 { data, pagination }）
   const { data: cashFlowData } = useSWR<CashFlow[] | { data: CashFlow[]; pagination: unknown }>(TRANSFER_FLOW_URL, fetcher, {
     revalidateOnFocus: false,
@@ -97,7 +123,7 @@ export default function TransferPage() {
     dedupingInterval: 5000
   });
 
-  const cashFlowListRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []);
+  const cashFlowListRaw = useMemo(() => Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData?.data ?? []), [cashFlowData]);
 
   // 使用 SWR 加载账户数据（分页接口返回 { data, pagination }）
   const { data: accountsData } = useSWR<BankAccount[] | { data: BankAccount[]; pagination: unknown }>('/api/accounts?page=1&pageSize=500', fetcher, {
@@ -107,7 +133,7 @@ export default function TransferPage() {
     dedupingInterval: 5000
   });
 
-  const accounts = Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []);
+  const accounts = useMemo(() => Array.isArray(accountsData) ? accountsData : (accountsData?.data ?? []), [accountsData]);
   
   // 根据流水计算实时余额（与账户列表页面一致）
   // 优先使用 initialCapital（初始资金），没有则用 originalBalance
@@ -193,12 +219,12 @@ export default function TransferPage() {
     
     Object.entries(grouped).forEach(([relatedId, flows]) => {
       if (flows.length !== 2) return; // 必须是两条记录（转出和转入）
-      
+
       const outFlow = flows.find((f) => String(f.type || "").toLowerCase() === "expense");
       const inFlow = flows.find((f) => String(f.type || "").toLowerCase() === "income");
-      
+
       if (!outFlow || !inFlow) return;
-      
+
       // 从 exchangeRate 字段读取（优先），否则从备注中解析
       const remarkText = ((outFlow as any).notes || (outFlow as any).remark || "");
       let exchangeRate = Number((outFlow as any).exchangeRate) || 0;
@@ -210,7 +236,7 @@ export default function TransferPage() {
 
       // 直接显示完整备注
       const remark = remarkText.replace(/汇率\s*[\d.]+（手动汇率）?，?/g, "").trim();
-      
+
       transferRecords.push({
         id: relatedId,
         date: outFlow.date,
@@ -263,60 +289,14 @@ export default function TransferPage() {
       
       // 转入账户筛选
       if (filterToAccount !== "all" && transfer.toAccountId !== filterToAccount) return false;
+
+      // 划拨类型筛选
+      if (filterTransferType !== "all" && transfer.category !== filterTransferType) return false;
       
       // 关键词搜索
       if (searchKeyword.trim()) {
         const keyword = searchKeyword.toLowerCase();
-        // 确认换汇（PENDING → CONFIRMED）
-  const handleConfirmTransfer = async (transferId: string) => {
-    const transfer = filteredTransfers.find((t) => t.id === transferId);
-    if (!transfer) {
-      toast.error("未找到记录");
-      return;
-    }
-    const flowIds = [transfer.outFlowId, transfer.inFlowId].filter(Boolean);
-    if (flowIds.length === 0) {
-      toast.error("未找到关联流水ID");
-      return;
-    }
-    try {
-      for (const flowId of flowIds) {
-        const res = await fetch(`/api/cash-flow/${flowId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "confirmed" }),
-          credentials: "same-origin",
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || "更新失败");
-        }
-      }
-      swrMutate(TRANSFER_FLOW_URL);
-      swrMutate("/api/accounts?page=1&pageSize=500");
-      toast.success("换汇已确认");
-    } catch (e: any) {
-      toast.error(e?.message || "确认失败");
-    }
-  };
-
-  // 删除换汇（PENDING 状态可删除）
-  const handleDeleteTransfer = async (transferId: string) => {
-    if (!confirm("确定要删除这笔待确认的换汇记录吗？")) return;
-    try {
-      const transfer = filteredTransfers.find((t) => t.id === transferId);
-      const flowIds = transfer ? [transfer.outFlowId, transfer.inFlowId].filter(Boolean) : [];
-      for (const flowId of flowIds) {
-        await fetch(`/api/cash-flow/${flowId}`, { method: "DELETE" });
-      }
-      swrMutate(TRANSFER_FLOW_URL);
-      toast.success("已删除");
-    } catch {
-      toast.error("删除失败");
-    }
-  };
-
-  return (
+        return (
           transfer.fromAccountName.toLowerCase().includes(keyword) ||
           transfer.toAccountName.toLowerCase().includes(keyword) ||
           transfer.remark.toLowerCase().includes(keyword) ||
@@ -326,13 +306,133 @@ export default function TransferPage() {
           String(Math.abs(transfer.toAmount || 0)).includes(keyword)
         );
       }
-      
-      // 划拨类型筛选
-      if (filterTransferType !== "all" && transfer.category !== filterTransferType) return false;
-      
+
       return true;
     });
   }, [transfers, filterDateFrom, filterDateTo, filterFromAccount, filterToAccount, searchKeyword, filterTransferType]);
+
+  // 导出当前筛选条件下的全部划拨记录（不受当前分页影响）。使用带 BOM 的 CSV，
+  // 这样用户可以直接用 Excel 打开，并保留账户、币种和金额等原始字段。
+  const handleExport = () => {
+    if (filteredTransfers.length === 0) {
+      toast.info("当前筛选没有可导出的划拨记录");
+      return;
+    }
+
+    const csvCell = (value: unknown) => {
+      const text = value === null || value === undefined ? "" : String(value);
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const headers = [
+      "类型",
+      "日期",
+      "转出账户",
+      "转出币种",
+      "转出金额",
+      "转入账户",
+      "转入币种",
+      "转入金额",
+      "汇率",
+      "状态",
+      "业务单号",
+      "备注",
+      "凭证",
+      "创建时间",
+    ];
+
+    const rows = filteredTransfers.map((transfer) => [
+      transfer.category === "换汇" ? "换汇" : "划拨",
+      formatDate(transfer.date),
+      transfer.fromAccountName,
+      transfer.fromCurrency,
+      transfer.fromAmount,
+      transfer.toAccountName,
+      transfer.toCurrency,
+      transfer.toAmount,
+      transfer.exchangeRate,
+      transfer.status === "pending" ? "待确认" : "已确认",
+      transfer.businessNumber,
+      transfer.remark,
+      transfer.hasVoucher ? "有" : "无",
+      formatDate(transfer.createdAt),
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(csvCell).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `内部划拨-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success(`已导出 ${filteredTransfers.length} 条划拨记录`);
+  };
+
+  const handleConfirmTransfer = async (transferId: string) => {
+    const transfer = transfers.find((item) => item.id === transferId);
+    if (!transfer) {
+      toast.error("未找到记录");
+      return;
+    }
+    const flowIds = [transfer.outFlowId, transfer.inFlowId].filter(Boolean);
+    try {
+      for (const flowId of flowIds) {
+        const res = await fetch(`/api/cash-flow/${flowId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "confirmed" }),
+          credentials: "same-origin",
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          let errorMessage = "更新失败";
+          if (body.trim()) {
+            try {
+              const error = JSON.parse(body) as { error?: string; message?: string };
+              errorMessage = error.error || error.message || errorMessage;
+            } catch {
+              errorMessage = body.trim().slice(0, 200) || errorMessage;
+            }
+          }
+          throw new Error(errorMessage);
+        }
+      }
+      await Promise.all([
+        swrMutate(TRANSFER_FLOW_URL),
+        swrMutate("/api/accounts?page=1&pageSize=500"),
+      ]);
+      toast.success(transfer.category === "内部划拨" ? "划拨已确认" : "换汇已确认");
+    } catch (error: any) {
+      toast.error(error?.message || "确认失败");
+    }
+  };
+
+  const handleDeleteTransfer = async (transferId: string) => {
+    if (typeof window !== "undefined" && !window.confirm("确定要删除这笔待确认的换汇记录吗？")) return;
+    const transfer = transfers.find((item) => item.id === transferId);
+    if (!transfer) {
+      toast.error("未找到记录");
+      return;
+    }
+    try {
+      for (const flowId of [transfer.outFlowId, transfer.inFlowId].filter(Boolean)) {
+        const res = await fetch(`/api/cash-flow/${flowId}`, { method: "DELETE" });
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({}));
+          throw new Error(error.error || "删除失败");
+        }
+      }
+      await swrMutate(TRANSFER_FLOW_URL);
+      toast.success("已删除");
+    } catch (error: any) {
+      toast.error(error?.message || "删除失败");
+    }
+  };
 
   // 统计信息
   const stats = useMemo(() => {
@@ -428,12 +528,22 @@ export default function TransferPage() {
             统一管理所有内部账户划拨记录，清晰展示转出和转入信息
           </p>
         </div>
-        <button
-          onClick={() => setActiveModal("transfer")}
-          className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
-        >
-          + 新增划拨
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-700 bg-slate-800/80 text-slate-200 text-sm font-medium hover:bg-slate-700 transition-colors"
+            title="导出当前筛选的全部记录"
+          >
+            <Download className="h-4 w-4" />
+            导出数据
+          </button>
+          <button
+            onClick={() => setActiveModal("transfer")}
+            className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
+          >
+            + 新增划拨
+          </button>
+        </div>
       </header>
 
       {/* 统计卡片 */}
@@ -720,10 +830,26 @@ export default function TransferPage() {
                     {transfer.status === "pending" ? (
                       <div className="flex gap-1 justify-center">
                         <button
-                          onClick={() => { console.log("confirm clicked", transfer.id); handleConfirmTransfer(transfer.id); }}
+                          type="button"
+                          onClick={async () => {
+                            const confirmed = await confirm({
+                              title: transfer.category === "内部划拨" ? "确认同币种划拨" : "确认换汇",
+                              message: [
+                                `转出：${transfer.fromAccountName}`,
+                                `转出金额：${transfer.fromCurrency} ${Math.abs(transfer.fromAmount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                `转入：${transfer.toAccountName}`,
+                                `转入金额：${transfer.toCurrency} ${transfer.toAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                "确认后将把转出和转入两条流水标记为已确认。",
+                              ].join("\n"),
+                              confirmText: transfer.category === "内部划拨" ? "确认划拨" : "确认换汇",
+                              cancelText: "取消",
+                              type: "warning",
+                            });
+                            if (confirmed) await handleConfirmTransfer(transfer.id);
+                          }}
                           className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-100 hover:bg-emerald-500/20"
                         >
-                          确认
+                          {transfer.category === "内部划拨" ? "确认划拨" : "确认换汇"}
                         </button>
                         <button
                           onClick={() => handleDeleteTransfer(transfer.id)}
@@ -782,6 +908,7 @@ export default function TransferPage() {
                       headers: { "Content-Type": "application/json" },
                       credentials: "same-origin",
                       body: JSON.stringify({
+                        appendVouchers: true,
                         paymentVoucher: voucherStr,
                         transferVoucher: voucherStr,
                       }),
@@ -885,8 +1012,17 @@ export default function TransferPage() {
               });
               
               if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || '创建失败');
+                const raw = await response.text().catch(() => "");
+                let message = "创建失败";
+                if (raw.trim()) {
+                  try {
+                    const error = JSON.parse(raw) as { error?: string; message?: string };
+                    message = error.error || error.message || message;
+                  } catch {
+                    message = raw.trim().slice(0, 200) || message;
+                  }
+                }
+                throw new Error(message);
               }
               
               // 使用 SWR 的 mutate 刷新数据
@@ -913,6 +1049,7 @@ export default function TransferPage() {
           }}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

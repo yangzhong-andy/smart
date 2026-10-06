@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +82,20 @@ export async function GET(request: NextRequest) {
     const auth = await requireApiUser(request);
     if (auth.response) return auth.response;
 
-    const [shops, stores, warehouses, shopRules, warehouseRules] = await Promise.all([
+    const [tiktokShops, shopeeShops, mercadoLivreAccounts, stores, warehouses, shopRules, warehouseRules] = await Promise.all([
       prisma.tikTokShopSetting.findMany({
         select: { shopId: true, shopName: true, region: true, bankAccountId: true },
         orderBy: { shopName: "asc" },
+      }),
+      prisma.shopeeShopSetting.findMany({
+        where: { status: "active" },
+        select: { shopId: true, shopName: true, region: true, currency: true, store: { select: { name: true, currency: true } } },
+        orderBy: { shopName: "asc" },
+      }),
+      prisma.mercadoLivreAccount.findMany({
+        where: { status: "active" },
+        select: { userId: true, nickname: true, country: true, currency: true, store: { select: { name: true, currency: true } } },
+        orderBy: { nickname: "asc" },
       }),
       prisma.store.findMany({ select: { id: true, name: true, accountId: true, currency: true } }),
       prisma.warehouse.findMany({
@@ -108,12 +119,25 @@ export async function GET(request: NextRequest) {
     const storeByAccount = new Map(stores.map((store) => [store.accountId, store]));
 
     return NextResponse.json({
-      shops: shops.map((shop) => ({
+      shops: [...tiktokShops.map((shop) => ({
+        platform: "TIKTOK",
         id: shop.shopId,
         name: (shop.bankAccountId && storeByAccount.get(shop.bankAccountId)?.name) || shop.shopName,
         region: shop.region,
         currency: (shop.bankAccountId && storeByAccount.get(shop.bankAccountId)?.currency) || (shop.region === "US" ? "USD" : "BRL"),
-      })),
+      })), ...shopeeShops.map((shop) => ({
+        platform: "SHOPEE",
+        id: shop.shopId,
+        name: shop.store?.name || shop.shopName || shop.shopId,
+        region: shop.region,
+        currency: shop.store?.currency || shop.currency || (shop.region === "US" ? "USD" : "BRL"),
+      })), ...mercadoLivreAccounts.map((account) => ({
+        platform: "MERCADO_LIVRE",
+        id: account.userId,
+        name: account.store?.name || account.nickname || `Mercado Livre ${account.userId}`,
+        region: account.country,
+        currency: account.store?.currency || account.currency || "BRL",
+      }))],
       warehouses,
       shopRules: shopRules.map((rule) => ({
         ...rule,
@@ -179,6 +203,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (kind === "shop") {
+      const platform = String(body?.platform || "TIKTOK").trim().toUpperCase();
       const shopId = String(body?.shopId || "").trim();
       const costType = String(body?.costType || "").trim().toUpperCase();
       const ratePercent = finiteNumber(body?.ratePercent);
@@ -188,23 +213,27 @@ export async function POST(request: NextRequest) {
       if (costType === "PLATFORM_FULFILLMENT" && Array.isArray(body?.tiers) && tiers.length !== body.tiers.length) {
         return NextResponse.json({ error: "平台费用阶梯参数无效" }, { status: 400 });
       }
-      if (!shopId || !SHOP_COST_TYPES.has(costType) || ratePercent < 0 || ratePercent > 100 || fixedPerOrder < 0 || fixedPerUnit < 0) {
+      if (!shopId || !["TIKTOK", "SHOPEE", "MERCADO_LIVRE"].includes(platform) || !SHOP_COST_TYPES.has(costType) || ratePercent < 0 || ratePercent > 100 || fixedPerOrder < 0 || fixedPerUnit < 0) {
         return NextResponse.json({ error: "店铺成本规则参数无效" }, { status: 400 });
       }
-      const shop = await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } });
+      const shop = platform === "SHOPEE"
+        ? await prisma.shopeeShopSetting.findFirst({ where: { shopId, status: "active" }, select: { shopId: true } })
+        : platform === "MERCADO_LIVRE"
+          ? await prisma.mercadoLivreAccount.findFirst({ where: { userId: shopId, status: "active" }, select: { userId: true } })
+          : await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } });
       if (!shop) return NextResponse.json({ error: "店铺不存在" }, { status: 400 });
       const rule = await prisma.$transaction(async (tx) => {
         const saved = await tx.profitShopCostRule.upsert({
           where: {
             platform_shopId_costType_effectiveFrom: {
-              platform: "TIKTOK",
+              platform,
               shopId,
               costType,
               effectiveFrom,
             },
           },
           create: {
-            platform: "TIKTOK",
+            platform,
             shopId,
             costType,
             ratePercent,
@@ -235,6 +264,7 @@ export async function POST(request: NextRequest) {
         }
         return saved;
       });
+      await clearCacheByPrefix("profit-report");
       return NextResponse.json({ success: true, id: rule.id });
     }
 
@@ -274,12 +304,16 @@ export async function POST(request: NextRequest) {
       ) {
         return NextResponse.json({ error: "仓库代发规则参数无效" }, { status: 400 });
       }
-      const [warehouse, shop] = await Promise.all([
+      const [warehouse, matchingShops] = await Promise.all([
         prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, type: true } }),
-        shopId ? prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } }) : Promise.resolve(null),
+        shopId ? Promise.all([
+          prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } }),
+          prisma.shopeeShopSetting.findFirst({ where: { shopId, status: "active" }, select: { shopId: true } }),
+          prisma.mercadoLivreAccount.findFirst({ where: { userId: shopId, status: "active" }, select: { userId: true } }),
+        ]) : Promise.resolve([]),
       ]);
       if (!warehouse || warehouse.type !== "OVERSEAS") return NextResponse.json({ error: "海外仓不存在" }, { status: 400 });
-      if (shopId && !shop) return NextResponse.json({ error: "店铺不存在" }, { status: 400 });
+      if (shopId && !matchingShops.some(Boolean)) return NextResponse.json({ error: "店铺不存在" }, { status: 400 });
       const data = {
         warehouseId,
         shopId,
@@ -319,6 +353,7 @@ export async function POST(request: NextRequest) {
         }
         return saved;
       });
+      await clearCacheByPrefix("profit-report");
       return NextResponse.json({ success: true, id: rule.id });
     }
 
@@ -339,6 +374,7 @@ export async function DELETE(request: NextRequest) {
     if (kind === "shop") await prisma.profitShopCostRule.delete({ where: { id } });
     else if (kind === "warehouse") await prisma.warehouseFulfillmentRule.delete({ where: { id } });
     else return NextResponse.json({ error: "成本规则类型无效" }, { status: 400 });
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("[Profit Cost Rules]", error);

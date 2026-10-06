@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from "react";
 import useSWR from "swr";
-import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship, ClipboardCheck, ShieldAlert, WalletCards, X, Gift } from "lucide-react";
+import { Package, Warehouse as WarehouseIcon, ChevronDown, ChevronUp, Download, Ship, ClipboardCheck, ShieldAlert, WalletCards, X, Gift, Boxes, RefreshCw } from "lucide-react";
 import { PageHeader, StatCard, ActionButton, EmptyState } from "@/components/ui";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
+import SkuConversionPanel from "./SkuConversionPanel";
 
 type StockItem = {
   id: string;
@@ -97,24 +98,93 @@ type OverseasStockAudit = {
   coverage: { missingWarehouseOrders: number; missingSkuOrders: number };
 };
 
+type PlatformOutboundSummary = {
+  warehouseId: string | null;
+  warehouseName: string | null;
+  summary: { salesUnits: number; sampleUnits: number; returnUnits: number; totalUnits: number };
+  platforms: Array<{
+    platform: "TIKTOK" | "SHOPEE" | "AMAZON" | "MERCADO_LIVRE";
+    label: string;
+    salesUnits: number;
+    sampleUnits: number;
+    returnUnits: number;
+    totalUnits: number;
+    orderCount: number;
+    warehouseCount: number;
+    hasAggregateHistory: boolean;
+    enabled: boolean;
+    activeFrom: string | null;
+    shopsEnabled: number | null;
+    warehouses: Array<{ warehouseId: string; warehouseName: string; totalUnits: number }>;
+  }>;
+  skus: Array<{
+    variantId: string;
+    skuId: string;
+    productName: string;
+    salesUnits: number;
+    sampleUnits: number;
+    returnUnits: number;
+    totalUnits: number;
+    platforms: Array<{ platform: string; label: string; salesUnits: number; sampleUnits: number; returnUnits: number; totalUnits: number }>;
+    warehouses: Array<{ warehouseId: string; warehouseName: string; salesUnits: number; sampleUnits: number; returnUnits: number; totalUnits: number }>;
+  }>;
+};
+
+type TransitSummary = {
+  inTransitTotal?: number;
+  skus?: Array<{
+    variantId: string | null;
+    skuId: string;
+    productName: string;
+    quantity: number;
+    batchCount: number;
+  }>;
+};
+
+type SummaryDetailType = "current" | "transit" | "available" | "outbound" | "sample";
+
+type SummaryDetailRow = {
+  key: string;
+  skuId: string;
+  productName: string;
+  quantity: number;
+  warehouseBreakdown?: Array<{ label: string; quantity: number }>;
+  platformBreakdown?: Array<{ label: string; quantity: number }>;
+  salesUnits?: number;
+  sampleUnits?: number;
+  returnUnits?: number;
+  batchCount?: number;
+};
+
+const platformOutboundStyle = {
+  TIKTOK: { border: "border-cyan-500/30", background: "bg-cyan-500/5", value: "text-cyan-200", dot: "bg-cyan-400" },
+  SHOPEE: { border: "border-orange-500/30", background: "bg-orange-500/5", value: "text-orange-200", dot: "bg-orange-400" },
+  AMAZON: { border: "border-amber-500/30", background: "bg-amber-500/5", value: "text-amber-200", dot: "bg-amber-400" },
+  MERCADO_LIVRE: { border: "border-sky-500/30", background: "bg-sky-500/5", value: "text-sky-200", dot: "bg-sky-400" },
+} as const;
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function WarehouseInventoryPage() {
+  const [activeView, setActiveView] = useState<"overview" | "conversion" | "records">("overview");
+  const [conversionWarehouseId, setConversionWarehouseId] = useState<string>("");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all");
   const [skuKeyword, setSkuKeyword] = useState<string>("");
   const [productKeyword, setProductKeyword] = useState<string>("");
   const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null);
+  const [summaryDetail, setSummaryDetail] = useState<SummaryDetailType | null>(null);
 
   // 获取仓库列表
   const { data: warehousesRaw } = useSWR<Warehouse[]>("/api/warehouses?noCache=true", fetcher, {
     revalidateOnFocus: false,
   });
-  const warehouses = Array.isArray(warehousesRaw)
-    ? warehousesRaw
-    : (warehousesRaw as any)?.data || [];
+  const warehouses = useMemo(
+    () => Array.isArray(warehousesRaw) ? warehousesRaw : (warehousesRaw as any)?.data || [],
+    [warehousesRaw],
+  );
 
   // 变体「海运中」合计（发运离境后、未入海外仓前；与国内仓 Stock 无关）
-  const { data: transitRaw } = useSWR<{ inTransitTotal?: number }>(
+  const { data: transitRaw } = useSWR<TransitSummary>(
     "/api/inventory/variant-in-transit-total?noCache=true",
     fetcher,
     { revalidateOnFocus: false }
@@ -129,9 +199,19 @@ export default function WarehouseInventoryPage() {
     fetcher,
     { revalidateOnFocus: false }
   );
-  const stocks = Array.isArray(stocksRaw) 
-    ? stocksRaw 
-    : (stocksRaw as any)?.data || [];
+  const stocks = useMemo(
+    () => Array.isArray(stocksRaw) ? stocksRaw : (stocksRaw as any)?.data || [],
+    [stocksRaw],
+  );
+  const platformOutboundUrl = selectedWarehouseId === "all"
+    ? "/api/inventory/platform-outbound"
+    : `/api/inventory/platform-outbound?warehouseId=${encodeURIComponent(selectedWarehouseId)}`;
+  const {
+    data: platformOutbound,
+    error: platformOutboundError,
+    isLoading: isPlatformOutboundLoading,
+    mutate: mutatePlatformOutbound,
+  } = useSWR<PlatformOutboundSummary>(platformOutboundUrl, fetcher, { revalidateOnFocus: false });
   const { data: overseasStockAudit, isLoading: isAuditLoading } = useSWR<OverseasStockAudit>(
     "/api/inventory/overseas-stock-audit",
     fetcher,
@@ -231,13 +311,16 @@ export default function WarehouseInventoryPage() {
       pendingStocktake: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS" && !item.hasFormalStocktake).length,
       ledgerCalibrated: stocks.filter((item: StockItem) => item.warehouseType === "OVERSEAS" && item.reconciliationStatus === "SYSTEM_RECONCILED").length,
     };
-  }, [warehouseStats]);
+  }, [warehouseStats, stocks]);
 
   // 当前选中的仓库
   const selectedWarehouse = warehouses.find((w: Warehouse) => w.id === selectedWarehouseId);
-  const selectedWarehouseStocks = selectedWarehouseId === "all" 
-    ? stocks.filter((s: StockItem) => s.warehouseType === "OVERSEAS")
-    : stocks.filter((s: StockItem) => s.warehouseId === selectedWarehouseId);
+  const selectedWarehouseStocks = useMemo(
+    () => selectedWarehouseId === "all"
+      ? stocks.filter((s: StockItem) => s.warehouseType === "OVERSEAS")
+      : stocks.filter((s: StockItem) => s.warehouseId === selectedWarehouseId),
+    [selectedWarehouseId, stocks],
+  );
   const filteredWarehouseStocks = useMemo(() => {
     const sku = skuKeyword.trim();
     const product = productKeyword.trim().toLowerCase();
@@ -247,6 +330,102 @@ export default function WarehouseInventoryPage() {
       return hitSku && hitProduct;
     });
   }, [selectedWarehouseStocks, skuKeyword, productKeyword]);
+
+  const inventorySkuDetails = useMemo(() => {
+    const details = new Map<string, {
+      key: string;
+      skuId: string;
+      productName: string;
+      currentQty: number;
+      availableQty: number;
+      warehouses: Map<string, { name: string; currentQty: number; availableQty: number }>;
+    }>();
+    for (const item of stocks.filter((stock: StockItem) => stock.warehouseType === "OVERSEAS")) {
+      const row = details.get(item.variantId) || {
+        key: item.variantId,
+        skuId: item.skuId,
+        productName: item.productName,
+        currentQty: 0,
+        availableQty: 0,
+        warehouses: new Map<string, { name: string; currentQty: number; availableQty: number }>(),
+      };
+      row.currentQty += item.qty || 0;
+      row.availableQty += item.availableQty || 0;
+      const warehouse = row.warehouses.get(item.warehouseId) || { name: item.warehouseName, currentQty: 0, availableQty: 0 };
+      warehouse.currentQty += item.qty || 0;
+      warehouse.availableQty += item.availableQty || 0;
+      row.warehouses.set(item.warehouseId, warehouse);
+      details.set(item.variantId, row);
+    }
+    return [...details.values()];
+  }, [stocks]);
+
+  const summaryDetailConfig = useMemo((): {
+    title: string;
+    description: string;
+    quantityLabel: string;
+    total: number;
+    rows: SummaryDetailRow[];
+  } | null => {
+    if (!summaryDetail) return null;
+    if (summaryDetail === "current" || summaryDetail === "available") {
+      const isCurrent = summaryDetail === "current";
+      const rows = inventorySkuDetails.map((item) => ({
+        key: item.key,
+        skuId: item.skuId,
+        productName: item.productName,
+        quantity: isCurrent ? item.currentQty : item.availableQty,
+        warehouseBreakdown: [...item.warehouses.values()].map((warehouse) => ({
+          label: warehouse.name,
+          quantity: isCurrent ? warehouse.currentQty : warehouse.availableQty,
+        })),
+      })).sort((a, b) => b.quantity - a.quantity || a.skuId.localeCompare(b.skuId));
+      return {
+        title: isCurrent ? "当前库存 SKU 明细" : "可用库存 SKU 明细",
+        description: `${selectedWarehouseId === "all" ? "全部海外仓" : selectedWarehouse?.name || "所选仓库"} · ${isCurrent ? "当前库内实物库存" : "当前库存扣除锁定数量"}`,
+        quantityLabel: isCurrent ? "当前库存" : "可用库存",
+        total: isCurrent ? totalStats.totalQty : totalStats.availableQty,
+        rows,
+      };
+    }
+    if (summaryDetail === "transit") {
+      return {
+        title: "真实海运在途 SKU 明细",
+        description: "已发运离境、尚未确认进入海外仓的批次",
+        quantityLabel: "在途数量",
+        total: inTransitVariantTotal,
+        rows: (transitRaw?.skus || []).map((item) => ({
+          key: item.variantId || item.skuId,
+          skuId: item.skuId,
+          productName: item.productName,
+          quantity: item.quantity,
+          batchCount: item.batchCount,
+        })),
+      };
+    }
+    const isSample = summaryDetail === "sample";
+    return {
+      title: isSample ? "达人寄样出库 SKU 明细" : "平台有效出库 SKU 明细",
+      description: `${platformOutbound?.warehouseName || "全部海外仓"} · 已写入库存台账的多平台订单`,
+      quantityLabel: isSample ? "寄样数量" : "有效出库",
+      total: isSample ? platformOutbound?.summary.sampleUnits || 0 : platformOutbound?.summary.totalUnits || 0,
+      rows: (platformOutbound?.skus || []).map((item) => ({
+        key: item.variantId,
+        skuId: item.skuId,
+        productName: item.productName,
+        quantity: isSample ? item.sampleUnits : item.totalUnits,
+        salesUnits: item.salesUnits,
+        sampleUnits: item.sampleUnits,
+        returnUnits: item.returnUnits,
+        warehouseBreakdown: item.warehouses
+          .map((warehouse) => ({ label: warehouse.warehouseName, quantity: isSample ? warehouse.sampleUnits : warehouse.totalUnits }))
+          .filter((warehouse) => warehouse.quantity > 0),
+        platformBreakdown: item.platforms
+          .map((platform) => ({ label: platform.label, quantity: isSample ? platform.sampleUnits : platform.totalUnits }))
+          .filter((platform) => platform.quantity > 0),
+      })).filter((item) => item.quantity > 0).sort((a, b) => b.quantity - a.quantity || a.skuId.localeCompare(b.skuId)),
+    };
+  }, [inTransitVariantTotal, inventorySkuDetails, platformOutbound, selectedWarehouse, selectedWarehouseId, summaryDetail, totalStats.availableQty, totalStats.totalQty, transitRaw?.skus]);
 
   const toggleWarehouse = (id: string) => {
     setExpandedWarehouse(expandedWarehouse === id ? null : id);
@@ -303,7 +482,27 @@ export default function WarehouseInventoryPage() {
         }
       />
 
-      <div className="p-6 space-y-6">
+      <div className="border-b border-slate-800 bg-slate-950 px-6">
+        <div className="flex flex-wrap gap-1">
+          {([
+            { key: "overview", label: "库存总览" },
+            { key: "conversion", label: "SKU拆装" },
+            { key: "records", label: "拆装记录" },
+          ] as const).map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => { setActiveView(item.key); setSummaryDetail(null); }}
+              className={`relative px-4 py-3 text-sm font-medium transition-colors ${activeView === item.key ? "text-cyan-300" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              {item.label}
+              {activeView === item.key && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-cyan-400" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={activeView === "overview" ? "p-6 space-y-6" : "hidden"}>
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <StatCard
@@ -318,49 +517,89 @@ export default function WarehouseInventoryPage() {
             icon={Package}
             iconColor="text-amber-400"
           />
-          <StatCard
-            title="当前库存"
-            value={totalStats.totalQty.toLocaleString("en-US")}
-            icon={Package}
-            iconColor="text-green-400"
-          />
-          <StatCard
-            title="真实海运在途"
-            value={inTransitVariantTotal.toLocaleString("en-US")}
-            icon={Ship}
-            iconColor="text-orange-400"
-          />
-          <StatCard
-            title="可用库存"
-            value={totalStats.availableQty.toLocaleString("en-US")}
-            icon={Package}
-            iconColor="text-cyan-400"
-          />
-          <StatCard
-            title="真实累计出库"
-            value={isAuditLoading ? "..." : (overseasStockAudit?.summary.trueOutboundUnits || 0).toLocaleString("en-US")}
-            icon={Package}
-            iconColor="text-rose-400"
-          />
-          <StatCard
-            title="达人寄样出库"
-            value={isAuditLoading ? "..." : (overseasStockAudit?.summary.sampleUnits || 0).toLocaleString("en-US")}
-            icon={Gift}
-            iconColor="text-pink-400"
-          />
+          <button type="button" onClick={() => setSummaryDetail("current")} className="h-full text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70" aria-label="查看当前库存 SKU 明细">
+            <StatCard title="当前库存" value={totalStats.totalQty.toLocaleString("en-US")} icon={Package} iconColor="text-green-400" className="h-full cursor-pointer">
+              <span className="text-[11px] text-emerald-300/80">点击查看 SKU 明细</span>
+            </StatCard>
+          </button>
+          <button type="button" onClick={() => setSummaryDetail("transit")} className="h-full text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70" aria-label="查看真实海运在途 SKU 明细">
+            <StatCard title="真实海运在途" value={inTransitVariantTotal.toLocaleString("en-US")} icon={Ship} iconColor="text-orange-400" className="h-full cursor-pointer">
+              <span className="text-[11px] text-orange-300/80">点击查看 SKU 明细</span>
+            </StatCard>
+          </button>
+          <button type="button" onClick={() => setSummaryDetail("available")} className="h-full text-left outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70" aria-label="查看可用库存 SKU 明细">
+            <StatCard title="可用库存" value={totalStats.availableQty.toLocaleString("en-US")} icon={Package} iconColor="text-cyan-400" className="h-full cursor-pointer">
+              <span className="text-[11px] text-cyan-300/80">点击查看 SKU 明细</span>
+            </StatCard>
+          </button>
+          <button type="button" onClick={() => setSummaryDetail("outbound")} disabled={isPlatformOutboundLoading} className="h-full text-left outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70 disabled:cursor-wait" aria-label="查看平台有效出库 SKU 明细">
+            <StatCard title="平台有效出库" value={isPlatformOutboundLoading ? "..." : (platformOutbound?.summary.totalUnits || 0).toLocaleString("en-US")} icon={Package} iconColor="text-rose-400" className="h-full cursor-pointer">
+              <span className="text-[11px] text-rose-300/80">点击查看 SKU 明细</span>
+            </StatCard>
+          </button>
+          <button type="button" onClick={() => setSummaryDetail("sample")} disabled={isPlatformOutboundLoading} className="h-full text-left outline-none focus-visible:ring-2 focus-visible:ring-pink-400/70 disabled:cursor-wait" aria-label="查看达人寄样出库 SKU 明细">
+            <StatCard title="达人寄样出库" value={isPlatformOutboundLoading ? "..." : (platformOutbound?.summary.sampleUnits || 0).toLocaleString("en-US")} icon={Gift} iconColor="text-pink-400" className="h-full cursor-pointer">
+              <span className="text-[11px] text-pink-300/80">点击查看 SKU 明细</span>
+            </StatCard>
+          </button>
         </div>
+
+        <section className="border-y border-slate-800 py-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Boxes className="h-5 w-5 text-emerald-400" />
+              <div>
+                <h2 className="text-base font-semibold text-slate-100">多平台销售出库</h2>
+                <div className="mt-0.5 text-xs text-slate-500">{platformOutbound?.warehouseName || "全部海外仓"} · 有效库存流水</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => void mutatePlatformOutbound()} title="刷新平台出库" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
+          {platformOutboundError && <div className="mb-3 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">平台出库统计加载失败</div>}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {(platformOutbound?.platforms || []).map((platform) => {
+              const style = platformOutboundStyle[platform.platform];
+              return (
+                <div key={platform.platform} className={`min-h-[176px] rounded-lg border p-4 ${style.border} ${style.background}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${platform.enabled ? style.dot : "bg-slate-600"}`} />
+                      <span className="truncate text-sm font-medium text-slate-100">{platform.label}</span>
+                    </div>
+                    <span className={`text-xs ${platform.enabled ? "text-emerald-300" : "text-slate-500"}`}>{platform.enabled ? "已接入" : "待接入"}</span>
+                  </div>
+                  <div className={`mt-4 text-3xl font-semibold tabular-nums ${style.value}`}>{platform.totalUnits.toLocaleString("en-US")}</div>
+                  <div className="mt-1 text-xs text-slate-500">有效出库件数</div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-800/80 pt-3 text-xs">
+                    <div><div className="text-slate-500">销售</div><div className="mt-1 tabular-nums text-slate-200">{platform.salesUnits.toLocaleString("en-US")}</div></div>
+                    <div><div className="text-slate-500">寄样</div><div className="mt-1 tabular-nums text-pink-200">{platform.sampleUnits.toLocaleString("en-US")}</div></div>
+                    <div><div className="text-slate-500">取消回补</div><div className="mt-1 tabular-nums text-emerald-300">{platform.returnUnits.toLocaleString("en-US")}</div></div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                    <span>{platform.hasAggregateHistory ? `历史汇总 + 新增逐单 ${platform.orderCount.toLocaleString("en-US")}` : `逐单流水 ${platform.orderCount.toLocaleString("en-US")}`}</span>
+                    <span>出库仓 {platform.warehouseCount}</span>
+                    {platform.activeFrom && <span>启用 {new Date(platform.activeFrom).toLocaleDateString("zh-CN")}</span>}
+                  </div>
+                </div>
+              );
+            })}
+            {isPlatformOutboundLoading && !platformOutbound && [0, 1, 2, 3].map((index) => <div key={index} className="h-44 animate-pulse rounded-lg border border-slate-800 bg-slate-900/50" />)}
+          </div>
+        </section>
 
         <div className="grid gap-3 md:grid-cols-5">
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">历史期初库存</div><div className="mt-1 text-xl font-semibold tabular-nums text-slate-100">{totalStats.openingQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">来自首笔出库前余额或正式盘点</div></div>
           <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4"><div className="text-xs text-slate-500">期后正式入库</div><div className="mt-1 text-xl font-semibold tabular-nums text-emerald-300">+{totalStats.inboundQty.toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">不再重复计算历史到仓批次</div></div>
-          <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 p-4"><div className="text-xs text-slate-400">真实销售订单出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-sky-200">-{isAuditLoading ? "..." : (overseasStockAudit?.summary.salesUnits || 0).toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">利润核算的有效订单，组合 SKU 已拆分</div></div>
-          <div className="rounded-lg border border-pink-500/25 bg-pink-500/5 p-4"><div className="text-xs text-slate-400">达人寄样出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-pink-200">-{isAuditLoading ? "..." : (overseasStockAudit?.summary.sampleUnits || 0).toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">免费样品单独扣库存，不混入销售</div></div>
-          <div className={`rounded-lg border p-4 ${(overseasStockAudit?.summary.differenceQty || 0) === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="text-xs text-slate-400">真实库存审计差异</div><div className={`mt-1 text-xl font-semibold tabular-nums ${(overseasStockAudit?.summary.differenceQty || 0) === 0 ? "text-emerald-300" : "text-amber-300"}`}>{isAuditLoading ? "..." : `${(overseasStockAudit?.summary.differenceQty || 0) > 0 ? "+" : ""}${(overseasStockAudit?.summary.differenceQty || 0).toLocaleString("en-US")}`}</div><div className="mt-1 text-xs text-slate-400">当前余额 - 真实期初扣真实出库；仅审计，不自动改库存</div></div>
+          <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 p-4"><div className="text-xs text-slate-400">多平台销售订单出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-sky-200">-{isPlatformOutboundLoading ? "..." : (platformOutbound?.summary.salesUnits || 0).toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">已入库存流水，组合 SKU 按实物件数扣减</div></div>
+          <div className="rounded-lg border border-pink-500/25 bg-pink-500/5 p-4"><div className="text-xs text-slate-400">达人寄样出库</div><div className="mt-1 text-xl font-semibold tabular-nums text-pink-200">-{isPlatformOutboundLoading ? "..." : (platformOutbound?.summary.sampleUnits || 0).toLocaleString("en-US")}</div><div className="mt-1 text-xs text-slate-500">免费样品单独扣库存，不混入销售</div></div>
+          <div className={`rounded-lg border p-4 ${(overseasStockAudit?.summary.differenceQty || 0) === 0 ? "border-emerald-500/30 bg-emerald-500/10" : "border-amber-500/30 bg-amber-500/10"}`}><div className="text-xs text-slate-400">TikTok 订单审计差异</div><div className={`mt-1 text-xl font-semibold tabular-nums ${(overseasStockAudit?.summary.differenceQty || 0) === 0 ? "text-emerald-300" : "text-amber-300"}`}>{isAuditLoading ? "..." : `${(overseasStockAudit?.summary.differenceQty || 0) > 0 ? "+" : ""}${(overseasStockAudit?.summary.differenceQty || 0).toLocaleString("en-US")}`}</div><div className="mt-1 text-xs text-slate-400">TikTok 历史订单专项审计，不代表其他平台</div></div>
         </div>
 
         {overseasStockAudit && (
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm text-slate-300">
-            <span className="font-medium text-amber-200">海外仓真实订单审计：</span>
+            <span className="font-medium text-amber-200">TikTok 历史订单审计：</span>
             期初 {overseasStockAudit.summary.openingQty.toLocaleString("en-US")} - 销售 {overseasStockAudit.summary.salesUnits.toLocaleString("en-US")} - 达人寄样 {overseasStockAudit.summary.sampleUnits.toLocaleString("en-US")} = 应有库存 {overseasStockAudit.summary.expectedQty.toLocaleString("en-US")}，当前账面 {overseasStockAudit.summary.currentQty.toLocaleString("en-US")}。
             {overseasStockAudit.coverage.missingWarehouseOrders + overseasStockAudit.coverage.missingSkuOrders > 0 && <span className="ml-2 text-amber-300">另有 {overseasStockAudit.coverage.missingWarehouseOrders + overseasStockAudit.coverage.missingSkuOrders} 笔订单待补充映射。</span>}
           </div>
@@ -429,7 +668,22 @@ export default function WarehouseInventoryPage() {
                       {stat.warehouse.type === "DOMESTIC" ? "国内" : stat.warehouse.type === "OVERSEAS" ? "海外" : stat.warehouse.type}
                     </span>
                   </div>
-                  {isExpanded ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
+                  <div className="flex items-center gap-2">
+                    {stat.warehouse.type === "OVERSEAS" && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setConversionWarehouseId(stat.warehouse.id);
+                          setActiveView("conversion");
+                        }}
+                        className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
+                      >
+                        发起拆装
+                      </button>
+                    )}
+                    {isExpanded ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
+                  </div>
                 </div>
                 <div className="grid grid-cols-5 gap-2 text-sm">
                   <div>
@@ -595,6 +849,72 @@ export default function WarehouseInventoryPage() {
           )}
         </div>
       </div>
+      {activeView === "conversion" && <SkuConversionPanel view="create" initialWarehouseId={conversionWarehouseId} onStocksChanged={mutateStocks} />}
+      {activeView === "records" && <SkuConversionPanel view="records" onStocksChanged={mutateStocks} />}
+      {summaryDetailConfig && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" onMouseDown={() => setSummaryDetail(null)}>
+          <div className="flex max-h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">{summaryDetailConfig.title}</h2>
+                <p className="mt-1 text-sm text-slate-400">{summaryDetailConfig.description}</p>
+              </div>
+              <button type="button" title="关闭" onClick={() => setSummaryDetail(null)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-b border-slate-800 bg-slate-950/50 px-5 py-3 sm:grid-cols-3">
+              <div><div className="text-xs text-slate-500">SKU 种类</div><div className="mt-1 text-xl font-semibold tabular-nums text-slate-100">{summaryDetailConfig.rows.length}</div></div>
+              <div><div className="text-xs text-slate-500">{summaryDetailConfig.quantityLabel}合计</div><div className="mt-1 text-xl font-semibold tabular-nums text-emerald-300">{summaryDetailConfig.total.toLocaleString("en-US")}</div></div>
+              <div className="hidden sm:block"><div className="text-xs text-slate-500">明细合计校验</div><div className={`mt-1 text-sm font-medium ${summaryDetailConfig.rows.reduce((sum, row) => sum + row.quantity, 0) === summaryDetailConfig.total ? "text-emerald-300" : "text-amber-300"}`}>{summaryDetailConfig.rows.reduce((sum, row) => sum + row.quantity, 0) === summaryDetailConfig.total ? "已与卡片一致" : "明细与汇总待核对"}</div></div>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[820px]">
+                <thead className="sticky top-0 z-10 bg-slate-800">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">SKU</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">产品名称</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">{summaryDetailConfig.quantityLabel}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">仓库明细</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">平台 / 批次</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {summaryDetailConfig.rows.map((row) => (
+                    <tr key={row.key} className="hover:bg-slate-800/35">
+                      <td className="px-4 py-3 font-mono text-sm text-slate-200">{row.skuId}</td>
+                      <td className="px-4 py-3 text-sm text-slate-300">{row.productName}</td>
+                      <td className="px-4 py-3 text-right text-base font-semibold tabular-nums text-emerald-300">{row.quantity.toLocaleString("en-US")}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {(row.warehouseBreakdown || []).map((warehouse) => <span key={warehouse.label} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{warehouse.label} <strong className="ml-1 tabular-nums text-slate-100">{warehouse.quantity.toLocaleString("en-US")}</strong></span>)}
+                          {!row.warehouseBreakdown?.length && <span className="text-xs text-slate-600">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {(row.platformBreakdown || []).map((platform) => <span key={platform.label} className="rounded bg-sky-500/10 px-2 py-1 text-xs text-sky-200">{platform.label} <strong className="ml-1 tabular-nums">{platform.quantity.toLocaleString("en-US")}</strong></span>)}
+                          {row.batchCount != null && <span className="rounded bg-orange-500/10 px-2 py-1 text-xs text-orange-200">{row.batchCount.toLocaleString("en-US")} 个在途批次</span>}
+                          {!row.platformBreakdown?.length && row.batchCount == null && <span className="text-xs text-slate-600">—</span>}
+                        </div>
+                        {summaryDetail === "outbound" && <div className="mt-1.5 text-[11px] text-slate-500">销售 {row.salesUnits?.toLocaleString("en-US") || 0} · 寄样 {row.sampleUnits?.toLocaleString("en-US") || 0} · 取消回补 {row.returnUnits?.toLocaleString("en-US") || 0}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                  {summaryDetailConfig.rows.length === 0 && <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500">暂无 SKU 明细</td></tr>}
+                </tbody>
+                <tfoot className="sticky bottom-0 bg-slate-950">
+                  <tr className="border-t border-slate-700">
+                    <td colSpan={2} className="px-4 py-3 text-right text-sm font-medium text-slate-300">合计</td>
+                    <td className="px-4 py-3 text-right text-base font-bold tabular-nums text-emerald-300">{summaryDetailConfig.rows.reduce((sum, row) => sum + row.quantity, 0).toLocaleString("en-US")}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
       {stocktakeItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-2xl">

@@ -1,0 +1,9 @@
+[Unit]
+Description=Process Shopee webhook and lost-push queues
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-shopee-webhook-process
+TimeoutStartSec=180

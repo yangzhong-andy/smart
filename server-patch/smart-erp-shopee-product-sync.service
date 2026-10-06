@@ -1,0 +1,9 @@
+[Unit]
+Description=Synchronize Shopee products and SKUs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-shopee-product-sync
+TimeoutStartSec=720

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
-import { AUTH_SECRET } from '@/lib/auth-secret'
+import { getAuthSecret } from '@/lib/auth-secret'
 
 // 部门代码到工作台的映射
 const DEPARTMENT_WORKBENCH_MAP: Record<string, string> = {
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         role: user.role,
         departmentId: user.departmentId
       },
-      AUTH_SECRET,
+      getAuthSecret(),
       { expiresIn: '7d' } // token 有效期 7 天
     )
 

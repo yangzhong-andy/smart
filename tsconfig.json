@@ -37,6 +37,9 @@
   ],
   "exclude": [
     "node_modules",
-    "backups"
+    "backups",
+    "server-patch",
+    "tmp",
+    ".next-stale-*"
   ]
 }

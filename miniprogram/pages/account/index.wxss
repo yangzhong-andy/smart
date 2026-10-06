@@ -1,0 +1,15 @@
+.account-page { padding-top: 32rpx; }
+.profile { display: flex; align-items: center; gap: 22rpx; padding: 30rpx; }
+.avatar { width: 88rpx; height: 88rpx; border-radius: 10rpx; background: #087f5b; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 38rpx; font-weight: 700; }
+.profile-main { min-width: 0; }
+.name { color: #17202a; font-size: 32rpx; font-weight: 650; }
+.email { margin-top: 7rpx; color: #697386; font-size: 24rpx; }
+.section { margin-top: 18rpx; padding: 8rpx 28rpx; }
+.info-row { display: flex; justify-content: space-between; gap: 28rpx; padding: 24rpx 0; color: #697386; border-bottom: 1rpx solid #edf0f2; }
+.info-row:last-child { border-bottom: 0; }
+.info-row text:last-child { color: #27313d; text-align: right; }
+.environment { margin-top: 18rpx; padding: 28rpx; }
+.environment-title { color: #27313d; font-weight: 600; }
+.environment-url { margin-top: 14rpx; color: #087f5b; font-family: monospace; font-size: 24rpx; word-break: break-all; }
+.environment-note { margin-top: 12rpx; color: #8993a4; font-size: 22rpx; line-height: 1.55; }
+.logout-button { margin-top: 36rpx; height: 84rpx; line-height: 84rpx; border: 1rpx solid #efc1c1; border-radius: 8rpx; background: #fff; color: #b42318; font-size: 27rpx; }

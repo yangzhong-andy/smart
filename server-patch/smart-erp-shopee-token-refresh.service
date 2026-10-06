@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh Shopee access tokens
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-shopee-token-refresh
+TimeoutStartSec=180

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getShopPerformance, getShopVideoPerformance, getShopVideoList, refreshAccessToken } from "@/lib/tiktok-shop-api";
+import { addBusinessDays, relativeBusinessDate } from "@/lib/order-business-time";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
     const traffic = interval.traffic || {};
     const gmvBreakdowns = sales.gmv?.breakdowns || [];
 
-    const result = {
+    const result: Record<string, any> = {
       latestAvailableDate: data.latest_available_date,
       startDate: interval.start_date,
       endDate: interval.end_date,
@@ -95,9 +96,8 @@ export async function GET(request: NextRequest) {
 
     // 获取今日数据
     try {
-      const nowUTC = new Date();
-      const today = nowUTC.toISOString().split("T")[0];
-      const tomorrow = new Date(nowUTC.getTime() + 86400000).toISOString().split("T")[0];
+      const today = relativeBusinessDate(shop.region);
+      const tomorrow = addBusinessDays(today, 1);
       const todayData = await getShopPerformance(accessToken, shop.shopCipher, appKey, appSecret, {
         start_date_ge: today, end_date_lt: tomorrow,
       });
@@ -105,6 +105,7 @@ export async function GET(request: NextRequest) {
       const todaySales = todayInterval?.sales || {};
       const todayTraffic = todayInterval?.traffic || {};
       result.today = {
+        date: today,
         gmv: todaySales.gmv?.overall?.amount || "0",
         currency: todaySales.gmv?.overall?.currency || "BRL",
         orders: todaySales.orders_count || 0,

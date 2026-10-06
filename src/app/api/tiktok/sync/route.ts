@@ -4,6 +4,7 @@ import { deductStockForOrder, restoreStockForCancelledOrder } from "@/lib/tiktok
 import {
   refreshAccessToken,
   searchOrders,
+  searchSellerAffiliateOrders,
   getStatements,
   getPayments,
   searchProducts,
@@ -12,6 +13,11 @@ import { clearCacheByPrefix } from "@/lib/redis";
 import { syncTikTokProfitFinancials } from "@/lib/tiktok-profit-financial-sync";
 import { fetchExchangeRates } from "@/lib/exchange";
 import { resolveCashFlowExchangeRateToCny } from "@/lib/cash-flow-exchange-rate";
+import {
+  isWarehouseShippedStatus,
+  reconcileWarehouseFeesForDate,
+  warehouseBusinessDate,
+} from "@/lib/warehouse-fund-reconciliation";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -82,10 +88,88 @@ export async function POST(request: NextRequest) {
         const now = Math.floor(Date.now() / 1000);
         const past = now - syncDays * 86400;
 
+        // Creator attribution uses TikTok's affiliate order API, not the normal
+        // order webhook. Keep it opt-in so an ordinary real-time order/finance
+        // refresh remains quick; scheduled reconciliation can call
+        // dataType=affiliateOrders once per day.
+        if (dataType === "affiliateOrders") {
+          if (syncDays > 90) throw new Error("达人联盟订单同步最多回补 90 天");
+          let pageToken: string | undefined;
+          const seenPageTokens = new Set<string>();
+          let pages = 0;
+          let orders = 0;
+          let upserts = 0;
+          while (pages < 1_000) {
+            pages += 1;
+            const affiliateData = await searchSellerAffiliateOrders(accessToken, cipher, appKey, appSecret, {
+              create_time_ge: past,
+              create_time_lt: now,
+              page_size: 100,
+              page_token: pageToken,
+            });
+            const affiliateOrders = Array.isArray(affiliateData?.orders) ? affiliateData.orders : [];
+            orders += affiliateOrders.length;
+            for (const order of affiliateOrders) {
+              const orderId = String(order?.id || order?.order_id || "").trim();
+              if (!orderId) continue;
+              const lines = Array.isArray(order?.skus) ? order.skus : [];
+              for (const line of lines) {
+                const creatorUsername = String(line?.creator_username || line?.creator?.username || order?.creator_username || "").trim();
+                const externalSkuId = String(line?.sku_id || line?.id || line?.seller_sku || "").trim();
+                if (!creatorUsername || !externalSkuId) continue;
+                const numberValue = (value: unknown) => {
+                  const parsed = Number(value);
+                  return Number.isFinite(parsed) ? parsed : null;
+                };
+                await prisma.creatorOrderAttribution.upsert({
+                  where: { platform_shopId_orderId_externalSkuId_creatorUsername: { platform: "TIKTOK", shopId: shop.shopId, orderId, externalSkuId, creatorUsername } },
+                  create: {
+                    platform: "TIKTOK", shopId: shop.shopId, orderId, externalSkuId, creatorUsername,
+                    creatorUserId: line?.creator_user_id || line?.creator?.user_id || order?.creator_user_id || null,
+                    creatorNickname: line?.creator_nickname || line?.creator?.nickname || order?.creator_nickname || null,
+                    collaborationType: order?.collaboration_type || line?.collaboration_type || null,
+                    programId: order?.program_id || line?.program_id || null,
+                    openCollaborationId: order?.open_collaboration_id || null,
+                    targetCollaborationId: order?.target_collaboration_id || null,
+                    campaignId: order?.campaign_id || line?.campaign_id || null,
+                    settlementStatus: line?.settlement_status || order?.settlement_status || null,
+                    quantity: numberValue(line?.quantity),
+                    currency: line?.currency || order?.currency || null,
+                    unitPrice: numberValue(line?.price?.amount ?? line?.price?.value ?? line?.price),
+                    rawData: { order, sku: line }, syncedAt: new Date(),
+                  },
+                  update: {
+                    creatorUserId: line?.creator_user_id || line?.creator?.user_id || order?.creator_user_id || null,
+                    creatorNickname: line?.creator_nickname || line?.creator?.nickname || order?.creator_nickname || null,
+                    collaborationType: order?.collaboration_type || line?.collaboration_type || null,
+                    programId: order?.program_id || line?.program_id || null,
+                    openCollaborationId: order?.open_collaboration_id || null,
+                    targetCollaborationId: order?.target_collaboration_id || null,
+                    campaignId: order?.campaign_id || line?.campaign_id || null,
+                    settlementStatus: line?.settlement_status || order?.settlement_status || null,
+                    quantity: numberValue(line?.quantity),
+                    currency: line?.currency || order?.currency || null,
+                    unitPrice: numberValue(line?.price?.amount ?? line?.price?.value ?? line?.price),
+                    rawData: { order, sku: line }, syncedAt: new Date(),
+                  },
+                });
+                upserts += 1;
+              }
+            }
+            const nextPageToken = typeof affiliateData?.next_page_token === "string" ? affiliateData.next_page_token : "";
+            if (!nextPageToken) break;
+            if (seenPageTokens.has(nextPageToken)) throw new Error("TikTok 返回重复的联盟订单分页游标");
+            seenPageTokens.add(nextPageToken);
+            pageToken = nextPageToken;
+          }
+          result.creatorAttribution = { pages, orders, upserts };
+        }
+
         // 同步订单（分段拉取，每段7天，避免单次订单太多超过翻页上限）
         if (dataType === "all" || dataType === "orders") {
           try {
             let count = 0;
+            const warehouseBusinessDates = new Set<string>();
             const segmentDays = 7;
             const totalSegments = Math.max(1, Math.ceil(syncDays / segmentDays));
             for (let seg = 0; seg < totalSegments; seg++) {
@@ -146,12 +230,22 @@ export async function POST(request: NextRequest) {
                     },
                   });
 
-                  // 定时同步也负责库存补漏：待揽收订单扣减，取消订单回补。
+                  // Warehouse fees are posted from the same profit-report
+                  // calculation after an order reaches a shipped state. Keep
+                  // dates here and reconcile once per shop/date, rather than
+                  // issuing one expensive report request per order.
+                  if ((isWarehouseShippedStatus(o.status) || o.status === "CANCELLED") && o.create_time) {
+                    warehouseBusinessDates.add(
+                      warehouseBusinessDate(new Date(Number(o.create_time) * 1000), shop.region),
+                    );
+                  }
+
+                  // 定时同步也负责库存补漏：已进入发货链路的订单扣减，取消订单回补。
                   // 两个操作都有扣减状态保护，重复同步不会重复增减库存。
                   try {
                     if (o.status === "CANCELLED") {
                       await restoreStockForCancelledOrder(o.id);
-                    } else if (o.status === "AWAITING_COLLECTION") {
+                    } else if (isWarehouseShippedStatus(o.status)) {
                       await deductStockForOrder(o.id, shop.shopId, o);
                     }
                   } catch (stockError: any) {
@@ -170,6 +264,29 @@ export async function POST(request: NextRequest) {
               console.log(`[TikTok Sync] ${shop.shopName} 第${seg+1}/${totalSegments}段(${pageCount}页) 累计${count}条`);
             }
             result.orders = count;
+            let warehouseDeducted = 0;
+            let warehouseDuplicate = 0;
+            let warehouseReversed = 0;
+            let warehouseErrors = 0;
+            for (const date of warehouseBusinessDates) {
+              try {
+                const warehouseResult = await reconcileWarehouseFeesForDate(request.nextUrl.origin, date, shop.shopId);
+                warehouseDeducted += warehouseResult.deducted;
+                warehouseDuplicate += warehouseResult.duplicate;
+                warehouseReversed += warehouseResult.reversed;
+                warehouseErrors += warehouseResult.errors;
+              } catch (warehouseError: any) {
+                warehouseErrors += 1;
+                console.error(`[TikTok Warehouse] ${shop.shopName} ${date} 自动扣费失败:`, warehouseError?.message || warehouseError);
+              }
+            }
+            result.warehouseFees = {
+              dates: warehouseBusinessDates.size,
+              deducted: warehouseDeducted,
+              duplicate: warehouseDuplicate,
+              reversed: warehouseReversed,
+              errors: warehouseErrors,
+            };
             console.log(`[TikTok Sync] ${shop.shopName} 订单同步完成: ${count}条`);
           } catch (e: any) {
             result.ordersError = e.message;
@@ -433,6 +550,7 @@ export async function POST(request: NextRequest) {
     // The accounts page caches the full cash-flow list.  Clear it after a
     // payment sync so a newly paid or corrected payment is visible immediately.
     await clearCacheByPrefix("cash-flow");
+    await clearCacheByPrefix("profit-report");
 
     return NextResponse.json({ success: true, results });
   } catch (error: any) {

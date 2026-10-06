@@ -233,6 +233,7 @@ export default function AdAgenciesPage() {
   const [filterMonth, setFilterMonth] = useState<string>(""); // 默认全部
   const [filterCountry, setFilterCountry] = useState<string>("all");
   const [filterAgency, setFilterAgency] = useState<string>("all");
+  const [filterAdAccount, setFilterAdAccount] = useState<string>("all");
   const [filterStore, setFilterStore] = useState<string>("all");
   const [isFilterLoading, setIsFilterLoading] = useState(false);
 
@@ -257,14 +258,8 @@ export default function AdAgenciesPage() {
     else if (action === "add-recharge") setIsRechargeModalOpen(true);
   }, []);
 
-  useEffect(() => {
-    if (adAccounts.length || consumptions.length || recharges.length) {
-      recalculateAccountBalances(adAccounts, consumptions, recharges);
-    }
-  }, [adAccounts, consumptions, recharges]);
-  
   // 重新计算账户余额：当前余额 = 累计实付充值 - 累计消耗（返点不计入余额）
-  const recalculateAccountBalances = async (accounts: AdAccount[], consumptions: AdConsumption[], recharges: AdRecharge[]) => {
+  const recalculateAccountBalances = useCallback(async (accounts: AdAccount[], consumptions: AdConsumption[], recharges: AdRecharge[]) => {
     // 从充值记录中统计每个账户的累计实付充值（不含返点）
     const rechargesByAccount: Record<string, number> = {};
     const rebatesByAccount: Record<string, number> = {}; // 累计应收返点
@@ -344,24 +339,36 @@ export default function AdAgenciesPage() {
       await saveAdAccounts(updatedAccounts);
       mutateAdAccounts();
     }
-  };
+  }, [cashFlowList, mutateAdAccounts]);
 
-  // 过滤后的消耗记录
-  // 过滤后的账户列表（按代理商筛选）
-  const filteredAccounts = useMemo(() => {
+  useEffect(() => {
+    if (adAccounts.length || consumptions.length || recharges.length) {
+      void recalculateAccountBalances(adAccounts, consumptions, recharges);
+    }
+  }, [adAccounts, consumptions, recharges, recalculateAccountBalances]);
+
+  const availableFilterAccounts = useMemo(() => {
     if (filterAgency === "all") return adAccounts;
-    return adAccounts.filter((acc) => acc.agencyId === filterAgency);
+    return adAccounts.filter((account) => account.agencyId === filterAgency);
   }, [adAccounts, filterAgency]);
 
-  // 过滤后的充值列表（按代理商筛选）
+  // 过滤后的账户列表（按代理商、广告账户筛选）
+  const filteredAccounts = useMemo(() => {
+    return availableFilterAccounts.filter(
+      (account) => filterAdAccount === "all" || account.id === filterAdAccount,
+    );
+  }, [availableFilterAccounts, filterAdAccount]);
+
+  // 过滤后的充值列表（按代理商、广告账户筛选）
   const filteredRecharges = useMemo(() => {
-    if (filterAgency === "all") return recharges;
-    // 通过账户ID关联到代理商
     return recharges.filter((r) => {
+      if (filterAdAccount !== "all" && r.adAccountId !== filterAdAccount) return false;
+      if (filterAgency === "all") return true;
+      // 通过账户ID关联到代理商
       const account = adAccounts.find((a) => a.id === r.adAccountId);
       return account && account.agencyId === filterAgency;
     });
-  }, [recharges, adAccounts, filterAgency]);
+  }, [recharges, adAccounts, filterAgency, filterAdAccount]);
 
   const filteredConsumptions = useMemo(() => {
     return consumptions.filter((c) => {
@@ -376,13 +383,16 @@ export default function AdAgenciesPage() {
       
       // 代理商过滤
       if (filterAgency !== "all" && c.agencyId !== filterAgency) return false;
+
+      // 广告账户过滤
+      if (filterAdAccount !== "all" && c.adAccountId !== filterAdAccount) return false;
       
       // 店铺过滤
       if (filterStore !== "all" && c.storeId !== filterStore) return false;
       
       return true;
     });
-  }, [consumptions, stores, filterMonth, filterCountry, filterAgency, filterStore]);
+  }, [consumptions, stores, filterMonth, filterCountry, filterAgency, filterAdAccount, filterStore]);
 
   // 生成月份选项列表（最近12个月）
   const monthOptions = useMemo(() => {
@@ -513,35 +523,49 @@ export default function AdAgenciesPage() {
     const mainAccountCurrency = Object.keys(accountBalanceByCurrency).includes("USD") ? "USD" : Object.keys(accountBalanceByCurrency)[0] || "USD";
     const totalAccountBalance = accountBalanceByCurrency[mainAccountCurrency] || 0;
     
-    // 已结算金额：从财务流水中统计已支付给代理商的金额（类目"广告费/广告代理费"的支出）
-    // 同时兼容旧的 isSettled 标志
+    // 已结算金额：单账户视图按消耗记录统计，全局视图保持财务流水口径。
     const settledConsumptionByCurrency: Record<string, number> = {};
-    // 1) 优先从财务流水统计（实际付款记录）
-    cashFlowList.forEach((flow) => {
-      if (
-        (flow.category === "广告费/广告代理费" || flow.category === "运营-广告-付款") &&
-        flow.type === "expense" &&
-        !flow.isReversal &&
-        (flow.status === "confirmed" || !flow.status)
-      ) {
-        const currency = flow.currency || "USD";
-        const amount = Math.abs(flow.amount || 0);
-        if (amount > 0) {
-          settledConsumptionByCurrency[currency] = (settledConsumptionByCurrency[currency] || 0) + amount;
-        }
-      }
-    });
-    // 2) 兼容旧的 isSettled 标志（如果财务流水没记录，从消耗记录统计）
-    if (Object.keys(settledConsumptionByCurrency).length === 0) {
+    if (filterAdAccount !== "all") {
       filteredConsumptions
-        .filter((c) => c.isSettled === true)
-        .forEach((c) => {
-          const currency = c.currency || "USD";
-          const amount = (c.amount || 0) - (c.giftConsumption || 0);
+        .filter((consumption) => consumption.isSettled === true)
+        .forEach((consumption) => {
+          const currency = consumption.currency || "USD";
+          const amount = (consumption.amount || 0) - (consumption.giftConsumption || 0);
           if (amount > 0) {
-            settledConsumptionByCurrency[currency] = (settledConsumptionByCurrency[currency] || 0) + amount;
+            settledConsumptionByCurrency[currency] =
+              (settledConsumptionByCurrency[currency] || 0) + amount;
           }
         });
+    } else {
+      // 全局视图优先从财务流水统计实际付款。
+      cashFlowList.forEach((flow) => {
+        if (
+          (flow.category === "广告费/广告代理费" || flow.category === "运营-广告-付款") &&
+          flow.type === "expense" &&
+          !flow.isReversal &&
+          (flow.status === "confirmed" || !flow.status)
+        ) {
+          const currency = flow.currency || "USD";
+          const amount = Math.abs(flow.amount || 0);
+          if (amount > 0) {
+            settledConsumptionByCurrency[currency] =
+              (settledConsumptionByCurrency[currency] || 0) + amount;
+          }
+        }
+      });
+      // 兼容旧的 isSettled 标志。
+      if (Object.keys(settledConsumptionByCurrency).length === 0) {
+        filteredConsumptions
+          .filter((consumption) => consumption.isSettled === true)
+          .forEach((consumption) => {
+            const currency = consumption.currency || "USD";
+            const amount = (consumption.amount || 0) - (consumption.giftConsumption || 0);
+            if (amount > 0) {
+              settledConsumptionByCurrency[currency] =
+                (settledConsumptionByCurrency[currency] || 0) + amount;
+            }
+          });
+      }
     }
     const mainSettledCurrency = Object.keys(settledConsumptionByCurrency).includes("USD") ? "USD" : Object.keys(settledConsumptionByCurrency)[0] || "USD";
     const totalSettledConsumption = settledConsumptionByCurrency[mainSettledCurrency] || 0;
@@ -726,12 +750,15 @@ export default function AdAgenciesPage() {
     // 计算已返点金额和未返点金额
     // 从财务流水中统计已结算的返点
     let totalSettledRebateAmount = 0;
+    const filteredConsumptionIds = new Set(filteredConsumptions.map((consumption) => consumption.id));
     cashFlowList.forEach((flow) => {
       if (
         flow.category === "其他收入/广告返点" &&
         flow.type === "income" &&
         !flow.isReversal &&
-        (flow.status === "confirmed" || !flow.status)
+        (flow.status === "confirmed" || !flow.status) &&
+        (filterAdAccount === "all" ||
+          Boolean(flow.relatedId && filteredConsumptionIds.has(flow.relatedId)))
       ) {
         totalSettledRebateAmount += Math.abs(flow.amount || 0);
       }
@@ -787,7 +814,16 @@ export default function AdAgenciesPage() {
       consumptionCurrency: mainConsumptionCurrency,
       baseCurrency: "USD" // Base Currency 默认为 USD
     };
-  }, [mounted, filteredAccounts, filteredConsumptions, filteredRecharges, stores, agencies, cashFlowList]);
+  }, [
+    mounted,
+    filteredAccounts,
+    filteredConsumptions,
+    filteredRecharges,
+    stores,
+    agencies,
+    cashFlowList,
+    filterAdAccount,
+  ]);
 
   const handleCreateAgency = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -1795,6 +1831,7 @@ export default function AdAgenciesPage() {
       month: new Date().toISOString().slice(0, 7),
       date: new Date().toISOString().slice(0, 10),
       amount: "",
+      creditConsumption: "",
       currency: "USD",
       campaignName: "",
       voucher: "",
@@ -2211,7 +2248,18 @@ export default function AdAgenciesPage() {
                     value={filterAgency}
                     onChange={(e) => {
                       setIsFilterLoading(true);
-                      setFilterAgency(e.target.value);
+                      const agencyId = e.target.value;
+                      setFilterAgency(agencyId);
+                      setFilterAdAccount((accountId) =>
+                        accountId === "all" ||
+                        adAccounts.some(
+                          (account) =>
+                            account.id === accountId &&
+                            (agencyId === "all" || account.agencyId === agencyId),
+                        )
+                          ? accountId
+                          : "all",
+                      );
                       setTimeout(() => setIsFilterLoading(false), 300);
                     }}
                     disabled={isFilterLoading}
@@ -2221,6 +2269,29 @@ export default function AdAgenciesPage() {
                     {agencies.map((agency) => (
                       <option key={agency.id} value={agency.id}>
                         {agency.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 广告账户筛选 */}
+                <div className="min-w-[180px]">
+                  <label className="block text-xs text-slate-400 mb-1.5">广告账户</label>
+                  <select
+                    value={filterAdAccount}
+                    onChange={(e) => {
+                      setIsFilterLoading(true);
+                      setFilterAdAccount(e.target.value);
+                      setTimeout(() => setIsFilterLoading(false), 300);
+                    }}
+                    disabled={isFilterLoading}
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-primary-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="all">全部</option>
+                    {availableFilterAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.accountName}
+                        {account.accountId ? ` (${account.accountId})` : ""}
                       </option>
                     ))}
                   </select>
@@ -2249,13 +2320,18 @@ export default function AdAgenciesPage() {
                 </div>
 
                 {/* 清除筛选按钮 */}
-                {(filterMonth || filterCountry !== "all" || filterAgency !== "all" || filterStore !== "all") && (
+                {(filterMonth ||
+                  filterCountry !== "all" ||
+                  filterAgency !== "all" ||
+                  filterAdAccount !== "all" ||
+                  filterStore !== "all") && (
                   <button
                     onClick={() => {
                       setIsFilterLoading(true);
                       setFilterMonth("");
                       setFilterCountry("all");
                       setFilterAgency("all");
+                      setFilterAdAccount("all");
                       setFilterStore("all");
                       setTimeout(() => setIsFilterLoading(false), 300);
                     }}
@@ -2718,6 +2794,7 @@ export default function AdAgenciesPage() {
               month: new Date().toISOString().slice(0, 7),
               date: new Date().toISOString().slice(0, 10),
               amount: "",
+              creditConsumption: "",
               currency: "USD",
               campaignName: "",
               voucher: "",
@@ -3071,6 +3148,7 @@ export default function AdAgenciesPage() {
             month: new Date().toISOString().slice(0, 7),
             date: new Date().toISOString().slice(0, 10),
             amount: "",
+            creditConsumption: "",
             currency: "USD",
             campaignName: "",
             voucher: "",

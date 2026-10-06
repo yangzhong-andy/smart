@@ -35,7 +35,7 @@ export default function CommissionsPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const records = (Array.isArray(recordsDataRaw) ? recordsDataRaw : (recordsDataRaw?.data ?? [])) as CommissionRecord[];
+  const records = useMemo<CommissionRecord[]>(() => (Array.isArray(recordsDataRaw) ? recordsDataRaw : (recordsDataRaw?.data ?? [])) as CommissionRecord[], [recordsDataRaw]);
   const { data: employeesRaw } = useSWR<any>("/api/employees?page=1&pageSize=500", fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 60000
@@ -44,8 +44,8 @@ export default function CommissionsPage() {
     revalidateOnFocus: false,
     dedupingInterval: 60000
   });
-  const employees = (Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? [])) as Employee[];
-  const rules = (Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw?.data ?? [])) as CommissionRule[];
+  const employees = useMemo<Employee[]>(() => (Array.isArray(employeesRaw) ? employeesRaw : (employeesRaw?.data ?? [])) as Employee[], [employeesRaw]);
+  const rules = useMemo<CommissionRule[]>(() => (Array.isArray(rulesRaw) ? rulesRaw : (rulesRaw?.data ?? [])) as CommissionRule[], [rulesRaw]);
 
   // 统计摘要
   const stats = useMemo(() => {

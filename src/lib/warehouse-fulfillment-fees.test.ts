@@ -192,3 +192,41 @@ test("does not charge packaging for a single physical unit", () => {
   assert.equal(result.packagingFee, 0);
   assert.equal(result.fee, 3.5);
 });
+
+test("bundle component count triggers packaging even under seller-unit rules", () => {
+  const result = calculateWarehouseFulfillmentFee({
+    pricingMode: "WEIGHT_TIER",
+    billedUnits: 2,
+    chargeableWeightKg: 1.7825,
+    packageLengthCm: 30,
+    packageWidthCm: 15.5,
+    packageHeightCm: 11.5,
+    baseOrderFee: 0,
+    firstUnitFee: 0,
+    additionalUnitFee: 0.5,
+    multiSkuFee: 0,
+    distinctSkuCount: 1,
+    overweightThresholdKg: 70,
+    overweightFeePerKg: 0.1,
+    feeTiers: [{
+      minWeightKg: 1,
+      maxWeightKg: 3,
+      minInclusive: false,
+      maxInclusive: true,
+      maxLengthCm: null,
+      maxWidthCm: null,
+      maxHeightCm: null,
+      baseFee: 3.5,
+    }],
+    packagingFeeTiers: [{
+      minWeightKg: 0,
+      maxWeightKg: 3,
+      minInclusive: false,
+      maxInclusive: true,
+      baseFee: 1,
+    }],
+  });
+  assert.equal(result.operationalFee, 4);
+  assert.equal(result.packagingFee, 1);
+  assert.equal(result.fee, 5);
+});

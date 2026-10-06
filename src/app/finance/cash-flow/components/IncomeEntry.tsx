@@ -48,7 +48,10 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
     keepPreviousData: true,
     dedupingInterval: 300000,
   });
-  const stores = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
+  const stores = useMemo(
+    () => Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []),
+    [storesDataRaw],
+  );
   
   // 获取当前一级分类下的二级分类选项
   const availableSubCategories = useMemo(() => {
@@ -78,7 +81,7 @@ export default function IncomeEntry({ accounts, onClose, onSave, skipAccountSele
       const storeCurrency = selectedStore.currency === "RMB" ? "CNY" : selectedStore.currency;
       setForm((f) => (f.currency === storeCurrency ? f : { ...f, currency: storeCurrency }));
     }
-  }, [skipAccountSelection, isStorePayment, selectedStore?.id, selectedStore?.currency]);
+  }, [skipAccountSelection, isStorePayment, selectedStore]);
 
   // 根据店铺自动匹配虚拟子账号（非“仅申请”模式）
   useEffect(() => {

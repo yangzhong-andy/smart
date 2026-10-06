@@ -116,7 +116,7 @@ export default function PreRecordsPage() {
 
   // 获取数据
   const { data, isLoading, mutate } = useSWR("/api/container-pre-records?pageSize=100", fetcher);
-  const preRecords: PreRecord[] = data?.data || [];
+  const preRecords = useMemo<PreRecord[]>(() => Array.isArray(data?.data) ? data.data : [], [data?.data]);
 
   // 获取下拉数据
   const { data: exportersData } = useSWR<{ data: any[] }>("/api/exporters?pageSize=100", fetcher);
@@ -133,7 +133,7 @@ export default function PreRecordsPage() {
   const overseasCompanies = overseasCompaniesData?.data || [];
   const warehouses = warehousesData?.data || [];
   const stores = storesData?.data || [];
-  const products = productsData?.data || [];
+  const products = useMemo(() => Array.isArray(productsData?.data) ? productsData.data : [], [productsData?.data]);
   const logisticsChannels = Array.isArray(logisticsChannelsData?.data) ? logisticsChannelsData!.data : [];
   const [boxSpecCache, setBoxSpecCache] = useState<Record<string, any | null>>({});
 

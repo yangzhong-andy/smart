@@ -9,6 +9,36 @@ export const dynamic = 'force-dynamic'
 
 const CACHE_KEY_PREFIX = 'cash-flow'
 
+function parseVoucherImages(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  }
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    }
+    if (typeof parsed === 'string' && parsed.trim()) return [parsed];
+  } catch {
+    // Legacy records store a single data URL or image URL directly.
+  }
+  return [trimmed];
+}
+
+function mergeVoucherImages(existing: unknown, incoming: unknown): string | null {
+  const merged = Array.from(new Set([
+    ...parseVoucherImages(existing),
+    ...parseVoucherImages(incoming),
+  ]));
+  if (merged.length === 0) return null;
+  return merged.length === 1 ? merged[0] : JSON.stringify(merged);
+}
+
 // PUT - 更新流水
 export async function PUT(
   request: NextRequest,
@@ -124,8 +154,24 @@ export async function PATCH(
     };
     
     const data: Record<string, unknown> = { updatedAt: new Date() };
-    if (body.paymentVoucher !== undefined) data.paymentVoucher = toVoucherStr(body.paymentVoucher);
-    if (body.transferVoucher !== undefined) data.transferVoucher = toVoucherStr(body.transferVoucher);
+    if (body.appendVouchers === true && (body.paymentVoucher !== undefined || body.transferVoucher !== undefined)) {
+      const current = await prisma.cashFlow.findUnique({
+        where: { id },
+        select: { voucher: true, paymentVoucher: true, transferVoucher: true },
+      });
+      if (!current) {
+        return NextResponse.json({ error: '流水记录不存在' }, { status: 404 });
+      }
+      if (body.paymentVoucher !== undefined) {
+        data.paymentVoucher = mergeVoucherImages(current.paymentVoucher || current.voucher, body.paymentVoucher);
+      }
+      if (body.transferVoucher !== undefined) {
+        data.transferVoucher = mergeVoucherImages(current.transferVoucher, body.transferVoucher);
+      }
+    } else {
+      if (body.paymentVoucher !== undefined) data.paymentVoucher = toVoucherStr(body.paymentVoucher);
+      if (body.transferVoucher !== undefined) data.transferVoucher = toVoucherStr(body.transferVoucher);
+    }
     if (body.platform !== undefined) data.platform = body.platform || null;
     if (body.storeId !== undefined) { data.storeId = body.storeId || null; data.storeName = body.storeName || null; }
     if (body.exchangeRate !== undefined) data.exchangeRate = Number(body.exchangeRate) || null;

@@ -1,53 +1,56 @@
-# Git 发布脚本
-# 用法: .\scripts\release.ps1 -Version "1.0.0" -Message "发布说明"
+# Create a local Git release tag after the repository passes release checks.
+# This script never deploys to a server and never changes a database.
+# Usage: .\scripts\release.ps1 -Version "2026.09.09.1" -Message "说明"
 
+[CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$')]
     [string]$Version,
-    
-    [Parameter(Mandatory=$false)]
-    [string]$Message = "版本 $Version 发布"
+
+    [Parameter(Mandatory = $false)]
+    [string]$Message = "Release $Version",
+
+    [switch]$Push,
+    [string]$Remote = "origin",
+    [string]$Branch
 )
 
-Write-Host "=== 开始发布版本 $Version ===" -ForegroundColor Cyan
+$ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location -LiteralPath $repoRoot
 
-# 1. 检查工作区是否干净
-$status = git status --porcelain
-if ($status) {
-    Write-Host "⚠️  工作区有未提交的更改，请先提交或暂存" -ForegroundColor Yellow
-    Write-Host $status
-    exit 1
+function Invoke-Git([string[]]$Arguments) {
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
 }
 
-# 2. 更新 package.json 版本号
-Write-Host "`n📦 更新 package.json 版本号..." -ForegroundColor Green
-$packageJson = Get-Content package.json -Raw | ConvertFrom-Json
-$packageJson.version = $Version
-$packageJson | ConvertTo-Json -Depth 10 | Set-Content package.json -Encoding UTF8
-Write-Host "✓ 版本号已更新为 $Version" -ForegroundColor Green
+$status = git status --porcelain
+if ($status) {
+    Write-Error "工作区不干净，先提交或明确整理以下改动：`n$status"
+}
 
-# 3. 提交更改
-Write-Host "`n📝 提交更改..." -ForegroundColor Green
-git add package.json
-git commit -m "chore: 更新版本号到 $Version"
-Write-Host "✓ 更改已提交" -ForegroundColor Green
+$currentBranch = (git branch --show-current).Trim()
+if (-not $currentBranch) { throw "当前不在分支上，不能创建发布标签。" }
+if ($Branch -and $currentBranch -ne $Branch) {
+    throw "当前分支是 $currentBranch，不是要求的 $Branch。"
+}
 
-# 4. 创建标签
-Write-Host "`n🏷️  创建 Git 标签..." -ForegroundColor Green
-git tag -a "v$Version" -m "$Message"
-Write-Host "✓ 标签 v$Version 已创建" -ForegroundColor Green
+Write-Host "Running release checks for $currentBranch..." -ForegroundColor Cyan
+npm run release:check
+if ($LASTEXITCODE -ne 0) { throw "Release checks failed." }
 
-# 5. 推送到远程
-Write-Host "`n🚀 推送到远程仓库..." -ForegroundColor Green
-git push origin main
-git push origin "v$Version"
-Write-Host "✓ 已推送到远程仓库" -ForegroundColor Green
+$tag = "v$Version"
+if (git tag --list $tag) { throw "标签 $tag 已存在，拒绝覆盖。" }
+Invoke-Git @("tag", "-a", $tag, "-m", $Message)
 
-# 6. 显示发布信息
-Write-Host "`n✅ 版本 $Version 发布成功！" -ForegroundColor Cyan
-Write-Host "`n发布信息:" -ForegroundColor Yellow
-Write-Host "  版本号: $Version" -ForegroundColor White
-Write-Host "  标签: v$Version" -ForegroundColor White
-Write-Host "  说明: $Message" -ForegroundColor White
-Write-Host "`n查看标签: git tag -l" -ForegroundColor Gray
-Write-Host "查看提交: git log --oneline -5" -ForegroundColor Gray
+$commit = (git rev-parse HEAD).Trim()
+Write-Host "Created $tag at $commit. No server was changed." -ForegroundColor Green
+
+if ($Push) {
+    Invoke-Git @("push", $Remote, $currentBranch)
+    Invoke-Git @("push", $Remote, $tag)
+    Write-Host "Pushed branch $currentBranch and tag $tag to $Remote." -ForegroundColor Green
+} else {
+    Write-Host "Tag is local only. Re-run with -Push after reviewing it." -ForegroundColor Yellow
+}

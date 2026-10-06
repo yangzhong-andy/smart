@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+keep_count=3
+dry_run="${DRY_RUN:-0}"
+
+clean_app_releases() {
+  local app="$1"
+  local base="/srv/smart-erp/${app}"
+  local releases_root="${base}/releases"
+  local current
+  local previous
+  local release
+  local index=0
+  declare -A keep=()
+
+  current="$(readlink -f "${base}/current")"
+  previous="$(readlink -f "${base}/previous")"
+  test -d "${current}"
+  test -d "${previous}"
+  keep["${current}"]=1
+  keep["${previous}"]=1
+
+  mapfile -t releases < <(find "${releases_root}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2-)
+  for release in "${releases[@]}"; do
+    if (( index < keep_count )); then
+      keep["${release}"]=1
+    fi
+    index=$((index + 1))
+  done
+
+  for release in "${releases[@]}"; do
+    if [[ -n "${keep[${release}]:-}" ]]; then
+      printf 'keep app=%s release=%s\n' "${app}" "${release}"
+      continue
+    fi
+    case "${release}" in
+      "${releases_root}"/*) ;;
+      *) printf 'unsafe release path: %s\n' "${release}" >&2; return 1 ;;
+    esac
+    test "${release}" != "${current}"
+    test "${release}" != "${previous}"
+    printf 'remove app=%s release=%s\n' "${app}" "${release}"
+    if [[ "${dry_run}" != "1" ]]; then
+      rm -rf -- "${release}"
+    fi
+  done
+}
+
+clean_app_releases baxi
+clean_app_releases sdfy

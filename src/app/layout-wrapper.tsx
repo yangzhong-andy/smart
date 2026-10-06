@@ -7,11 +7,10 @@ import { useSWRConfig } from "swr";
 import dynamic from "next/dynamic";
 import SWRProvider from "@/lib/swr-provider";
 import GlobalRefresher from "@/components/GlobalRefresher";
+import AiFloatingAssistant from "@/components/AiFloatingAssistant";
 import {
-  // ALLOWED_PATH_PREFIXES_BY_DEPARTMENT, // 已移除
-  
-  
-  
+  isPathAllowedForDepartment,
+  resolvePathGuardFallback,
 } from "@/lib/permissions";
 import { DepartmentAccessProvider, useDepartmentAccess } from "@/components/DepartmentAccessContext";
 
@@ -59,13 +58,14 @@ const Sidebar = dynamic(() => import("@/components/Sidebar"), {
   ),
 });
 
+const ENABLE_ROUTE_REFRESH = false;
+
 /**
  * 路由切换刷新器
  * 已禁用：不再在路由切换时主动请求数据库，数据由各页面的 useSWR 按需加载
  * 如需恢复，将 ENABLE_ROUTE_REFRESH 设为 true
  */
 function RouteChangeRefresher() {
-  const ENABLE_ROUTE_REFRESH = false; // 设为 true 可恢复路由切换时预加载数据
   const pathname = usePathname();
   const { mutate } = useSWRConfig();
   const prevPathnameRef = useRef<string | null>(null);
@@ -162,18 +162,8 @@ function DepartmentPathGuard() {
     const departmentName = session.user.departmentName ?? null;
     const opts = { bypass: false, dbConfig: access.config };
 
-    const hasDbPathWhitelist =
-      access.config?.pathMode === "whitelist" &&
-      Array.isArray(access.config.pathPrefixes) &&
-      access.config.pathPrefixes.some((p) => typeof p === "string" && p.trim().length > 0);
-
-    const effective = getEffectiveDepartmentCode(departmentCode, departmentName);
-    const hasLegacyPathRules = Boolean(
-      effective && ALLOWED_PATH_PREFIXES_BY_DEPARTMENT[effective]?.length
-    );
-
-    // 未配置路径白名单（库 + 代码内置）时不拦截，避免误伤
-    if (!hasDbPathWhitelist && !hasLegacyPathRules) return;
+    const configuredRoutes = Object.values(access.config?.childHrefs || {}).flat();
+    if (configuredRoutes.length === 0) return;
 
     const current = pathname || "/";
     if (isPathAllowedForDepartment(current, departmentCode, departmentName, opts)) return;
@@ -306,6 +296,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
         </main>
       </div>
       <GlobalRefresher />
+      <AiFloatingAssistant />
       </DepartmentAccessProvider>
     </SWRProvider>
   );

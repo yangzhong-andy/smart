@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
+import { Download } from "lucide-react";
 import type { BankAccount } from "./types";
 import type { CashFlowLike } from "./types";
 
@@ -25,6 +26,13 @@ type AccountFlowDialogProps = {
 };
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50];
+
+const csvEscape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+
+const safeFileName = (value: string) => {
+  const cleaned = value.replace(/[\\/:*?"<>|]/g, "_").trim();
+  return cleaned || "账户";
+};
 
 // 通过 relatedId 从全量流水里查找对方账户
 function findCounterAccount(flow: CashFlowLike, allFlows?: CashFlowLike[], bankAccounts?: BankAccount[]): { name: string; accountId?: string } {
@@ -68,6 +76,7 @@ export function AccountFlowDialog({ open, account, flows, allFlows, bankAccounts
   const [voucherView, setVoucherView] = useState<string | null>(null);
   const [voucherRotation, setVoucherRotation] = useState(0);
   const [voucherLoadingKey, setVoucherLoadingKey] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // 筛选后的正常收支
   const normalCategories = useMemo(() => {
@@ -123,6 +132,112 @@ export function AccountFlowDialog({ open, account, flows, allFlows, bankAccounts
   const handleTransferPageSizeChange = (v: number) => { setTransferPageSize(v); setTransferPage(1); };
 
   const openVoucher = (v: string) => { setVoucherView(v); setVoucherRotation(0); };
+
+  const exportAccountFlows = async () => {
+    if (!account || exporting) return;
+    setExporting(true);
+    try {
+      // 账户页的预加载数据有数量上限，导出时单独按账户读取全部分页，避免大账户漏流水。
+      const fetched: any[] = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const query = new URLSearchParams({
+          accountId: account.id,
+          page: String(page),
+          pageSize: "10000",
+          noCache: "true",
+          includeVouchers: "false",
+        });
+        const response = await fetch(`/api/cash-flow?${query.toString()}`, { cache: "no-store" });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body?.error || "流水读取失败");
+        const rows = Array.isArray(body) ? body : (body?.data || []);
+        fetched.push(...rows);
+        totalPages = Math.max(1, Number(body?.pagination?.totalPages || 1));
+        page += 1;
+      } while (page <= totalPages);
+
+      const normalized: CashFlowLike[] = fetched.map((flow: any) => {
+        const rawType = String(flow.type || "").toLowerCase();
+        return {
+          ...flow,
+          date: flow.date || flow.createdAt || "",
+          summary: flow.summary || flow.description || "",
+          category: flow.category || "",
+          remark: flow.remark || flow.notes || "",
+          currency: flow.currency || account.currency,
+          relatedId: flow.relatedOrderId || flow.relatedId,
+          type: rawType === "income" ? "income" : "expense",
+          status: String(flow.flowStatus ?? flow.status ?? "pending").toLowerCase() === "confirmed" ? "confirmed" : "pending",
+          createdAt: flow.createdAt || flow.date || "",
+        };
+      });
+
+      const exportFlows = normalized.filter((flow) => {
+        const isTransfer = flow.category === "内部划拨";
+        if (isTransfer) {
+          return !transferFilter || transferFilter === "all" || flow.type === transferFilter;
+        }
+        const typeOk = !normalFilter || normalFilter === "all" || flow.type === normalFilter;
+        const categoryOk = !normalCategoryFilter || normalCategoryFilter === "all" || flow.category === normalCategoryFilter;
+        return typeOk && categoryOk;
+      });
+
+      if (exportFlows.length === 0) {
+        toast.error("当前筛选条件下没有数据可导出");
+        return;
+      }
+
+      const exportRows = exportFlows.map((flow) => {
+        const isTransfer = flow.category === "内部划拨";
+        const counter = isTransfer ? findCounterAccount(flow, normalized, bankAccounts) : { name: "" };
+        const type = isTransfer
+          ? (flow.type === "income" ? "划入" : "划出")
+          : (flow.type === "income" ? "收入" : "支出");
+        const raw = flow as CashFlowLike & { platform?: string; storeName?: string; uid?: string };
+        return {
+          流水分组: isTransfer ? "内部划拨" : "正常收入支出",
+          日期: flow.date ? new Date(flow.date).toLocaleDateString("zh-CN") : "",
+          类型: type,
+          摘要: flow.summary,
+          分类: flow.category,
+          金额: Math.abs(Number(flow.amount) || 0),
+          记账金额: Number(flow.amount) || 0,
+          币种: flow.currency || account.currency,
+          备注: flow.remark || "",
+          状态: flow.status === "confirmed" ? "已确认" : "待核对",
+          是否冲销: flow.isReversal ? "是" : "否",
+          业务单号: flow.businessNumber || "",
+          相关编号: flow.relatedId || "",
+          平台: raw.platform || "",
+          店铺: raw.storeName || "",
+          对方账户: counter.name || "",
+          账户名称: account.name,
+          创建时间: flow.createdAt ? new Date(flow.createdAt).toLocaleString("zh-CN") : "",
+        };
+      });
+
+      const headers = Object.keys(exportRows[0]);
+      const csvContent = "\uFEFF" + [
+        headers.map(csvEscape).join(","),
+        ...exportRows.map((row) => headers.map((header) => csvEscape(row[header as keyof typeof row])).join(",")),
+      ].join("\r\n");
+      const url = URL.createObjectURL(new Blob([csvContent], { type: "text/csv;charset=utf-8;" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `账户流水明细_${safeFileName(account.name)}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${exportRows.length} 条流水`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // 解析凭证数据
   const parseVoucher = (v: any): string[] => {
@@ -196,7 +311,19 @@ export function AccountFlowDialog({ open, account, flows, allFlows, bankAccounts
               当前余额：{fmtAmt(account.originalBalance || 0)}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">✕</button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void exportAccountFlows()}
+              disabled={exporting}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-700 text-slate-300 hover:border-primary-400 hover:text-primary-300 disabled:cursor-wait disabled:opacity-50"
+              title={exporting ? "正在导出" : "导出账户流水 CSV"}
+              aria-label={exporting ? "正在导出" : "导出账户流水 CSV"}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200" aria-label="关闭">✕</button>
+          </div>
         </div>
 
         <div className="space-y-6">

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { badRequest, handlePrismaError, serverError } from "@/lib/api-response";
 import { buildOutboundBatchSkuPayload } from "@/lib/outbound-batch-serialize";
 import { clearCacheByPrefix } from '@/lib/redis';
+import { syncProductVariantInventory } from "@/lib/inventory-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,101 @@ export async function GET(
 
     if (!container) {
       return NextResponse.json({ error: "柜子不存在" }, { status: 404 });
+    }
+
+    const shipmentLines = new Map<string, {
+      sku: string;
+      skuName: string;
+      qty: number;
+      variantId: string | null;
+    }>();
+    for (const batch of container.outboundBatches) {
+      const rawItems = batch.outboundBatchItems ?? [];
+      const lines = rawItems.length > 0
+        ? rawItems.map((line) => ({
+            sku: line.sku,
+            skuName: line.skuName ?? line.sku,
+            qty: line.qty,
+            variantId: line.variantId ?? null,
+          }))
+        : buildOutboundBatchSkuPayload(batch as any).skuLines.map((line) => ({
+            sku: line.sku,
+            skuName: line.skuName ?? line.sku,
+            qty: line.qty,
+            variantId: line.variantId ?? null,
+          }));
+      for (const line of lines) {
+        const key = line.variantId || line.sku;
+        const previous = shipmentLines.get(key);
+        shipmentLines.set(key, previous
+          ? { ...previous, qty: previous.qty + line.qty }
+          : line);
+      }
+    }
+    const shipmentLineRows = [...shipmentLines.values()];
+    const shipmentVariantIds = shipmentLineRows
+      .map((line) => line.variantId)
+      .filter((value): value is string => Boolean(value));
+    const shipmentBoxSpecs = shipmentVariantIds.length > 0
+      ? await (prisma as any).boxSpec.findMany({
+          where: { variantId: { in: shipmentVariantIds } },
+          orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+          select: {
+            variantId: true,
+            boxLengthCm: true,
+            boxWidthCm: true,
+            boxHeightCm: true,
+            qtyPerBox: true,
+            weightKg: true,
+          },
+        })
+      : [];
+    const specsByVariant = new Map<string, any[]>();
+    for (const spec of shipmentBoxSpecs) {
+      const rows = specsByVariant.get(spec.variantId) ?? [];
+      rows.push(spec);
+      specsByVariant.set(spec.variantId, rows);
+    }
+    let cartonCount: number | null = 0;
+    let cartonCountKnown = true;
+    const cartonBreakdown: Array<{ sku: string; cartons: number | null; detail: string }> = [];
+    for (const line of shipmentLineRows) {
+      const specs = line.variantId ? (specsByVariant.get(line.variantId) ?? []) : [];
+      if (specs.length === 1 && Number(specs[0].qtyPerBox) > 0 && line.qty % Number(specs[0].qtyPerBox) === 0) {
+        const cartons = line.qty / Number(specs[0].qtyPerBox);
+        cartonCount = (cartonCount ?? 0) + cartons;
+        cartonBreakdown.push({ sku: line.sku, cartons, detail: `${cartons} 箱 × ${specs[0].qtyPerBox} 个` });
+      } else {
+        cartonCountKnown = false;
+        cartonBreakdown.push({ sku: line.sku, cartons: null, detail: specs.length > 1 ? "多套箱规，待确认装箱分配" : "未录入箱规" });
+      }
+    }
+    // When a SKU has multiple box specs, use the saved container totals to solve
+    // the integer carton mix instead of guessing one box spec.
+    if (!cartonCountKnown && shipmentLineRows.length === 1 && shipmentBoxSpecs.length === 2 && container.totalVolumeCBM && container.totalWeightKG) {
+      const line = shipmentLineRows[0];
+      const [a, b] = shipmentBoxSpecs;
+      const targetQty = line.qty;
+      const targetVolume = Number(container.totalVolumeCBM);
+      const targetWeight = Number(container.totalWeightKG);
+      for (let cartonsA = 0; cartonsA <= Math.ceil(targetQty / Number(a.qtyPerBox)); cartonsA += 1) {
+        const remaining = targetQty - cartonsA * Number(a.qtyPerBox);
+        if (remaining < 0 || remaining % Number(b.qtyPerBox) !== 0) continue;
+        const cartonsB = remaining / Number(b.qtyPerBox);
+        const volume = cartonsA * Number(a.boxLengthCm) * Number(a.boxWidthCm) * Number(a.boxHeightCm) / 1_000_000
+          + cartonsB * Number(b.boxLengthCm) * Number(b.boxWidthCm) * Number(b.boxHeightCm) / 1_000_000;
+        const weight = cartonsA * Number(a.weightKg) + cartonsB * Number(b.weightKg);
+        if (Math.abs(volume - targetVolume) < 0.002 && Math.abs(weight - targetWeight) < 0.02) {
+          cartonCount = cartonsA + cartonsB;
+          cartonCountKnown = true;
+          cartonBreakdown[0] = {
+            sku: line.sku,
+            cartons: cartonCount,
+            detail: `${cartonsA} 箱 × ${a.qtyPerBox} 个 + ${cartonsB} 箱 × ${b.qtyPerBox} 个`,
+          };
+          break;
+        }
+      }
     }
 
     const sanitized = sanitizeContainerDisplayFields({
@@ -116,6 +212,20 @@ export async function GET(
       // 汇总
       totalVolumeCBM: container.totalVolumeCBM ? container.totalVolumeCBM.toString() : undefined,
       totalWeightKG: container.totalWeightKG ? container.totalWeightKG.toString() : undefined,
+      shipmentSummary: {
+        batchCount: container.outboundBatches.length,
+        totalPieces: shipmentLineRows.reduce((sum, line) => sum + line.qty, 0),
+        skuCount: shipmentLineRows.length,
+        cartonCount: cartonCountKnown ? cartonCount : null,
+        cartonCountKnown,
+        cartonBreakdown,
+        lines: shipmentLineRows.map((line) => ({
+          sku: line.sku,
+          skuName: line.skuName,
+          qty: line.qty,
+          variantId: line.variantId,
+        })),
+      },
       createdAt: container.createdAt.toISOString(),
       updatedAt: container.updatedAt.toISOString(),
       outboundBatches: container.outboundBatches.map((b) => ({
@@ -283,6 +393,22 @@ export async function PUT(
       data,
     });
 
+    // 柜子状态决定货物是否进入/离开在途。状态或关键运输时间更新后，
+    // 立即刷新受影响 SKU 的缓存字段，避免产品档案与实时资产总账出现两个数字。
+    if (body.status !== undefined || body.actualDeparture !== undefined || body.actualArrival !== undefined || body.warehouseInboundAt !== undefined) {
+      const affected = await prisma.outboundBatchItem.findMany({
+        where: { outboundBatch: { containerId: id }, variantId: { not: null } },
+        select: { variantId: true },
+        distinct: ["variantId"],
+      });
+      await Promise.all(
+        affected
+          .map((row) => row.variantId)
+          .filter((variantId): variantId is string => Boolean(variantId))
+          .map((variantId) => syncProductVariantInventory(variantId)),
+      );
+    }
+
     await clearCacheByPrefix('containers');
     return NextResponse.json({
       id: updated.id,
@@ -296,4 +422,3 @@ export async function PUT(
     });
   }
 }
-

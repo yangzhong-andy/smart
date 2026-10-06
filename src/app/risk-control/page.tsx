@@ -36,7 +36,7 @@ export default function RiskControlPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
-  const ordersData = Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []);
+  const ordersData = useMemo<PurchaseOrder[]>(() => Array.isArray(ordersDataRaw) ? ordersDataRaw : (ordersDataRaw?.data ?? []), [ordersDataRaw]);
   const orders = useMemo(
     () => ordersData.filter((o: PurchaseOrder) => o.status === "待风控"),
     [ordersData]

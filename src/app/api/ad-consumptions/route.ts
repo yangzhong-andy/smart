@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
 
     // 清除广告消费缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    await clearCacheByPrefix("profit-report");
     const billSync = await syncAdvertisingMonthlyBills([consumption.month]);
 
     return NextResponse.json({

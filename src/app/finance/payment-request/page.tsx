@@ -31,11 +31,13 @@ import InteractiveButton from "@/components/ui/InteractiveButton";
 import { PageHeader } from "@/components/ui";
 import { toast } from "sonner";
 import { FileText, Filter, Plus, Edit, Send, CheckCircle, XCircle, Clock, DollarSign, Eye, X } from "lucide-react";
+import { useSystemConfirm } from "@/hooks/use-system-confirm";
 
 // SWR fetcher
 const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 export default function PaymentRequestPage() {
+  const { confirm, confirmDialog } = useSystemConfirm();
   const [filterStatus, setFilterStatus] = useState<BillStatus | "All">("All");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRequest, setEditingRequest] = useState<PaymentRequest | null>(null);
@@ -51,9 +53,9 @@ export default function PaymentRequestPage() {
   const { data: storesDataRaw } = useSWR<any>('/api/stores?page=1&pageSize=500', fetcher);
   const { data: accountsDataRaw } = useSWR<any>('/api/accounts?page=1&pageSize=500', fetcher);
 
-  const requests: PaymentRequest[] = Array.isArray(requestsDataRaw) ? requestsDataRaw : (requestsDataRaw?.data ?? []);
-  const stores: Store[] = Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []);
-  const accounts: BankAccount[] = Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? []);
+  const requests = useMemo<PaymentRequest[]>(() => Array.isArray(requestsDataRaw) ? requestsDataRaw : (requestsDataRaw?.data ?? []), [requestsDataRaw]);
+  const stores = useMemo<Store[]>(() => Array.isArray(storesDataRaw) ? storesDataRaw : (storesDataRaw?.data ?? []), [storesDataRaw]);
+  const accounts = useMemo<BankAccount[]>(() => Array.isArray(accountsDataRaw) ? accountsDataRaw : (accountsDataRaw?.data ?? []), [accountsDataRaw]);
 
   const filteredRequests = useMemo(() => {
     if (filterStatus === "All") return requests;
@@ -134,9 +136,7 @@ export default function PaymentRequestPage() {
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const requestData: Omit<PaymentRequest, "id"> = {
+    const requestData: Omit<PaymentRequest, "id"> = {
         expenseItem: form.expenseItem,
         amount: Number(form.amount),
         currency: form.currency,
@@ -149,7 +149,24 @@ export default function PaymentRequestPage() {
         createdBy: editingRequest?.createdBy || "系统",
         createdAt: editingRequest?.createdAt || new Date().toISOString(),
         notes: form.notes || undefined
-      };
+    };
+
+    const confirmed = await confirm({
+      title: editingRequest ? "确认保存付款申请" : "确认创建付款申请",
+      message: [
+        `支出项目：${requestData.expenseItem}`,
+        `金额：${requestData.currency} ${requestData.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `分类：${requestData.category || "-"}`,
+        editingRequest ? "确认后将保存本次修改。" : "确认后将创建付款申请，后续可提交审批。",
+      ].join("\n"),
+      confirmText: editingRequest ? "确认保存" : "确认创建",
+      cancelText: "返回修改",
+      type: "warning",
+    });
+    if (!confirmed) return;
+
+    setIsSubmitting(true);
+    try {
 
       if (editingRequest) {
         await updatePaymentRequest(editingRequest.id, requestData);
@@ -683,6 +700,8 @@ export default function PaymentRequestPage() {
           </div>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

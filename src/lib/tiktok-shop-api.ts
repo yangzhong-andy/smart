@@ -117,7 +117,7 @@ export async function callTikTokApi(
   const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
   const sign = generateSign(path, signParams, appSecret, bodyStr);
 
-  const allParams = { ...signParams, sign };
+  const allParams: Record<string, string> = { ...signParams, sign };
   const queryString = Object.keys(allParams)
     .sort()
     .map((k) => `${k}=${encodeURIComponent(allParams[k])}`)
@@ -369,6 +369,48 @@ export async function getVideoPerformanceDetail(
 // ==================== 联盟营销（达人消息）====================
 
 const AFFILIATE_VER = "202412";
+
+/**
+ * 搜索官方联盟归因订单。归因在 SKU 层返回，不能用普通订单接口替代。
+ * TikTok 限制单次查询的创建时间范围不超过三个月。
+ */
+export async function searchSellerAffiliateOrders(
+  accessToken: string, shopCipher: string, appKey: string, appSecret: string,
+  params: { create_time_ge: number; create_time_lt: number; page_size?: number; page_token?: string; program_id?: string }
+) {
+  const query: Record<string, string> = {
+    shop_cipher: shopCipher,
+    page_size: String(params.page_size || 100),
+  };
+  if (params.page_token) query.page_token = params.page_token;
+  const body: Record<string, unknown> = {
+    create_time_ge: params.create_time_ge,
+    create_time_lt: params.create_time_lt,
+  };
+  if (params.program_id) body.program_id = params.program_id;
+  return await callTikTokApi(
+    "/affiliate_seller/202410/orders/search",
+    accessToken,
+    appKey,
+    appSecret,
+    { method: "POST", query, body },
+  );
+}
+
+/** Fetch one creator marketplace profile/performance snapshot by official creator user id. */
+export async function getMarketplaceCreatorPerformance(
+  accessToken: string, shopCipher: string, appKey: string, appSecret: string,
+  creatorUserId: string,
+  dataGroups: string[] = ["BASIC_CREATOR_INFORMATION", "FOLLOWER_INFORMATION", "SALES_AND_GMV", "COLLABORATION"],
+) {
+  return await callTikTokApi(
+    `/affiliate_seller/202608/marketplace_creators/${encodeURIComponent(creatorUserId)}`,
+    accessToken,
+    appKey,
+    appSecret,
+    { method: "GET", query: { shop_cipher: shopCipher, data_groups: dataGroups.join(",") } },
+  );
+}
 
 /** 获取对话列表 */
 export async function getAffiliateConversations(

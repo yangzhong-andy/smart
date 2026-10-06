@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import type { Product as PrismaProduct } from '@prisma/client'
 import { sumOverseasQtyByVariantIds } from '@/lib/overseas-stock'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
+import { createProductVariantBatch, ProductVariantCreateError } from '@/lib/product-variant-create'
 
 async function attachOverseasQtyToFlatRows(rows: any[]): Promise<void> {
   const ids = rows.map((r) => r.variant_id).filter(Boolean) as string[]
@@ -173,6 +173,23 @@ function productToFlatVariants(product: any): any[] {
   return transformed
 }
 
+// Prefer current supplier relations; retain legacy JSON-only suppliers for older products.
+function workspaceSuppliers(product: any): Array<{ id: string; name: string }> {
+  const related = (product.productSuppliers ?? []).map((relation: any) => relation.supplier).filter(Boolean)
+  let legacy = product.suppliers
+  if (typeof legacy === 'string') {
+    try { legacy = JSON.parse(legacy) } catch { legacy = [] }
+  }
+  const candidates = [product.defaultSupplier, ...(related.length > 0 ? related : Array.isArray(legacy) ? legacy : [])]
+  const suppliers = new Map<string, { id: string; name: string }>()
+  for (const supplier of candidates) {
+    if (supplier && typeof supplier.id === 'string' && supplier.id && !suppliers.has(supplier.id)) {
+      suppliers.set(supplier.id, { id: supplier.id, name: typeof supplier.name === 'string' ? supplier.name : '' })
+    }
+  }
+  return [...suppliers.values()]
+}
+
 // GET - 获取产品（支持三种模式：list=spu 仅 SPU 列表 | spuId=xxx 单 SPU 全量变体 | 无参全量，兼容旧逻辑）
 export async function GET(request: NextRequest) {
   try {
@@ -183,12 +200,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const listSpu = searchParams.get('list') === 'spu'
     const includeImages = searchParams.get('includeImages') === 'true'
+    const workspace = searchParams.get('workspace') === 'true'
     const spuId = searchParams.get('spuId')
 
     // 模式 1：仅拉取 SPU 列表（主图、状态、变体数）+ 统计摘要（供产品档案页统计卡片）
     if (listSpu) {
       const noCache = searchParams.get('noCache') === 'true'
-      const cacheKey = generateCacheKey('products', 'spu-list', includeImages ? 'with-images' : 'summary')
+      const cacheKey = generateCacheKey('products', 'spu-list', includeImages ? 'with-images' : 'summary', ...(workspace ? ['workspace-v1'] : []))
       
       if (!noCache) {
         const cached = await getCache<any>(cacheKey)
@@ -197,7 +215,20 @@ export async function GET(request: NextRequest) {
       
       const [products, variantAgg] = await Promise.all([
         prisma.product.findMany({
-          select: { id: true, spuCode: true, name: true, mainImage: true, status: true, category: true, _count: { select: { variants: true } } },
+          select: {
+            id: true, spuCode: true, name: true, mainImage: true, status: true, category: true,
+            _count: { select: { variants: true } },
+            ...(workspace ? {
+              createdAt: true,
+              suppliers: true,
+              defaultSupplier: { select: { id: true, name: true } },
+              productSuppliers: { select: { supplier: { select: { id: true, name: true } } } },
+              variants: {
+                select: { skuId: true, color: true, size: true, costPrice: true, currency: true, weightKg: true, lengthCm: true, widthCm: true, heightCm: true },
+                orderBy: { skuId: 'asc' as const },
+              },
+            } : {}),
+          },
           orderBy: { createdAt: 'desc' }
         }),
         prisma.productVariant.aggregate({
@@ -217,7 +248,22 @@ export async function GET(request: NextRequest) {
           hasImage: !!img,
           status: p.status,
           category: p.category ?? undefined,
-          variantCount: p._count.variants
+          variantCount: p._count.variants,
+          ...(workspace ? {
+            createdAt: p.createdAt.toISOString(),
+            suppliers: workspaceSuppliers(p),
+            skuIndex: p.variants.map((variant) => ({
+              sku_id: variant.skuId,
+              color: variant.color ?? undefined,
+              size: variant.size ?? undefined,
+              cost_price: variant.costPrice != null ? Number(variant.costPrice) : null,
+              currency: variant.currency || 'CNY',
+              weight_kg: variant.weightKg != null ? Number(variant.weightKg) : undefined,
+              length: variant.lengthCm != null ? Number(variant.lengthCm) : undefined,
+              width: variant.widthCm != null ? Number(variant.widthCm) : undefined,
+              height: variant.heightCm != null ? Number(variant.heightCm) : undefined,
+            })),
+          } : {}),
         }
       })
       const totalCount = products.length
@@ -228,7 +274,7 @@ export async function GET(request: NextRequest) {
         : 0
       const response = {
         list,
-        summary: { totalCount, onSaleCount, offSaleCount, avgCost }
+        summary: { totalCount, onSaleCount, offSaleCount, avgCost, ...(workspace ? { skuCount: variantAgg._count.id } : {}) }
       }
       if (!noCache) {
         await setCache(cacheKey, response, 300) // 5 min TTL
@@ -413,141 +459,7 @@ export async function GET(request: NextRequest) {
 }
 
 async function createProductWithVariants(body: any, variantsInput: any[]) {
-  if (!body.name?.trim()) {
-    return NextResponse.json({ error: '产品名称必填' }, { status: 400 })
-  }
-  const skuIds = variantsInput.map((v: any) => (v.sku_id || '').trim()).filter(Boolean)
-  if (skuIds.length === 0) {
-    return NextResponse.json({ error: '至少需要一个有效的 SKU 编码' }, { status: 400 })
-  }
-  const uniqueSkuIds = [...new Set(skuIds)]
-  if (uniqueSkuIds.length !== skuIds.length) {
-    return NextResponse.json({ error: '变体 SKU 编码不能重复' }, { status: 400 })
-  }
-
-  const existing = await prisma.productVariant.findMany({
-    where: { skuId: { in: uniqueSkuIds } }
-  })
-  if (existing.length > 0) {
-    return NextResponse.json(
-      { error: `SKU 已存在：${existing.map(e => e.skuId).join(', ')}` },
-      { status: 400 }
-    )
-  }
-
-  let suppliersData = null
-  if (body.suppliers && Array.isArray(body.suppliers) && body.suppliers.length > 0) {
-    suppliersData = body.suppliers
-  } else if (body.factory_id) {
-    suppliersData = [{
-      id: body.factory_id,
-      name: body.factory_name || '',
-      price: variantsInput[0]?.cost_price ?? body.cost_price,
-      moq: body.moq,
-      lead_time: body.lead_time,
-      isPrimary: true
-    }]
-  }
-
-  // 优先用 product_id 查找已有产品（添加变体时前端会传），否则用 name
-  const intentAddToExisting = !!body.product_id
-  let product: PrismaProduct | null = null
-  if (body.product_id) {
-    product = await prisma.product.findUnique({
-      where: { id: String(body.product_id) }
-    })
-  }
-  if (!product && body.name?.trim()) {
-    product = await prisma.product.findFirst({
-      where: { name: body.name.trim() }
-    })
-  }
-  // 添加变体时若传了 product_id 却未找到产品，不创建新产品，直接报错
-  if (!product && intentAddToExisting) {
-    return NextResponse.json(
-      { error: '未找到对应的产品，请刷新产品列表后重试', code: 'PRODUCT_NOT_FOUND' },
-      { status: 400 }
-    )
-  }
-  if (!product) {
-    const createData: any = {
-        spuCode: body.spu_code || null,
-        name: body.name.trim(),
-        category: body.category || null,
-        brand: body.brand || null,
-        description: body.description || null,
-        mainImage: body.main_image || null,
-        galleryImages: Array.isArray(body.gallery_images) && body.gallery_images.length > 0 ? JSON.parse(JSON.stringify(body.gallery_images)) : null,
-        material: body.material || null,
-        customsNameCN: body.customs_name_cn || null,
-        customsNameEN: body.customs_name_en || null,
-        defaultSupplierId: body.default_supplier_id || null,
-        status: body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
-        suppliers: suppliersData ? JSON.parse(JSON.stringify(suppliersData)) : null
-      }
-    if ((body as any).spec_description) createData.specDescription = (body as any).spec_description
-    product = await prisma.product.create({ data: createData })
-  }
-
-  const currency = body.currency || 'CNY'
-  const createdVariants: any[] = []
-  for (let i = 0; i < variantsInput.length; i++) {
-    const v = variantsInput[i]
-    const skuId = (v.sku_id || '').trim()
-    if (!skuId) continue
-    const costPrice = Number(v.cost_price ?? v.unitPrice ?? 0)
-    const variant = await prisma.productVariant.create({
-      data: {
-        productId: product.id,
-        skuId,
-        color: v.color || null,
-        size: v.size || null,
-        weightKg: body.weight_kg ? parseFloat(String(body.weight_kg)) : null,
-        barcode: v.barcode || null,
-        costPrice: Number.isFinite(costPrice) ? costPrice : null,
-        stockQuantity: 0,
-        currency,
-        targetRoi: body.target_roi ? parseFloat(String(body.target_roi)) : null,
-        lengthCm: body.length ? parseFloat(String(body.length)) : null,
-        widthCm: body.width ? parseFloat(String(body.width)) : null,
-        heightCm: body.height ? parseFloat(String(body.height)) : null,
-        volumetricDivisor: body.volumetric_divisor ? parseInt(String(body.volumetric_divisor)) : null,
-        atFactory: 0,
-        atDomestic: 0,
-        inTransit: 0,
-      }
-    })
-    createdVariants.push(variant)
-  }
-
-  if (suppliersData && Array.isArray(suppliersData)) {
-    for (const supplier of suppliersData) {
-      if (supplier.id) {
-        try {
-          await prisma.productSupplier.upsert({
-            where: {
-              productId_supplierId: {
-                productId: product.id,
-                supplierId: supplier.id
-              }
-            },
-            create: {
-              productId: product.id,
-              supplierId: supplier.id,
-              price: suppliersData[0]?.price ? parseFloat(String(suppliersData[0].price)) : null,
-              moq: suppliersData[0]?.moq || null,
-              leadTime: suppliersData[0]?.lead_time || null,
-              isPrimary: suppliersData[0]?.isPrimary || false
-            },
-            update: {}
-          })
-        } catch (err) {
-          // ignore
-        }
-      }
-    }
-  }
-
+  const { product, createdVariants } = await createProductVariantBatch(prisma, body, variantsInput)
   const v = createdVariants[0]
   return NextResponse.json({
     sku_id: v.skuId,
@@ -561,13 +473,21 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
     customs_name_en: product.customsNameEN || undefined,
     default_supplier_id: product.defaultSupplierId || undefined,
     status: product.status,
-    cost_price: v.costPrice ? Number(v.costPrice) : 0,
+    cost_price: v.costPrice != null ? Number(v.costPrice) : 0,
     currency: v.currency,
+    target_roi: v.targetRoi != null ? Number(v.targetRoi) : undefined,
+    weight_kg: v.weightKg != null ? Number(v.weightKg) : undefined,
+    length: v.lengthCm != null ? Number(v.lengthCm) : undefined,
+    width: v.widthCm != null ? Number(v.widthCm) : undefined,
+    height: v.heightCm != null ? Number(v.heightCm) : undefined,
+    volumetric_divisor: v.volumetricDivisor ?? undefined,
     color: v.color || undefined,
     size: v.size || undefined,
     barcode: v.barcode || undefined,
     product_id: product.id,
     variant_id: v.id,
+    createdCount: createdVariants.length,
+    createdSkuIds: createdVariants.map((variant) => variant.skuId),
     createdAt: v.createdAt.toISOString(),
     updatedAt: v.updatedAt.toISOString()
   }, { status: 201 })
@@ -589,9 +509,14 @@ export async function POST(request: NextRequest) {
   try {
     
     // 批量创建多变体：body.variants = [{ color, sku_id, cost_price, size?, barcode? }, ...]
-    const variantsInput = Array.isArray(body.variants) && body.variants.length > 0 ? body.variants : null
-    if (variantsInput) {
-      const result = await createProductWithVariants(body, variantsInput)
+    if (body == null || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: '产品数据格式无效' }, { status: 400 })
+    }
+    if (body.variants !== undefined) {
+      if (!Array.isArray(body.variants)) {
+        return NextResponse.json({ error: '变体必须是数组', code: 'INVALID_VARIANT_INPUT' }, { status: 400 })
+      }
+      const result = await createProductWithVariants(body, body.variants)
       await clearCacheByPrefix('products')
       return result
     }
@@ -820,6 +745,9 @@ export async function POST(request: NextRequest) {
       updatedAt: v.updatedAt.toISOString()
     }, { status: 201 })
   } catch (error: any) {
+    if (error instanceof ProductVariantCreateError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+    }
     const msg = error?.message || String(error)
     const isPayload = /payload|too large|413|body limit/i.test(msg)
     return NextResponse.json(

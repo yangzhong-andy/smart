@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up Smart ERP PostgreSQL databases
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/smart-erp-db-backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

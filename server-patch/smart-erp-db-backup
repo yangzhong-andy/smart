@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+backup_root="/var/backups/smart-erp/databases/daily"
+timestamp="$(date '+%Y%m%dT%H%M%SCST')"
+staging="$backup_root/.staging-$timestamp"
+destination="$backup_root/$timestamp"
+
+install -d -o root -g root -m 700 "$backup_root"
+install -d -o root -g root -m 700 "$staging"
+cleanup() {
+  if [ -d "$staging" ]; then rm -rf -- "$staging"; fi
+}
+trap cleanup EXIT
+
+for database in smart smartsdfy; do
+  dump_file="$staging/$database.dump"
+  runuser -u postgres -- pg_dump --format=custom "$database" > "$dump_file"
+  pg_restore --list "$dump_file" >/dev/null
+done
+
+(
+  cd "$staging"
+  sha256sum smart.dump smartsdfy.dump > SHA256SUMS
+)
+mv -- "$staging" "$destination"
+trap - EXIT
+
+mapfile -t backups < <(find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name '20*CST' -printf '%f\n' | sort -r)
+if [ "${#backups[@]}" -gt 3 ]; then
+  for old_backup in "${backups[@]:3}"; do
+    rm -rf -- "$backup_root/$old_backup"
+  done
+fi
+
+printf 'created=%s retained=%s\n' "$destination" "$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name '20*CST' | wc -l)"

@@ -1,0 +1,4 @@
+0 8 * * * /root/tiktok-sync.sh
+30 8 * * * /root/tiktok-sync-sdfy.sh
+0 12 * * * /root/tiktok-finance-sync.sh
+0 13 * * * /root/tiktok-finance-sync-sdfy.sh

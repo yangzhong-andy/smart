@@ -1,0 +1,35 @@
+.login-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 150rpx 48rpx 48rpx;
+  background: #f4f6f8;
+}
+
+.brand-block { margin-bottom: 64rpx; }
+.brand-mark {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 12rpx;
+  background: #087f5b;
+  color: #fff;
+  font-size: 40rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28rpx;
+}
+.brand-name { font-size: 48rpx; font-weight: 700; color: #17202a; }
+.brand-caption { margin-top: 10rpx; color: #697386; font-size: 28rpx; }
+.login-panel { background: #fff; border: 1rpx solid #e2e7eb; border-radius: 12rpx; padding: 40rpx; }
+.panel-title { font-size: 32rpx; font-weight: 650; margin-bottom: 36rpx; }
+.field { margin-bottom: 28rpx; }
+.field-label { display: block; margin-bottom: 12rpx; color: #4c5667; font-size: 25rpx; }
+.field-input { height: 84rpx; box-sizing: border-box; padding: 0 24rpx; background: #f7f8fa; border: 1rpx solid #dce1e6; border-radius: 8rpx; font-size: 28rpx; }
+.password-row { display: flex; align-items: center; gap: 12rpx; }
+.password-input { flex: 1; }
+.visibility-button { width: 100rpx; padding: 0; background: transparent; color: #087f5b; font-size: 25rpx; line-height: 84rpx; }
+.error-message { margin: -4rpx 0 24rpx; color: #c92a2a; font-size: 25rpx; }
+.submit-button { height: 88rpx; line-height: 88rpx; border-radius: 8rpx; background: #087f5b; color: #fff; font-size: 29rpx; font-weight: 600; }
+.submit-button[disabled] { opacity: 0.62; }
+.security-note { margin-top: 28rpx; text-align: center; color: #8993a4; font-size: 23rpx; }

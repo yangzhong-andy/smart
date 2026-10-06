@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from "react";
 import useSWR, { mutate } from "swr";
 import { FileText, Plus, Search, Eye, TrendingUp, Zap, Wallet } from "lucide-react";
 import { PageHeader, ActionButton, StatCard, EmptyState } from "@/components/ui";
-import { getMonthlyBills, saveMonthlyBills, getMonthlyBillPaymentAmount, getMonthlyBillSettledAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
+import { getBillById, getMonthlyBills, saveMonthlyBills, getMonthlyBillPaymentAmount, getMonthlyBillSettledAmount, type MonthlyBill, type BillStatus, type BillType } from "@/lib/reconciliation-store";
 import { procurementPaymentCoverageLabel } from "@/lib/procurement-payment-coverage";
 import { formatCurrency } from "@/lib/currency-utils";
 import Link from "next/link";
@@ -47,7 +47,7 @@ export default function MonthlyBillsPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000 // 优化：增加到10分钟内去重
   });
-  const bills: MonthlyBill[] = Array.isArray(billsData) ? billsData : [];
+  const bills = useMemo<MonthlyBill[]>(() => Array.isArray(billsData) ? billsData : [], [billsData]);
 
   // 根据拿货单批量生成月账单（供已有拿货单但无月账单时使用）
   const handleGenerateFromDelivery = async () => {
@@ -171,10 +171,13 @@ export default function MonthlyBillsPage() {
     });
   }, [bills, searchKeyword, filterType, filterStatus, filterMonth]);
 
-  const handleViewDetail = (bill: MonthlyBill) => {
-    setSelectedBill(bill);
+  const handleViewDetail = async (bill: MonthlyBill) => {
     setIsDetailModalOpen(true);
-    loadBillDetails(bill);
+    setLoadingDetails(true);
+    const detailedBill = await getBillById(bill.id);
+    const billForDetail = detailedBill || bill;
+    setSelectedBill(billForDetail);
+    await loadBillDetails(billForDetail);
   };
 
   const loadBillDetails = async (bill: MonthlyBill) => {
@@ -210,7 +213,7 @@ export default function MonthlyBillsPage() {
           allContracts.filter((c: any) => c.supplierId === bill.supplierId).map((c: any) => c.id)
         );
         // 获取合同SKU单价
-        const contractSkuPrices: Record<string, Record<string, number>> = {};
+        const contractSkuPrices: Record<string, Record<string, { price: number; sku: string }>> = {};
         for (const c of allContracts) {
           if (supplierContractIds.has(c.id)) {
             try {
@@ -571,7 +574,7 @@ export default function MonthlyBillsPage() {
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-20 w-20 rounded-full bg-white/5 blur-2xl" />
           <div className="relative z-10">
             <div className="text-xs font-medium text-white/70 mb-2">已付金额</div>
-            {Object.keys(stats.paidByCurrency || {}).length > 0 ? Object.entries(stats.paidByCurrency).sort().map(([cur, amt]) => (
+            {Object.keys(stats.paidByCurrency || {}).length > 0 ? Object.entries(stats.paidByCurrency || {}).sort().map(([cur, amt]) => (
               <div key={cur} className="text-lg font-bold text-emerald-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {cur === "CNY" || cur === "RMB" ? formatCurrency(amt, "CNY", "expense") : cur === "USD" ? formatCurrency(amt, "USD", "expense") : `${amt.toLocaleString()} ${cur}`}
               </div>

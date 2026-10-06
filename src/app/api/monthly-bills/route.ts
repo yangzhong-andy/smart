@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 import {
@@ -7,6 +8,7 @@ import {
   extractDeliveryNumbers,
   parseRelatedIds,
 } from "@/lib/procurement-payment-coverage";
+import { calculateAdvertisingBillDueDate } from "@/lib/monthly-bill-due-date";
 
 export const dynamic = 'force-dynamic';
 
@@ -58,13 +60,13 @@ export async function GET(request: NextRequest) {
           totalAmount: true, currency: true, rebateAmount: true, offsetAmount: true, rebateRate: true, netAmount: true,
           consumptionIds: true, rechargeIds: true,
           status: true, createdBy: true, createdAt: true,
-          submittedToFinanceAt: true, paymentApplicationVoucher: true,
+          submittedToFinanceAt: true,
           financeReviewedBy: true, financeReviewedAt: true,
           submittedAt: true, approvedBy: true, approvedAt: true, cashierApprovedBy: true, cashierApprovedAt: true,
           rejectionReason: true, paidBy: true, paidAt: true,
           dueDate: true,
           paymentMethod: true, paymentAccountId: true, paymentAccountName: true,
-          paymentVoucher: true, paymentFlowId: true, paymentVoucherNumber: true, paymentRemarks: true,
+          paymentFlowId: true, paymentVoucherNumber: true, paymentRemarks: true,
           notes: true,
         },
         orderBy: [{ month: 'desc' }, { createdAt: 'desc' }],
@@ -73,6 +75,22 @@ export async function GET(request: NextRequest) {
       }),
       prisma.monthlyBill.count({ where }),
     ]);
+
+    const voucherFlags = bills.length > 0
+      ? await prisma.$queryRaw<Array<{
+          id: string;
+          hasPaymentApplicationVoucher: boolean;
+          hasPaymentVoucher: boolean;
+        }>>(Prisma.sql`
+          SELECT
+            "id",
+            COALESCE(LENGTH("paymentApplicationVoucher"), 0) > 2 AS "hasPaymentApplicationVoucher",
+            COALESCE(LENGTH("paymentVoucher"), 0) > 2 AS "hasPaymentVoucher"
+          FROM "MonthlyBill"
+          WHERE "id" IN (${Prisma.join(bills.map((bill) => bill.id))})
+        `)
+      : [];
+    const voucherFlagsById = new Map(voucherFlags.map((item) => [item.id, item]));
 
     const deliveryOrderIds = Array.from(
       new Set(
@@ -105,20 +123,9 @@ export async function GET(request: NextRequest) {
         })
       : [];
 
-    const parseJsonField = (raw: string | null): string | string[] | undefined => {
-      if (!raw) return undefined;
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
-        if (typeof parsed === 'string' && parsed.length > 0) return parsed;
-        return undefined;
-      } catch {
-        return raw.length > 0 ? raw : undefined;
-      }
-    };
-
     const response = {
       data: bills.map(b => {
+        const billVoucherFlags = voucherFlagsById.get(b.id);
         const actualPaidAmount =
           b.billType === "工厂订单"
             ? calculateProcurementActualPaidAmount(
@@ -173,7 +180,7 @@ export async function GET(request: NextRequest) {
         createdBy: b.createdBy,
         createdAt: b.createdAt.toISOString(),
         submittedToFinanceAt: b.submittedToFinanceAt?.toISOString(),
-        paymentApplicationVoucher: parseJsonField(b.paymentApplicationVoucher),
+        hasPaymentApplicationVoucher: billVoucherFlags?.hasPaymentApplicationVoucher ?? false,
         financeReviewedBy: b.financeReviewedBy ?? undefined,
         financeReviewedAt: b.financeReviewedAt?.toISOString(),
         submittedAt: b.submittedAt?.toISOString(),
@@ -187,7 +194,7 @@ export async function GET(request: NextRequest) {
         paymentMethod: b.paymentMethod || undefined,
         paymentAccountId: b.paymentAccountId || undefined,
         paymentAccountName: b.paymentAccountName || undefined,
-        paymentVoucher: parseJsonField(b.paymentVoucher),
+        hasPaymentVoucher: billVoucherFlags?.hasPaymentVoucher ?? false,
         paymentFlowId: b.paymentFlowId || undefined,
         paymentVoucherNumber: b.paymentVoucherNumber || undefined,
         paymentRemarks: b.paymentRemarks || undefined,
@@ -211,6 +218,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const dueDate = body.dueDate
+      ? new Date(body.dueDate)
+      : body.billType === "广告"
+        ? calculateAdvertisingBillDueDate(body.month)
+        : null;
     const bill = await prisma.monthlyBill.create({
       data: {
         uid: body.uid || null,
@@ -229,6 +241,7 @@ export async function POST(request: NextRequest) {
         currency: body.currency || "CNY",
         rebateAmount: body.rebateAmount ?? 0,
         netAmount: body.netAmount ?? body.totalAmount,
+        dueDate,
         status: body.status || "Draft",
         createdBy: body.createdBy || '系统',
         notes: body.notes || null,

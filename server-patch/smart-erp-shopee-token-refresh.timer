@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Shopee access tokens every thirty minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30min
+RandomizedDelaySec=60
+Unit=smart-erp-shopee-token-refresh.service
+
+[Install]
+WantedBy=timers.target

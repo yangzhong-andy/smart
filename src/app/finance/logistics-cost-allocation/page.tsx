@@ -36,7 +36,7 @@ export default function LogisticsCostAllocationPage() {
   const { data: containersData } = useSWR("/api/containers?pageSize=200", (url: string) =>
     fetch(url).then((r) => r.json()), { revalidateOnFocus: false }
   );
-  const containers = Array.isArray(containersData?.data) ? containersData.data : (Array.isArray(containersData) ? containersData : []);
+  const containers = useMemo(() => Array.isArray(containersData?.data) ? containersData.data : (Array.isArray(containersData) ? containersData : []), [containersData]);
 
   // 加载全部分摊数据
   const { data: allocData, isLoading, mutate } = useSWR(
@@ -45,7 +45,7 @@ export default function LogisticsCostAllocationPage() {
     { revalidateOnFocus: false }
   );
 
-  const allData: AllocationItem[] = allocData?.data || [];
+  const allData = useMemo<AllocationItem[]>(() => Array.isArray(allocData?.data) ? allocData.data : [], [allocData?.data]);
   const summary = allocData?.summary || { totalCost: 0, containerCount: 0, skuCount: 0 };
 
   // 筛选

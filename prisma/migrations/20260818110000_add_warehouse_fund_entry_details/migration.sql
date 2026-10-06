@@ -1,0 +1,1 @@
+ALTER TABLE "WarehouseFundEntry" ADD COLUMN IF NOT EXISTS "details" JSONB;

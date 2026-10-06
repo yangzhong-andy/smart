@@ -5,6 +5,8 @@
 export type NavChild = {
   label: string;
   href: string;
+  section?: string;
+  disabled?: boolean;
 };
 
 export type NavGroup = {
@@ -42,6 +44,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "生产进度", href: "/procurement/production-progress" },
       { label: "拿货单管理", href: "/procurement/delivery-orders" },
       { label: "工厂端管理", href: "/supply-chain/factories" },
+      { label: "货物资产总账", href: "/inventory/assets" },
       { label: "库存查询", href: "/inventory" },
       { label: "仓库库存", href: "/inventory/warehouse" },
       { label: "库存看板", href: "/inventory/dashboard" },
@@ -67,11 +70,49 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
     ],
   },
   {
+    label: "平台中心",
+    children: [
+      { section: "TikTok Shop", label: "店铺与授权", href: "/settings/tiktok" },
+      { section: "TikTok Shop", label: "订单管理", href: "/tiktok/orders" },
+      { section: "TikTok Shop", label: "售后管理（待接入）", href: "/platforms/tiktok/after-sales", disabled: true },
+      { section: "TikTok Shop", label: "履约物流", href: "/logistics/tracking" },
+      { section: "TikTok Shop", label: "结算财务", href: "/tiktok/finance" },
+      { section: "TikTok Shop", label: "商品管理", href: "/product-center/products" },
+      { section: "TikTok Shop", label: "营销推广", href: "/advertising/agencies" },
+      { section: "TikTok Shop", label: "达人合作", href: "/tiktok/affiliate" },
+      { section: "TikTok Shop", label: "运营数据分析", href: "/platforms/tiktok/analytics" },
+      { section: "TikTok Shop", label: "YYT广告数据", href: "/platforms/yyt/advertising" },
+      { section: "TikTok Shop", label: "精细利润核算", href: "/finance/profit" },
+      { section: "Shopee", label: "店铺与授权", href: "/platforms/shopee/stores" },
+      { section: "Shopee", label: "订单管理", href: "/platforms/shopee/orders" },
+      { section: "Shopee", label: "售后管理", href: "/platforms/shopee/after-sales" },
+      { section: "Shopee", label: "履约物流", href: "/platforms/shopee/fulfillment" },
+      { section: "Shopee", label: "结算财务", href: "/platforms/shopee/finance" },
+      { section: "Shopee", label: "钱包管理", href: "/platforms/shopee/wallets" },
+      { section: "Shopee", label: "商品与 SKU", href: "/platforms/shopee/products" },
+      { section: "Shopee", label: "包裹与订单操作", href: "/platforms/shopee/operations" },
+      { section: "Shopee", label: "营销推广", href: "/platforms/shopee/marketing" },
+      { section: "Shopee", label: "达人合作", href: "/platforms/shopee/affiliate" },
+      { section: "Shopee", label: "数据分析", href: "/platforms/shopee/analytics" },
+      { section: "Shopee", label: "精细利润核算", href: "/platforms/shopee/profit" },
+      { section: "Mercado Livre", label: "店铺与授权", href: "/platforms/mercado-livre/stores" },
+      { section: "Mercado Livre", label: "订单管理", href: "/platforms/mercado-livre/orders" },
+      { section: "Mercado Livre", label: "售后管理（待接入）", href: "/platforms/mercado-livre/after-sales", disabled: true },
+      { section: "Mercado Livre", label: "履约物流（待接入）", href: "/platforms/mercado-livre/fulfillment", disabled: true },
+      { section: "Mercado Livre", label: "结算财务", href: "/platforms/mercado-livre/finance" },
+      { section: "Mercado Livre", label: "精细利润核算", href: "/platforms/mercado-livre/profit" },
+      { section: "Amazon", label: "店铺与授权（待接入）", href: "/platforms/amazon/stores", disabled: true },
+      { section: "Amazon", label: "订单管理（待接入）", href: "/platforms/amazon/orders", disabled: true },
+      { section: "Amazon", label: "售后管理（待接入）", href: "/platforms/amazon/after-sales", disabled: true },
+      { section: "Amazon", label: "履约物流（待接入）", href: "/platforms/amazon/fulfillment", disabled: true },
+      { section: "Amazon", label: "结算财务（待接入）", href: "/platforms/amazon/finance", disabled: true },
+      { section: "Amazon", label: "精细利润核算", href: "/platforms/amazon/profit" },
+    ],
+  },
+  {
     label: "营销与店铺",
     children: [
       { label: "经营总览", href: "/finance/settlement-dashboard" },
-      { label: "订单中心", href: "/tiktok/orders" },
-      { label: "店铺分析", href: "/tiktok/analytics" },
       { label: "营销增长", href: "/advertising/influencers" },
       { label: "达人营销核算", href: "/advertising/influencer-costs" },
       { label: "广告代理", href: "/advertising/agencies" },
@@ -85,13 +126,14 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "对账中心", href: "/finance/reconciliation" },
       { label: "流水明细", href: "/finance/cash-flow" },
       { label: "出口退税管理", href: "/finance/export-tax" },
+      { label: "多平台利润汇总", href: "/finance/platform-profit-summary" },
       { label: "精细利润核算", href: "/finance/profit" },
       { label: "账户列表", href: "/finance/accounts" },
       { label: "内部划拨", href: "/finance/transfer" },
       { label: "审批中心", href: "/finance/approval" },
       { label: "应收款管理", href: "/finance/receivables" },
-      { label: "平台回款", href: "/tiktok/finance" },
       { label: "店铺回款统计", href: "/finance/store-report" },
+      { label: "AI 智能经营中枢", href: "/ai-assistant" },
     ],
   },
   {

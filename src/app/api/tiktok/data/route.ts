@@ -7,73 +7,52 @@ import {
   deliveryAlertCutoff,
   isDeliveryOverdue,
 } from "@/lib/order-delivery-alert";
+import { tiktokAffiliateCommissionCost } from "@/lib/profit-affiliate-commissions";
+import {
+  businessDateInTimeZone,
+  businessDateUtcRangeInTimeZone,
+  isBusinessDate,
+  orderTimeZone,
+} from "@/lib/order-business-time";
 
 export const dynamic = "force-dynamic";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ORDER_SOURCE_TYPES = new Set(["NORMAL", "AFFILIATE_ORGANIC", "AFFILIATE_ADS", "FREE_SAMPLE"]);
+
+type OrderSourceType = "NORMAL" | "AFFILIATE_ORGANIC" | "AFFILIATE_ADS" | "FREE_SAMPLE";
+
+function resolveOrderSource(rawData: unknown, commission: { organic: number; ads: number }): OrderSourceType {
+  const raw = rawData && typeof rawData === "object" ? rawData as { is_sample_order?: unknown } : null;
+  if (raw?.is_sample_order === true) return "FREE_SAMPLE";
+  if (commission.ads > 0) return "AFFILIATE_ADS";
+  if (commission.organic > 0) return "AFFILIATE_ORGANIC";
+  return "NORMAL";
+}
+
+function commissionByOrder(rows: Array<{ orderId: string; rawData: unknown }>) {
+  const result = new Map<string, { organic: number; ads: number }>();
+  for (const row of rows) {
+    const current = result.get(row.orderId) || { organic: 0, ads: 0 };
+    const commission = tiktokAffiliateCommissionCost(row.rawData);
+    current.organic += commission.organic;
+    current.ads += commission.ads;
+    result.set(row.orderId, current);
+  }
+  return result;
+}
 
 function isValidDate(value: string | null) {
-  if (!value || !DATE_PATTERN.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
-function nextDate(value: string) {
-  const parsed = new Date(`${value}T00:00:00Z`);
-  parsed.setUTCDate(parsed.getUTCDate() + 1);
-  return parsed.toISOString().slice(0, 10);
-}
-
-function timeZoneForRegion(region: string | null | undefined) {
-  return region === "US" ? "America/Denver" : "America/Sao_Paulo";
-}
-
-function startOfDateInTimeZone(value: string, timeZone: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  const localMidnightAsUtc = new Date(Date.UTC(year, month - 1, day));
-  const offsetAt = (instant: Date) => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(instant);
-    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    const displayedAsUtc = Date.UTC(
-      Number(values.year),
-      Number(values.month) - 1,
-      Number(values.day),
-      Number(values.hour),
-      Number(values.minute),
-      Number(values.second),
-    );
-    return displayedAsUtc - instant.getTime();
-  };
-
-  // Calculate the timezone offset twice so the date boundary remains correct on DST changes.
-  let instant = new Date(localMidnightAsUtc.getTime() - offsetAt(localMidnightAsUtc));
-  instant = new Date(localMidnightAsUtc.getTime() - offsetAt(instant));
-  return instant;
+  return Boolean(value && DATE_PATTERN.test(value) && isBusinessDate(value));
 }
 
 function orderTimeRange(startDate: string | null, endDate: string | null, timeZone: string) {
-  return {
-    ...(startDate ? { gte: startOfDateInTimeZone(startDate, timeZone) } : {}),
-    ...(endDate ? { lt: startOfDateInTimeZone(nextDate(endDate), timeZone) } : {}),
-  };
+  return businessDateUtcRangeInTimeZone(startDate, endDate, timeZone);
 }
 
 function overviewRange(range: string | null, timeZone: string) {
   if (!range || range === "all") return null;
-  const nowParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(nowParts.map((part) => [part.type, part.value]));
-  const today = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
+  const today = new Date(`${businessDateInTimeZone(new Date(), timeZone)}T00:00:00.000Z`);
   const day = today.getUTCDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
   const currentMonday = new Date(today);
@@ -115,11 +94,16 @@ export async function GET(request: NextRequest) {
     const keyword = searchParams.get("keyword");
     const sku = searchParams.get("sku");
     const shippingType = searchParams.get("shippingType");
+    const orderSource = searchParams.get("orderSource");
     const orderStartDate = searchParams.get("orderStartDate");
     const orderEndDate = searchParams.get("orderEndDate");
     const deliveryAlert = searchParams.get("deliveryAlert") === "1";
     const overview = searchParams.get("range");
     const skip = (page - 1) * pageSize;
+
+    if (type === "orders" && orderSource && !ORDER_SOURCE_TYPES.has(orderSource)) {
+      return NextResponse.json({ error: "Invalid order source" }, { status: 400 });
+    }
 
     if (type === "orders" && (
       (orderStartDate && !isValidDate(orderStartDate))
@@ -153,6 +137,46 @@ export async function GET(request: NextRequest) {
         { rawData: { path: ["shipping_type"], equals: shippingType } },
       ];
     }
+    if (type === "orders" && orderSource === "FREE_SAMPLE") {
+      where.rawData = {
+        ...(where.rawData || {}),
+        path: ["is_sample_order"],
+        equals: true,
+      };
+    }
+    if (type === "orders" && orderSource && orderSource !== "FREE_SAMPLE") {
+      // The order API has no creator identifier. The settlement transaction is
+      // the authoritative source for affiliate commission attribution.
+      const settlementRows = await prisma.platformSettlementTransaction.findMany({
+        where: {
+          platform: "TIKTOK",
+          ...(shopId ? { externalShopId: shopId } : {}),
+        },
+        select: { orderId: true, rawData: true },
+      });
+      const commissions = commissionByOrder(settlementRows);
+      const affiliateOrderIds = [...commissions.entries()]
+        .filter(([, commission]) => commission.organic > 0 || commission.ads > 0)
+        .map(([orderId]) => orderId);
+      const matchedOrderIds = [...commissions.entries()]
+        .filter(([, commission]) => {
+          if (orderSource === "AFFILIATE_ADS") return commission.ads > 0;
+          return commission.organic > 0 && commission.ads <= 0;
+        })
+        .map(([orderId]) => orderId);
+
+      if (orderSource === "NORMAL") {
+        where.orderId = { notIn: affiliateOrderIds };
+      } else {
+        where.orderId = { in: matchedOrderIds.length > 0 ? matchedOrderIds : ["__NO_MATCHING_ORDER__"] };
+      }
+      // Free samples remain a separate source even if a settlement row happens
+      // to contain an affiliate-related fee.
+      where.AND = [
+        ...(where.AND || []),
+        { NOT: { rawData: { path: ["is_sample_order"], equals: true } } },
+      ];
+    }
     if (type === "orders" && (orderStartDate || orderEndDate)) {
       const dateShops = await prisma.tikTokShopSetting.findMany({
         where: shopId ? { shopId } : undefined,
@@ -160,17 +184,17 @@ export async function GET(request: NextRequest) {
       });
       const shopsByTimeZone = new Map<string, string[]>();
       for (const shop of dateShops) {
-        const timeZone = timeZoneForRegion(shop.region);
+        const timeZone = orderTimeZone(shop.region);
         shopsByTimeZone.set(timeZone, [...(shopsByTimeZone.get(timeZone) || []), shop.shopId]);
       }
-      const dateConditions = [...shopsByTimeZone.entries()].map(([timeZone, shopIds]) => ({
+      const dateConditions: Prisma.TikTokOrderWhereInput[] = [...shopsByTimeZone.entries()].map(([timeZone, shopIds]) => ({
         shopId: { in: shopIds },
         createTime: orderTimeRange(orderStartDate, orderEndDate, timeZone),
       }));
       if (!shopId && dateShops.length > 0) {
         dateConditions.push({
           shopId: { notIn: dateShops.map((shop) => shop.shopId) },
-          createTime: orderTimeRange(orderStartDate, orderEndDate, "America/Sao_Paulo"),
+          createTime: orderTimeRange(orderStartDate, orderEndDate, "UTC"),
         });
       }
       if (dateConditions.length === 1 && shopId) {
@@ -181,7 +205,7 @@ export async function GET(request: NextRequest) {
           { OR: dateConditions },
         ];
       } else {
-        where.createTime = orderTimeRange(orderStartDate, orderEndDate, "America/Sao_Paulo");
+        where.createTime = orderTimeRange(orderStartDate, orderEndDate, "UTC");
       }
     }
     const requestNow = new Date();
@@ -242,7 +266,7 @@ export async function GET(request: NextRequest) {
       const summaryShop = shopId
         ? await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { region: true } })
         : null;
-      const summaryTimeZone = timeZoneForRegion(summaryShop?.region);
+      const summaryTimeZone = orderTimeZone(summaryShop?.region);
       const overviewDates = overviewRange(overview, summaryTimeZone);
       const statementWhere: any = shopId ? { shopId } : {};
       if (overviewDates) statementWhere.statementTime = orderTimeRange(overviewDates.startDate, overviewDates.endDate, summaryTimeZone);
@@ -334,9 +358,20 @@ export async function GET(request: NextRequest) {
         prisma.tikTokOrder.count({ where: deliveryAlertScope }),
       ]);
 
+      const orderIds = data.map((order) => order.orderId);
+      const settlementRows = orderIds.length > 0
+        ? await prisma.platformSettlementTransaction.findMany({
+            where: { platform: "TIKTOK", orderId: { in: orderIds } },
+            select: { orderId: true, rawData: true },
+          })
+        : [];
+      const affiliateCommissions = commissionByOrder(settlementRows);
+
       // 从 rawData 提取完整字段
       const enriched = data.map((o) => {
         const raw = o.rawData as any;
+        const affiliateCommission = affiliateCommissions.get(o.orderId) || { organic: 0, ads: 0 };
+        const sourceType = resolveOrderSource(raw, affiliateCommission);
         return {
           id: o.id,
           orderId: o.orderId,
@@ -386,6 +421,9 @@ export async function GET(request: NextRequest) {
           // 支付明细
           payment: raw?.payment,
           isSampleOrder: raw?.is_sample_order === true,
+          sourceType,
+          affiliateOrganicCommission: affiliateCommission.organic,
+          affiliateAdsCommission: affiliateCommission.ads,
           deliveryAlert: isDeliveryOverdue(o.status, o.createTime, requestNow),
           deliveryAlertAgeDays: deliveryAlertAgeDays(o.createTime, requestNow),
         };

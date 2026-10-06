@@ -149,7 +149,7 @@ export default function OutboundBatchDetailPage() {
     batchFetcher,
     { revalidateOnFocus: false, dedupingInterval: 300000 }
   );
-  const destinationCountries = Array.isArray(countryData?.data) ? countryData!.data : [];
+  const destinationCountries = useMemo(() => Array.isArray(countryData?.data) ? countryData.data : [], [countryData?.data]);
   const countryOptionsByRegion = useMemo(() => {
     const grouped = getCountriesByRegion();
     const knownCodes = new Set<string>();

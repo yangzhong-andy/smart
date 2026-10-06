@@ -31,9 +31,7 @@ export default function TikTokAffiliatePage() {
       const res = await fetch(`/api/tiktok/affiliate?shopId=${shopId}&action=list`);
       const d = await res.json();
       setConversations(d.conversations || []);
-      if (d.conversations?.length > 0 && !selectedConv) {
-        setSelectedConv(d.conversations[0].id);
-      }
+      setSelectedConv((current) => current || d.conversations?.[0]?.id || null);
     } catch { toast.error("加载对话失败"); }
     setLoadingList(false);
   }, [shopId]);

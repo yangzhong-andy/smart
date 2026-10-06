@@ -21,7 +21,13 @@ export async function GET(request: NextRequest) {
     if (status && status !== "all") where.status = status;
     if (employeeId) where.employeeId = employeeId;
 
-    const cacheKey = generateCacheKey("payroll", { month, department, status, employeeId });
+    const cacheKey = generateCacheKey(
+      "payroll",
+      month || "all",
+      department || "all",
+      status || "all",
+      employeeId || "all",
+    );
     if (!noCache) {
       const cached = await getCache<any>(cacheKey);
       if (cached) return NextResponse.json(cached);

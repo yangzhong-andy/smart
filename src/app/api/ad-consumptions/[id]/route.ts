@@ -82,6 +82,7 @@ export async function PUT(
       data,
     });
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    await clearCacheByPrefix("profit-report");
     const affectedMonths = Array.from(
       new Set([before.month, c.month]),
     );
@@ -126,6 +127,7 @@ export async function DELETE(
     }
     await prisma.adConsumption.delete({ where: { id: params.id } });
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    await clearCacheByPrefix("profit-report");
     const billSync = await syncAdvertisingMonthlyBills([existing.month]);
     return NextResponse.json({ success: true, billSync });
   } catch (error: any) {

@@ -4,9 +4,13 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { Pencil, Plus, Power, PowerOff, Save, Search, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  PROFIT_SKU_PLATFORM_LABELS,
+  type ProfitSkuPlatform,
+} from "@/lib/profit-sku-platforms";
 
 type Variant = { id: string; skuId: string; product: { name: string } };
-type Shop = { shopId: string; shopName: string; region: string };
+type Shop = { platform: ProfitSkuPlatform; shopId: string; shopName: string | null; region: string };
 type Mapping = {
   id: string;
   platform: string;
@@ -16,7 +20,12 @@ type Mapping = {
   notes: string | null;
   components: Array<{ variantId: string; quantity: number; variant: Variant }>;
 };
-type Data = { mappings: Mapping[]; shops: Shop[]; variants: Variant[] };
+type Data = {
+  mappings: Mapping[];
+  shops: Array<Omit<Shop, "platform"> & { platform?: ProfitSkuPlatform }>;
+  variants: Variant[];
+  platforms?: ProfitSkuPlatform[];
+};
 type ComponentDraft = { key: string; variantId: string; quantity: number };
 
 const fetcher = async (url: string) => {
@@ -26,31 +35,42 @@ const fetcher = async (url: string) => {
   return body;
 };
 const emptyComponent = (key = "initial"): ComponentDraft => ({ key, variantId: "", quantity: 1 });
+const shopKey = (platform: string, shopId: string) => `${platform}\u0000${shopId}`;
 
 export default function StoreSkuMappingsPanel() {
   const { data, error, isLoading, mutate } = useSWR<Data>("/api/profit-sku-mappings", fetcher, { revalidateOnFocus: false });
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [platformFilter, setPlatformFilter] = useState<"all" | ProfitSkuPlatform>("all");
   const [shopFilter, setShopFilter] = useState("all");
   const [form, setForm] = useState({
-    id: "", shopId: "", sellerSku: "", notes: "", components: [emptyComponent()] as ComponentDraft[],
+    id: "", platform: "TIKTOK" as ProfitSkuPlatform, shopId: "", sellerSku: "", notes: "", components: [emptyComponent()] as ComponentDraft[],
   });
 
-  const shopById = useMemo(() => new Map((data?.shops || []).map((shop) => [shop.shopId, shop])), [data?.shops]);
+  const platforms = data?.platforms || ["TIKTOK", "SHOPEE", "MERCADO_LIVRE"];
+  const shops = useMemo<Shop[]>(() => (data?.shops || []).map((shop) => ({
+    ...shop,
+    platform: shop.platform || "TIKTOK",
+  })), [data?.shops]);
+  const shopById = useMemo(() => new Map(shops.map((shop) => [shopKey(shop.platform, shop.shopId), shop])), [shops]);
+  const formShops = useMemo(() => shops.filter((shop) => shop.platform === form.platform), [shops, form.platform]);
+  const filterShops = useMemo(() => shops.filter((shop) => platformFilter === "all" || shop.platform === platformFilter), [shops, platformFilter]);
   const rows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return (data?.mappings || []).filter((mapping) => (
-      (shopFilter === "all" || mapping.shopId === shopFilter)
+      (platformFilter === "all" || mapping.platform === platformFilter)
+      && (shopFilter === "all" || shopKey(mapping.platform, mapping.shopId) === shopFilter)
       && (!keyword
         || mapping.sellerSku.toLowerCase().includes(keyword)
-        || (shopById.get(mapping.shopId)?.shopName || "").toLowerCase().includes(keyword)
+        || (shopById.get(shopKey(mapping.platform, mapping.shopId))?.shopName || "").toLowerCase().includes(keyword)
         || mapping.components.some((component) => component.variant.skuId.toLowerCase().includes(keyword)))
     ));
-  }, [data?.mappings, search, shopById, shopFilter]);
+  }, [data?.mappings, search, shopById, shopFilter, platformFilter]);
 
-  const reset = () => setForm({ id: "", shopId: "", sellerSku: "", notes: "", components: [emptyComponent()] });
+  const reset = () => setForm({ id: "", platform: "TIKTOK", shopId: "", sellerSku: "", notes: "", components: [emptyComponent()] });
   const edit = (mapping: Mapping) => setForm({
     id: mapping.id,
+    platform: mapping.platform as ProfitSkuPlatform,
     shopId: mapping.shopId,
     sellerSku: mapping.sellerSku,
     notes: mapping.notes || "",
@@ -73,7 +93,7 @@ export default function StoreSkuMappingsPanel() {
       const response = await fetch("/api/profit-sku-mappings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: "TIKTOK", ...form, components }),
+        body: JSON.stringify({ ...form, components }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "店铺销售 SKU 映射保存失败");
@@ -108,8 +128,9 @@ export default function StoreSkuMappingsPanel() {
       <div className="mb-4 border-l-2 border-emerald-500 bg-slate-900 px-4 py-3 text-sm text-slate-300">
         组合装请添加多行内部 SKU。系统按内部组成计算真实件数、采购成本和后续库存扣减。
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <Field label="店铺"><select value={form.shopId} onChange={(event) => setForm({ ...form, shopId: event.target.value })} className="input"><option value="">请选择</option>{data.shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName} · {shop.region}</option>)}</select></Field>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Field label="平台"><select value={form.platform} onChange={(event) => setForm({ ...form, platform: event.target.value as ProfitSkuPlatform, shopId: "" })} className="input">{platforms.map((platform) => <option key={platform} value={platform}>{PROFIT_SKU_PLATFORM_LABELS[platform]}</option>)}</select></Field>
+        <Field label="店铺"><select value={form.shopId} onChange={(event) => setForm({ ...form, shopId: event.target.value })} className="input"><option value="">请选择</option>{formShops.map((shop) => <option key={shopKey(shop.platform, shop.shopId)} value={shop.shopId}>{shop.shopName || shop.shopId} · {shop.region}</option>)}</select></Field>
         <Field label="店铺销售 SKU"><input value={form.sellerSku} onChange={(event) => setForm({ ...form, sellerSku: event.target.value })} placeholder="例如 FY-T3B" className="input" /></Field>
         <Field label="备注"><input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="例如马桶刷与刷头组合装" className="input" /></Field>
       </div>
@@ -122,8 +143,8 @@ export default function StoreSkuMappingsPanel() {
     </section>
 
     <section>
-      <div className="mb-3 grid gap-3 md:grid-cols-[260px_1fr]"><select value={shopFilter} onChange={(event) => setShopFilter(event.target.value)} className="input"><option value="all">全部店铺</option>{data.shops.map((shop) => <option key={shop.shopId} value={shop.shopId}>{shop.shopName}</option>)}</select><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索店铺销售 SKU、内部 SKU 或店铺" className="input pl-9" /></div></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="text-xs text-slate-500"><tr className="border-b border-slate-800"><th className="px-3 py-3 text-left">店铺</th><th className="px-3 py-3 text-left">销售 SKU</th><th className="px-3 py-3 text-left">内部 SKU 组成</th><th className="px-3 py-3 text-left">真实件数</th><th className="px-3 py-3 text-left">状态</th><th className="px-3 py-3 text-left">备注</th><th className="w-24" /></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-3 py-10 text-center text-slate-500">暂无店铺销售 SKU 映射</td></tr> : rows.map((mapping) => <tr key={mapping.id} className="border-b border-slate-900"><td className="px-3 py-3 text-slate-300">{shopById.get(mapping.shopId)?.shopName || mapping.shopId}</td><td className="px-3 py-3 font-mono text-slate-100">{mapping.sellerSku}</td><td className="px-3 py-3 text-slate-300">{mapping.components.map((component) => `${component.variant.skuId} × ${component.quantity}`).join(" + ")}</td><td className="px-3 py-3 text-slate-200">{mapping.components.reduce((sum, component) => sum + component.quantity, 0)} 件</td><td className="px-3 py-3"><span className={mapping.enabled ? "text-emerald-300" : "text-slate-500"}>{mapping.enabled ? "启用" : "停用"}</span></td><td className="max-w-[220px] px-3 py-3 text-slate-500"><div className="truncate" title={mapping.notes || ""}>{mapping.notes || "-"}</div></td><td className="px-2 py-3"><div className="flex gap-1"><button type="button" onClick={() => edit(mapping)} title="编辑映射" className="icon-button"><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => toggle(mapping)} title={mapping.enabled ? "停用映射" : "启用映射"} className="icon-button">{mapping.enabled ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}</button></div></td></tr>)}</tbody></table></div>
+      <div className="mb-3 grid gap-3 md:grid-cols-[200px_260px_1fr]"><select value={platformFilter} onChange={(event) => { setPlatformFilter(event.target.value as "all" | ProfitSkuPlatform); setShopFilter("all"); }} className="input"><option value="all">全部平台</option>{platforms.map((platform) => <option key={platform} value={platform}>{PROFIT_SKU_PLATFORM_LABELS[platform]}</option>)}</select><select value={shopFilter} onChange={(event) => setShopFilter(event.target.value)} className="input"><option value="all">全部店铺</option>{filterShops.map((shop) => <option key={shopKey(shop.platform, shop.shopId)} value={shopKey(shop.platform, shop.shopId)}>{shop.shopName || shop.shopId}</option>)}</select><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索店铺销售 SKU、内部 SKU 或店铺" className="input pl-9" /></div></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-sm"><thead className="text-xs text-slate-500"><tr className="border-b border-slate-800"><th className="px-3 py-3 text-left">平台</th><th className="px-3 py-3 text-left">店铺</th><th className="px-3 py-3 text-left">销售 SKU</th><th className="px-3 py-3 text-left">内部 SKU 组成</th><th className="px-3 py-3 text-left">真实件数</th><th className="px-3 py-3 text-left">状态</th><th className="px-3 py-3 text-left">备注</th><th className="w-24" /></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-500">暂无店铺销售 SKU 映射</td></tr> : rows.map((mapping) => <tr key={mapping.id} className="border-b border-slate-900"><td className="px-3 py-3 text-slate-300">{PROFIT_SKU_PLATFORM_LABELS[mapping.platform as ProfitSkuPlatform] || mapping.platform}</td><td className="px-3 py-3 text-slate-300">{shopById.get(shopKey(mapping.platform, mapping.shopId))?.shopName || mapping.shopId}</td><td className="px-3 py-3 font-mono text-slate-100">{mapping.sellerSku}</td><td className="px-3 py-3 text-slate-300">{mapping.components.map((component) => `${component.variant.skuId} × ${component.quantity}`).join(" + ")}</td><td className="px-3 py-3 text-slate-200">{mapping.components.reduce((sum, component) => sum + component.quantity, 0)} 件</td><td className="px-3 py-3"><span className={mapping.enabled ? "text-emerald-300" : "text-slate-500"}>{mapping.enabled ? "启用" : "停用"}</span></td><td className="max-w-[220px] px-3 py-3 text-slate-500"><div className="truncate" title={mapping.notes || ""}>{mapping.notes || "-"}</div></td><td className="px-2 py-3"><div className="flex gap-1"><button type="button" onClick={() => edit(mapping)} title="编辑映射" className="icon-button"><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => toggle(mapping)} title={mapping.enabled ? "停用映射" : "启用映射"} className="icon-button">{mapping.enabled ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}</button></div></td></tr>)}</tbody></table></div>
     </section>
     <style jsx>{`.input{height:2.5rem;width:100%;border-radius:.375rem;border:1px solid #334155;background:#0f172a;padding:0 .75rem;font-size:.875rem;color:#e2e8f0;outline:none}.input:focus{border-color:#10b981}.icon-button{display:inline-flex;height:2rem;width:2rem;align-items:center;justify-content:center;border-radius:.375rem;color:#94a3b8}.icon-button:hover{background:#1e293b;color:#f8fafc}.command-button{display:inline-flex;height:2.25rem;align-items:center;gap:.5rem;border-radius:.375rem;padding:0 1rem;font-size:.875rem;font-weight:500}.command-button:disabled{opacity:.5}`}</style>
   </div>;

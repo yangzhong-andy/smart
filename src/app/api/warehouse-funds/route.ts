@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const warehouseId = String(searchParams.get("warehouseId") || "").trim();
   const currency = String(searchParams.get("currency") || "").trim().toUpperCase();
+  const platform = String(searchParams.get("platform") || "").trim().toUpperCase();
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(searchParams.get("pageSize")) || 20));
 
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
   const entryWhere = {
     ...(warehouseId ? { warehouseId } : {}),
     ...(currency ? { currency } : {}),
+    ...(platform ? { platform } : {}),
   };
   const [accounts, entries, total] = await prisma.$transaction([
     prisma.warehouseFundAccount.findMany({
@@ -62,7 +64,18 @@ export async function GET(request: NextRequest) {
       balanceAfter: Number(entry.balanceAfter),
       sourceType: entry.sourceType,
       sourceId: entry.sourceId,
+      orderId: entry.orderId,
+      platform: entry.platform || (
+        entry.sourceType === "PROFIT_ORDER_FULFILLMENT"
+        || entry.sourceType === "PROFIT_ORDER_FULFILLMENT_REVERSAL"
+          ? "TIKTOK"
+          : null
+      ),
+      shopId: entry.shopId,
+      shopName: entry.shopName,
+      countryCode: entry.countryCode,
       notes: entry.notes,
+      details: entry.details,
       occurredAt: entry.occurredAt.toISOString(),
       createdBy: entry.createdBy,
     })),

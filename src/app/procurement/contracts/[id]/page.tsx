@@ -89,7 +89,7 @@ export default function ContractPreviewPage() {
     if (error) toast.error("加载合同失败");
   }, [error]);
 
-  const items = data?.snapshot?.items ?? [];
+  const items = useMemo(() => data?.snapshot?.items ?? [], [data?.snapshot?.items]);
   const groupedByPrototype = useMemo(() => {
     const key = (item: ContractItem) => item.skuName || item.productName || item.sku || "";
     const map = new Map<string, ContractItem[]>();

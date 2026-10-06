@@ -130,7 +130,7 @@ const renderGroupedAccountOptions = (accounts: any[]) => {
     const label = CURRENCY_LABELS[currency] || currency;
     return [
       <optgroup key={`group-${currency}`} label={`━━━ ${label} (${currency}) ━━━`}>
-        {grouped[currency].map((acc) => (
+        {grouped[currency].map((acc: any) => (
           <option key={acc.id} value={acc.id}>
             {acc.name} | 余额: {formatAccountBalance(acc)}
           </option>
@@ -177,9 +177,9 @@ export default function ReceivablesPage() {
   const { data: accounts = [] } = useSWR<BankAccount[]>("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   const { data: employeesRaw } = useSWR<any[]>("/api/employees?page=1&pageSize=500", arrayFetcher, SWR_OPT);
   // 防御性: 确保 accounts/receivables/employees 一定是数组
-  const safeAccounts: BankAccount[] = Array.isArray(accounts) ? accounts : [];
-  const safeEmployees: any[] = Array.isArray(employeesRaw) ? employeesRaw : [];
-  const safeReceivables: Receivable[] = Array.isArray(receivables) ? receivables : [];
+  const safeAccounts = useMemo<BankAccount[]>(() => Array.isArray(accounts) ? accounts : [], [accounts]);
+  const safeEmployees = useMemo<any[]>(() => Array.isArray(employeesRaw) ? employeesRaw : [], [employeesRaw]);
+  const safeReceivables = useMemo<Receivable[]>(() => Array.isArray(receivables) ? receivables : [], [receivables]);
 
   const filteredReceivables = useMemo(() => {
     let result = safeReceivables;

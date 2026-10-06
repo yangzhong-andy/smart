@@ -1,0 +1,11 @@
+[Unit]
+Description=Synchronize Shopee products and SKUs every six hours
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=6h
+RandomizedDelaySec=300
+Unit=smart-erp-shopee-product-sync.service
+
+[Install]
+WantedBy=timers.target

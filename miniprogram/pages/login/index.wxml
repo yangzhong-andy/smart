@@ -1,0 +1,26 @@
+<view class="login-page">
+  <view class="brand-block">
+    <view class="brand-mark">水</view>
+    <view class="brand-name">水滴飞扬</view>
+    <view class="brand-caption">店铺订单管理</view>
+  </view>
+
+  <view class="login-panel">
+    <view class="panel-title">登录 ERP 账号</view>
+    <view class="field">
+      <text class="field-label">邮箱</text>
+      <input class="field-input" type="text" placeholder="请输入邮箱" value="{{email}}" bindinput="onEmailInput" />
+    </view>
+    <view class="field">
+      <text class="field-label">密码</text>
+      <view class="password-row">
+        <input class="field-input password-input" password="{{!showPassword}}" placeholder="请输入密码" value="{{password}}" bindinput="onPasswordInput" confirm-type="done" bindconfirm="submit" />
+        <button class="visibility-button" bindtap="togglePassword">{{showPassword ? '隐藏' : '显示'}}</button>
+      </view>
+    </view>
+    <view wx:if="{{error}}" class="error-message">{{error}}</view>
+    <button class="submit-button" loading="{{loading}}" disabled="{{loading}}" bindtap="submit">登录</button>
+  </view>
+
+  <view class="security-note">使用现有 ERP 账号登录，权限与网页端保持一致</view>
+</view>

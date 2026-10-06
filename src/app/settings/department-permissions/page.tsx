@@ -13,7 +13,7 @@ import {
   type DepartmentAccessRuleConfig,
 } from "@/lib/department-access-config";
 import { useRouter } from "next/navigation";
-import { InteractiveButton } from "@/components/ui/InteractiveButton";
+import InteractiveButton from "@/components/ui/InteractiveButton";
 
 type Department = {
   id: string;
@@ -75,8 +75,8 @@ export default function DepartmentPermissionsPage() {
     }
   );
 
-  const depts: Department[] = deptsData ?? [];
-  const rules: RuleRow[] = rulesData ?? [];
+  const depts = useMemo<Department[]>(() => deptsData ?? [], [deptsData]);
+  const rules = useMemo<RuleRow[]>(() => rulesData ?? [], [rulesData]);
 
   // 规则按 departmentId 映射
   const ruleMap = useMemo(() => {

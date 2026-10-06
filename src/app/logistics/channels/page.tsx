@@ -55,7 +55,7 @@ export default function LogisticsChannelsPage() {
     revalidateOnReconnect: false,
     dedupingInterval: 600000,
   });
-  const channels = (Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw?.data ?? [])) as LogisticsChannel[];
+  const channels = useMemo<LogisticsChannel[]>(() => (Array.isArray(channelsRaw) ? channelsRaw : (channelsRaw?.data ?? [])) as LogisticsChannel[], [channelsRaw]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<LogisticsChannel | null>(null);

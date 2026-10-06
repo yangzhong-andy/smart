@@ -12,8 +12,13 @@ export type WarehouseFundEntryInput = {
   expenseRequestId?: string | null;
   cashFlowId?: string | null;
   orderId?: string | null;
+  platform?: string | null;
+  shopId?: string | null;
+  shopName?: string | null;
+  countryCode?: string | null;
   occurredAt?: Date;
   notes?: string | null;
+  details?: Prisma.InputJsonValue | null;
   createdBy?: string | null;
   allowNegativeBalance?: boolean;
 };
@@ -43,7 +48,9 @@ export async function recordWarehouseFundEntry(tx: TransactionClient, input: War
   if (!warehouse || warehouse.type !== "OVERSEAS") throw new Error("海外仓不存在或类型不正确");
 
   const lockKey = `warehouse-fund:${input.warehouseId}:${currency}`;
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+  // pg_advisory_xact_lock returns PostgreSQL `void`; use executeRaw so
+  // Prisma does not try to deserialize a result column from the lock call.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
   const existing = await tx.warehouseFundEntry.findUnique({
     where: { sourceType_sourceId: { sourceType, sourceId } },
@@ -94,8 +101,13 @@ export async function recordWarehouseFundEntry(tx: TransactionClient, input: War
       expenseRequestId: input.expenseRequestId || null,
       cashFlowId: input.cashFlowId || null,
       orderId: input.orderId || null,
+      platform: input.platform?.trim().toUpperCase() || null,
+      shopId: input.shopId?.trim() || null,
+      shopName: input.shopName?.trim() || null,
+      countryCode: input.countryCode?.trim().toUpperCase() || null,
       occurredAt: input.occurredAt || new Date(),
       notes: input.notes || null,
+      details: input.details ?? undefined,
       createdBy: input.createdBy || null,
     },
   });

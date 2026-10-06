@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Smart Baxi TikTok creator affiliate order sync
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=180
+Unit=smart-baxi-creator-orders-sync.service
+
+[Install]
+WantedBy=timers.target

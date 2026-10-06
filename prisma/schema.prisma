@@ -99,13 +99,15 @@ model ProductVariant {
   replenishmentPolicies  ReplenishmentPolicyConfig[]
   stocks                 Stock[]
   stockLogs              StockLog[]
+  skuConversionSources   WarehouseSkuConversion[]       @relation("WarehouseSkuConversionSource")
+  skuConversionOutputs   WarehouseSkuConversionOutput[] @relation("WarehouseSkuConversionOutput")
 
   @@index([productId])
   @@index([skuId])
 }
 
 model Store {
-  id                  String              @id @default(uuid())
+  id                  String               @id @default(uuid())
   name                String
   platform            Platform
   country             String
@@ -114,7 +116,7 @@ model Store {
   accountName         String
   vatNumber           String?
   taxId               String?
-  createdAt           DateTime            @default(now())
+  createdAt           DateTime             @default(now())
   overseasCompanyId   String?
   overseasCompanyName String?
   bankAccounts        BankAccount[]
@@ -124,6 +126,8 @@ model Store {
   profitSchemes       ProfitScheme[]
   profitOrderLedgers  ProfitOrderLedger[]
   tiktokShopSetting   TikTokShopSetting?
+  shopeeShopSetting   ShopeeShopSetting?
+  mercadoLivreAccount MercadoLivreAccount?
 }
 
 model Influencer {
@@ -150,6 +154,58 @@ model Influencer {
   updatedAt                DateTime               @updatedAt
   videoTasks               VideoTask[]
   sampleCostAttributions   InfluencerSampleCost[]
+}
+
+// Official TikTok affiliate attribution is stored separately from the BD
+// contact record. One order can have multiple SKU-level creator attributions.
+model CreatorOrderAttribution {
+  id                    String   @id @default(uuid())
+  platform              String   @default("TIKTOK")
+  shopId                String
+  orderId               String
+  externalSkuId         String
+  creatorUsername       String
+  creatorUserId         String?
+  creatorNickname       String?
+  collaborationType     String?
+  programId             String?
+  openCollaborationId   String?
+  targetCollaborationId String?
+  campaignId            String?
+  settlementStatus      String?
+  quantity              Int?
+  currency              String?
+  unitPrice             Decimal? @db.Decimal(18, 4)
+  source                String   @default("OFFICIAL_AFFILIATE_API")
+  rawData               Json
+  syncedAt              DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([platform, shopId, orderId, externalSkuId, creatorUsername])
+  @@index([shopId, creatorUsername])
+  @@index([shopId, orderId])
+  @@index([creatorUserId])
+}
+
+// A cached profile/performance snapshot from the official creator marketplace
+// API. The attribution table remains the source of truth for order ownership.
+model CreatorProfile {
+  id              String   @id @default(uuid())
+  platform        String   @default("TIKTOK")
+  creatorUserId   String
+  username        String?
+  nickname        String?
+  avatarUrl       String?
+  selectionRegion String?
+  followerCount   Int?
+  rawData         Json
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([platform, creatorUserId])
+  @@index([platform, username])
 }
 
 model Department {
@@ -190,12 +246,27 @@ model User {
   departmentId String?
   isActive     Boolean     @default(true)
   lastLoginAt  DateTime?
+  preferences  Json?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   department   Department? @relation(fields: [departmentId], references: [id])
 
   @@index([email])
   @@index([departmentId])
+}
+
+// Shared account-card layout for the current application database. The
+// application databases are tenant-isolated, so one row is shared by all
+// users in that tenant while selectedGroup remains a per-browser preference.
+model AccountGroupConfig {
+  id            String   @id @default("default")
+  groups        Json
+  assignments   Json
+  accountOrder  Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedById   String?
+  updatedByName String?
 }
 
 model Employee {
@@ -223,6 +294,7 @@ model Employee {
   pensionInsurance       Float?             @default(323.44)
   unemploymentInsurance  Float?             @default(20.22)
   medicalInsurance       Float?             @default(88.66)
+  restDays               Int                @default(7)
   leaveDate              DateTime?
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
@@ -297,10 +369,33 @@ model Warehouse {
   skuMappings       WarehouseSkuMapping[]
   fundAccounts      WarehouseFundAccount[]
   fundEntries       WarehouseFundEntry[]
+  skuConversions    WarehouseSkuConversion[]
+  storageRules      WarehouseStorageRule[]
 
   @@index([code])
   @@index([location])
   @@index([type])
+}
+
+// Daily storage pricing for overseas warehouses. A warehouse can keep
+// historical rules so changing a provider's quote does not rewrite old days.
+model WarehouseStorageRule {
+  id            String    @id @default(uuid())
+  warehouseId   String
+  freeDays      Int       @default(0)
+  dailyRate     Decimal   @db.Decimal(18, 6)
+  rateUnit      String    @default("CBM_DAY")
+  currency      String    @default("BRL")
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+  enabled       Boolean   @default(true)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseId, effectiveFrom])
+  @@index([enabled, effectiveFrom])
 }
 
 // Prepaid cash held by a warehouse. Product stock is tracked separately in
@@ -335,8 +430,13 @@ model WarehouseFundEntry {
   expenseRequestId String?
   cashFlowId       String?
   orderId          String?
+  platform         String?
+  shopId           String?
+  shopName         String?
+  countryCode      String?
   occurredAt       DateTime
   notes            String?
+  details          Json?
   createdBy        String?
   createdAt        DateTime               @default(now())
   account          WarehouseFundAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
@@ -348,6 +448,52 @@ model WarehouseFundEntry {
   @@index([expenseRequestId])
   @@index([cashFlowId])
   @@index([orderId])
+  @@index([platform, occurredAt])
+  @@index([platform, shopId, occurredAt])
+}
+
+// Overseas-warehouse repacking work order. Creating an order reserves the
+// source SKU; completion atomically consumes it and creates the output SKUs.
+model WarehouseSkuConversion {
+  id              String                         @id @default(uuid())
+  conversionNo    String                         @unique
+  warehouseId     String
+  sourceVariantId String
+  plannedQty      Int
+  completedQty    Int                            @default(0)
+  damagedQty      Int                            @default(0)
+  status          String                         @default("PROCESSING")
+  feeAmount       Decimal                        @default(0) @db.Decimal(18, 2)
+  feeCurrency     String                         @default("BRL")
+  notes           String?
+  evidence        String?
+  completionNotes String?
+  createdBy       String?
+  completedBy     String?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+  warehouse       Warehouse                      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  sourceVariant   ProductVariant                 @relation("WarehouseSkuConversionSource", fields: [sourceVariantId], references: [id], onDelete: Restrict)
+  outputs         WarehouseSkuConversionOutput[]
+
+  @@index([warehouseId, status])
+  @@index([sourceVariantId])
+  @@index([createdAt])
+}
+
+model WarehouseSkuConversionOutput {
+  id                String                 @id @default(uuid())
+  conversionId      String
+  variantId         String
+  quantityPerSource Int                    @default(1)
+  createdAt         DateTime               @default(now())
+  conversion        WarehouseSkuConversion @relation(fields: [conversionId], references: [id], onDelete: Cascade)
+  variant           ProductVariant         @relation("WarehouseSkuConversionOutput", fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([conversionId, variantId])
+  @@index([variantId])
 }
 
 model Stock {
@@ -933,63 +1079,69 @@ model VideoTask {
 }
 
 model BankAccount {
-  id               String          @id @default(uuid())
-  name             String
-  accountNumber    String
-  accountType      AccountType
-  accountCategory  AccountCategory
-  accountPurpose   String
-  currency         String          @default("CNY")
-  country          String          @default("CN")
-  originalBalance  Decimal         @default(0) @db.Decimal(18, 2)
-  initialCapital   Decimal         @default(0) @db.Decimal(18, 2)
-  exchangeRate     Decimal         @default(1) @db.Decimal(10, 4)
-  rmbBalance       Decimal         @default(0) @db.Decimal(18, 2)
-  parentId         String?
-  storeId          String?
-  companyEntity    String?
-  owner            String?
-  notes            String          @default("")
-  platformAccount  String?
-  platformPassword String?
-  platformUrl      String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  parent           BankAccount?    @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children         BankAccount[]   @relation("AccountHierarchy")
-  store            Store?          @relation(fields: [storeId], references: [id])
-  cashFlows        CashFlow[]
+  id                         String                   @id @default(uuid())
+  name                       String
+  accountNumber              String
+  accountType                AccountType
+  accountCategory            AccountCategory
+  accountPurpose             String
+  currency                   String                   @default("CNY")
+  country                    String                   @default("CN")
+  originalBalance            Decimal                  @default(0) @db.Decimal(18, 2)
+  initialCapital             Decimal                  @default(0) @db.Decimal(18, 2)
+  exchangeRate               Decimal                  @default(1) @db.Decimal(10, 4)
+  rmbBalance                 Decimal                  @default(0) @db.Decimal(18, 2)
+  parentId                   String?
+  storeId                    String?
+  companyEntity              String?
+  owner                      String?
+  notes                      String                   @default("")
+  platformAccount            String?
+  platformPassword           String?
+  platformUrl                String?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  parent                     BankAccount?             @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children                   BankAccount[]            @relation("AccountHierarchy")
+  store                      Store?                   @relation(fields: [storeId], references: [id])
+  cashFlows                  CashFlow[]
+  shopeeWithdrawals          ShopeeWalletWithdrawal[]
+  shopeeWalletFundingEntries ShopeeWalletEntry[]      @relation("ShopeeWalletEntryBankAccount")
+  shopeePayoutWallets        ShopeeWalletAccount[]    @relation("ShopeeWalletPayoutAccount")
 }
 
 model CashFlow {
-  id              String         @id @default(uuid())
-  uid             String?        @unique
-  date            DateTime
-  summary         String
-  category        String
-  type            CashFlowType
-  amount          Decimal        @db.Decimal(18, 2)
-  accountId       String
-  accountName     String
-  currency        String         @default("CNY")
-  remark          String         @default("")
-  relatedId       String?
-  businessNumber  String?
-  status          CashFlowStatus @default(CONFIRMED)
-  isReversal      Boolean        @default(false)
-  reversedById    String?
-  voucher         String?
-  paymentVoucher  String?
-  transferVoucher String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  exchangeRate    Decimal?       @default(1) @db.Decimal
-  platform        String?
-  storeId         String?
-  storeName       String?
-  account         BankAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  reversedBy      CashFlow?      @relation("Reversal", fields: [reversedById], references: [id])
-  reversals       CashFlow[]     @relation("Reversal")
+  id                            String                         @id @default(uuid())
+  uid                           String?                        @unique
+  date                          DateTime
+  summary                       String
+  category                      String
+  type                          CashFlowType
+  amount                        Decimal                        @db.Decimal(18, 2)
+  accountId                     String
+  accountName                   String
+  currency                      String                         @default("CNY")
+  remark                        String                         @default("")
+  relatedId                     String?
+  businessNumber                String?
+  status                        CashFlowStatus                 @default(CONFIRMED)
+  isReversal                    Boolean                        @default(false)
+  reversedById                  String?
+  voucher                       String?
+  paymentVoucher                String?
+  transferVoucher               String?
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
+  exchangeRate                  Decimal?                       @default(1) @db.Decimal
+  platform                      String?
+  storeId                       String?
+  storeName                     String?
+  account                       BankAccount                    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  reversedBy                    CashFlow?                      @relation("Reversal", fields: [reversedById], references: [id])
+  reversals                     CashFlow[]                     @relation("Reversal")
+  shopeeWalletWithdrawal        ShopeeWalletWithdrawal?
+  shopeeWalletFundingEntry      ShopeeWalletEntry?             @relation("ShopeeWalletEntryCashFlow")
+  mercadoLivreWalletTransaction MercadoLivreWalletTransaction?
 
   @@index([accountId])
   @@index([date])
@@ -997,6 +1149,27 @@ model CashFlow {
   @@index([status])
   @@index([category])
   @@index([createdAt])
+}
+
+model CashFlowAccountChangeLog {
+  id             String   @id @default(uuid())
+  cashFlowId     String
+  flowDate       DateTime
+  flowAmount     Decimal  @db.Decimal(18, 2)
+  flowCurrency   String
+  flowSummary    String
+  oldAccountId   String
+  oldAccountName String
+  newAccountId   String
+  newAccountName String
+  reason         String   @db.Text
+  changedById    String
+  changedByName  String
+  changedByEmail String
+  createdAt      DateTime @default(now())
+
+  @@index([cashFlowId, createdAt])
+  @@index([changedById, createdAt])
 }
 
 model StoreOrderSettlement {
@@ -1181,6 +1354,7 @@ model StoreOrderSettlement {
   @@index([orderAdjustmentId])
   @@index([paymentId])
   @@index([createdAt])
+  @@index([relatedOrderId])
 }
 
 model OrderItem {
@@ -1457,6 +1631,7 @@ model MonthlyBill {
   rebateRate                Decimal?  @db.Decimal
   offsetAmount              Decimal?  @default(0) @db.Decimal
 
+  @@unique([month, billType, agencyId, currency], map: "MonthlyBill_advertising_business_key")
   @@index([status])
   @@index([month])
   @@index([billCategory])
@@ -1515,23 +1690,109 @@ model AdAgency {
 }
 
 model AdAccount {
-  id               String          @id @default(uuid())
-  agencyId         String
-  agencyName       String?
-  accountName      String
-  currentBalance   Decimal         @default(0) @db.Decimal(18, 2)
-  rebateReceivable Decimal         @default(0) @db.Decimal(18, 2)
-  creditLimit      Decimal         @default(0) @db.Decimal(18, 2)
-  currency         String
-  country          String?
-  notes            String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  accountId        String?         @unique
-  storeIds         String[]        @default([])
-  agency           AdAgency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
-  consumptions     AdConsumption[]
-  recharges        AdRecharge[]
+  id                   String                @id @default(uuid())
+  agencyId             String
+  agencyName           String?
+  accountName          String
+  currentBalance       Decimal               @default(0) @db.Decimal(18, 2)
+  rebateReceivable     Decimal               @default(0) @db.Decimal(18, 2)
+  creditLimit          Decimal               @default(0) @db.Decimal(18, 2)
+  currency             String
+  country              String?
+  notes                String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  accountId            String?               @unique
+  storeIds             String[]              @default([])
+  agency               AdAgency              @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  consumptions         AdConsumption[]
+  recharges            AdRecharge[]
+  qianchuanConnection  QianchuanConnection?
+  shopeeWalletAccounts ShopeeWalletAccount[]
+}
+
+// 千川数据服务使用公司级 token；这里只保存系统广告户与外部报表筛选条件的映射。
+// token 始终放在服务器环境变量中，不进入数据库，也不返回给前端。
+model QianchuanConnection {
+  id               String    @id @default(uuid())
+  name             String
+  adAccountId      String    @unique
+  externalUserIds  String[]  @default([])
+  externalGroupIds String[]  @default([])
+  categoryId       Int       @default(0)
+  reportType       Int       @default(1)
+  currency         String    @default("CNY")
+  enabled          Boolean   @default(true)
+  lastSyncAt       DateTime?
+  lastSyncError    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  adAccount    AdAccount              @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  dailyMetrics QianchuanDailyMetric[]
+
+  @@index([enabled])
+}
+
+// 千川按日指标。0 代表 API 明确返回 0；没有记录代表该日尚未取得数据。
+model QianchuanDailyMetric {
+  id                String   @id @default(uuid())
+  connectionId      String
+  date              DateTime @db.Date
+  spend             Decimal? @db.Decimal(18, 2)
+  conversions       Int?
+  attributedRevenue Decimal? @db.Decimal(18, 2)
+  roi               Decimal? @db.Decimal(18, 6)
+  adCount           Int?
+  rawData           Json
+  syncedAt          DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  connection QianchuanConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, date])
+  @@index([date])
+  @@index([connectionId, date])
+}
+
+// YYT TikTok 广告户日报。接口按时间范围返回汇总，因此同步任务逐日请求，
+// 使用 date + advertiserId 幂等覆盖，避免重复同步造成累计翻倍。
+model YytAdvertisingDaily {
+  id                 String    @id @default(uuid())
+  date               DateTime  @db.Date
+  advertiserId       String
+  advertiserName     String
+  currency           String    @default("USD")
+  cost               Decimal   @default(0) @db.Decimal(18, 2)
+  orders             Int       @default(0)
+  grossRevenue       Decimal   @default(0) @db.Decimal(18, 2)
+  costPerOrder       Decimal   @default(0) @db.Decimal(18, 4)
+  roi                Decimal   @default(0) @db.Decimal(18, 6)
+  productImpressions Int       @default(0)
+  productClicks      Int       @default(0)
+  adConversion       Int       @default(0)
+  adConversionRate   Decimal   @default(0) @db.Decimal(12, 6)
+  diggCount          Int       @default(0)
+  collectCount       Int       @default(0)
+  shareCount         Int       @default(0)
+  commentCount       Int       @default(0)
+  playCount          Int       @default(0)
+  productAvgPrice    Decimal   @default(0) @db.Decimal(18, 4)
+  productPieceNum    Decimal   @default(0) @db.Decimal(18, 4)
+  itemNum            Int       @default(0)
+  authorizationDate  DateTime? @db.Date
+  relationName       String?
+  categoryNames      String?
+  rawData            Json
+  sourceRequestId    String?
+  syncedAt           DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([date, advertiserId])
+  @@index([date])
+  @@index([advertiserId, date])
 }
 
 model AdConsumption {
@@ -1796,6 +2057,7 @@ model BusinessUidMapping {
 
 model LogisticsCost {
   id                 String            @id @default(uuid())
+  uid                String?           @unique
   outboundBatchId    String?
   logisticsChannelId String?
   costType           String
@@ -1809,6 +2071,9 @@ model LogisticsCost {
   invoiceNumber      String?
   invoiceStatus      String?
   notes              String?
+  voucher            String?
+  expenseRequestId   String?
+  cashFlowId         String?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   containerId        String?
@@ -1817,6 +2082,8 @@ model LogisticsCost {
 
   @@index([outboundBatchId])
   @@index([logisticsChannelId])
+  @@index([expenseRequestId])
+  @@index([cashFlowId])
 }
 
 model Exporter {
@@ -2090,10 +2357,980 @@ model DailyOperationReport {
 
 enum Platform {
   TIKTOK
+  SHOPEE
   AMAZON
+  MERCADO_LIVRE
   INSTAGRAM
   YOUTUBE
   OTHER
+}
+
+// Shopee Open Platform 应用配置。密钥只用于服务端签名，不通过查询接口返回。
+model ShopeeAppConfig {
+  id                 String   @id @default(uuid())
+  appName            String
+  partnerId          String
+  partnerKey         String
+  environment        String   @default("sandbox") // sandbox / live
+  testRedirectDomain String?
+  liveRedirectDomain String?
+  status             String   @default("active") // active / disabled
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  shops       ShopeeShopSetting[]
+  oauthStates ShopeeOAuthState[]
+  webhookLogs ShopeeWebhookLog[]
+
+  @@unique([partnerId, environment])
+  @@index([status])
+}
+
+// Shopee 店铺 OAuth 授权及令牌。每个 shop_id 独立保存授权关系。
+model ShopeeShopSetting {
+  id                       String    @id @default(uuid())
+  shopId                   String
+  shopName                 String?
+  region                   String    @default("BR")
+  currency                 String?
+  appConfigId              String
+  accessToken              String?
+  refreshToken             String?
+  tokenExpireAt            DateTime?
+  tokenRefreshedAt         DateTime?
+  tokenRefreshFailedAt     DateTime?
+  tokenRefreshFailureCount Int       @default(0)
+  tokenRefreshError        String?
+  status                   String    @default("disconnected") // active / expired / disconnected
+  lastSyncAt               DateTime?
+  storeId                  String?   @unique
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  appConfig             ShopeeAppConfig              @relation(fields: [appConfigId], references: [id], onDelete: Cascade)
+  store                 Store?                       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  tokenRefreshLogs      ShopeeTokenRefreshLog[]
+  orders                ShopeeOrder[]
+  returns               ShopeeReturn[]
+  settlements           ShopeeSettlement[]
+  products              ShopeeProduct[]
+  operationLogs         ShopeeOperationLog[]
+  dailyOperationActions ShopeeDailyOperationAction[]
+  orderSyncCheckpoint   ShopeeOrderSyncCheckpoint?
+  walletAccounts        ShopeeWalletAccount[]
+  walletWithdrawals     ShopeeWalletWithdrawal[]
+  walletTransactions    ShopeeWalletTransaction[]
+
+  @@unique([shopId, appConfigId])
+  @@index([shopId])
+  @@index([status])
+}
+
+// Daily operator notes shown alongside Shopee analytics, isolated by shop and business date.
+model ShopeeDailyOperationAction {
+  id              String   @id @default(uuid())
+  shopSettingId   String
+  date            String   @db.VarChar(10)
+  operationAction String   @db.Text
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  shopSetting ShopeeShopSetting @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+
+  @@unique([shopSettingId, date])
+  @@index([date])
+}
+
+// Shopee token refresh audit. Tokens are never stored in this table.
+model ShopeeTokenRefreshLog {
+  id               String    @id @default(uuid())
+  shopSettingId    String
+  status           String // success / failed / superseded
+  trigger          String // scheduled / manual / api-retry
+  previousExpireAt DateTime?
+  newExpireAt      DateTime?
+  message          String?
+  createdAt        DateTime  @default(now())
+
+  shopSetting ShopeeShopSetting @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+
+  @@index([shopSettingId, createdAt])
+  @@index([status, createdAt])
+}
+
+// Shopee orders are intentionally stored separately from TikTok orders.
+model ShopeeOrder {
+  id                   String    @id @default(uuid())
+  shopSettingId        String
+  shopId               String
+  orderSn              String
+  status               String?
+  currency             String?
+  totalAmount          Decimal?  @db.Decimal(18, 2)
+  estimatedShippingFee Decimal?  @db.Decimal(18, 2)
+  actualShippingFee    Decimal?  @db.Decimal(18, 2)
+  buyerUserId          String?
+  buyerUsername        String?
+  paymentMethod        String?
+  shippingCarrier      String?
+  trackingNumber       String?
+  createTime           DateTime?
+  updateTime           DateTime?
+  payTime              DateTime?
+  shipByDate           DateTime?
+  cancelTime           DateTime?
+  rawData              Json
+  syncedAt             DateTime  @default(now())
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  shopSetting ShopeeShopSetting @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  items       ShopeeOrderItem[]
+  returns     ShopeeReturn[]
+  settlement  ShopeeSettlement?
+
+  @@unique([shopId, orderSn])
+  @@index([shopSettingId, createTime])
+  @@index([shopId, status, createTime])
+  @@index([orderSn])
+  @@index([updateTime])
+}
+
+model ShopeeOrderItem {
+  id              String   @id @default(uuid())
+  orderId         String
+  itemId          String
+  modelId         String
+  itemSku         String?
+  modelSku        String?
+  itemName        String?
+  modelName       String?
+  quantity        Int      @default(0)
+  originalPrice   Decimal? @db.Decimal(18, 2)
+  discountedPrice Decimal? @db.Decimal(18, 2)
+  promotionType   String?
+  imageUrl        String?
+  rawData         Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  order ShopeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, itemId, modelId])
+  @@index([itemSku])
+  @@index([modelSku])
+}
+
+// Shopee return/refund cases are stored independently and linked back to the
+// order when the order has already been synchronized.
+model ShopeeReturn {
+  id                       String    @id @default(uuid())
+  shopSettingId            String
+  shopId                   String
+  returnSn                 String
+  orderSn                  String?
+  orderId                  String?
+  status                   String?
+  reason                   String?
+  textReason               String?
+  refundAmount             Decimal?  @db.Decimal(18, 2)
+  amountBeforeDiscount     Decimal?  @db.Decimal(18, 2)
+  currency                 String?
+  trackingNumber           String?
+  needsLogistics           Boolean   @default(false)
+  dueDate                  DateTime?
+  returnShipDueDate        DateTime?
+  returnSellerDueDate      DateTime?
+  negotiationStatus        String?
+  sellerProofStatus        String?
+  sellerCompensationStatus String?
+  buyerUsername            String?
+  buyerEmail               String?
+  images                   Json
+  disputeReasons           Json
+  rawData                  Json
+  sourceCreateTime         DateTime?
+  sourceUpdateTime         DateTime?
+  syncedAt                 DateTime  @default(now())
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  shopSetting ShopeeShopSetting  @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  order       ShopeeOrder?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  items       ShopeeReturnItem[]
+
+  @@unique([shopId, returnSn])
+  @@index([shopSettingId, sourceCreateTime])
+  @@index([shopId, status, sourceCreateTime])
+  @@index([orderSn])
+  @@index([sourceUpdateTime])
+}
+
+model ShopeeReturnItem {
+  id        String   @id @default(uuid())
+  returnId  String
+  itemId    String
+  modelId   String
+  itemSku   String?
+  modelSku  String?
+  itemName  String?
+  quantity  Int      @default(0)
+  itemPrice Decimal? @db.Decimal(18, 2)
+  images    Json
+  rawData   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  returnCase ShopeeReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@unique([returnId, itemId, modelId])
+  @@index([itemSku])
+  @@index([modelSku])
+}
+
+// Official per-order Escrow detail. This remains separate from TikTok
+// settlements and is safe to consume later from the unified profit layer.
+model ShopeeSettlement {
+  id                      String   @id @default(uuid())
+  shopSettingId           String
+  shopId                  String
+  orderId                 String   @unique
+  orderSn                 String
+  currency                String?
+  buyerTotalAmount        Decimal? @db.Decimal(18, 2)
+  orderSellingPrice       Decimal? @db.Decimal(18, 2)
+  originalPrice           Decimal? @db.Decimal(18, 2)
+  sellerDiscount          Decimal? @db.Decimal(18, 2)
+  shopeeDiscount          Decimal? @db.Decimal(18, 2)
+  commissionFee           Decimal? @db.Decimal(18, 2)
+  netCommissionFee        Decimal? @db.Decimal(18, 2)
+  serviceFee              Decimal? @db.Decimal(18, 2)
+  netServiceFee           Decimal? @db.Decimal(18, 2)
+  sellerTransactionFee    Decimal? @db.Decimal(18, 2)
+  amsCommissionFee        Decimal? @db.Decimal(18, 2)
+  adsEscrowFee            Decimal? @db.Decimal(18, 2)
+  campaignFee             Decimal? @db.Decimal(18, 2)
+  actualShippingFee       Decimal? @db.Decimal(18, 2)
+  finalShippingFee        Decimal? @db.Decimal(18, 2)
+  estimatedShippingFee    Decimal? @db.Decimal(18, 2)
+  shopeeShippingRebate    Decimal? @db.Decimal(18, 2)
+  reverseShippingFee      Decimal? @db.Decimal(18, 2)
+  sellerReturnRefund      Decimal? @db.Decimal(18, 2)
+  adjustableRefund        Decimal? @db.Decimal(18, 2)
+  withholdingTax          Decimal? @db.Decimal(18, 2)
+  escrowAmount            Decimal? @db.Decimal(18, 2)
+  escrowAmountAfterAdjust Decimal? @db.Decimal(18, 2)
+  returnOrderSns          Json
+  items                   Json
+  rawData                 Json
+  syncedAt                DateTime @default(now())
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  shopSetting ShopeeShopSetting @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  order       ShopeeOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, orderSn])
+  @@index([shopSettingId, syncedAt])
+  @@index([shopId, orderSn])
+  @@index([escrowAmount])
+}
+
+// Shopee platform money is operational money, not a company bank account.
+// Wallet balances and platform-internal movements are isolated from company
+// finance. Only a real bank funding or a reconciled withdrawal links them to
+// BankAccount and CashFlow.
+model ShopeeWalletAccount {
+  id                                 String                    @id @default(uuid())
+  shopSettingId                      String
+  walletType                         String // STORE / ADVERTISING
+  name                               String
+  externalAccountId                  String?
+  currency                           String                    @default("BRL")
+  balance                            Decimal                   @default(0) @db.Decimal(18, 2)
+  pendingBalance                     Decimal                   @default(0) @db.Decimal(18, 2)
+  autoTopupRate                      Decimal                   @default(0) @db.Decimal(9, 6)
+  adAccountId                        String?
+  defaultPayoutBankAccountId         String?
+  isOfficialTopupTarget              Boolean                   @default(false)
+  enabled                            Boolean                   @default(true)
+  officialBalanceMode                Boolean                   @default(false)
+  officialBalanceCursorAt            DateTime?
+  officialBalanceCursorTransactionId String?
+  officialBalanceLastSyncAt          DateTime?
+  notes                              String?
+  createdAt                          DateTime                  @default(now())
+  updatedAt                          DateTime                  @updatedAt
+  shopSetting                        ShopeeShopSetting         @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  adAccount                          AdAccount?                @relation(fields: [adAccountId], references: [id], onDelete: SetNull)
+  defaultPayoutBankAccount           BankAccount?              @relation("ShopeeWalletPayoutAccount", fields: [defaultPayoutBankAccountId], references: [id], onDelete: SetNull)
+  entries                            ShopeeWalletEntry[]
+  withdrawals                        ShopeeWalletWithdrawal[]
+  officialTransactions               ShopeeWalletTransaction[]
+
+  @@unique([shopSettingId, name])
+  @@index([shopSettingId, walletType])
+  @@index([adAccountId])
+  @@index([defaultPayoutBankAccountId])
+}
+
+model ShopeeWalletEntry {
+  id                   String                    @id @default(uuid())
+  walletId             String
+  entryType            String
+  amount               Decimal                   @db.Decimal(18, 2)
+  balanceBefore        Decimal                   @db.Decimal(18, 2)
+  balanceAfter         Decimal                   @db.Decimal(18, 2)
+  sourceType           String
+  sourceId             String
+  counterpartyWalletId String?
+  bankAccountId        String?
+  cashFlowId           String?                   @unique
+  relatedOrderSn       String?
+  occurredAt           DateTime
+  notes                String?
+  details              Json?
+  createdBy            String?
+  createdAt            DateTime                  @default(now())
+  wallet               ShopeeWalletAccount       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  bankAccount          BankAccount?              @relation("ShopeeWalletEntryBankAccount", fields: [bankAccountId], references: [id], onDelete: SetNull)
+  cashFlow             CashFlow?                 @relation("ShopeeWalletEntryCashFlow", fields: [cashFlowId], references: [id], onDelete: SetNull)
+  officialMatches      ShopeeWalletTransaction[] @relation("ShopeeWalletTransactionMatch")
+
+  @@unique([walletId, sourceType, sourceId])
+  @@index([walletId, occurredAt])
+  @@index([sourceType, sourceId])
+  @@index([relatedOrderSn])
+  @@index([bankAccountId])
+}
+
+// Raw Shopee wallet movements returned by payment/get_wallet_transaction_list.
+// They are kept separately from the internal wallet ledger so an official
+// order credit can reconcile an existing settlement entry without crediting
+// the wallet a second time.
+model ShopeeWalletTransaction {
+  id                 String   @id @default(uuid())
+  shopSettingId      String
+  walletId           String?
+  transactionId      String
+  status             String?
+  walletType         String?
+  transactionType    String
+  transactionTabType String?
+  moneyFlow          String
+  amount             Decimal  @db.Decimal(18, 2)
+  currentBalance     Decimal? @db.Decimal(18, 2)
+  transactionFee     Decimal? @db.Decimal(18, 2)
+  currency           String   @default("BRL")
+  orderSn            String?
+  refundSn           String?
+  withdrawalType     String?
+  withdrawalId       String?
+  rootWithdrawalId   String?
+  description        String?
+  reason             String?
+  buyerName          String?
+  matchStatus        String   @default("PENDING")
+  matchedEntryId     String?
+  raw                Json?
+  occurredAt         DateTime
+  syncedAt           DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  shopSetting  ShopeeShopSetting    @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  wallet       ShopeeWalletAccount? @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  matchedEntry ShopeeWalletEntry?   @relation("ShopeeWalletTransactionMatch", fields: [matchedEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([shopSettingId, transactionId])
+  @@index([shopSettingId, occurredAt])
+  @@index([walletId, occurredAt])
+  @@index([orderSn])
+  @@index([moneyFlow, occurredAt])
+  @@index([matchStatus, occurredAt])
+  @@index([matchedEntryId])
+}
+
+model ShopeeWalletWithdrawal {
+  id                    String              @id @default(uuid())
+  shopSettingId         String
+  walletId              String
+  amount                Decimal             @db.Decimal(18, 2)
+  currency              String
+  status                String              @default("IN_TRANSIT") // IN_TRANSIT / RECEIVED / CANCELLED
+  payoutReference       String?
+  officialTransactionId String?             @unique
+  officialWithdrawalId  String?
+  platformCompletedAt   DateTime?
+  destinationAccountId  String?
+  cashFlowId            String?             @unique
+  actualReceivedAmount  Decimal?            @db.Decimal(18, 2)
+  requestedAt           DateTime            @default(now())
+  expectedAt            DateTime?
+  receivedAt            DateTime?
+  cancelledAt           DateTime?
+  notes                 String?
+  createdBy             String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  shopSetting           ShopeeShopSetting   @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  wallet                ShopeeWalletAccount @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  destinationAccount    BankAccount?        @relation(fields: [destinationAccountId], references: [id], onDelete: SetNull)
+  cashFlow              CashFlow?           @relation(fields: [cashFlowId], references: [id], onDelete: SetNull)
+
+  @@index([shopSettingId, status])
+  @@index([walletId, requestedAt])
+  @@index([destinationAccountId])
+  @@index([officialWithdrawalId])
+}
+
+model ShopeeProduct {
+  id               String    @id @default(uuid())
+  shopSettingId    String
+  shopId           String
+  itemId           String
+  itemName         String?
+  itemSku          String?
+  itemStatus       String?
+  categoryId       String?
+  hasModel         Boolean   @default(false)
+  currency         String?
+  originalPrice    Decimal?  @db.Decimal(18, 2)
+  currentPrice     Decimal?  @db.Decimal(18, 2)
+  availableStock   Int       @default(0)
+  reservedStock    Int       @default(0)
+  sales            Int       @default(0)
+  views            Int       @default(0)
+  likes            Int       @default(0)
+  rating           Decimal?  @db.Decimal(8, 2)
+  commentCount     Int       @default(0)
+  weight           Decimal?  @db.Decimal(18, 3)
+  packageLength    Decimal?  @db.Decimal(18, 2)
+  packageWidth     Decimal?  @db.Decimal(18, 2)
+  packageHeight    Decimal?  @db.Decimal(18, 2)
+  imageUrl         String?
+  sourceCreateTime DateTime?
+  sourceUpdateTime DateTime?
+  rawData          Json
+  syncedAt         DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  shopSetting ShopeeShopSetting    @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+  models      ShopeeProductModel[]
+
+  @@unique([shopId, itemId])
+  @@index([shopSettingId, itemStatus])
+  @@index([itemSku])
+  @@index([sourceUpdateTime])
+}
+
+model ShopeeProductModel {
+  id             String   @id @default(uuid())
+  productId      String
+  modelId        String
+  modelName      String?
+  modelSku       String?
+  modelStatus    String?
+  currency       String?
+  originalPrice  Decimal? @db.Decimal(18, 2)
+  currentPrice   Decimal? @db.Decimal(18, 2)
+  availableStock Int      @default(0)
+  reservedStock  Int      @default(0)
+  weight         Decimal? @db.Decimal(18, 3)
+  packageLength  Decimal? @db.Decimal(18, 2)
+  packageWidth   Decimal? @db.Decimal(18, 2)
+  packageHeight  Decimal? @db.Decimal(18, 2)
+  rawData        Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  product ShopeeProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, modelId])
+  @@index([modelSku])
+}
+
+model ShopeeOperationLog {
+  id            String    @id @default(uuid())
+  shopSettingId String
+  shopId        String
+  orderSn       String
+  action        String
+  status        String
+  actorId       String?
+  actorName     String?
+  requestData   Json
+  responseData  Json?
+  error         String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  shopSetting ShopeeShopSetting @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, orderSn, createdAt])
+  @@index([status, createdAt])
+}
+
+model ShopeeOrderSyncCheckpoint {
+  id                   String    @id @default(uuid())
+  shopSettingId        String    @unique
+  lastSuccessfulFrom   DateTime?
+  lastSuccessfulTo     DateTime?
+  lastSuccessfulSyncAt DateTime?
+  lastAttemptAt        DateTime?
+  status               String    @default("idle") // idle / running / success / failed
+  lastError            String?
+  ordersProcessed      Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  shopSetting ShopeeShopSetting @relation(fields: [shopSettingId], references: [id], onDelete: Cascade)
+
+  @@index([status, lastAttemptAt])
+}
+
+// Raw Shopee Push messages and their order-detail processing state.
+model ShopeeWebhookLog {
+  id             String    @id @default(uuid())
+  appConfigId    String
+  eventKey       String    @unique
+  messageId      String?
+  code           Int?
+  shopId         String?
+  orderSn        String?
+  signatureValid Boolean   @default(false)
+  status         String    @default("pending") // pending / processing / processed / ignored / failed
+  attempts       Int       @default(0)
+  lastError      String?
+  rawData        Json
+  eventTimestamp DateTime?
+  receivedAt     DateTime  @default(now())
+  processedAt    DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  appConfig ShopeeAppConfig @relation(fields: [appConfigId], references: [id], onDelete: Cascade)
+
+  @@index([status, receivedAt])
+  @@index([shopId, orderSn])
+  @@index([messageId])
+}
+
+// OAuth state 一次性校验记录，避免授权回调被重放或串到错误的 App。
+model ShopeeOAuthState {
+  id          String    @id @default(uuid())
+  state       String    @unique
+  appConfigId String
+  environment String    @default("sandbox")
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  appConfig ShopeeAppConfig @relation(fields: [appConfigId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([appConfigId, usedAt])
+}
+
+// Mercado Livre 应用配置。clientSecret 仅在服务端使用，不通过 GET 接口返回。
+model MercadoLivreAppConfig {
+  id           String   @id @default(uuid())
+  appName      String
+  clientId     String
+  clientSecret String
+  redirectUri  String
+  pkceEnabled  Boolean  @default(false)
+  status       String   @default("active") // active / disabled
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts    MercadoLivreAccount[]
+  oauthStates MercadoLivreOAuthState[]
+  webhookLogs MercadoLivreWebhookLog[]
+
+  @@unique([clientId, redirectUri])
+  @@index([status])
+}
+
+// Mercado Livre 授权账号及 OAuth token。一个账号对应一个系统 Store，历史 token 不覆盖业务订单数据。
+model MercadoLivreAccount {
+  id                       String    @id @default(uuid())
+  userId                   String
+  nickname                 String?
+  siteId                   String    @default("MLB")
+  country                  String    @default("BR")
+  currency                 String    @default("BRL")
+  appConfigId              String
+  accessToken              String?
+  refreshToken             String?
+  scope                    String?
+  tokenExpireAt            DateTime?
+  tokenRefreshedAt         DateTime?
+  tokenRefreshFailedAt     DateTime?
+  tokenRefreshFailureCount Int       @default(0)
+  tokenRefreshError        String?
+  status                   String    @default("disconnected") // active / expired / disconnected
+  lastSyncAt               DateTime?
+  storeId                  String?   @unique
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  appConfig             MercadoLivreAppConfig              @relation(fields: [appConfigId], references: [id], onDelete: Cascade)
+  store                 Store?                             @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  webhookLogs           MercadoLivreWebhookLog[]
+  orders                MercadoLivreOrder[]
+  products              MercadoLivreProduct[]
+  dailyOperationActions MercadoLivreDailyOperationAction[]
+  advertisingAccounts   MercadoLivreAdvertisingAccount[]
+  walletReports         MercadoLivreWalletReport[]
+  walletTransactions    MercadoLivreWalletTransaction[]
+
+  @@unique([appConfigId, userId])
+  @@index([userId])
+  @@index([status])
+}
+
+// Mercado Livre 订单原始快照。订单与授权账号隔离，重复同步使用平台订单号幂等更新。
+model MercadoLivreOrder {
+  id              String    @id @default(uuid())
+  accountId       String
+  externalOrderId String
+  status          String?
+  substatus       String?
+  currency        String?
+  totalAmount     Decimal?  @db.Decimal(18, 2)
+  paidAmount      Decimal?  @db.Decimal(18, 2)
+  buyerNickname   String?
+  shippingId      String?
+  packId          String?
+  dateCreated     DateTime?
+  lastUpdated     DateTime?
+  dateClosed      DateTime?
+  rawData         Json
+  syncedAt        DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  account MercadoLivreAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  items   MercadoLivreOrderItem[]
+
+  @@unique([accountId, externalOrderId])
+  @@index([accountId, dateCreated])
+  @@index([externalOrderId])
+  @@index([status, dateCreated])
+}
+
+model MercadoLivreOrderItem {
+  id            String   @id @default(uuid())
+  orderId       String
+  itemId        String
+  variationId   String?
+  sellerSku     String?
+  title         String?
+  quantity      Int      @default(0)
+  unitPrice     Decimal? @db.Decimal(18, 2)
+  fullUnitPrice Decimal? @db.Decimal(18, 2)
+  saleFee       Decimal? @db.Decimal(18, 2)
+  rawData       Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  order MercadoLivreOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, itemId, variationId])
+  @@index([itemId])
+  @@index([sellerSku])
+}
+
+// Official Mercado Pago release reports for one Mercado Livre seller account.
+// A report is stored separately from company finance because it represents the
+// platform wallet. Only a verified bank payout may link one row to CashFlow.
+model MercadoLivreWalletReport {
+  id               String    @id @default(uuid())
+  accountId        String
+  externalReportId String?
+  reportId         String?
+  fileName         String
+  status           String
+  beginAt          DateTime?
+  endAt            DateTime?
+  generatedAt      DateTime?
+  rowCount         Int       @default(0)
+  rawData          Json?
+  syncedAt         DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  account      MercadoLivreAccount             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transactions MercadoLivreWalletTransaction[]
+
+  @@unique([accountId, fileName])
+  @@index([accountId, generatedAt])
+  @@index([status, generatedAt])
+}
+
+model MercadoLivreWalletTransaction {
+  id                   String   @id @default(uuid())
+  accountId            String
+  reportId             String?
+  transactionKey       String
+  sourceId             String?
+  externalReference    String?
+  recordType           String
+  businessType         String
+  moneyFlow            String
+  netCreditAmount      Decimal  @default(0) @db.Decimal(18, 2)
+  netDebitAmount       Decimal  @default(0) @db.Decimal(18, 2)
+  grossAmount          Decimal? @db.Decimal(18, 2)
+  sellerAmount         Decimal? @db.Decimal(18, 2)
+  marketplaceFeeAmount Decimal? @db.Decimal(18, 2)
+  shippingFeeAmount    Decimal? @db.Decimal(18, 2)
+  taxesAmount          Decimal? @db.Decimal(18, 2)
+  couponAmount         Decimal? @db.Decimal(18, 2)
+  balanceAmount        Decimal? @db.Decimal(18, 2)
+  payoutBankAccount    String?
+  paymentMethodType    String?
+  transactionIntentId  String?
+  externalOrderId      String?
+  packId               String?
+  orderMp              String?
+  occurredAt           DateTime
+  matchStatus          String   @default("PENDING")
+  cashFlowId           String?  @unique
+  rawData              Json
+  syncedAt             DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  account  MercadoLivreAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  report   MercadoLivreWalletReport? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  cashFlow CashFlow?                 @relation(fields: [cashFlowId], references: [id], onDelete: SetNull)
+
+  @@unique([accountId, transactionKey])
+  @@index([accountId, occurredAt])
+  @@index([accountId, businessType, occurredAt])
+  @@index([accountId, moneyFlow, occurredAt])
+  @@index([accountId, payoutBankAccount, occurredAt])
+  @@index([sourceId])
+  @@index([externalOrderId])
+  @@index([matchStatus, occurredAt])
+  @@index([reportId])
+}
+
+// Mercado Livre listing snapshots. Kept separate from Shopee products so
+// platform-specific statuses, listing types and variation inventory remain exact.
+model MercadoLivreProduct {
+  id                String    @id @default(uuid())
+  accountId         String
+  itemId            String
+  siteId            String    @default("MLB")
+  userProductId     String?
+  title             String
+  familyName        String?
+  categoryId        String?
+  status            String?
+  substatuses       Json
+  condition         String?
+  currency          String?
+  price             Decimal?  @db.Decimal(18, 2)
+  basePrice         Decimal?  @db.Decimal(18, 2)
+  originalPrice     Decimal?  @db.Decimal(18, 2)
+  availableQuantity Int       @default(0)
+  initialQuantity   Int       @default(0)
+  soldQuantity      Int       @default(0)
+  listingTypeId     String?
+  catalogProductId  String?
+  inventoryId       String?
+  permalink         String?
+  thumbnail         String?
+  freeShipping      Boolean   @default(false)
+  logisticType      String?
+  buyingMode        String?
+  warranty          String?
+  description       String?
+  visits30d         Int       @default(0)
+  sourceCreateTime  DateTime?
+  startTime         DateTime?
+  stopTime          DateTime?
+  endTime           DateTime?
+  lastUpdated       DateTime?
+  rawData           Json
+  syncedAt          DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  account     MercadoLivreAccount             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  variations  MercadoLivreProductVariation[]
+  dailyVisits MercadoLivreProductVisitDaily[]
+
+  @@unique([accountId, itemId])
+  @@index([accountId, status])
+  @@index([itemId])
+  @@index([categoryId])
+  @@index([lastUpdated])
+}
+
+model MercadoLivreProductVariation {
+  id                String   @id @default(uuid())
+  productId         String
+  variationId       String
+  sellerSku         String?
+  name              String?
+  price             Decimal? @db.Decimal(18, 2)
+  availableQuantity Int      @default(0)
+  soldQuantity      Int      @default(0)
+  inventoryId       String?
+  catalogProductId  String?
+  pictureIds        Json
+  attributes        Json
+  rawData           Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product MercadoLivreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, variationId])
+  @@index([sellerSku])
+}
+
+model MercadoLivreProductVisitDaily {
+  id        String   @id @default(uuid())
+  productId String
+  date      DateTime @db.Date
+  visits    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product MercadoLivreProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, date])
+  @@index([date])
+}
+
+// Daily operator notes shown alongside Mercado Livre analytics, isolated by account and Brazil business date.
+model MercadoLivreDailyOperationAction {
+  id              String   @id @default(uuid())
+  accountId       String
+  date            String   @db.VarChar(10)
+  operationAction String   @db.Text
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account MercadoLivreAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, date])
+  @@index([date])
+}
+
+// Mercado Ads Product Ads advertiser. Kept separate from the marketplace account
+// because one seller can have more than one advertiser or advertising product.
+model MercadoLivreAdvertisingAccount {
+  id             String    @id @default(uuid())
+  accountId      String
+  advertiserId   String
+  productId      String    @default("PADS")
+  siteId         String    @default("MLB")
+  advertiserName String?
+  accountName    String?
+  status         String    @default("active") // active / unavailable / error
+  lastSyncAt     DateTime?
+  lastSyncError  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  account      MercadoLivreAccount            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  dailyMetrics MercadoLivreAdvertisingDaily[]
+
+  @@unique([accountId, advertiserId, productId])
+  @@index([accountId, status])
+  @@index([advertiserId])
+}
+
+// Daily Product Ads metrics returned by Mercado Ads. A row with zero values is
+// a real zero from the API; a missing row means that the date is unavailable.
+model MercadoLivreAdvertisingDaily {
+  id                       String   @id @default(uuid())
+  advertisingAccountId     String
+  date                     DateTime @db.Date
+  clicks                   Int      @default(0)
+  prints                   Int      @default(0)
+  ctr                      Decimal? @db.Decimal(12, 8)
+  cost                     Decimal? @db.Decimal(18, 2)
+  cpc                      Decimal? @db.Decimal(18, 4)
+  acos                     Decimal? @db.Decimal(12, 8)
+  roas                     Decimal? @db.Decimal(18, 6)
+  tacos                    Decimal? @db.Decimal(12, 8)
+  cvr                      Decimal? @db.Decimal(12, 8)
+  directAmount             Decimal? @db.Decimal(18, 2)
+  indirectAmount           Decimal? @db.Decimal(18, 2)
+  totalAmount              Decimal? @db.Decimal(18, 2)
+  directUnitsQuantity      Int      @default(0)
+  indirectUnitsQuantity    Int      @default(0)
+  unitsQuantity            Int      @default(0)
+  organicUnitsQuantity     Int      @default(0)
+  advertisingItemsQuantity Int      @default(0)
+  directItemsQuantity      Int      @default(0)
+  indirectItemsQuantity    Int      @default(0)
+  organicItemsQuantity     Int      @default(0)
+  organicUnitsAmount       Decimal? @db.Decimal(18, 2)
+  organicItemsAmount       Decimal? @db.Decimal(18, 2)
+  impressionShare          Decimal? @db.Decimal(12, 8)
+  rawData                  Json
+  syncedAt                 DateTime @default(now())
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  advertisingAccount MercadoLivreAdvertisingAccount @relation(fields: [advertisingAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([advertisingAccountId, date])
+  @@index([date])
+  @@index([advertisingAccountId, date])
+}
+
+// OAuth state 一次性校验记录，防止 Mercado Livre 回调被重放或串到错误的 App。
+model MercadoLivreOAuthState {
+  id           String    @id @default(uuid())
+  state        String    @unique
+  appConfigId  String
+  codeVerifier String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  appConfig MercadoLivreAppConfig @relation(fields: [appConfigId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([appConfigId, usedAt])
+}
+
+// Mercado Livre retries notifications. Persist every unique payload before acknowledging it.
+model MercadoLivreWebhookLog {
+  id              String    @id @default(uuid())
+  eventKey        String    @unique
+  appConfigId     String?
+  accountId       String?
+  applicationId   String?
+  userId          String?
+  topic           String?
+  resource        String?
+  attempts        Int?
+  sentAt          DateTime?
+  status          String    @default("received") // received / processing / processed / ignored / failed
+  processAttempts Int       @default(0)
+  lastError       String?
+  rawData         Json
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  appConfig MercadoLivreAppConfig? @relation(fields: [appConfigId], references: [id], onDelete: SetNull)
+  account   MercadoLivreAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([status, receivedAt])
+  @@index([userId, topic])
+  @@index([resource])
 }
 
 enum DepartmentEnum {
@@ -2505,30 +3742,48 @@ model Payroll {
 
 // TikTok Shop 授权配置
 model TikTokShopSetting {
-  id               String    @id @default(uuid())
-  shopId           String    @unique // TikTok 店铺ID
-  shopName         String // 店铺名称
-  region           String    @default("UNSET") // TikTok站点国家代码；无法识别时不猜测
-  regionSource     String    @default("LEGACY") // TIKTOK/MANUAL/LEGACY/PENDING
-  regionVerifiedAt DateTime?
-  sellerType       String? // 卖家类型
-  appKey           String? // 关联的 App Key
-  shopCipher       String? // 店铺密钥（API调用必需）
-  bankAccountId    String? // 关联的财务账户(BankAccount.id)
-  storeId          String?   @unique // 关联的系统店铺
-  accessToken      String? // 访问令牌
-  refreshToken     String? // 刷新令牌
-  tokenExpireAt    DateTime? // 令牌过期时间
-  openId           String? // 开放平台用户ID
-  status           String    @default("disconnected") // active/expired/disconnected
-  lastSyncAt       DateTime? // 最后同步时间
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  store            Store?    @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  id                    String                       @id @default(uuid())
+  shopId                String                       @unique // TikTok 店铺ID
+  shopName              String // 店铺名称
+  region                String                       @default("UNSET") // TikTok站点国家代码；无法识别时不猜测
+  regionSource          String                       @default("LEGACY") // TIKTOK/MANUAL/LEGACY/PENDING
+  regionVerifiedAt      DateTime?
+  sellerType            String? // 卖家类型
+  appKey                String? // 关联的 App Key
+  shopCipher            String? // 店铺密钥（API调用必需）
+  bankAccountId         String? // 关联的财务账户(BankAccount.id)
+  storeId               String?                      @unique // 关联的系统店铺
+  accessToken           String? // 访问令牌
+  refreshToken          String? // 刷新令牌
+  tokenExpireAt         DateTime? // 令牌过期时间
+  openId                String? // 开放平台用户ID
+  status                String                       @default("disconnected") // active/expired/disconnected
+  lastSyncAt            DateTime? // 最后同步时间
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+  store                 Store?                       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  dailyOperationActions TikTokDailyOperationAction[]
 
   @@index([shopId])
   @@index([region])
   @@index([status])
+}
+
+// Daily operator notes shown alongside TikTok analytics, isolated by shop and
+// the destination country's business date.
+model TikTokDailyOperationAction {
+  id              String   @id @default(uuid())
+  shopId          String
+  date            String   @db.VarChar(10)
+  operationAction String   @db.Text
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  shop TikTokShopSetting @relation(fields: [shopId], references: [shopId], onDelete: Cascade)
+
+  @@unique([shopId, date])
+  @@index([date])
 }
 
 // TikTok 订单数据
@@ -2553,6 +3808,7 @@ model TikTokOrder {
   @@index([orderId])
   @@index([status])
   @@index([createTime])
+  @@index([shopId, createTime])
 }
 
 // TikTok 结算日报表
@@ -2818,31 +4074,31 @@ model ProfitPlatformFeeTier {
 // Overseas warehouse fulfillment pricing. The order warehouse_id decides
 // which rule applies, so shops can switch warehouses without rewriting history.
 model WarehouseFulfillmentRule {
-  id                    String                        @id @default(uuid())
+  id                    String                                 @id @default(uuid())
   warehouseId           String
   shopId                String?
-  pricingMode           String                        @default("FLAT_UNIT")
-  billingUnit           String                        @default("SELLER_UNIT")
-  baseOrderFee          Decimal                       @default(0) @db.Decimal(18, 4)
-  firstUnitFee          Decimal                       @default(0) @db.Decimal(18, 4)
-  additionalUnitFee     Decimal                       @default(0) @db.Decimal(18, 4)
-  multiSkuFee           Decimal                       @default(0) @db.Decimal(18, 4)
-  volumetricDivisor     Int                           @default(6000)
-  overweightThresholdKg Decimal?                      @db.Decimal(10, 3)
-  overweightFeePerKg    Decimal                       @default(0) @db.Decimal(18, 4)
+  pricingMode           String                                 @default("FLAT_UNIT")
+  billingUnit           String                                 @default("SELLER_UNIT")
+  baseOrderFee          Decimal                                @default(0) @db.Decimal(18, 4)
+  firstUnitFee          Decimal                                @default(0) @db.Decimal(18, 4)
+  additionalUnitFee     Decimal                                @default(0) @db.Decimal(18, 4)
+  multiSkuFee           Decimal                                @default(0) @db.Decimal(18, 4)
+  volumetricDivisor     Int                                    @default(6000)
+  overweightThresholdKg Decimal?                               @db.Decimal(10, 3)
+  overweightFeePerKg    Decimal                                @default(0) @db.Decimal(18, 4)
   // When enabled, chargeable weight is max(actual weight, summed volume / divisor).
-  useVolumetricWeight   Boolean                       @default(false)
-  oversizeThresholdCm   Decimal?                      @db.Decimal(10, 2)
-  oversizeFee           Decimal                       @default(0) @db.Decimal(18, 4)
+  useVolumetricWeight   Boolean                                @default(false)
+  oversizeThresholdCm   Decimal?                               @db.Decimal(10, 2)
+  oversizeFee           Decimal                                @default(0) @db.Decimal(18, 4)
   packagingFeeTiers     WarehouseFulfillmentPackagingFeeTier[]
-  currency              String                        @default("BRL")
-  effectiveFrom         DateTime                      @db.Date
-  effectiveTo           DateTime?                     @db.Date
-  enabled               Boolean                       @default(true)
+  currency              String                                 @default("BRL")
+  effectiveFrom         DateTime                               @db.Date
+  effectiveTo           DateTime?                              @db.Date
+  enabled               Boolean                                @default(true)
   notes                 String?
-  createdAt             DateTime                      @default(now())
-  updatedAt             DateTime                      @updatedAt
-  warehouse             Warehouse                     @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdAt             DateTime                               @default(now())
+  updatedAt             DateTime                               @updatedAt
+  warehouse             Warehouse                              @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   feeTiers              WarehouseFulfillmentFeeTier[]
 
   @@index([warehouseId, effectiveFrom])
@@ -2871,15 +4127,15 @@ model WarehouseFulfillmentFeeTier {
 // Keeping them separate prevents a provider's material charge from being
 // hidden in the outbound-operation tier.
 model WarehouseFulfillmentPackagingFeeTier {
-  id              String                    @id @default(uuid())
+  id              String                   @id @default(uuid())
   ruleId          String
-  minWeightKg     Decimal?                  @db.Decimal(10, 3)
-  maxWeightKg     Decimal?                  @db.Decimal(10, 3)
-  minInclusive    Boolean                   @default(false)
-  maxInclusive    Boolean                   @default(true)
-  baseFee         Decimal                   @default(0) @db.Decimal(18, 4)
-  createdAt       DateTime                  @default(now())
-  updatedAt       DateTime                  @updatedAt
+  minWeightKg     Decimal?                 @db.Decimal(10, 3)
+  maxWeightKg     Decimal?                 @db.Decimal(10, 3)
+  minInclusive    Boolean                  @default(false)
+  maxInclusive    Boolean                  @default(true)
+  baseFee         Decimal                  @default(0) @db.Decimal(18, 4)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
   fulfillmentRule WarehouseFulfillmentRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId])
@@ -3111,6 +4367,46 @@ model TikTokStockDeduction {
   @@unique([tiktokOrderId, variantId])
   @@index([tiktokOrderId])
   @@index([shopId])
+}
+
+// Per-shop activation boundary for platform order stock deductions. Existing
+// shops start from an explicit timestamp so newly connected platforms cannot
+// silently deduct their complete order history from today's physical stock.
+model PlatformStockActivation {
+  id         String   @id @default(uuid())
+  platform   String
+  shopId     String
+  enabled    Boolean  @default(true)
+  activeFrom DateTime
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([platform, shopId])
+  @@index([platform, enabled, activeFrom])
+}
+
+// Idempotency and audit trail for non-legacy platform stock deductions. The
+// TikTok table remains intact so the established TikTok flow and rollback
+// history are not changed while other platforms share the same Stock balance.
+model PlatformStockDeduction {
+  id              String    @id @default(uuid())
+  platform        String
+  orderId         String
+  shopId          String
+  warehouseId     String
+  variantId       String
+  sellerSku       String?
+  qty             Int
+  status          String    @default("deducted")
+  orderCreateTime DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([platform, orderId, variantId])
+  @@index([platform, shopId, orderCreateTime])
+  @@index([warehouseId, variantId, status])
+  @@index([orderId])
 }
 
 // TikTok 渠道号配置（标记哪些账号是店铺渠道号）

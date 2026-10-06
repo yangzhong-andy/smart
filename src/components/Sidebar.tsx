@@ -107,6 +107,7 @@ const CHANGELOG = [
 import {
   LayoutDashboard,
   Package,
+  PackageCheck,
   Factory,
   Truck,
   Megaphone,
@@ -123,6 +124,7 @@ import {
   Building2,
   GripVertical,
   Shield,
+  Video,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ExchangeRateBar from "./ExchangeRateBar";
@@ -164,6 +166,7 @@ const ROUTE_PREFETCH_API: Record<string, string> = {
   "/settings/company": "/api/company",
   "/hr/employees": "/api/employees",
   "/inventory": "/api/stock",
+  "/inventory/assets": "/api/inventory/assets",
   "/inventory/reconciliation": "/api/inventory/reconciliation",
   "/logistics/channels": "/api/logistics-channels",
   "/logistics/containers": "/api/containers",
@@ -179,6 +182,8 @@ type NavItem = {
   labelEn: string; // 英文副标题
   icon: LucideIcon;
   href?: string;
+  section?: string;
+  disabled?: boolean;
   children?: NavItem[];
 };
 
@@ -218,6 +223,7 @@ const navItems: NavItem[] = [
       { label: "生产进度", labelEn: "", icon: Factory, href: "/procurement/production-progress" },
       { label: "拿货单管理", labelEn: "", icon: Factory, href: "/procurement/delivery-orders" },
       { label: "工厂端管理", labelEn: "", icon: Factory, href: "/supply-chain/factories" },
+      { label: "货物资产总账", labelEn: "", icon: Package, href: "/inventory/assets" },
       { label: "库存查询", labelEn: "", icon: Factory, href: "/inventory" },
       { label: "仓库库存", labelEn: "", icon: Package, href: "/inventory/warehouse" },
       { label: "备货补货", labelEn: "", icon: Package, href: "/inventory/replenishment" },
@@ -246,14 +252,57 @@ const navItems: NavItem[] = [
     ]
   },
   {
+    label: "平台中心",
+    labelEn: "Platform Center",
+    icon: Building2,
+    children: [
+      { section: "TikTok Shop", label: "店铺与授权", labelEn: "", icon: Building2, href: "/settings/tiktok" },
+      { section: "TikTok Shop", label: "订单管理", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
+      { section: "TikTok Shop", label: "售后管理（待接入）", labelEn: "", icon: ShoppingBag, href: "/platforms/tiktok/after-sales", disabled: true },
+      { section: "TikTok Shop", label: "履约物流", labelEn: "", icon: Truck, href: "/logistics/tracking" },
+      { section: "TikTok Shop", label: "结算财务", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
+      { section: "TikTok Shop", label: "商品管理", labelEn: "", icon: Package, href: "/product-center/products" },
+      { section: "TikTok Shop", label: "营销推广", labelEn: "", icon: Megaphone, href: "/advertising/agencies" },
+      { section: "TikTok Shop", label: "达人合作", labelEn: "", icon: Users, href: "/tiktok/affiliate" },
+      { section: "TikTok Shop", label: "运营数据分析", labelEn: "", icon: BarChart3, href: "/platforms/tiktok/analytics" },
+      { section: "TikTok Shop", label: "YYT广告数据", labelEn: "", icon: BarChart3, href: "/platforms/yyt/advertising" },
+      { section: "TikTok Shop", label: "精细利润核算", labelEn: "", icon: Wallet, href: "/finance/profit" },
+      { section: "Shopee", label: "店铺与授权", labelEn: "", icon: Building2, href: "/platforms/shopee/stores" },
+      { section: "Shopee", label: "订单管理", labelEn: "", icon: ShoppingBag, href: "/platforms/shopee/orders" },
+      { section: "Shopee", label: "售后管理", labelEn: "", icon: ShoppingBag, href: "/platforms/shopee/after-sales" },
+      { section: "Shopee", label: "履约物流", labelEn: "", icon: Truck, href: "/platforms/shopee/fulfillment" },
+      { section: "Shopee", label: "结算财务", labelEn: "", icon: Wallet, href: "/platforms/shopee/finance" },
+      { section: "Shopee", label: "钱包管理", labelEn: "", icon: Wallet, href: "/platforms/shopee/wallets" },
+      { section: "Shopee", label: "商品与 SKU", labelEn: "", icon: Package, href: "/platforms/shopee/products" },
+      { section: "Shopee", label: "包裹与订单操作", labelEn: "", icon: PackageCheck, href: "/platforms/shopee/operations" },
+      { section: "Shopee", label: "营销推广", labelEn: "", icon: Megaphone, href: "/platforms/shopee/marketing" },
+      { section: "Shopee", label: "达人合作", labelEn: "", icon: Users, href: "/platforms/shopee/affiliate" },
+      { section: "Shopee", label: "数据分析", labelEn: "", icon: BarChart3, href: "/platforms/shopee/analytics" },
+      { section: "Shopee", label: "精细利润核算", labelEn: "", icon: Wallet, href: "/platforms/shopee/profit" },
+      { section: "Mercado Livre", label: "店铺与授权", labelEn: "", icon: Building2, href: "/platforms/mercado-livre/stores" },
+      { section: "Mercado Livre", label: "订单管理", labelEn: "", icon: ShoppingBag, href: "/platforms/mercado-livre/orders" },
+      { section: "Mercado Livre", label: "运营数据", labelEn: "", icon: BarChart3, href: "/platforms/mercado-livre/analytics" },
+      { section: "Mercado Livre", label: "售后管理（待接入）", labelEn: "", icon: ShoppingBag, href: "/platforms/mercado-livre/after-sales", disabled: true },
+      { section: "Mercado Livre", label: "履约物流（待接入）", labelEn: "", icon: Truck, href: "/platforms/mercado-livre/fulfillment", disabled: true },
+      { section: "Mercado Livre", label: "结算财务", labelEn: "", icon: Wallet, href: "/platforms/mercado-livre/finance" },
+      { section: "Mercado Livre", label: "精细利润核算", labelEn: "", icon: Wallet, href: "/platforms/mercado-livre/profit" },
+      { section: "Amazon", label: "店铺与授权（待接入）", labelEn: "", icon: Building2, href: "/platforms/amazon/stores", disabled: true },
+      { section: "Amazon", label: "订单管理（待接入）", labelEn: "", icon: ShoppingBag, href: "/platforms/amazon/orders", disabled: true },
+      { section: "Amazon", label: "售后管理（待接入）", labelEn: "", icon: ShoppingBag, href: "/platforms/amazon/after-sales", disabled: true },
+      { section: "Amazon", label: "履约物流（待接入）", labelEn: "", icon: Truck, href: "/platforms/amazon/fulfillment", disabled: true },
+      { section: "Amazon", label: "结算财务（待接入）", labelEn: "", icon: Wallet, href: "/platforms/amazon/finance", disabled: true },
+      { section: "Amazon", label: "精细利润核算", labelEn: "", icon: Wallet, href: "/platforms/amazon/profit" },
+    ]
+  },
+  {
     label: "营销与店铺",
     labelEn: "Marketing & Store",
     icon: Megaphone,
     children: [
       { label: "经营总览", labelEn: "", icon: LayoutDashboard, href: "/finance/settlement-dashboard" },
-      { label: "订单中心", labelEn: "", icon: ShoppingBag, href: "/tiktok/orders" },
-      { label: "店铺分析", labelEn: "", icon: BarChart3, href: "/tiktok/analytics" },
       { label: "营销增长", labelEn: "", icon: Megaphone, href: "/advertising/influencers" },
+      { label: "达人中心", labelEn: "", icon: Users, href: "/advertising/creator-center" },
+      { label: "自营渠道号", labelEn: "", icon: Video, href: "/advertising/self-channels" },
       { label: "达人营销核算", labelEn: "", icon: Users, href: "/advertising/influencer-costs" },
       { label: "广告代理", labelEn: "", icon: Building2, href: "/advertising/agencies" },
       { label: "平台管理", labelEn: "", icon: Settings, href: "/settings/stores" },
@@ -268,13 +317,14 @@ const navItems: NavItem[] = [
       { label: "对账中心", labelEn: "", icon: Wallet, href: "/finance/reconciliation" },
       { label: "流水明细", labelEn: "", icon: Wallet, href: "/finance/cash-flow" },
       { label: "出口退税管理", labelEn: "", icon: Wallet, href: "/finance/export-tax" },
+      { label: "多平台利润汇总", labelEn: "", icon: Wallet, href: "/finance/platform-profit-summary" },
       { label: "精细利润核算", labelEn: "", icon: Wallet, href: "/finance/profit" },
       { label: "账户列表", labelEn: "", icon: Wallet, href: "/finance/accounts" },
       { label: "内部划拨", labelEn: "", icon: Wallet, href: "/finance/transfer" },
       { label: "审批中心", labelEn: "", icon: Wallet, href: "/finance/approval" },
       { label: "应收款管理", labelEn: "", icon: Wallet, href: "/finance/receivables" },
-      { label: "平台回款", labelEn: "", icon: Wallet, href: "/tiktok/finance" },
-      { label: "店铺回款统计", labelEn: "", icon: Wallet, href: "/finance/store-report" }
+      { label: "店铺回款统计", labelEn: "", icon: Wallet, href: "/finance/store-report" },
+      { label: "AI 智能经营中枢", labelEn: "", icon: Wallet, href: "/ai-assistant" }
     ]
   },
   {
@@ -309,7 +359,6 @@ const navItems: NavItem[] = [
       { label: "本公司信息", labelEn: "", icon: Building2, href: "/settings/company" },
       { label: "出口公司管理", labelEn: "", icon: Building2, href: "/settings/exporters" },
       { label: "海外公司管理", labelEn: "", icon: Building2, href: "/settings/overseas-companies" },
-      { label: "TIKTOK店铺授权", labelEn: "", icon: Building2, href: "/settings/tiktok" },
       { label: "生成测试数据", labelEn: "", icon: Database, href: "/settings/generate-test-data" },
       { label: "清空系统数据", labelEn: "", icon: Trash2, href: "/settings/clear-data" }
     ]
@@ -344,6 +393,12 @@ export default function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    "TikTok Shop": false,
+    Shopee: false,
+    "Mercado Livre": false,
+    Amazon: false,
+  });
   const [customChildOrder, setCustomChildOrder] = useState<Record<string, string[]>>({});
   const [showChangelog, setShowChangelog] = useState(false);
   const [draggingChildHref, setDraggingChildHref] = useState<string | null>(null);
@@ -360,7 +415,7 @@ export default function Sidebar() {
     const filtered = navItems.filter((item) => allowedLabels.includes(item.label));
     if (filtered.length === 0 && allowedLabels.length > 0) return navItems;
     return filtered;
-  }, [allowedLabels, departmentAccessOpts?.bypass, departmentAccessOpts?.dbConfig]);
+  }, [allowedLabels]);
   
   // 客户端初始化
   useEffect(() => {
@@ -402,6 +457,10 @@ export default function Sidebar() {
           const hasActiveChild = filtered.some((child) => child.href === currentPath);
           if (hasActiveChild) {
             expanded.push(item.label);
+            const activeSection = filtered.find((child) => child.href === currentPath)?.section;
+            if (activeSection) {
+              setExpandedSections((prev) => ({ ...prev, [activeSection]: true }));
+            }
           }
         }
       });
@@ -453,6 +512,12 @@ export default function Sidebar() {
       return list.includes(label) ? list.filter((l) => l !== label) : [...list, label];
     });
   };
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !(prev[section] ?? true) }));
+  };
+
+  const isSectionExpanded = (section?: string) => !section || (expandedSections[section] ?? true);
 
   const handleCollapse = () => {
     const newState = !isCollapsed;
@@ -723,22 +788,46 @@ export default function Sidebar() {
                           <div className="absolute left-0 top-0 bottom-0 w-px bg-white/10" />
                           
                           <div className="space-y-0.5 pl-5">
-                            {getOrderedChildren(item).map((child) => {
+                            {(() => {
+                              let lastSection: string | undefined;
+                              return getOrderedChildren(item).map((child) => {
                               const isApprovalLink = child.href === "/finance/approval";
                               const active = isActive(child.href);
                               const childKey = child.href || `__${child.label}`;
+                              const sectionHeader = child.section && child.section !== lastSection ? child.section : null;
+                              const sectionExpanded = isSectionExpanded(child.section);
+                              lastSection = child.section;
+                              if (!sectionExpanded && !sectionHeader) return null;
                               return (
-                                <Link
-                                  key={childKey}
-                                  href={child.href || "#"}
-                                  prefetch
-                                  draggable
+                                <div key={childKey}>
+                                  {sectionHeader && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSection(sectionHeader)}
+                                      aria-expanded={sectionExpanded}
+                                      className="flex w-full items-center justify-between px-3 pb-1 pt-3 text-left text-[11px] font-semibold text-cyan-300/80 transition-colors hover:text-cyan-200"
+                                    >
+                                      <span>{sectionHeader}</span>
+                                      <ChevronRight
+                                        size={14}
+                                        className={`transition-transform duration-200 ${sectionExpanded ? "rotate-90" : ""}`}
+                                      />
+                                    </button>
+                                  )}
+                                  {sectionExpanded && <Link
+                                  href={child.disabled ? "#" : (child.href || "#")}
+                                  prefetch={!child.disabled}
+                                  aria-disabled={child.disabled || undefined}
+                                  tabIndex={child.disabled ? -1 : undefined}
+                                  draggable={!child.disabled}
                                   onDragStart={(e) => {
+                                    if (child.disabled) return;
                                     e.dataTransfer.effectAllowed = "move";
                                     e.dataTransfer.setData("text/plain", childKey);
                                     setDraggingChildHref(childKey);
                                   }}
                                   onDragOver={(e) => {
+                                    if (child.disabled) return;
                                     e.preventDefault();
                                     e.dataTransfer.dropEffect = "move";
                                     setDragOverChildHref(childKey);
@@ -747,6 +836,7 @@ export default function Sidebar() {
                                     setDragOverChildHref((prev) => (prev === childKey ? null : prev));
                                   }}
                                   onDrop={(e) => {
+                                    if (child.disabled) return;
                                     e.preventDefault();
                                     const from = e.dataTransfer.getData("text/plain") || draggingChildHref;
                                     if (from) reorderChildren(item.label, from, childKey);
@@ -757,17 +847,25 @@ export default function Sidebar() {
                                     setDragOverChildHref(null);
                                     setDraggingChildHref(null);
                                   }}
-                                  onMouseEnter={() => prefetchRoute(child.href)}
-                                  onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
+                                  onMouseEnter={() => !child.disabled && prefetchRoute(child.href)}
+                                  onClick={(e) => {
+                                    if (child.disabled) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    sidebarLinkClick(router, e, child.href, pathname || "");
+                                  }}
                                   className={`group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
-                                    active
+                                    child.disabled
+                                      ? "cursor-default text-slate-600"
+                                      : active
                                       ? "text-blue-400 font-medium bg-blue-500/10"
                                       : "text-gray-400 hover:text-white hover:bg-white/5"
                                   }`}
                                   style={dragOverChildHref === childKey ? { outline: "1px dashed rgba(56, 189, 248, 0.7)" } : undefined}
                                 >
                                   <div
-                                    className="text-slate-500/70 group-hover:text-slate-300"
+                                    className={child.disabled ? "text-slate-700" : "text-slate-500/70 group-hover:text-slate-300"}
                                     title="拖拽排序"
                                     onMouseDown={(e) => e.stopPropagation()}
                                   >
@@ -805,9 +903,11 @@ export default function Sidebar() {
                                       {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
                                     </span>
                                   )}
-                                </Link>
+                                  </Link>}
+                                </div>
                               );
-                            })}
+                              });
+                            })()}
                           </div>
                         </div>
                       </motion.div>
@@ -828,7 +928,9 @@ export default function Sidebar() {
                     <div className="text-xs text-slate-400 px-3 py-1.5 mb-1 border-b border-slate-800/50">
                       {item.label}
                     </div>
-                    {filterSidebarNavChildren(
+                    {(() => {
+                      let lastSection: string | undefined;
+                      return filterSidebarNavChildren(
                       item.label,
                       item.children,
                       departmentCode,
@@ -837,13 +939,30 @@ export default function Sidebar() {
                     ).map((child) => {
                       const isApprovalLink = child.href === "/finance/approval";
                       const active = isActive(child.href);
+                      const sectionHeader = child.section && child.section !== lastSection ? child.section : null;
+                      lastSection = child.section;
                       return (
-                        <Link
-                          key={child.href}
-                          href={child.href || "#"}
-                          onClick={(e) => sidebarLinkClick(router, e, child.href, pathname || "")}
+                        <div key={child.href}>
+                          {sectionHeader && (
+                            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold text-cyan-300/80">
+                              {sectionHeader}
+                            </div>
+                          )}
+                          <Link
+                          href={child.disabled ? "#" : (child.href || "#")}
+                          aria-disabled={child.disabled || undefined}
+                          tabIndex={child.disabled ? -1 : undefined}
+                          onClick={(e) => {
+                            if (child.disabled) {
+                              e.preventDefault();
+                              return;
+                            }
+                            sidebarLinkClick(router, e, child.href, pathname || "");
+                          }}
                           className={`block px-3 py-2 text-sm transition-all duration-200 cursor-pointer ${
-                            active
+                            child.disabled
+                              ? "cursor-default text-slate-600"
+                              : active
                               ? "text-white font-semibold"
                               : "text-slate-400 hover:text-white"
                           }`}
@@ -861,9 +980,11 @@ export default function Sidebar() {
                               {pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}
                             </span>
                           )}
-                        </Link>
+                          </Link>
+                        </div>
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                 )}
                 </div>

@@ -51,15 +51,30 @@ export type VariantRow = {
   cost_price: string;
   size: string;
   barcode: string;
+  currency?: string;
+  weight_kg?: string;
+  length?: string;
+  width?: string;
+  height?: string;
+  volumetric_divisor?: string;
+  target_roi?: string;
+  copiedFromSku?: string;
 };
 
 export function newVariantRow(): VariantRow {
   return {
-    tempId: typeof crypto !== "undefined" ? crypto.randomUUID() : `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    tempId: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     color: "",
     sku_id: "",
     cost_price: "",
     size: "",
-    barcode: ""
+    barcode: "",
+    currency: "",
+    weight_kg: "",
+    length: "",
+    width: "",
+    height: "",
+    volumetric_divisor: "",
+    target_roi: ""
   };
 }

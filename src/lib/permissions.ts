@@ -53,6 +53,52 @@ export function filterSidebarNavChildren<T extends { href?: string; label: strin
   return children.filter((c) => !c.href || allowed.has(c.href));
 }
 
+function matchesRoute(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function configuredRoutes(
+  config: import("./department-access-config").DepartmentAccessRuleConfig,
+): string[] {
+  const routes = new Set<string>();
+  for (const hrefs of Object.values(config.childHrefs || {})) {
+    for (const href of hrefs) {
+      if (typeof href === "string" && href.startsWith("/")) routes.add(href);
+    }
+  }
+  return [...routes];
+}
+
+export function isPathAllowedForDepartment(
+  pathname: string,
+  _departmentCode: string | null,
+  _departmentName: string | null | undefined,
+  opts?: DepartmentAccessRuntimeOptions,
+): boolean {
+  if (opts?.bypass) return true;
+  const config = opts?.dbConfig;
+  if (!config) return true;
+  const routes = configuredRoutes(config);
+  if (routes.length === 0) return true;
+  return routes.some((href) => matchesRoute(pathname, href));
+}
+
+export function resolvePathGuardFallback(
+  _pathname: string,
+  _departmentCode: string | null,
+  _departmentName: string | null | undefined,
+  opts?: DepartmentAccessRuntimeOptions,
+): string {
+  const config = opts?.dbConfig;
+  if (!config) return "/";
+  const routes = configuredRoutes(config);
+  if (config.defaultRoute && routes.some((href) => matchesRoute(config.defaultRoute!, href))) {
+    return config.defaultRoute;
+  }
+  return routes[0] || config.defaultRoute || "/";
+}
+
 export const SENSITIVE_FIELDS = [
   'paymentPassword',      // 支付密码
   'bankPassword',         // 银行密码

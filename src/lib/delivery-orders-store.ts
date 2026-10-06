@@ -145,6 +145,19 @@ export async function deleteDeliveryOrder(id: string): Promise<boolean> {
 /** 按变体拿货：itemId 为合同明细 id，qty 为本次拿货数量 */
 export type DeliveryOrderItemInput = { itemId: string; qty: number };
 
+/** Calculate a date-only tail due date without local-timezone rollover. */
+export function calculateDeliveryOrderTailDueDate(
+  pickupDate: string,
+  tailPeriodDays: number,
+): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(pickupDate)) return "";
+  const date = new Date(`${pickupDate}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  const days = Math.max(0, Math.trunc(Number(tailPeriodDays) || 0));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * 创建新的拿货单（子单）
  * 支持按变体提交：items 为各 SKU 的本次拿货数量；若不传 items 则用总 qty（兼容旧用法）
@@ -229,8 +242,8 @@ export async function createDeliveryOrder(
     tailAmount = totalQty * unitPrice;
   }
 
-  const dueDate = new Date();
-  dueDate.setDate(dueDate.getDate() + contract.tailPeriodDays);
+  const pickupDate = shippedDate || new Date().toISOString().slice(0, 10);
+  const tailDueDate = calculateDeliveryOrderTailDueDate(pickupDate, contract.tailPeriodDays);
 
   const newOrder: DeliveryOrder = {
     id: crypto.randomUUID(),
@@ -240,11 +253,11 @@ export async function createDeliveryOrder(
     qty: totalQty,
     itemQtys: itemQtysRecord,
     domesticTrackingNumber,
-    shippedDate: shippedDate || new Date().toISOString().slice(0, 10),
+    shippedDate: pickupDate,
     status: "待发货",
     tailAmount,
     tailPaid: 0,
-    tailDueDate: dueDate.toISOString().slice(0, 10),
+    tailDueDate,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };

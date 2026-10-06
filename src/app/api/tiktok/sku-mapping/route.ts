@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { clearCacheByPrefix } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true, id: mapping.id });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -109,6 +111,7 @@ export async function DELETE(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "缺少 id" }, { status: 400 });
 
     await prisma.tikTokSkuMapping.delete({ where: { id } });
+    await clearCacheByPrefix("profit-report");
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

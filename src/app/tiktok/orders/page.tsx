@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, ShoppingBag, Search, ChevronDown, ChevronRight, Pac
 import { Pagination } from "@/components/Pagination";
 import StoreMarketingNav from "@/components/store-marketing/StoreMarketingNav";
 import { DELIVERY_ALERT_DAYS } from "@/lib/order-delivery-alert";
+import { formatOrderDateTime } from "@/lib/order-business-time";
 
 type Order = {
   id: string;
@@ -28,6 +29,9 @@ type Order = {
   buyerAddress: string | null;
   paymentMethod: string | null;
   payment: any;
+  sourceType: "NORMAL" | "AFFILIATE_ORGANIC" | "AFFILIATE_ADS" | "FREE_SAMPLE";
+  affiliateOrganicCommission: number;
+  affiliateAdsCommission: number;
   deliveryAlert: boolean;
   deliveryAlertAgeDays: number | null;
 };
@@ -60,6 +64,20 @@ const SHIPPING_TYPE_LABELS: Record<string, string> = {
   SELLER: "卖家物流",
 };
 
+const ORDER_SOURCE_LABELS: Record<Order["sourceType"], string> = {
+  NORMAL: "普通订单",
+  AFFILIATE_ORGANIC: "达人自然流",
+  AFFILIATE_ADS: "达人 ADS 投放",
+  FREE_SAMPLE: "达人免费样品",
+};
+
+const ORDER_SOURCE_COLORS: Record<Order["sourceType"], string> = {
+  NORMAL: "border-slate-600 bg-slate-800 text-slate-300",
+  AFFILIATE_ORGANIC: "border-violet-500/40 bg-violet-500/10 text-violet-200",
+  AFFILIATE_ADS: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200",
+  FREE_SAMPLE: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+};
+
 const fmtMoney = (v: string | number | null, currency = "BRL") => {
   if (v === null || v === undefined) return "-";
   const n = typeof v === "string" ? parseFloat(v) : v;
@@ -67,15 +85,9 @@ const fmtMoney = (v: string | number | null, currency = "BRL") => {
   return `${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 };
 
-const timeZoneForRegion = (region: string | null | undefined) =>
-  region === "US" ? "America/Denver" : "America/Sao_Paulo";
-
 const fmtDate = (d: string | Date | null, region?: string | null) => {
-  if (!d) return "-";
-  return new Date(d).toLocaleString("zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-    timeZone: timeZoneForRegion(region),
-  });
+  const formatted = formatOrderDateTime(d, region);
+  return formatted === "--" ? "-" : formatted;
 };
 
 export default function TikTokOrdersPage() {
@@ -90,6 +102,7 @@ export default function TikTokOrdersPage() {
   const [keyword, setKeyword] = useState("");
   const [skuFilter, setSkuFilter] = useState("");
   const [shippingTypeFilter, setShippingTypeFilter] = useState("");
+  const [orderSourceFilter, setOrderSourceFilter] = useState("");
   const [orderStartDate, setOrderStartDate] = useState("");
   const [orderEndDate, setOrderEndDate] = useState("");
   const [deliveryAlertOnly, setDeliveryAlertOnly] = useState(false);
@@ -98,15 +111,23 @@ export default function TikTokOrdersPage() {
   const [shopFilter, setShopFilter] = useState("");
   const [shops, setShops] = useState<{shopId:string; shopName:string}[]>([]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedShopId = params.get("shopId") || "";
+    const requestedStartDate = params.get("orderStartDate") || "";
+    const requestedEndDate = params.get("orderEndDate") || "";
+    if (requestedShopId) setShopFilter(requestedShopId);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(requestedStartDate)) setOrderStartDate(requestedStartDate);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(requestedEndDate)) setOrderEndDate(requestedEndDate);
+  }, []);
+
   // 加载店铺列表，默认选中第一个店铺
   useEffect(() => {
     fetch("/api/tiktok/data?type=shops").then(r => r.json()).then(d => {
       const list = d.shops || [];
       setShops(list);
       // 多店铺时默认选第一个，避免数据混在一起
-      if (list.length > 1 && !shopFilter) {
-        setShopFilter(list[0].shopId);
-      }
+      setShopFilter((current) => list.length > 1 && !current ? list[0].shopId : current);
     }).catch(() => {});
   }, []);
 
@@ -128,6 +149,7 @@ export default function TikTokOrdersPage() {
       if (keyword) params.set("keyword", keyword);
       if (skuFilter) params.set("sku", skuFilter);
       if (shippingTypeFilter) params.set("shippingType", shippingTypeFilter);
+      if (orderSourceFilter) params.set("orderSource", orderSourceFilter);
       if (orderStartDate) params.set("orderStartDate", orderStartDate);
       if (orderEndDate) params.set("orderEndDate", orderEndDate);
       if (deliveryAlertOnly) params.set("deliveryAlert", "1");
@@ -140,7 +162,7 @@ export default function TikTokOrdersPage() {
       toast.error("加载订单失败");
     }
     setLoading(false);
-  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderStartDate, orderEndDate, shopFilter, deliveryAlertOnly]);
+  }, [page, pageSize, statusFilter, keyword, skuFilter, shippingTypeFilter, orderSourceFilter, orderStartDate, orderEndDate, shopFilter, deliveryAlertOnly]);
 
 
   // 访问页面自动同步最近1天订单
@@ -281,7 +303,7 @@ export default function TikTokOrdersPage() {
       </div>
 
       {/* 筛选 */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(140px,auto)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(300px,1.4fr)_minmax(220px,2fr)]">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(140px,auto)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(300px,1.4fr)_minmax(220px,2fr)]">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setDeliveryAlertOnly(false); setPage(1); }}
@@ -311,6 +333,17 @@ export default function TikTokOrdersPage() {
           {filterOptions.shippingTypes.map(type => (
             <option key={type} value={type}>{SHIPPING_TYPE_LABELS[type] || type}</option>
           ))}
+        </select>
+        <select
+          value={orderSourceFilter}
+          onChange={(e) => { setOrderSourceFilter(e.target.value); setPage(1); }}
+          className="min-w-0 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200"
+        >
+          <option value="">全部订单来源</option>
+          <option value="AFFILIATE_ORGANIC">达人自然流</option>
+          <option value="AFFILIATE_ADS">达人 ADS 投放</option>
+          <option value="FREE_SAMPLE">达人免费样品</option>
+          <option value="NORMAL">普通订单</option>
         </select>
         <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
           <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
@@ -358,6 +391,7 @@ export default function TikTokOrdersPage() {
                 <tr className="text-left text-xs text-slate-400 border-b border-slate-800 bg-slate-800/30">
                   <th className="px-4 py-3 w-8"></th>
                   <th className="px-4 py-3">订单</th>
+                  <th className="px-4 py-3">订单来源</th>
                   <th className="px-4 py-3">客户</th>
                   <th className="px-4 py-3">商品</th>
                   <th className="px-4 py-3 text-center">数量</th>
@@ -383,9 +417,11 @@ export default function TikTokOrdersPage() {
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-300">
                         {o.orderId}
-                        {(o as any).isSampleOrder && (
-                          <span className="ml-1 inline-block rounded bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.5 text-[10px] font-medium text-purple-300">免费样品</span>
-                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex whitespace-nowrap rounded border px-2 py-0.5 text-xs font-medium ${ORDER_SOURCE_COLORS[o.sourceType]}`}>
+                          {ORDER_SOURCE_LABELS[o.sourceType]}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">{(o as any).buyerName || "-"}</td>
                       <td className="px-4 py-3 text-slate-300 max-w-xs truncate">
@@ -416,7 +452,7 @@ export default function TikTokOrdersPage() {
                     </tr>
                     {expanded === o.orderId && (
                       <tr className="bg-slate-800/20">
-                        <td colSpan={10} className="px-8 py-4">
+                        <td colSpan={11} className="px-8 py-4">
                           <div className="grid grid-cols-2 gap-6">
                             {/* 商品详情 */}
                             <div>
@@ -491,6 +527,21 @@ export default function TikTokOrdersPage() {
                                 </div>
                               </div>
                             )}
+                            <div className="col-span-2">
+                              <h4 className="text-xs font-semibold text-slate-300 mb-2">订单来源</h4>
+                              <div className="rounded-lg bg-slate-900/40 p-3 text-xs">
+                                <div className="flex justify-between"><span className="text-slate-500">识别结果</span><span className="text-slate-200">{ORDER_SOURCE_LABELS[o.sourceType]}</span></div>
+                                {o.sourceType === "AFFILIATE_ORGANIC" && <div className="mt-1 text-slate-500">依据：结算单中的达人自然流联盟佣金</div>}
+                                {o.sourceType === "AFFILIATE_ADS" && <div className="mt-1 text-slate-500">依据：结算单中的 ADS 达人佣金</div>}
+                                {o.sourceType === "FREE_SAMPLE" && <div className="mt-1 text-slate-500">依据：订单接口的免费样品标识</div>}
+                                {(o.affiliateOrganicCommission > 0 || o.affiliateAdsCommission > 0) && (
+                                  <div className="mt-2 flex gap-4 text-slate-400">
+                                    <span>自然流佣金 {fmtMoney(o.affiliateOrganicCommission, o.currency)}</span>
+                                    <span>ADS 达人佣金 {fmtMoney(o.affiliateAdsCommission, o.currency)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </td>
                       </tr>

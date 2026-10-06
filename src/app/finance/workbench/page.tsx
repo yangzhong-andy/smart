@@ -155,6 +155,13 @@ export default function FinanceWorkbenchPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [paymentVoucher, setPaymentVoucher] = useState<string | string[]>(""); // 转账凭证
   const [inputExchangeRate, setInputExchangeRate] = useState<string>(""); // 付款当天的汇率
+  const [paymentConfirm, setPaymentConfirm] = useState<{
+    open: boolean;
+    requestId: string | null;
+    summary?: string;
+    amount?: number;
+    currency?: string;
+  }>({ open: false, requestId: null });
   const [activeModal, setActiveModal] = useState<"expense" | "income" | "transfer" | null>(null);
   const [isSavingFlow, setIsSavingFlow] = useState(false);
   const [batchPaymentModal, setBatchPaymentModal] = useState(false);
@@ -302,15 +309,17 @@ export default function FinanceWorkbenchPage() {
   }, [financeRatesData]);
 
   // 确保数据是数组并指定类型
-  const pendingEntries: PendingEntry[] = Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [];
-  const monthlyBills: MonthlyBill[] = Array.isArray(monthlyBillsData) ? (monthlyBillsData as MonthlyBill[]) : [];
-  const pendingBills: MonthlyBill[] = Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [];
-  const approvedExpenseRequests: ExpenseRequest[] = Array.isArray(approvedExpenseRequestsData) ? (approvedExpenseRequestsData as ExpenseRequest[]) : [];
-  const approvedIncomeRequests: IncomeRequest[] = Array.isArray(approvedIncomeRequestsData) ? (approvedIncomeRequestsData as IncomeRequest[]) : [];
+  const pendingEntries = useMemo<PendingEntry[]>(() => Array.isArray(pendingEntriesData) ? (pendingEntriesData as PendingEntry[]) : [], [pendingEntriesData]);
+  const monthlyBills = useMemo<MonthlyBill[]>(() => Array.isArray(monthlyBillsData) ? (monthlyBillsData as MonthlyBill[]) : [], [monthlyBillsData]);
+  const pendingBills = useMemo<MonthlyBill[]>(() => Array.isArray(pendingBillsData) ? (pendingBillsData as MonthlyBill[]) : [], [pendingBillsData]);
+  const approvedExpenseRequests = useMemo<ExpenseRequest[]>(() => Array.isArray(approvedExpenseRequestsData) ? (approvedExpenseRequestsData as ExpenseRequest[]) : [], [approvedExpenseRequestsData]);
+  const approvedIncomeRequests = useMemo<IncomeRequest[]>(() => Array.isArray(approvedIncomeRequestsData) ? (approvedIncomeRequestsData as IncomeRequest[]) : [], [approvedIncomeRequestsData]);
 
-  const accountsListRaw = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data ?? [];
-  const cashFlowListRawRaw = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
-  const cashFlowListRaw: any[] = Array.isArray(cashFlowListRawRaw) ? cashFlowListRawRaw : [];
+  const accountsListRaw = useMemo<BankAccount[]>(() => Array.isArray(accountsData) ? accountsData : (accountsData as any)?.data ?? [], [accountsData]);
+  const cashFlowListRaw = useMemo<any[]>(() => {
+    const rows = Array.isArray(cashFlowData) ? cashFlowData : (cashFlowData as any)?.data ?? [];
+    return Array.isArray(rows) ? rows : [];
+  }, [cashFlowData]);
 
   // 统一流水 status / type 为小写，兼容 API 返回的枚举值，并用于统计卡片
   const cashFlow: CashFlow[] = useMemo(
@@ -434,7 +443,7 @@ export default function FinanceWorkbenchPage() {
     return updatedAccounts;
   }, [accountsListRaw, cashFlowListRaw]);
 
-  const stores: Store[] = Array.isArray(storesDataRaw) ? (storesDataRaw as Store[]) : (storesDataRaw?.data ?? []);
+  const stores = useMemo<Store[]>(() => Array.isArray(storesDataRaw) ? (storesDataRaw as Store[]) : (storesDataRaw?.data ?? []), [storesDataRaw]);
 
   // 打开收入入账弹窗时：若申请关联了回款店铺，自动带出该店铺的收款账户
   useEffect(() => {
@@ -457,7 +466,7 @@ export default function FinanceWorkbenchPage() {
     mutate("approved-expense-requests", undefined, { revalidate: true });
     mutate("approved-income-requests", undefined, { revalidate: true });
     mutate("pending-bills", undefined, { revalidate: true });
-  }, [mutate]);
+  }, []);
 
   // 处理流水记录创建
   const handleAddFlow = async (newFlow: CashFlow, adAccountId?: string, rebateAmount?: number) => {
@@ -550,7 +559,7 @@ export default function FinanceWorkbenchPage() {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("approval-updated", handleApprovalUpdate);
     };
-  }, [refreshApprovalData, mutate]); // 修复：添加 mutate 到依赖项
+  }, [refreshApprovalData]);
 
   // 统计信息
   // 已审批待付款月账单
@@ -993,7 +1002,7 @@ export default function FinanceWorkbenchPage() {
     mutate("approved-expense-requests");
     mutate("approved-income-requests");
     mutate("/api/finance-rates");
-  }, [mutate]);
+  }, []);
 
   if (hasApiError) {
     return (
@@ -1163,8 +1172,8 @@ export default function FinanceWorkbenchPage() {
               <p className="text-sm">暂无已审批支出申请</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {approvedExpenseRequests.slice(0, 5).map((request) => {
+            <div className="max-h-[34rem] overflow-y-auto space-y-3 pr-1">
+              {approvedExpenseRequests.map((request) => {
                 const colors = getStatusColor(request.status);
                 return (
                   <div key={request.id} className="rounded-lg border border-slate-800/50 bg-slate-900/40 p-4 hover:border-amber-500/50 hover:bg-slate-900/60 transition-all duration-200 group">
@@ -1699,6 +1708,7 @@ export default function FinanceWorkbenchPage() {
                 取消
               </button>
               <InteractiveButton
+                type="button"
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1710,14 +1720,13 @@ export default function FinanceWorkbenchPage() {
                     toast.error("请选择出款账户");
                     return;
                   }
-                  try {
-                    console.log("开始执行出账操作，requestId:", request.id);
-                    await handleProcessExpenseRequest(request.id);
-                    console.log("出账操作完成");
-                  } catch (error: any) {
-                    console.error("出账处理失败:", error);
-                    // 错误已在 handleProcessExpenseRequest 中处理，这里只记录日志
-                  }
+                  setPaymentConfirm({
+                    open: true,
+                    requestId: request.id,
+                    summary: request.summary,
+                    amount: request.amount,
+                    currency: request.currency,
+                  });
                 }}
                 variant="danger"
                 size="md"
@@ -1731,6 +1740,33 @@ export default function FinanceWorkbenchPage() {
         </div>
         );
       })()}
+
+      {/* 出账前二次确认：确认后才调用付款接口，防止回车或误点击直接出账 */}
+      <ConfirmDialog
+        open={paymentConfirm.open}
+        title="确认付款出账"
+        message={[
+          "请确认以下付款信息：",
+          `摘要：${paymentConfirm.summary || "-"}`,
+          `金额：${paymentConfirm.currency || "CNY"} ${Number(paymentConfirm.amount || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          "确认后将生成财务流水并扣减出款账户余额。",
+        ].join("\n")}
+        confirmText="确认出账"
+        cancelText="返回检查"
+        type="danger"
+        onCancel={() => setPaymentConfirm({ open: false, requestId: null })}
+        onConfirm={async () => {
+          const requestId = paymentConfirm.requestId;
+          if (!requestId) return;
+          try {
+            await handleProcessExpenseRequest(requestId);
+          } catch {
+            // 错误已由出账函数提示，确认框只负责结束本次确认流程。
+          } finally {
+            setPaymentConfirm({ open: false, requestId: null });
+          }
+        }}
+      />
 
       {/* 合并付款弹窗 */}
       {batchPaymentModal && (
