@@ -5,7 +5,6 @@
 import { InventoryMovementType, Prisma, StockLogReason, WarehouseFundEntryType } from "@prisma/client";
 import jwt from "jsonwebtoken";
 import { prisma } from "../src/lib/prisma";
-import { getAuthSecret } from "../src/lib/auth-secret";
 import { clearCacheByPrefix } from "../src/lib/redis";
 import { recordWarehouseFundEntry } from "../src/lib/warehouse-funds";
 
@@ -81,13 +80,15 @@ async function bind() {
 async function profitRows() {
   const user = await prisma.user.findFirst({ where: { isActive: true }, select: { id: true }, orderBy: { createdAt: "asc" } });
   if (!user) throw new Error("No active user for internal read-only report request");
+  const authSecret = process.env.NEXTAUTH_SECRET || process.env.JWT_SECRET;
+  if (!authSecret) throw new Error("NEXTAUTH_SECRET or JWT_SECRET is required for the internal report request");
   const rows = new Map<string, ProfitRow>();
   const lastDay = brazilToday();
   for (const day of daysFrom("2026-10-02", lastDay)) {
     let page = 1;
     let totalPages = 1;
     do {
-      const token = jwt.sign({ userId: user.id }, getAuthSecret(), { algorithm: "HS256", expiresIn: 120 });
+      const token = jwt.sign({ userId: user.id }, authSecret, { algorithm: "HS256", expiresIn: 120 });
       const params = new URLSearchParams({ startDate: day, endDate: day, groupBy: "day", shopId: SHOP_ID, page: String(page), pageSize: "100" });
       const response = await fetch(`http://127.0.0.1:3001/api/shopee/profit?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const report = await response.json().catch(() => null);
