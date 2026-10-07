@@ -25,6 +25,8 @@ const PLATFORM_SOURCES: Record<LedgerPlatform, { debit: string; reversal: string
   },
 };
 
+const warehouseSwitchDebitSource = (debitSource: string) => `${debitSource}_WAREHOUSE_SWITCH_NEW_DEBIT`;
+
 /**
  * The reconciliation helpers run inside the Next.js process. Calling the
  * public server address from that process is fragile (hairpin NAT, firewall,
@@ -151,7 +153,29 @@ export async function recordWarehouseFeeForProfitOrder(row: WarehouseFeeRow) {
     return { skipped: true, reason: "订单时间无效" };
   }
 
-  return prisma.$transaction((tx) => recordWarehouseFundEntry(tx, {
+  return prisma.$transaction(async (tx) => {
+    // Historical switch corrections keep the original debit in the old warehouse
+    // and append an offset there plus a debit in the new warehouse. Treat that
+    // new debit as the active one on every subsequent reconciliation.
+    const switched = await tx.warehouseFundEntry.findUnique({
+      where: {
+        sourceType_sourceId: {
+          sourceType: warehouseSwitchDebitSource(sources.debit),
+          sourceId: row.orderId,
+        },
+      },
+    });
+    if (switched) {
+      if (
+        switched.warehouseId !== row.warehouseId
+        || switched.currency !== String(breakdown.currency || row.currency || "BRL").toUpperCase()
+        || !new Prisma.Decimal(switched.amount).equals(new Prisma.Decimal(-amount))
+      ) {
+        throw new Error(`订单 ${row.orderId} 的切仓扣费与当前利润明细不一致，请人工核对`);
+      }
+      return { entry: switched, duplicated: true };
+    }
+    return recordWarehouseFundEntry(tx, {
     warehouseId: row.warehouseId!,
     currency: String(breakdown.currency || row.currency || "BRL").toUpperCase(),
     entryType: WarehouseFundEntryType.FULFILLMENT_DEBIT,
@@ -188,14 +212,22 @@ export async function recordWarehouseFeeForProfitOrder(row: WarehouseFeeRow) {
       packageDimensions: breakdown.packageDimensions,
       tier: breakdown.tier,
     }),
-  }));
+    });
+  });
 }
 
 /** Reverses an existing debit exactly once when an order is cancelled. */
 export async function reverseWarehouseFeeForOrder(orderId: string, platform: LedgerPlatform = "TIKTOK") {
   const sources = PLATFORM_SOURCES[platform];
   return prisma.$transaction(async (tx) => {
-    const original = await tx.warehouseFundEntry.findUnique({
+    const switched = await tx.warehouseFundEntry.findUnique({
+      where: { sourceType_sourceId: { sourceType: warehouseSwitchDebitSource(sources.debit), sourceId: orderId } },
+      select: {
+        id: true, warehouseId: true, currency: true, amount: true, orderId: true, details: true,
+        platform: true, shopId: true, shopName: true, countryCode: true,
+      },
+    });
+    const original = switched || await tx.warehouseFundEntry.findUnique({
       where: { sourceType_sourceId: { sourceType: sources.debit, sourceId: orderId } },
       select: {
         id: true, warehouseId: true, currency: true, amount: true, orderId: true, details: true,

@@ -335,7 +335,17 @@ export default function ProfitSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(warehouseSwitchForm),
       });
-      const body = await response.json();
+      const responseText = await response.text();
+      let body: { error?: string } | null = null;
+      try {
+        body = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        // A proxy error can return an HTML page instead of the API's JSON.
+      }
+      if (!body) {
+        await mutateSwitches();
+        throw new Error(`切仓接口返回非 JSON 或空响应（HTTP ${response.status}），请先核对下方切仓记录再重试`);
+      }
       if (!response.ok) throw new Error(body?.error || "仓库切换记录保存失败");
       await mutateSwitches();
       setWarehouseSwitchForm((current) => ({ ...current, effectiveOrderId: "", notes: "" }));
