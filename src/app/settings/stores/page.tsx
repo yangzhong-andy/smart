@@ -467,6 +467,7 @@ export default function StoresPage() {
             <option value="all">全部平台</option>
             <option value="TikTok">TikTok</option>
             <option value="Shopee">Shopee</option>
+            <option value="Kwai">Kwai</option>
             <option value="Amazon">Amazon</option>
             <option value="Mercado Livre">Mercado Livre</option>
             <option value="其他">其他</option>
@@ -714,6 +715,7 @@ export default function StoresPage() {
                   >
                     <option value="TikTok">TikTok</option>
                     <option value="Shopee">Shopee</option>
+                    <option value="Kwai">Kwai</option>
                     <option value="Amazon">Amazon</option>
                     <option value="Mercado Livre">Mercado Livre</option>
                     <option value="其他">其他</option>

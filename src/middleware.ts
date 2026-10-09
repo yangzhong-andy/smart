@@ -20,6 +20,7 @@ const PUBLIC_API_PATHS = new Set([
   "/api/auth/signout",
   "/api/auth/error",
   "/api/tiktok/callback",
+  "/api/kwai/oauth/callback",
   "/api/tiktok/webhook",
   "/api/shopee/oauth/callback",
   "/api/mercado-livre/oauth/callback",

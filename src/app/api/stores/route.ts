@@ -9,6 +9,7 @@ import { badRequest, serverError } from '@/lib/api-response'
 export const dynamic = 'force-dynamic'
 
 const PLATFORM_MAP_DB_TO_FRONT: Record<Platform, string> = {
+  [Platform.KWAI]: 'Kwai',
   [Platform.TIKTOK]: 'TikTok',
   [Platform.SHOPEE]: 'Shopee',
   [Platform.AMAZON]: 'Amazon',
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
         platform: PLATFORM_MAP_DB_TO_FRONT[s.platform] as
           | 'TikTok'
           | 'Shopee'
+          | 'Kwai'
           | 'Amazon'
           | 'Mercado Livre'
           | 'Instagram'
@@ -123,6 +125,7 @@ export async function POST(request: NextRequest) {
     const PLATFORM_MAP_FRONT_TO_DB: Record<string, Platform> = {
       TikTok: Platform.TIKTOK,
       Shopee: Platform.SHOPEE,
+      Kwai: Platform.KWAI,
       Amazon: Platform.AMAZON,
       'Mercado Livre': Platform.MERCADO_LIVRE,
       Instagram: Platform.INSTAGRAM,

@@ -128,6 +128,7 @@ model Store {
   tiktokShopSetting   TikTokShopSetting?
   shopeeShopSetting   ShopeeShopSetting?
   mercadoLivreAccount MercadoLivreAccount?
+  kwaiShopSetting     KwaiShopSetting?
 }
 
 model Influencer {
@@ -2360,6 +2361,7 @@ model DailyOperationReport {
 }
 
 enum Platform {
+  KWAI
   TIKTOK
   SHOPEE
   AMAZON
@@ -2367,6 +2369,62 @@ enum Platform {
   INSTAGRAM
   YOUTUBE
   OTHER
+}
+
+model KwaiAppConfig {
+  id          String @id @default(uuid())
+  appKey      String @unique
+  appName     String
+  credentials String
+  revision    Int @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shops       KwaiShopSetting[]
+  states      KwaiOAuthState[]
+}
+
+model KwaiOAuthState {
+  id          String @id @default(uuid())
+  stateHash   String @unique
+  browserHash String
+  userId      String
+  appId       String
+  appRevision Int
+  expiresAt   DateTime
+  usedAt      DateTime?
+  app         KwaiAppConfig @relation(fields: [appId], references: [id], onDelete: Cascade)
+  @@index([expiresAt])
+}
+
+model KwaiShopSetting {
+  id                String @id @default(uuid())
+  merchantId        String @unique
+  shopName          String
+  appId             String
+  tokenCipher       String
+  tokenExpireAt     DateTime
+  refreshExpireAt   DateTime
+  scopes            String
+  status            String @default("active")
+  storeId           String @unique
+  lastReadAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  app               KwaiAppConfig @relation(fields: [appId], references: [id])
+  store             Store @relation(fields: [storeId], references: [id])
+  records           KwaiRecord[]
+}
+
+model KwaiRecord {
+  id           String @id @default(uuid())
+  shopId       String
+  kind         String
+  externalId   String
+  payload      Json
+  fetchedAt    DateTime @default(now())
+  shop         KwaiShopSetting @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  @@unique([shopId, kind, externalId])
+  @@index([shopId, kind, fetchedAt])
 }
 
 // Shopee Open Platform 应用配置。密钥只用于服务端签名，不通过查询接口返回。

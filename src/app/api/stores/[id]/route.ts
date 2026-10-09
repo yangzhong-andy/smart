@@ -26,6 +26,7 @@ export async function GET(
 
     // 转换平台格式：数据库枚举转前端字符串
     const platformToFrontend: Record<Platform, string> = {
+      [Platform.KWAI]: 'Kwai',
       [Platform.TIKTOK]: 'TikTok',
       [Platform.SHOPEE]: 'Shopee',
       [Platform.AMAZON]: 'Amazon',
@@ -38,7 +39,7 @@ export async function GET(
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: platformToFrontend[store.platform] as 'TikTok' | 'Shopee' | 'Amazon' | 'Mercado Livre' | '其他',
+      platform: platformToFrontend[store.platform] as 'TikTok' | 'Shopee' | 'Kwai' | 'Amazon' | 'Mercado Livre' | '其他',
       country: store.country,
       currency: store.currency,
       accountId: store.accountId,
@@ -75,6 +76,7 @@ export async function PUT(
     const platformToEnum: Record<string, Platform> = {
       'TikTok': Platform.TIKTOK,
       'Shopee': Platform.SHOPEE,
+      'Kwai': Platform.KWAI,
       'Amazon': Platform.AMAZON,
       'Mercado Livre': Platform.MERCADO_LIVRE,
       'Instagram': Platform.INSTAGRAM,
@@ -103,6 +105,7 @@ export async function PUT(
 
     // 转换平台格式：数据库枚举转前端字符串
     const platformToFrontend: Record<Platform, string> = {
+      [Platform.KWAI]: 'Kwai',
       [Platform.TIKTOK]: 'TikTok',
       [Platform.SHOPEE]: 'Shopee',
       [Platform.AMAZON]: 'Amazon',
@@ -115,7 +118,7 @@ export async function PUT(
     return NextResponse.json({
       id: store.id,
       name: store.name,
-      platform: platformToFrontend[store.platform] as 'TikTok' | 'Shopee' | 'Amazon' | 'Mercado Livre' | '其他',
+      platform: platformToFrontend[store.platform] as 'TikTok' | 'Shopee' | 'Kwai' | 'Amazon' | 'Mercado Livre' | '其他',
       country: store.country,
       currency: store.currency,
       accountId: store.accountId,

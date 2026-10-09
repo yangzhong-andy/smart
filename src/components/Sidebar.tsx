@@ -267,6 +267,7 @@ const navItems: NavItem[] = [
       { section: "TikTok Shop", label: "运营数据分析", labelEn: "", icon: BarChart3, href: "/platforms/tiktok/analytics" },
       { section: "TikTok Shop", label: "YYT广告数据", labelEn: "", icon: BarChart3, href: "/platforms/yyt/advertising" },
       { section: "TikTok Shop", label: "精细利润核算", labelEn: "", icon: Wallet, href: "/finance/profit" },
+      { section: "Kwai Shop", label: "店铺授权与数据", labelEn: "", icon: Building2, href: "/platforms/kwai" },
       { section: "Shopee", label: "店铺与授权", labelEn: "", icon: Building2, href: "/platforms/shopee/stores" },
       { section: "Shopee", label: "订单管理", labelEn: "", icon: ShoppingBag, href: "/platforms/shopee/orders" },
       { section: "Shopee", label: "售后管理", labelEn: "", icon: ShoppingBag, href: "/platforms/shopee/after-sales" },
