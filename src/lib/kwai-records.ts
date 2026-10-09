@@ -1,11 +1,43 @@
 import { KwaiError, kwaiId } from "./kwai-api";
 const text = (v: unknown) => typeof v === "string" ? v.slice(0, 500) : "";
+const sensitiveKey = /(address|receiver|consignee|recipient|phone|mobile|telephone|cpf|email|name|operator|buyer|customer|user|姓名|地址|电话|手机|收件)/i;
+const coreOrderKeys = new Set(["orderId", "orderStatus", "currency", "country", "createTime", "paidTime", "totalAmount", "shippingFee", "productPlatformDiscount", "productSellerDiscount", "orderItemView"]);
+function safeExtra(value: unknown, key = "", depth = 0): any {
+  if (sensitiveKey.test(key) || depth > 4) return undefined;
+  if (value == null || typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value === "string") return value.slice(0, 500);
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => safeExtra(item, key, depth + 1)).filter((item) => item !== undefined);
+  if (typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+      const safe = safeExtra(childValue, childKey, depth + 1);
+      if (safe !== undefined) result[childKey.slice(0, 100)] = safe;
+    }
+    return result;
+  }
+  return undefined;
+}
+function extras(row: Record<string, unknown>): any {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (coreOrderKeys.has(key)) continue;
+    const safe = safeExtra(value, key);
+    if (safe !== undefined) result[key] = safe;
+  }
+  return result;
+}
 function integer(v: unknown): number | null {
   if (v == null) return null;
   if ((typeof v !== "number" && typeof v !== "string") || (typeof v === "string" && !/^\d+$/.test(v))) throw new KwaiError("Kwai 返回的数量或金额格式异常");
   const n = Number(v);
   if (!Number.isSafeInteger(n) || n < 0) throw new KwaiError("Kwai 返回的数量或金额格式异常");
   return n;
+}
+function code(v: unknown): string | number | null {
+  if (v == null || v === "") return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") return v.slice(0, 100);
+  return null;
 }
 export function normalizeKwaiOrder(row: any) {
   if (!row || row.currency !== "BRL" || !["BRA", "BR"].includes(row.country)) throw new KwaiError("订单不是巴西 BRL 数据，已停止导入");
@@ -14,7 +46,20 @@ export function normalizeKwaiOrder(row: any) {
     orderId: kwaiId(row.orderId), status: integer(row.orderStatus), currency: "BRL", createdAt: integer(row.createTime), paidAt: integer(row.paidTime),
     totalAmountCents: integer(row.totalAmount), shippingFeeCents: integer(row.shippingFee),
     productPlatformDiscountCents: integer(row.productPlatformDiscount), productSellerDiscountCents: integer(row.productSellerDiscount),
-    items: row.orderItemView.map((item: any) => ({ itemId: kwaiId(item.itemId), skuId: kwaiId(item.skuId), name: text(item.itemName), skuName: text(item.skuName), sellerSku: text(item.skuNumber) || text(item.number), quantity: integer(item.skuQuantity), priceCents: integer(item.skuPrice) })),
+    // These are the non-sensitive business fields returned by Kwai. Values stay nullable when the platform omits them.
+    cancelStatus: code(row.cancelStatus ?? row.cancelOrderStatus), cancelReason: text(row.cancelReason ?? row.closeReason), cancelledAt: integer(row.cancelTime ?? row.cancelledTime),
+    afterSaleStatus: code(row.afterSaleStatus ?? row.refundStatus), deliveryType: text(row.deliveryType ?? row.shipType), deliveryStatus: code(row.deliveryStatus ?? row.shipStatus),
+    trackingNumber: text(row.trackingNumber ?? row.logisticsNo ?? row.expressNo), logisticsCompany: text(row.logisticsCompany ?? row.expressCompany),
+    invoiceStatus: code(row.invoiceStatus), invoiceNumber: text(row.invoiceNumber), invoiceAmountCents: integer(row.invoiceAmount),
+    productAmountCents: integer(row.productAmount ?? row.goodsAmount ?? row.itemAmount), shippingDiscountCents: integer(row.shippingDiscount ?? row.shippingFeeDiscount),
+    operationLogs: safeExtra(row.operationLogs ?? row.orderOperationList ?? row.operations),
+    items: row.orderItemView.map((item: any) => ({
+      itemId: kwaiId(item.itemId), skuId: kwaiId(item.skuId), name: text(item.itemName), skuName: text(item.skuName), sellerSku: text(item.skuNumber) || text(item.number),
+      quantity: integer(item.skuQuantity), priceCents: integer(item.skuPrice), subtotalCents: integer(item.subtotal ?? item.itemAmount ?? item.totalAmount),
+      imageUrl: text(item.imageUrl ?? item.itemImage ?? item.image), afterSaleStatus: code(item.afterSaleStatus ?? item.refundStatus),
+      extras: extras(item),
+    })),
+    extras: extras(row),
   };
 }
 export function extractKwaiOrderDetails(data: any, expectedCount: number) {

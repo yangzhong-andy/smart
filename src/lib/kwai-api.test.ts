@@ -61,6 +61,22 @@ test("Kwai order snapshots strip personal data and preserve minor units / missin
   for (const stock of ["", false, -1, 1.5, "invalid"]) assert.throws(() => normalizeKwaiProduct({ itemId: 1, stock }));
   assert.equal(normalizeKwaiProduct({ itemId: 1 }).stock, null);
 });
+test("Kwai order snapshots keep non-sensitive fulfillment fields and filter nested personal data", () => {
+  const order = normalizeKwaiOrder({
+    orderId: "123", country: "BR", currency: "BRL", orderStatus: 30, totalAmount: 1200, shippingFee: 100,
+    deliveryType: "EXPRESS", trackingNumber: "BR123", logisticsCompany: "Carrier", invoiceNumber: "NF-1",
+    receiverAddressInfo: { address: "private", cpf: "private", phone: "private" },
+    operationLogs: [{ action: "SHIPPED", operator: "private", at: 1 }],
+    orderItemView: [{ itemId: 1, skuId: 2, itemName: "Brush", skuNumber: "B-1", skuQuantity: 2, skuPrice: 600, imageUrl: "https://img.test/a.jpg", refundStatus: "NONE", receiverName: "private" }],
+  });
+  assert.equal(order.deliveryType, "EXPRESS");
+  assert.equal(order.trackingNumber, "BR123");
+  assert.equal(order.items[0].imageUrl, "https://img.test/a.jpg");
+  assert.equal(order.items[0].afterSaleStatus, "NONE");
+  const serialized = JSON.stringify(order);
+  assert.ok(!serialized.includes("private"));
+  assert.ok(serialized.includes("SHIPPED"));
+});
 test("Kwai SKU membership and page validation reject cross-product / invalid values", () => {
   assert.throws(() => normalizeKwaiSkus({ itemId: 1, saleCountry: "BRA", skus: [{ itemId: 2, skuId: 3 }] }, "1"));
   assert.equal(normalizeKwaiSkus({ itemId: 1, saleCountry: "BRA", skus: [{ itemId: 1, skuId: 3, stock: 0 }] }, "1")[0].stock, 0);
