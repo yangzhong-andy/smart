@@ -77,7 +77,7 @@ export default function KwaiPage() {
     finally { setBusy(false); }
   }
   return <main className="space-y-6 p-6 text-slate-200">
-    <header><h1 className="text-2xl font-semibold">Kwai Shop · 店铺授权与数据</h1><p className="mt-2 text-sm text-slate-400">首版为人工触发的分页查询，不回写库存、不发货、不生成财务收支；结算与利润核算尚未接入。</p></header>
+    <header><h1 className="text-2xl font-semibold">Kwai Shop · 店铺与授权</h1><p className="mt-2 text-sm text-slate-400">这里配置应用和店铺授权；订单、商品与 SKU 已拆到左侧独立页面。首版不回写库存、不发货、不生成财务收支。</p></header>
     {error && <div role="alert" className="rounded border border-rose-800 p-3 text-rose-300">{error}<button className={`${classes} ml-3`} onClick={() => void load()}>重新加载</button></div>}
     <section className="space-y-3 rounded-xl border border-slate-700 p-5">
       <h2 className="font-semibold">1. 回调地址与应用配置</h2><code className="block break-all text-cyan-300">{CALLBACK}</code>

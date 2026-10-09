@@ -2,7 +2,7 @@
 
 ## 范围与启用
 
-3001 / baxi 的平台中心新增「Kwai Shop → 店铺授权与数据」。首版提供应用配置、商家 OAuth、授权续期和人工分页读取订单、商品、SKU。**不是自动全量同步，也未接通结算、利润、库存扣减或发货。** 快照不会生成财务流水。
+3001 / baxi 的平台中心新增「Kwai Shop」。店铺授权、订单管理、商品与 SKU 已分成独立页面；首版提供应用配置、商家 OAuth、授权续期和人工分页读取订单、商品、SKU。**不是自动全量同步，也未接通结算、利润、库存扣减或发货。** 快照不会生成财务流水。
 
 1. 在 Kwai 后台轮换曾在截图中暴露的 appSecret / signSecret；不要发到聊天或提交 Git。
 2. 用管理员登录 `https://www.baxi8.com/platforms/kwai`，填写 appKey、appSecret、signSecret。
