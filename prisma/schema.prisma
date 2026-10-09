@@ -922,6 +922,7 @@ model OutboundBatchItem {
 
 model Container {
   id                  String          @id @default(uuid())
+  costsClosedAt       DateTime?
   containerNo         String          @unique
   containerType       String
   sealNo              String?
@@ -969,6 +970,7 @@ model Container {
 
 model OutboundBatch {
   id                   String               @id @default(uuid())
+  costsClosedAt        DateTime?
   outboundOrderId      String
   batchNumber          String
   warehouseId          String

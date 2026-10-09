@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from '@/lib/redis';
 import { syncLogisticsMonthlyBills } from "@/lib/monthly-bill-sync";
+import { lockOpenCostTargets } from "@/lib/logistics-cost-target-lock";
+import { LogisticsCostTargetError } from "@/lib/logistics-cost-targets";
 
 export const dynamic = "force-dynamic";
 
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
 
     const amount = amountRaw != null ? Number(amountRaw) : NaN;
 
-    if (!costType || !currency || !paymentType || !paymentStatus || !Number.isFinite(amount)) {
+    if (!costType || !currency || !paymentType || !paymentStatus || !Number.isFinite(amount) || amount < 0) {
       return NextResponse.json(
         { error: "请提供有效的 costType、amount、currency、paymentType、paymentStatus" },
         { status: 400 }
@@ -193,58 +195,18 @@ export async function POST(request: NextRequest) {
     const dueDate = body.dueDate ? new Date(body.dueDate) : null;
     const paidDate = body.paidDate ? new Date(body.paidDate) : null;
 
-    if (resolvedBatchIds.length <= 1) {
-      const cost = await prisma.logisticsCost.create({
-        data: {
-          outboundBatchId: resolvedBatchIds[0] ?? null,
-          logisticsChannelId,
-          containerId,
-          costType,
-          amount,
-          currency,
-          paymentType,
-          creditDays: Number.isFinite(creditDays as number) ? creditDays : null,
-          dueDate,
-          paymentStatus,
-          paidDate,
-          invoiceNumber: body.invoiceNumber ?? null,
-          invoiceStatus: body.invoiceStatus ?? null,
-          notes: baseNotes || null,
-          voucher: typeof body.voucher === "string" && body.voucher ? body.voucher : null,
-        },
-        include: {
-          outboundBatch: {
-            include: {
-              outboundOrder: true,
-              warehouse: true,
-            },
-          },
-          logisticsChannel: true,
-        },
-      });
-
-      await syncLogisticsMonthlyBills();
-
-      return NextResponse.json({
-        id: cost.id,
-        created: 1,
-        ids: [cost.id],
-        createdAt: cost.createdAt.toISOString(),
-        outboundBatchId: cost.outboundBatchId ?? undefined,
-        logisticsChannelId: cost.logisticsChannelId ?? undefined,
-      });
-    }
-
-    const parts = splitAmountAcrossBatches(amount, resolvedBatchIds.length);
+    const targets: Array<string | null> = resolvedBatchIds.length ? resolvedBatchIds : [null];
+    const parts = splitAmountAcrossBatches(amount, targets.length);
     const shareNote = `[多批次分摊 合计${amount}${currency} → ${resolvedBatchIds.length}笔]`;
-
-    const rows = await prisma.$transaction(
-      resolvedBatchIds.map((batchId, i) =>
-        prisma.logisticsCost.create({
+    const rows = await prisma.$transaction(async (tx) => {
+      const batchContainers = await lockOpenCostTargets(tx, resolvedBatchIds, containerId);
+      const created = [];
+      for (const [i, batchId] of targets.entries()) {
+        created.push(await tx.logisticsCost.create({
           data: {
             outboundBatchId: batchId,
             logisticsChannelId,
-            containerId,
+            containerId: containerId || (batchId ? batchContainers.get(batchId) : null),
             costType,
             amount: parts[i]!,
             currency,
@@ -255,12 +217,15 @@ export async function POST(request: NextRequest) {
             paidDate,
             invoiceNumber: body.invoiceNumber ?? null,
             invoiceStatus: body.invoiceStatus ?? null,
-            notes: [baseNotes, `${shareNote} 第${i + 1}/${resolvedBatchIds.length}笔`].filter(Boolean).join(" "),
+            notes: targets.length > 1
+              ? [baseNotes, `${shareNote} 第${i + 1}/${targets.length}笔`].filter(Boolean).join(" ")
+              : baseNotes || null,
             voucher: typeof body.voucher === "string" && body.voucher ? body.voucher : null,
           },
-        })
-      )
-    );
+        }));
+      }
+      return created;
+    });
 
     await syncLogisticsMonthlyBills();
 
@@ -275,7 +240,7 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "创建失败" },
-      { status: 500 }
+      { status: error instanceof LogisticsCostTargetError ? error.status : 500 }
     );
   }
 }

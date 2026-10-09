@@ -8,6 +8,8 @@ import { PageHeader, EmptyState, ActionButton } from "@/components/ui";
 import DateInput from "@/components/DateInput";
 import ImageUploader from "@/components/ImageUploader";
 import { VoucherViewerModal } from "@/components/VoucherImage";
+import { isBatchCostClosed, type LogisticsCostTargets } from "@/lib/logistics-cost-targets";
+import CostClosureManager from "./components/CostClosureManager";
 
 type CostItem = {
   id: string;
@@ -40,35 +42,14 @@ type CostItem = {
   };
 };
 
-type BatchOption = {
-  id: string;
-  batchNumber: string;
-  outboundOrder?: { outboundNumber: string };
-  /** 出库批次绑定的柜子（与 /api/outbound-batch 列表一致） */
-  container?: { id: string; containerNo: string };
-};
-
 type ChannelOption = {
   id: string;
   name: string;
   channelCode: string;
 };
 
-type ContainerOption = {
-  id: string;
-  containerNo: string;
-  containerType?: string;
-};
-
-type ContainerDetailForBatches = {
-  outboundBatches?: Array<{
-    id: string;
-    batchNumber: string;
-    outboundOrder?: { outboundNumber: string };
-  }>;
-};
-
 const COST_TYPE_OPTIONS = [
+  { value: "国内拖车费用", label: "国内拖车费用" },
   { value: "海运费", label: "海运费" },
   { value: "海运费（双清包税）", label: "海运费（双清包税）" },
   { value: "空运费", label: "空运费" },
@@ -123,26 +104,10 @@ const arrayFetcher = async (url: string) => {
 };
 const SWR_OPT = { revalidateOnFocus: false, dedupingInterval: 60000, keepPreviousData: true };
 
-const containersListFetcher = async (url: string): Promise<ContainerOption[]> => {
-  const r = await fetch(url);
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const base = typeof j?.error === "string" ? j.error : "获取柜子列表失败";
-    const details = typeof j?.details === "string" ? j.details : "";
-    throw new Error(details ? `${base}（${details}）` : base);
-  }
-  return Array.isArray(j?.data) ? j.data : [];
-};
-
-const containerDetailFetcher = async (url: string): Promise<ContainerDetailForBatches> => {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("加载柜子失败");
-  return r.json();
-};
-
 export default function LogisticsCostPage() {
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   const [modalOpen, setModalOpen] = useState(false);
+  const [closureManagerOpen, setClosureManagerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [voucherView, setVoucherView] = useState<string[] | null>(null);
   const [voucherEditId, setVoucherEditId] = useState<string | null>(null);
@@ -161,67 +126,20 @@ export default function LogisticsCostPage() {
     if (listResponse?.pagination) setPagination((p) => ({ ...p, ...listResponse.pagination }));
   }, [listResponse?.pagination]);
 
-  const { data: batches = [] } = useSWR<BatchOption[]>("/api/outbound-batch?pageSize=200", arrayFetcher, SWR_OPT);
   const { data: channels = [] } = useSWR<ChannelOption[]>("/api/logistics-channels?pageSize=200", arrayFetcher, SWR_OPT);
-  const {
-    data: containersFromApi,
-    error: containersListError,
-    isLoading: containersListLoading,
-  } = useSWR<ContainerOption[]>(
-    modalOpen ? "/api/containers?pageSize=50&page=1" : null,
-    containersListFetcher,
-    SWR_OPT
+  const { data: targets, error: targetsError, isLoading: targetsLoading, mutate: refreshTargets } = useSWR<LogisticsCostTargets>(
+    "/api/logistics-cost/targets", listFetcher,
+    { revalidateOnFocus: true, keepPreviousData: false }
   );
-
-  /** 从已加载的出库批次里提取柜子（API 失败或未返回时的兜底，与业务「批次绑柜」一致） */
-  const containersFromBatches = useMemo(() => {
-    const m = new Map<string, ContainerOption>();
-    for (const b of batches) {
-      const c = b.container;
-      if (c?.id && c.containerNo) {
-        m.set(c.id, { id: c.id, containerNo: c.containerNo });
-      }
-    }
-    return [...m.values()].sort((a, b) => a.containerNo.localeCompare(b.containerNo));
-  }, [batches]);
-
-  const containerSelectOptions = useMemo(() => {
-    const m = new Map<string, ContainerOption>();
-    for (const c of containersFromApi ?? []) {
-      m.set(c.id, { id: c.id, containerNo: c.containerNo, containerType: c.containerType });
-    }
-    for (const c of containersFromBatches) {
-      if (!m.has(c.id)) m.set(c.id, c);
-    }
-    return [...m.values()].sort((a, b) => a.containerNo.localeCompare(b.containerNo));
-  }, [containersFromApi, containersFromBatches]);
+  const containerSelectOptions = useMemo(() => (targets?.containers ?? []).filter((c) => !c.costsClosedAt), [targets]);
 
   const loading = isLoading;
 
   // 表单
   const [modalContainerId, setModalContainerId] = useState("");
-  const { data: containerDetail, error: containerDetailError, isLoading: containerDetailLoading } = useSWR<ContainerDetailForBatches>(
-    modalOpen && modalContainerId ? `/api/containers/${modalContainerId}` : null,
-    containerDetailFetcher,
-    { ...SWR_OPT, shouldRetryOnError: false }
-  );
-
-  const batchOptions: BatchOption[] = useMemo(() => {
-    if (!modalContainerId) {
-      return batches;
-    }
-    if (!containerDetail) {
-      return [];
-    }
-    const list = containerDetail.outboundBatches ?? [];
-    return list.map((b) => ({
-      id: b.id,
-      batchNumber: b.batchNumber,
-      outboundOrder: b.outboundOrder
-        ? { outboundNumber: b.outboundOrder.outboundNumber }
-        : undefined,
-    }));
-  }, [modalContainerId, containerDetail, batches]);
+  const batchOptions = useMemo(() => (targets?.batches ?? []).filter((b) =>
+    !isBatchCostClosed(b) && (!modalContainerId || b.containerId === modalContainerId)
+  ), [modalContainerId, targets]);
 
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
   const [logisticsChannelId, setLogisticsChannelId] = useState("");
@@ -233,6 +151,7 @@ export default function LogisticsCostPage() {
   const [dueDate, setDueDate] = useState("");
 
   const openModal = () => {
+    void refreshTargets();
     setModalContainerId("");
     setSelectedBatchIds([]);
     setLogisticsChannelId("");
@@ -256,6 +175,12 @@ export default function LogisticsCostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!targets || targetsError || (modalContainerId && !containerSelectOptions.some((c) => c.id === modalContainerId)) ||
+      selectedBatchIds.some((id) => !batchOptions.some((b) => b.id === id))) {
+      toast.error("费用完结状态已变化或加载失败，请刷新后重新选择柜子和批次");
+      void refreshTargets();
+      return;
+    }
     const amt = Number(amount);
     if (!costType || !currency || !paymentType || !Number.isFinite(amt) || amt < 0) {
       toast.error("请填写费用类型、金额、货币、付款方式");
@@ -267,10 +192,8 @@ export default function LogisticsCostPage() {
     }
     setSubmitting(true);
     try {
-      const batchIdsForSubmit = selectedBatchIds.filter((id) =>
-        batchOptions.some((b) => b.id === id)
-      );
       const body: Record<string, unknown> = {
+        containerId: modalContainerId || undefined,
         logisticsChannelId: logisticsChannelId || undefined,
         costType,
         amount: amt,
@@ -280,8 +203,8 @@ export default function LogisticsCostPage() {
         creditDays: paymentType === "账期" && creditDays ? Number(creditDays) : undefined,
         dueDate: dueDate ? `${dueDate}T00:00:00.000Z` : undefined,
       };
-      if (batchIdsForSubmit.length > 0) {
-        body.outboundBatchIds = batchIdsForSubmit;
+      if (selectedBatchIds.length > 0) {
+        body.outboundBatchIds = selectedBatchIds;
       }
       const res = await fetch("/api/logistics-cost", {
         method: "POST",
@@ -290,6 +213,7 @@ export default function LogisticsCostPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status === 409 || res.status === 404) void refreshTargets();
         throw new Error(typeof json?.error === "string" ? json.error : "创建失败");
       }
       const created = typeof json?.created === "number" ? json.created : 1;
@@ -316,9 +240,10 @@ export default function LogisticsCostPage() {
           title="物流费用管理"
           description="物流费用列表，支持按批次、物流商、费用类型查看"
         />
-        <ActionButton icon={Plus} onClick={openModal}>
-          新建费用
-        </ActionButton>
+        <div className="flex gap-2">
+          <ActionButton onClick={() => { void refreshTargets(); setClosureManagerOpen(true); }}>费用完结管理</ActionButton>
+          <ActionButton icon={Plus} onClick={openModal}>新建费用</ActionButton>
+        </div>
       </div>
 
       {loading ? (
@@ -341,7 +266,7 @@ export default function LogisticsCostPage() {
             const groups: Record<string, { containerNo: string; items: CostItem[] }> = {};
             list.forEach((c: CostItem) => {
               const containerId = c.containerId || c.outboundBatch?.container?.id || "_no_container";
-              const containerNo = c.outboundBatch?.container?.containerNo || "无柜子";
+              const containerNo = targets?.containers.find((item) => item.id === containerId)?.containerNo || c.outboundBatch?.container?.containerNo || "无柜子";
               if (!groups[containerId]) groups[containerId] = { containerNo, items: [] };
               groups[containerId].items.push(c);
             });
@@ -357,6 +282,9 @@ export default function LogisticsCostPage() {
                   <div className="flex items-center justify-between border-b border-slate-700 bg-slate-800/40 px-4 py-2">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-semibold text-slate-200">{group.containerNo}</span>
+                      {targets?.containers.find((c) => c.id === containerId)?.costsClosedAt && (
+                        <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">费用已完结</span>
+                      )}
                       <span className="text-xs text-slate-400">{group.items.length}笔</span>
                       <span className="text-sm font-medium text-amber-300">{currency} {totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</span>
                     </div>
@@ -388,7 +316,11 @@ export default function LogisticsCostPage() {
                       <tbody>
                         {group.items.map((c: CostItem) => (
                           <tr key={c.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                            <td className="px-3 py-2 text-slate-300">{batchLabel(c)}</td>
+                            <td className="px-3 py-2 text-slate-300">{batchLabel(c)}
+                              {targets?.batches.some((b) => b.id === c.outboundBatchId && isBatchCostClosed(b)) && (
+                                <span className="ml-2 text-emerald-300">费用已完结</span>
+                              )}
+                            </td>
                             <td className="px-3 py-2 text-slate-300">{c.logisticsChannel?.name ?? "-"}</td>
                             <td className="px-3 py-2 text-slate-300">{c.costType}</td>
                             <td className="px-3 py-2 text-right text-slate-200">{c.currency} {c.amount}</td>
@@ -450,6 +382,14 @@ export default function LogisticsCostPage() {
         </div>
       )}
 
+      {closureManagerOpen && <CostClosureManager
+        targets={targets}
+        loading={targetsLoading}
+        error={Boolean(targetsError)}
+        onRefresh={() => refreshTargets()}
+        onClose={() => setClosureManagerOpen(false)}
+      />}
+
       {/* 新建费用弹窗 */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
@@ -470,11 +410,11 @@ export default function LogisticsCostPage() {
                 <select
                   value={modalContainerId}
                   onChange={(e) => setModalContainerId(e.target.value)}
-                  disabled={containersListLoading}
+                  disabled={targetsLoading || Boolean(targetsError)}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200 disabled:opacity-60"
                 >
                   <option value="">
-                    {containersListLoading ? "正在加载柜子列表…" : "不筛选 — 显示全部出库批次"}
+                    {targetsLoading ? "正在加载柜子列表…" : "不筛选 — 显示未完结出库批次"}
                   </option>
                   {containerSelectOptions.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -483,28 +423,9 @@ export default function LogisticsCostPage() {
                     </option>
                   ))}
                 </select>
-                {containersListError && (
-                  <p
-                    className={`mt-1 text-xs leading-relaxed ${
-                      containersFromBatches.length > 0 ? "text-amber-300/95" : "text-rose-400"
-                    }`}
-                  >
-                    {containersFromBatches.length > 0
-                      ? "柜子列表接口暂不可用，已自动使用当前出库批次里绑定的柜号作为备选。"
-                      : "柜子列表加载失败："}
-                    {containersListError instanceof Error ? containersListError.message : "请刷新重试"}
-                  </p>
-                )}
-                {!containersListLoading &&
-                  !containersListError &&
-                  containerSelectOptions.length === 0 &&
-                  batches.length > 0 && (
-                    <p className="mt-1 text-xs text-amber-400/90">
-                      当前出库批次均未绑定柜子；请先在批次或柜子管理中完成绑定，或确认数据库中已有柜子数据。
-                    </p>
-                  )}
+                {targetsError && <p className="mt-1 text-xs text-rose-400">费用完结状态加载失败，暂不能提交。<button type="button" className="ml-2 underline" onClick={() => void refreshTargets()}>重新加载</button></p>}
                 <p className="mt-1 text-xs text-slate-500">
-                  选择柜子后，下方仅列出已绑定到该柜的出库批次。列表合并「柜子接口」与「当前页已加载批次上的柜子」。
+                  已隐藏费用完结的柜子及批次。需要补录时，请在「费用完结管理」中重新打开。
                 </p>
               </div>
               <div>
@@ -531,7 +452,7 @@ export default function LogisticsCostPage() {
                 </div>
                 <div
                   className={`max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-2 space-y-1.5 ${
-                    modalContainerId && containerDetailLoading ? "opacity-50 pointer-events-none" : ""
+                    targetsLoading || targetsError ? "opacity-50 pointer-events-none" : ""
                   }`}
                 >
                   {batchOptions.length === 0 ? (
@@ -566,12 +487,9 @@ export default function LogisticsCostPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   多选时「金额」为<strong className="text-slate-400">合计</strong>，提交后按所选批次数<strong className="text-slate-400">平均分摊</strong>生成多条费用（备注中带分摊标记）。
                 </p>
-                {modalContainerId && containerDetailError && (
-                  <p className="mt-1 text-xs text-rose-400">柜子数据加载失败，请重试或取消筛选柜子。</p>
-                )}
-                {modalContainerId && containerDetail && (containerDetail.outboundBatches?.length ?? 0) === 0 && (
+                {modalContainerId && !targetsLoading && batchOptions.length === 0 && (
                   <p className="mt-1 text-xs text-amber-400/90">
-                    该柜暂无绑定出库批次，请先在出库批次中绑定柜子，或改用「不筛选」选择批次。
+                    该柜暂无未完结的出库批次；不选批次时，费用仅关联当前柜子。
                   </p>
                 )}
               </div>
@@ -672,7 +590,7 @@ export default function LogisticsCostPage() {
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <ActionButton type="submit" isLoading={submitting}>
+                <ActionButton type="submit" isLoading={submitting} disabled={targetsLoading || Boolean(targetsError) || !targets}>
                   提交
                 </ActionButton>
                 <ActionButton type="button" variant="secondary" onClick={closeModal}>

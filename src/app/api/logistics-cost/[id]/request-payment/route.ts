@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 // 费用类型到支出分类的映射
 const COST_TYPE_TO_CATEGORY: Record<string, string> = {
+  "国内拖车费用": "物流/国内物流",
   "海运费": "物流/海运费用",
   "海运费（双清包税）": "物流/海运费用",
   "空运费": "物流/空运费用",

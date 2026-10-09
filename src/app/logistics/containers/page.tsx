@@ -1765,7 +1765,7 @@ export default function ContainersPage() {
                 <span className="text-sm text-slate-300">费用类型 <span className="text-rose-400">*</span></span>
                 <select value={billForm.costType} onChange={e => setBillForm(f => ({ ...f, costType: e.target.value }))}
                   className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
-                  {["海运费", "海运费（双清包税）", "空运费", "港杂费", "清关费", "送货费"].map(t => <option key={t} value={t}>{t}</option>)}
+                  {["国内拖车费用", "海运费", "海运费（双清包税）", "空运费", "港杂费", "清关费", "送货费"].map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
 
