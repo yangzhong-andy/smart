@@ -15,7 +15,7 @@ test("container completion hides linked batches; reopening preserves independent
   assert.equal(isBatchCostClosed({ costsClosedAt: null, container: null }), false);
 });
 
-test("transport completion and existing paid bills alone do not close cost entry", () => {
+test("transport status alone does not close cost entry before payment aggregation", () => {
   const target = { costsClosedAt: null, status: "CLOSED", paymentStatus: "已付", container: null };
   assert.equal(isBatchCostClosed(target), false);
   assert.doesNotThrow(() => validateCostTargets([batch.id], null, [batch], [container]));
@@ -40,7 +40,7 @@ test("missing targets or container/batch mismatches fail the whole selection", (
 test("unfiltered multi-container selection retains each batch's actual container", async () => {
   const sql: Prisma.Sql[] = [];
   const batches = [batch, { ...batch, id: "batch-2", containerId: "container-2" }, { ...batch, id: "batch-3", containerId: null }];
-  const tx = { $queryRaw: async (query: Prisma.Sql) => {
+  const tx = { logisticsCost: { findMany: async () => [] }, $queryRaw: async (query: Prisma.Sql) => {
     sql.push(query);
     return sql.length === 1 ? batches : [container, { ...container, id: "container-2" }];
   } } as unknown as Prisma.TransactionClient;

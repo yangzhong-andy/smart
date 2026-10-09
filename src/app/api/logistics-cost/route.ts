@@ -4,6 +4,7 @@ import { clearCacheByPrefix } from '@/lib/redis';
 import { syncLogisticsMonthlyBills } from "@/lib/monthly-bill-sync";
 import { lockOpenCostTargets } from "@/lib/logistics-cost-target-lock";
 import { LogisticsCostTargetError } from "@/lib/logistics-cost-targets";
+import { consumeCostReopening } from "@/lib/logistics-cost-closure";
 
 export const dynamic = "force-dynamic";
 
@@ -224,6 +225,10 @@ export async function POST(request: NextRequest) {
           },
         }));
       }
+      await consumeCostReopening(tx, resolvedBatchIds, [...new Set([
+        ...(containerId ? [containerId] : []),
+        ...[...batchContainers.values()].filter((id): id is string => Boolean(id)),
+      ])]);
       return created;
     });
 

@@ -20,13 +20,14 @@ export default function CostClosureManager({ targets, loading, error, onRefresh,
     const items = type === "container"
       ? (targets?.containers ?? []).map((c) => ({
         id: c.id, label: `${c.containerNo} · ${c.containerType}`, closed: Boolean(c.costsClosedAt),
-        closedAt: c.costsClosedAt, inherited: false,
+        closedAt: c.costsClosedAt, inherited: false, source: c.costClosureSource,
       }))
       : (targets?.batches ?? []).map((b) => ({
         id: b.id,
         label: `${b.batchNumber} / ${b.outboundOrder.outboundNumber}${b.container ? ` · 柜 ${b.container.containerNo}` : " · 未绑柜"}`,
         closed: isBatchCostClosed(b), closedAt: b.costsClosedAt || b.container?.costsClosedAt,
         inherited: Boolean(b.container?.costsClosedAt),
+        source: b.container?.costsClosedAt ? b.container.costClosureSource : b.costClosureSource,
       }));
     const query = search.trim().toLowerCase();
     return items.filter((item) => item.label.toLowerCase().includes(query) &&
@@ -63,7 +64,7 @@ export default function CostClosureManager({ targets, loading, error, onRefresh,
         <button type="button" aria-label="关闭费用完结管理" disabled={Boolean(saving)} onClick={onClose} className="p-1.5 text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
       </div>
       <div className="space-y-3 border-b border-slate-700 p-4">
-        <p className="text-sm text-slate-400">确认所有费用均已登记后，再标记完结。完结只关闭新增费用入口，历史费用和付款记录保留。</p>
+        <p className="text-sm text-slate-400">有关联费用且全部“已付”时自动完结，无需手工标记。有未付费用或尚未登记费用的保持开放。补录费用请先重新打开，历史费用和付款记录不变。</p>
         <div className="flex flex-wrap gap-2">
           {(["container", "batch"] as const).map((tab) => <button type="button" key={tab} disabled={Boolean(saving)} onClick={() => setType(tab)} className={`rounded-lg px-3 py-2 text-sm ${type === tab ? "bg-cyan-500/20 text-cyan-300" : "bg-slate-800 text-slate-400"}`}>{tab === "container" ? "柜子" : "出库批次"}</button>)}
           <input aria-label="搜索柜号、批次或出库单" placeholder="搜索柜号、批次或出库单" value={search} onChange={(e) => setSearch(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200" />
@@ -81,6 +82,7 @@ export default function CostClosureManager({ targets, loading, error, onRefresh,
               <p className="break-words text-sm text-slate-200">{row.label}</p>
               <p className={`mt-1 text-xs ${row.closed ? "text-emerald-300" : "text-slate-400"}`}>
                 {row.inherited ? "费用已完结（所属柜子已完结，请先重新打开柜子）" : row.closed ? "费用已完结" : "费用未完结"}
+                {row.source === "paid" ? " · 已付自动完结" : ""}
                 {row.closedAt ? ` · ${new Date(row.closedAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}` : ""}
               </p>
             </div>
@@ -89,7 +91,7 @@ export default function CostClosureManager({ targets, loading, error, onRefresh,
             </button>
           </li>)}</ul>}
       </div>
-      <div className="border-t border-slate-700 p-3 text-xs text-slate-500">柜子完结后，其下所有批次一并从新增费用选项中隐藏；重新打开柜子不会清除批次自身的完结标记。</div>
+      <div className="border-t border-slate-700 p-3 text-xs text-slate-500">重新打开柜子时，其下自动完结的批次可一起补录，手工完结的批次仍保留。成功补录后恢复按付款状态自动判断。</div>
     </section>
   </div>;
 }

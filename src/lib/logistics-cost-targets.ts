@@ -3,6 +3,7 @@ export type CostContainerTarget = {
   containerNo: string;
   containerType: string;
   costsClosedAt: string | null;
+  costClosureSource?: "manual" | "paid" | null;
 };
 
 export type CostBatchTarget = {
@@ -10,6 +11,7 @@ export type CostBatchTarget = {
   batchNumber: string;
   containerId: string | null;
   costsClosedAt: string | null;
+  costClosureSource?: "manual" | "paid" | null;
   outboundOrder: { outboundNumber: string };
   container: CostContainerTarget | null;
 };
