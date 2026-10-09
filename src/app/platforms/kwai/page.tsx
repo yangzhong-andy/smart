@@ -46,7 +46,17 @@ export default function KwaiPage() {
     setSecure(window.location.origin === "https://www.baxi8.com");
     const query = new URLSearchParams(window.location.search);
     if (query.has("success")) toast.success("Kwai 店铺授权已保存");
-    if (query.has("error")) toast.error("授权未完成：请核对密钥，并从本页重新发起授权。同一浏览器内完成，授权链接 10 分钟有效。");
+    if (query.has("error")) {
+      const messages: Record<string, string> = {
+        save_failed: "已收到 Kwai 授权响应，但系统保存店铺失败。请联系管理员排查；不代表密钥错误。修复后须重新发起授权。",
+        token_failed: "Kwai 令牌获取或响应校验失败。请联系管理员核对接口；从本页重新发起授权，不要复用旧链接。",
+        credentials_failed: "系统无法读取加密凭证，请联系管理员核对服务器加密配置。",
+        expired_state: "授权链接已过期、已使用或应用配置已变化，请重新发起授权。",
+        invalid_callback: "授权回调缺少参数或浏览器校验信息，请从 HTTPS 页面在同一浏览器内重新发起并完成授权。",
+        permission_denied: "发起授权的管理员账号已停用或权限不足。",
+      };
+      toast.error(messages[query.get("error") || ""] || "授权未完成，系统校验失败，请联系管理员排查并从本页重新发起授权。");
+    }
     if (query.has("success") || query.has("error")) window.history.replaceState({}, "", "/platforms/kwai");
     void load();
   }, [load]);

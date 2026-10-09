@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
   if (!params.size) return NextResponse.json({ service: "Kwai OAuth callback", ready: true, callback: KWAI_CALLBACK, message: "回调接口已部署，请从 ERP 平台中心发起店铺授权；此页不代表已授权" }, { headers: { "Cache-Control": "no-store" } });
   const code = params.get("code"), state = params.get("status"), browser = request.cookies.get(KWAI_COOKIE)?.value;
   if (!code || code.length > 2048 || !state || !/^[a-f0-9]{64}$/.test(state) || !browser || !/^[a-f0-9]{64}$/.test(browser)) return finish("error=invalid_callback");
+  let stage: "state" | "credentials" | "token" | "save" = "state";
   try {
     const pending = await prisma.kwaiOAuthState.findUnique({ where: { stateHash: hashKwai(state) }, include: { app: true } });
     if (!pending || pending.browserHash !== hashKwai(browser) || pending.usedAt || pending.expiresAt <= new Date() || pending.appRevision !== pending.app.revision) return finish("error=expired_state");
@@ -23,15 +24,19 @@ export async function GET(request: NextRequest) {
     if (!user?.isActive || !["SUPER_ADMIN", "ADMIN"].includes(user.role)) return finish("error=permission_denied");
     const claim = await prisma.kwaiOAuthState.updateMany({ where: { id: pending.id, usedAt: null, expiresAt: { gt: new Date() } }, data: { usedAt: new Date() } });
     if (claim.count !== 1) return finish("error=expired_state");
+    stage = "credentials";
     const credentials = openKwai<KwaiCredentials>(pending.app.credentials);
+    stage = "token";
     const token = await kwaiExchange(pending.app.appKey, credentials.appSecret, code);
+    stage = "save";
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "KwaiAppConfig" WHERE "id" = ${pending.appId} FOR UPDATE`;
       const app = await tx.kwaiAppConfig.findUnique({ where: { id: pending.appId } });
       if (app?.revision !== pending.appRevision) throw new Error("config_changed");
       const currentUser = await tx.user.findUnique({ where: { id: pending.userId }, select: { isActive: true, role: true } });
       if (!currentUser?.isActive || !["SUPER_ADMIN", "ADMIN"].includes(currentUser.role)) throw new Error("permission_changed");
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`kwai-merchant:${token.merchantId}`}))`;
+      // PostgreSQL returns void for this lock; Prisma queryRaw cannot deserialize it.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`kwai-merchant:${token.merchantId}`}))`;
       const existing = await tx.kwaiShopSetting.findUnique({ where: { merchantId: token.merchantId } });
       if (existing && existing.appId !== pending.appId) throw new Error("shop_app_conflict");
       const data = { appId: pending.appId, shopName: token.shopName, tokenCipher: sealKwai(token), ...tokenDates(token), scopes: token.scopes, status: "active" };
@@ -46,6 +51,6 @@ export async function GET(request: NextRequest) {
     return finish("success=1");
   } catch {
     // Never log upstream errors, authorization codes or token responses.
-    return finish("error=authorization_failed");
+    return finish(`error=${stage === "save" ? "save_failed" : stage === "token" ? "token_failed" : stage === "credentials" ? "credentials_failed" : "authorization_failed"}`);
   }
 }

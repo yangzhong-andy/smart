@@ -61,14 +61,22 @@ test("Kwai settings GET selects metadata only; unauthorized POST does not mutate
   assert.equal((await blocked.POST(request("/api/kwai/settings", { action: "save" }))).status, 403);
 });
 
-function callbackFixture(overrides: any = {}) {
+function callbackFixture(overrides: any = {}, failure?: "token" | "save") {
   let exchanges = 0, shops = 0;
   const state = "a".repeat(64), browser = "b".repeat(64);
   const pending = { id: "state", userId: "admin", appId: "app", appRevision: 1, app: { revision: 1, credentials: "encrypted", appKey: "app" }, browserHash: api.hashKwai(browser), expiresAt: new Date(Date.now() + 600000), usedAt: null, ...overrides };
   const prisma: any = {
     kwaiOAuthState: { findUnique: async () => pending, updateMany: async () => { if (pending.usedAt) return { count: 0 }; pending.usedAt = new Date(); return { count: 1 }; } },
     user: { findUnique: async () => ({ isActive: true, role: "ADMIN" }) },
-    $queryRaw: async () => [],
+    $queryRaw: async (sql: TemplateStringsArray) => {
+      assert.ok(!sql.join("").includes("pg_advisory_xact_lock"), "void-returning advisory locks must not be read with queryRaw");
+      return [];
+    },
+    $executeRaw: async (sql: TemplateStringsArray) => {
+      assert.ok(sql.join("").includes("pg_advisory_xact_lock"));
+      if (failure === "save") throw new Error("private-database-error");
+      return 1;
+    },
     kwaiAppConfig: { findUnique: async () => ({ revision: 1 }) },
     kwaiShopSetting: { findUnique: async () => null, create: async () => { shops++; } },
     store: { findFirst: async () => null, create: async () => ({ id: "store" }) },
@@ -77,7 +85,7 @@ function callbackFixture(overrides: any = {}) {
   const mod = loadSource("app/api/kwai/oauth/callback/route.ts", {
     "@/lib/prisma": { prisma }, "@/lib/redis": { clearCacheByPrefix: async () => true },
     "@/lib/kwai-service": service,
-    "@/lib/kwai-api": { ...api, openKwai: () => ({ appSecret: "test" }), sealKwai: () => "encrypted", kwaiExchange: async () => { exchanges++; return { merchantId: "123", shopName: "test", scopes: "merchant_order" }; } },
+    "@/lib/kwai-api": { ...api, openKwai: () => ({ appSecret: "test" }), sealKwai: () => "encrypted", kwaiExchange: async () => { exchanges++; if (failure === "token") throw new Error("private-token-error"); return { merchantId: "123", shopName: "test", scopes: "merchant_order" }; } },
   });
   const req = () => new NextRequest(`${api.KWAI_CALLBACK}?code=test&status=${state}`, { headers: { cookie: `__Host-kwai-oauth=${browser}` } });
   return { mod, req, counters: () => ({ exchanges, shops }) };
@@ -100,6 +108,16 @@ test("Kwai callback rejects expired, mismatched-browser, used and stale-config s
   const f = callbackFixture();
   assert.equal((await f.mod.GET(request("/api/kwai/oauth/callback"))).status, 200);
   assert.deepEqual(f.counters(), { exchanges: 0, shops: 0 });
+});
+test("Kwai callback distinguishes token failures from persistence failures without exposing secrets", async () => {
+  for (const stage of ["token", "save"] as const) {
+    const f = callbackFixture({}, stage);
+    const result = await f.mod.GET(f.req());
+    assert.equal(result.headers.get("location"), `${api.KWAI_ORIGIN}/platforms/kwai?error=${stage}_failed`);
+    assert.equal(f.counters().shops, 0);
+    assert.equal(f.counters().exchanges, 1);
+    assert.ok(!result.headers.get("location")?.includes("private"));
+  }
 });
 test("Kwai records upsert snapshots idempotently and do not overwrite newer reads", async () => {
   const saved = new Map<string, any>(); let writes = 0;
