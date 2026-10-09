@@ -35,10 +35,8 @@ export function kwaiAuthorizeUrl(appKey: string, state: string) {
   return url.toString();
 }
 export function kwaiSign(path: string, params: Record<string, string>, secret: string) {
-  // Product docs explicitly exclude accessToken. Trade docs reference the generic
-  // signing contract (all query parameters except sign). Sign decoded values.
-  const product = path.startsWith("/rest/open/api/product/");
-  const keys = Object.keys(params).filter((k) => k !== "sign" && !(product && k === "accessToken")).sort();
+  // OAuth2 access tokens authenticate requests but are excluded from signatures.
+  const keys = Object.keys(params).filter((k) => k !== "sign" && k !== "accessToken").sort();
   return hashKwai(`api-shop.kwai.com${path}${keys.map((k) => `${k}=${params[k]}`).join("")}signSecret=${secret}`);
 }
 export function parseKwaiJson(text: string): any {
@@ -78,7 +76,16 @@ async function request(path: string, query: Record<string, string>, body?: strin
   if (json?.result !== 200) {
     // Do not surface upstream messages which might echo request tokens/URLs.
     const code = Number.isSafeInteger(json?.result) ? json.result : "未知";
-    throw new KwaiError(`Kwai 接口拒绝请求（代码 ${code}），请核对授权及签名配置`);
+    const knownErrors: Record<number, string> = {
+      440: "Kwai appKey 无效，请核对应用配置",
+      441: "Kwai appSecret 无效，请联系管理员核对应用凭证",
+      442: "Kwai 请求时间戳无效，请校准服务器时间后重试",
+      443: "Kwai 请求签名无效，请核对签名规则及 signSecret",
+      445: "Kwai 商家编号无效，请重新授权店铺",
+      446: "Kwai 店铺未授予此接口权限，请核对应用授权范围",
+      447: "Kwai 接口版本无效，请联系管理员核对接口配置",
+    };
+    throw new KwaiError(knownErrors[Number(code)] || `Kwai 接口拒绝请求（代码 ${code}）`);
   }
   return json.data;
 }

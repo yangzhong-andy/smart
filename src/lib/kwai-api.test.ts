@@ -12,12 +12,12 @@ test("Kwai authorization uses status and protocol-free registered redirect", () 
   assert.equal(url.searchParams.get("state"), null);
   assert.equal(url.searchParams.get("redirect_uri"), "www.baxi8.com/api/kwai/oauth/callback");
 });
-test("Kwai signature uses endpoint-specific documented token handling and decoded sorted values", () => {
+test("Kwai signature excludes access tokens and uses decoded sorted values", () => {
   const params = { version: "1.0", sign: "ignored", accessToken: "test-access", ts: "123", appKey: "a+b 测试" };
   for (const path of ["/rest/open/api/product/listItem", "/rest/open/api/trade/queryOrderList"]) {
-    const prefix = path.includes("/trade/") ? "accessToken=test-access" : "";
-    const expected = createHash("sha256").update(`api-shop.kwai.com${path}${prefix}appKey=a+b 测试ts=123version=1.0signSecret=secret`).digest("hex");
+    const expected = createHash("sha256").update(`api-shop.kwai.com${path}appKey=a+b 测试ts=123version=1.0signSecret=secret`).digest("hex");
     assert.equal(kwaiSign(path, params, "secret"), expected);
+    assert.equal(kwaiSign(path, { ...params, accessToken: "rotated-token" }, "secret"), expected);
   }
 });
 test("Kwai encrypted credentials are randomized, authenticated and reject malformed ciphers", (t) => {
@@ -88,4 +88,10 @@ test("Kwai read allowlist blocks writes and hides upstream secret-bearing errors
   assert.equal(calls, 0);
   await assert.rejects(kwaiRead("app", "secret", token, "/rest/open/api/product/listItem", "{}"), (error: Error) => error.message.includes("403") && !error.message.includes("SECRET-ECHO"));
   assert.equal(hashKwai("x").length, 64);
+});
+
+test("Kwai API explains invalid signatures without leaking upstream messages", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({ result: 443, message: "SECRET-ECHO" })));
+  await assert.rejects(kwaiRead("app", "secret", token, "/rest/open/api/trade/queryOrderList", "{}"), (error: Error) =>
+    error.message.includes("签名无效") && !error.message.includes("SECRET-ECHO"));
 });
