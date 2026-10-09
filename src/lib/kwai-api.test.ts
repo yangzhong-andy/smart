@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { hashKwai, kwaiAuthorizeUrl, kwaiExchange, kwaiRead, kwaiRefresh, kwaiSign, openKwai, parseKwaiJson, parseKwaiToken, sealKwai, kwaiId } from "./kwai-api";
-import { kwaiPage, normalizeKwaiOrder, normalizeKwaiProduct, normalizeKwaiSkus } from "./kwai-records";
+import { extractKwaiOrderDetails, kwaiPage, normalizeKwaiOrder, normalizeKwaiProduct, normalizeKwaiSkus } from "./kwai-records";
 
 const token = { merchantId: "123", shopName: "测试店铺", accessToken: "test-access", refreshToken: "test-refresh", expiresIn: 604800, refreshTokenExpiresIn: 31536000, scopes: "user_info,merchant_item,merchant_order" };
 test("Kwai authorization uses status and protocol-free registered redirect", () => {
@@ -66,6 +66,12 @@ test("Kwai SKU membership and page validation reject cross-product / invalid val
   assert.equal(normalizeKwaiSkus({ itemId: 1, saleCountry: "BRA", skus: [{ itemId: 1, skuId: 3, stock: 0 }] }, "1")[0].stock, 0);
   for (const page of [0, -1, 10001, 1.5, "bad"]) assert.throws(() => kwaiPage(page));
   assert.equal(kwaiPage(null), 1);
+});
+test("Kwai order details accepts the documented response envelope and rejects partial results", () => {
+  const rows = [{ orderId: "1" }, { orderId: "2" }];
+  assert.deepEqual(extractKwaiOrderDetails({ orderInfoDetailList: rows }, 2), rows);
+  assert.deepEqual(extractKwaiOrderDetails(rows, 2), rows);
+  assert.throws(() => extractKwaiOrderDetails({ orderInfoDetailList: rows.slice(0, 1) }, 2), /详情不完整/);
 });
 test("Kwai transport verifies exact OAuth parameters and refresh rotation", async (t) => {
   let calls = 0;

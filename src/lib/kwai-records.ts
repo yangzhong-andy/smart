@@ -17,6 +17,11 @@ export function normalizeKwaiOrder(row: any) {
     items: row.orderItemView.map((item: any) => ({ itemId: kwaiId(item.itemId), skuId: kwaiId(item.skuId), name: text(item.itemName), skuName: text(item.skuName), sellerSku: text(item.skuNumber) || text(item.number), quantity: integer(item.skuQuantity), priceCents: integer(item.skuPrice) })),
   };
 }
+export function extractKwaiOrderDetails(data: any, expectedCount: number) {
+  const rows = Array.isArray(data) ? data : data?.orderInfoDetailList;
+  if (!Array.isArray(rows) || rows.length !== expectedCount) throw new KwaiError("订单详情不完整，本页未写入，请重试");
+  return rows;
+}
 export function normalizeKwaiProduct(row: any) {
   if (!row) throw new KwaiError("Kwai 商品数据缺失");
   if (row.saleCountry && !["BRA", "BR"].includes(row.saleCountry)) throw new KwaiError("商品不是巴西站数据，已停止导入");

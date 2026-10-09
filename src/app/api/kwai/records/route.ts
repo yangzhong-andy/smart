@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { KwaiError, kwaiId, kwaiRead } from "@/lib/kwai-api";
 import { kwaiAdmin, kwaiSafeError, usableKwaiShop } from "@/lib/kwai-service";
-import { kwaiPage, normalizeKwaiOrder, normalizeKwaiProduct, normalizeKwaiSkus } from "@/lib/kwai-records";
+import { extractKwaiOrderDetails, kwaiPage, normalizeKwaiOrder, normalizeKwaiProduct, normalizeKwaiSkus } from "@/lib/kwai-records";
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
@@ -41,8 +41,7 @@ export async function POST(request: NextRequest) {
       const ids = entries.map((e: any) => kwaiId(e.orderId));
       if (new Set(ids).size !== ids.length) throw new KwaiError("官方订单分页包含重复编号，请稍后重试");
       if (ids.length) {
-        const details = await read("/rest/open/api/trade/queryOrderDetails", `{"orderList":[${ids.join(",")}]}`);
-        if (!Array.isArray(details) || details.length !== ids.length) throw new KwaiError("订单详情不完整，本页未写入，请重试");
+        const details = extractKwaiOrderDetails(await read("/rest/open/api/trade/queryOrderDetails", `{"orderList":[${ids.join(",")}]}`), ids.length);
         records = details.map((row: any) => { const payload = normalizeKwaiOrder(row); if (!ids.includes(payload.orderId)) throw new KwaiError("订单详情身份不匹配"); return { externalId: payload.orderId, payload }; });
         if (new Set(records.map((r) => r.externalId)).size !== ids.length) throw new KwaiError("订单详情存在重复编号，本页未写入");
       }
