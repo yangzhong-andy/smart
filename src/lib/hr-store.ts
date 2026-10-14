@@ -37,6 +37,7 @@ export type Employee = {
   pensionInsurance?: number;
   unemploymentInsurance?: number;
   medicalInsurance?: number;
+  restDays?: number;
   
   // 元数据
   notes?: string; // 备注

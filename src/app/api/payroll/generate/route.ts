@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
+import { hasSalarySettings } from "@/lib/employee-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const month = body.month;
-    if (!month) return NextResponse.json({ error: "请选择月份" }, { status: 400 });
+    if (typeof month !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || Number(month.slice(0, 4)) < 1900) {
+      return NextResponse.json({ error: "请选择有效月份" }, { status: 400 });
+    }
 
     // 1. 查询符合条件的员工（在职+试用期+当月离职，可选按部门过滤）
     // 注意：离职员工也要算当月工资（离职当月的工资）
@@ -53,14 +56,16 @@ export async function POST(request: NextRequest) {
 
     // 4. 计算当月天数
     const [year, mon] = month.split("-").map(Number);
-    const monthDays = new Date(year, mon, 0).getDate();
-    const monthStart = new Date(year, mon - 1, 1);
-    const monthEnd = new Date(year, mon, 0);
+    // Employment dates are calendar days, not instants in the server's local timezone.
+    const monthDays = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+    const monthStart = new Date(Date.UTC(year, mon - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, mon, 0));
 
     // 5. 为每个员工生成工资单
     const now = new Date();
     const created: any[] = [];
     let skipped = 0;
+    const missingSalary: { employeeId: string; employeeName: string; reason: string }[] = [];
 
     for (const emp of employees) {
       if (existingEmpIds.has(emp.id)) {
@@ -73,13 +78,6 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const baseSalary = Number(emp.baseSalary) || 2200;
-      const positionSalary = Number(emp.positionSalary) || 0;
-      const actualSalary = baseSalary + positionSalary;
-
-      const restDays = Number(emp.restDays) || 7;
-      const payableDays = monthDays - restDays > 0 ? monthDays - restDays : 24;
-
       // === 根据入职/离职日期计算实际在职天数 ===
       // 确定该员工在这个月的有效工作区间 [workStart, workEnd]
       let workStart = monthStart; // 默认月初
@@ -88,6 +86,7 @@ export async function POST(request: NextRequest) {
       // 入职日期处理
       if (emp.joinDate) {
         const joinDate = new Date(emp.joinDate);
+        joinDate.setUTCHours(0, 0, 0, 0);
         if (joinDate > monthEnd) {
           // 入职日期在当月之后：还没入职，跳过
           skipped++;
@@ -101,6 +100,7 @@ export async function POST(request: NextRequest) {
       // 离职日期处理
       if (emp.leaveDate) {
         const leaveDate = new Date(emp.leaveDate);
+        leaveDate.setUTCHours(0, 0, 0, 0);
         if (leaveDate < monthStart) {
           // 离职日期在当月之前：早就离职了，跳过
           skipped++;
@@ -110,6 +110,18 @@ export async function POST(request: NextRequest) {
           workEnd = leaveDate; // 当月离职，算到离职日
         }
       }
+
+      if (!hasSalarySettings(emp) || emp.restDays >= monthDays) {
+        missingSalary.push({ employeeId: emp.id, employeeName: emp.name,
+          reason: !hasSalarySettings(emp) ? "薪资档案未完整设置" : "休息天数不能大于或等于当月天数" });
+        continue;
+      }
+      // Zero is an explicit setting, not a request to substitute an old default salary.
+      const baseSalary = Number(emp.baseSalary);
+      const positionSalary = Number(emp.positionSalary);
+      const actualSalary = baseSalary + positionSalary;
+      const restDays = emp.restDays;
+      const payableDays = monthDays - restDays;
 
       // 计算当月实际在职天数（含入职当天和离职当天）
       const inMonthDays = Math.floor((workEnd.getTime() - workStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
@@ -123,7 +135,7 @@ export async function POST(request: NextRequest) {
       if (isFullMonth) {
         // 整月在职：全勤
         actualAttendDays = payableDays;
-        fullAttendanceAmt = Number(emp.fullAttendanceBonus) || 200;
+        fullAttendanceAmt = Number(emp.fullAttendanceBonus);
       } else {
         // 非整月（入职/离职）：按比例折算
         actualAttendDays = Math.max(1, Math.round(payableDays * inMonthDays / monthDays));
@@ -188,6 +200,7 @@ export async function POST(request: NextRequest) {
       skipped,
       total: employees.length,
       partialMonth: partialCount,
+      missingSalary,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "生成工资单失败" }, { status: 500 });

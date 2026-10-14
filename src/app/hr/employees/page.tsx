@@ -6,7 +6,6 @@ import { Plus } from "lucide-react";
 import { PageHeader, ActionButton } from "@/components/ui";
 import useSWR from "swr";
 import {
-  upsertEmployee,
   deleteEmployee,
   type Employee,
   type Department,
@@ -16,6 +15,8 @@ import { EmployeeStats } from "./components/EmployeeStats";
 import { EmployeesFilters } from "./components/EmployeesFilters";
 import { EmployeesTable } from "./components/EmployeesTable";
 import { EmployeeFormDialog } from "./components/EmployeeFormDialog";
+import { HrWorkflowNav } from "../components/HrWorkflowNav";
+import { employeeStatusLabel, hasSalarySettings, parseSalarySettings, personnelSettings } from "@/lib/employee-profile";
 import type {
   DepartmentFromAPI,
   EmployeeFormState,
@@ -47,18 +48,20 @@ const initialForm: EmployeeFormState = {
   bankAccount: "",
   bankName: "",
   idNumber: "",
-  baseSalary: "2200",
-  positionSalary: "0",
-  fullAttendanceBonus: "200",
-  pensionInsurance: "323.44",
-  unemploymentInsurance: "20.22",
-  medicalInsurance: "88.66",
+  baseSalary: "",
+  positionSalary: "",
+  fullAttendanceBonus: "",
+  pensionInsurance: "",
+  unemploymentInsurance: "",
+  medicalInsurance: "",
+  restDays: "7",
 };
 
 export default function EmployeesPage() {
   const { confirm, confirmDialog } = useSystemConfirm();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [formSection, setFormSection] = useState<"personnel" | "salary">("personnel");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -71,7 +74,7 @@ export default function EmployeesPage() {
 
   const [form, setForm] = useState<EmployeeFormState>(initialForm);
 
-  const { data: employeesDataRaw, mutate: mutateEmployees } = useSWR<any>(
+  const { data: employeesDataRaw, error: employeesError, isLoading: employeesLoading, mutate: mutateEmployees } = useSWR<any>(
     "/api/employees?page=1&pageSize=500",
     fetcher,
     {
@@ -81,7 +84,9 @@ export default function EmployeesPage() {
   );
   const employees = useMemo<Employee[]>(() => (Array.isArray(employeesDataRaw)
     ? employeesDataRaw
-    : employeesDataRaw?.data ?? []) as Employee[], [employeesDataRaw]);
+    : employeesDataRaw?.data ?? []).map((employee: Employee) => ({
+      ...employee, status: employeeStatusLabel(employee.status),
+    })) as Employee[], [employeesDataRaw]);
 
   const { data: departmentsDataRaw } = useSWR<any>(
     "/api/departments?page=1&pageSize=500",
@@ -171,7 +176,8 @@ export default function EmployeesPage() {
     setEditingEmployee(null);
   };
 
-  const handleOpenModal = (employee?: Employee) => {
+  const handleOpenModal = (employee?: Employee, section: "personnel" | "salary" = "personnel") => {
+    setFormSection(section);
     if (employee) {
       setEditingEmployee(employee);
       setForm({
@@ -179,7 +185,7 @@ export default function EmployeesPage() {
         employeeNumber: employee.employeeNumber || "",
         department: employee.department,
         position: employee.position,
-        joinDate: employee.joinDate,
+        joinDate: employee.joinDate.slice(0, 10),
         leaveDate: employee.leaveDate || "",
         phone: employee.phone || "",
         email: employee.email || "",
@@ -188,12 +194,13 @@ export default function EmployeesPage() {
         bankAccount: employee.bankAccount || "",
         bankName: employee.bankName || "",
         idNumber: employee.idNumber || "",
-        baseSalary: String(employee.baseSalary ?? 2200),
-        positionSalary: String(employee.positionSalary ?? 0),
-        fullAttendanceBonus: String(employee.fullAttendanceBonus ?? 200),
-        pensionInsurance: String(employee.pensionInsurance ?? 323.44),
-        unemploymentInsurance: String(employee.unemploymentInsurance ?? 20.22),
-        medicalInsurance: String(employee.medicalInsurance ?? 88.66),
+        baseSalary: employee.baseSalary == null ? "" : String(employee.baseSalary),
+        positionSalary: employee.positionSalary == null ? "" : String(employee.positionSalary),
+        fullAttendanceBonus: employee.fullAttendanceBonus == null ? "" : String(employee.fullAttendanceBonus),
+        pensionInsurance: employee.pensionInsurance == null ? "" : String(employee.pensionInsurance),
+        unemploymentInsurance: employee.unemploymentInsurance == null ? "" : String(employee.unemploymentInsurance),
+        medicalInsurance: employee.medicalInsurance == null ? "" : String(employee.medicalInsurance),
+        restDays: String(employee.restDays ?? 7),
       });
     } else {
       resetForm();
@@ -219,54 +226,39 @@ export default function EmployeesPage() {
       toast.error("正在提交，请勿重复点击");
       return;
     }
-    if (!form.name.trim()) {
+    if (formSection === "personnel" && !form.name.trim()) {
       toast.error("请填写员工姓名");
       return;
     }
-    if (!form.department) {
+    if (formSection === "personnel" && !form.department) {
       toast.error("请选择部门");
       return;
     }
-    if (!form.position.trim()) {
+    if (formSection === "personnel" && !form.position.trim()) {
       toast.error("请填写岗位");
       return;
     }
 
-    const employeeData: Employee = {
-      id: editingEmployee?.id || crypto.randomUUID(),
-      name: form.name.trim(),
-      employeeNumber: form.employeeNumber.trim() || undefined,
-      department: form.department as Department,
-      position: form.position.trim(),
-      joinDate: form.joinDate || new Date().toISOString().split("T")[0],
-      leaveDate: form.leaveDate || undefined,
-      phone: form.phone.trim() || undefined,
-      email: form.email.trim() || undefined,
-      status: form.status,
-      notes: form.notes.trim() || undefined,
-      bankAccount: form.bankAccount.trim() || undefined,
-      bankName: form.bankName.trim() || undefined,
-      idNumber: form.idNumber.trim() || undefined,
-      baseSalary: parseFloat(form.baseSalary) || 2200,
-      positionSalary: parseFloat(form.positionSalary) || 0,
-      fullAttendanceBonus: parseFloat(form.fullAttendanceBonus) || 200,
-      pensionInsurance: parseFloat(form.pensionInsurance) || 323.44,
-      unemploymentInsurance: parseFloat(form.unemploymentInsurance) || 20.22,
-      medicalInsurance: parseFloat(form.medicalInsurance) || 88.66,
-      createdAt: editingEmployee?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
     setIsSubmitting(true);
     try {
-      await upsertEmployee(employeeData);
-      mutateEmployees();
-      toast.success(editingEmployee ? "员工信息已更新" : "员工已添加");
+      const payload = formSection === "salary" ? parseSalarySettings({ ...form }) : personnelSettings({ ...form });
+      if (formSection === "salary" && !hasSalarySettings(payload)) throw new Error("请完整填写薪资项目，未发生项目请填 0");
+      if (formSection === "personnel" && !form.joinDate) throw new Error("请填写入职日期");
+      if (formSection === "personnel" && form.leaveDate && form.leaveDate < form.joinDate) throw new Error("离职日期不能早于入职日期");
+      const res = await fetch(editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees", {
+        method: editingEmployee ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "保存失败，请重试");
+      await mutateEmployees();
+      toast.success(formSection === "salary" ? "薪资设置已保存，不影响已生成的工资单" : editingEmployee ? "人员资料已更新，薪资未改动" : "入职档案已建立，请单独维护薪资设置");
       resetForm();
       setIsModalOpen(false);
     } catch (error) {
       console.error("保存员工失败:", error);
-      toast.error("保存失败，请重试");
+      toast.error(error instanceof Error ? error.message : "保存失败，请重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -308,19 +300,24 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <HrWorkflowNav active="employees" />
       <PageHeader
-        title="员工档案"
-        description="管理员工基本信息、岗位等"
+        title="员工入职与档案"
+        description="入职、岗位及离职资料与薪资设置分别维护；这里不生成工资或支出流水"
         actions={
           <ActionButton
             onClick={() => handleOpenModal()}
             variant="primary"
             icon={Plus}
           >
-            新增员工
+            员工入职
           </ActionButton>
         }
       />
+
+      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-slate-300">
+        先办理入职，再通过员工卡片的「薪资设置」维护工资标准和收款资料。每月到「每月发工资」核算、审批和登记发放；薪资设置不会回改已生成的工资单。
+      </div>
 
       <EmployeeStats stats={stats} departments={departments} />
 
@@ -338,16 +335,20 @@ export default function EmployeesPage() {
         departments={departments}
       />
 
-      <EmployeesTable
+      {employeesLoading ? <p role="status" className="text-slate-400">正在加载员工档案…</p> : employeesError ? (
+        <div role="alert" className="text-rose-300">员工档案加载失败，请重试。<button onClick={() => mutateEmployees()} className="ml-3 underline">重新加载</button></div>
+      ) : <EmployeesTable
         employees={filteredEmployees}
         onEdit={handleOpenModal}
+        onSalary={(employee) => handleOpenModal(employee, "salary")}
         onDelete={handleDelete}
-      />
+      />}
 
       <EmployeeFormDialog
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         editingEmployee={editingEmployee}
+        section={formSection}
         form={form}
         setForm={setForm}
         departments={departments}

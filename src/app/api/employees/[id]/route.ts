@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
+import { clearCacheByPrefix } from '@/lib/redis'
+import { parseSalarySettings } from '@/lib/employee-profile'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +67,12 @@ export async function PUT(
     }
 
     const body = await request.json()
+    let salary
+    try {
+      salary = parseSalarySettings(body)
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : '薪资格式不正确' }, { status: 400 })
+    }
 
     // 中文状态 -> EmploymentStatus 映射
     const STATUS_MAP: Record<string, string> = {
@@ -84,20 +92,13 @@ export async function PUT(
     if (body.responsibleStores !== undefined) updateData.responsibleStores = body.responsibleStores || []
     if (body.notes !== undefined) updateData.notes = body.notes || null
     if (body.leaveDate !== undefined) updateData.leaveDate = body.leaveDate ? new Date(body.leaveDate) : null
-    if (body.bankAccount !== undefined) updateData.bankAccount = body.bankAccount || null
-    if (body.bankName !== undefined) updateData.bankName = body.bankName || null
-    if (body.idNumber !== undefined) updateData.idNumber = body.idNumber || null
-    if (body.baseSalary !== undefined) updateData.baseSalary = Number(body.baseSalary)
-    if (body.positionSalary !== undefined) updateData.positionSalary = Number(body.positionSalary)
-    if (body.fullAttendanceBonus !== undefined) updateData.fullAttendanceBonus = Number(body.fullAttendanceBonus)
-    if (body.pensionInsurance !== undefined) updateData.pensionInsurance = Number(body.pensionInsurance)
-    if (body.unemploymentInsurance !== undefined) updateData.unemploymentInsurance = Number(body.unemploymentInsurance)
-    if (body.medicalInsurance !== undefined) updateData.medicalInsurance = Number(body.medicalInsurance)
+    Object.assign(updateData, salary)
 
     const employee = await prisma.employee.update({
       where: { id: params.id },
       data: updateData
     })
+    await clearCacheByPrefix('employees')
 
     return NextResponse.json({
       id: employee.id,
@@ -143,6 +144,7 @@ export async function DELETE(
     await prisma.employee.delete({
       where: { id: params.id }
     })
+    await clearCacheByPrefix('employees')
 
     return NextResponse.json({ success: true })
   } catch (error) {

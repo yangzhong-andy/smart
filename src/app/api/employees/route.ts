@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
+import { initialSalarySettings } from '@/lib/employee-profile'
+import { requireApiUser } from '@/lib/api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +23,7 @@ export async function GET(request: NextRequest) {
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
+      'personnel-salary-v1',
       status || 'all',
       department || 'all',
       String(page),
@@ -50,6 +53,7 @@ export async function GET(request: NextRequest) {
           leaveDate: true, bankAccount: true, bankName: true, idNumber: true,
           baseSalary: true, positionSalary: true, fullAttendanceBonus: true,
           pensionInsurance: true, unemploymentInsurance: true, medicalInsurance: true,
+          restDays: true,
         },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
@@ -83,6 +87,7 @@ export async function GET(request: NextRequest) {
         pensionInsurance: e.pensionInsurance != null ? Number(e.pensionInsurance) : undefined,
         unemploymentInsurance: e.unemploymentInsurance != null ? Number(e.unemploymentInsurance) : undefined,
         medicalInsurance: e.medicalInsurance != null ? Number(e.medicalInsurance) : undefined,
+        restDays: e.restDays,
         createdAt: e.createdAt.toISOString(),
         updatedAt: e.updatedAt.toISOString()
       })),
@@ -106,7 +111,15 @@ export async function GET(request: NextRequest) {
 // POST - 创建新员工（清除缓存）
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireApiUser(request, { roles: ['ADMIN', 'MANAGER'] })
+    if (auth.response) return auth.response
     const body = await request.json()
+    let salary
+    try {
+      salary = initialSalarySettings(body)
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : '薪资格式不正确' }, { status: 400 })
+    }
 
     // 中文状态 -> EmploymentStatus 映射
     const STATUS_MAP: Record<string, string> = {
@@ -129,15 +142,7 @@ export async function POST(request: NextRequest) {
         responsibleStores: body.responsibleStores || [],
         notes: body.notes || null,
         leaveDate: body.leaveDate ? new Date(body.leaveDate) : null,
-        bankAccount: body.bankAccount || null,
-        bankName: body.bankName || null,
-        idNumber: body.idNumber || null,
-        baseSalary: body.baseSalary != null ? Number(body.baseSalary) : 2200,
-        positionSalary: body.positionSalary != null ? Number(body.positionSalary) : 0,
-        fullAttendanceBonus: body.fullAttendanceBonus != null ? Number(body.fullAttendanceBonus) : 200,
-        pensionInsurance: body.pensionInsurance != null ? Number(body.pensionInsurance) : 323.44,
-        unemploymentInsurance: body.unemploymentInsurance != null ? Number(body.unemploymentInsurance) : 20.22,
-        medicalInsurance: body.medicalInsurance != null ? Number(body.medicalInsurance) : 88.66,
+        ...salary,
       }
     })
 

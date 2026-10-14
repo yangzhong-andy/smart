@@ -349,8 +349,8 @@ const navItems: NavItem[] = [
     labelEn: "HR Center",
     icon: Users,
     children: [
-      { label: "员工档案", labelEn: "", icon: Users, href: "/hr/employees" },
-      { label: "工资管理", labelEn: "", icon: Wallet, href: "/hr/payroll" },
+      { label: "员工入职与档案", labelEn: "", icon: Users, href: "/hr/employees" },
+      { label: "每月发工资", labelEn: "", icon: Wallet, href: "/hr/payroll" },
       { label: "提成规则", labelEn: "", icon: Users, href: "/hr/commission-rules" },
       { label: "提成管理", labelEn: "", icon: Users, href: "/hr/commissions" }
     ]

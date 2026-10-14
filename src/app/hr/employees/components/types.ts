@@ -34,6 +34,7 @@ export interface EmployeeFormState {
   pensionInsurance: string;
   unemploymentInsurance: string;
   medicalInsurance: string;
+  restDays: string;
 }
 
 export interface EmployeeStatsData {

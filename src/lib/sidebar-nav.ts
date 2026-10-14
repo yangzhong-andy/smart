@@ -147,8 +147,8 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
   {
     label: "人力资源中心",
     children: [
-      { label: "员工档案", href: "/hr/employees" },
-      { label: "工资管理", href: "/hr/payroll" },
+      { label: "员工入职与档案", href: "/hr/employees" },
+      { label: "每月发工资", href: "/hr/payroll" },
       { label: "提成规则", href: "/hr/commission-rules" },
       { label: "提成管理", href: "/hr/commissions" },
     ],

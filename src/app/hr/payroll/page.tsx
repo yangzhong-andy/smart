@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Wallet, TrendingUp, Clock, Users, Plus, Sparkles, CheckCircle2, Upload, Banknote } from "lucide-react";
 import { renderGroupedAccountOptions } from "@/lib/account-grouped-options";
 import { Pagination, usePaginationState, paginate } from "@/components/Pagination";
+import Link from "next/link";
+import { HrWorkflowNav } from "../components/HrWorkflowNav";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "草稿",
@@ -48,6 +50,7 @@ export default function PayrollPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [generateLoading, setGenerateLoading] = useState(false);
+  const [salaryWarnings, setSalaryWarnings] = useState<{ month: string; employees: { employeeId: string; employeeName: string; reason: string }[] } | null>(null);
   const [batchPayModal, setBatchPayModal] = useState(false);
   const [payAccountId, setPayAccountId] = useState("");
   const [payVoucher, setPayVoucher] = useState<string | string[]>("");
@@ -55,7 +58,7 @@ export default function PayrollPage() {
 
   const SWR_OPT = { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 600000 };
 
-  const { data: rawPayrolls } = useSWR(`/api/payroll?month=${selectedMonth}`, arrayFetcher, SWR_OPT);
+  const { data: rawPayrolls, error: payrollError, isLoading: payrollLoading } = useSWR(`/api/payroll?month=${selectedMonth}`, arrayFetcher, SWR_OPT);
   const { data: rawAccounts } = useSWR("/api/accounts?page=1&pageSize=500", arrayFetcher, SWR_OPT);
 
   const payrolls = useMemo(() => (Array.isArray(rawPayrolls) ? rawPayrolls : []), [rawPayrolls]);
@@ -95,7 +98,10 @@ export default function PayrollPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(`已生成 ${data.created} 条工资单${data.skipped > 0 ? `（跳过 ${data.skipped} 条已存在）` : ""}`);
+        const missing = Array.isArray(data.missingSalary) ? data.missingSalary : [];
+        setSalaryWarnings({ month: selectedMonth, employees: missing });
+        toast.success(`已生成 ${data.created} 条工资草稿${data.skipped > 0 ? `（跳过 ${data.skipped} 人：已生成或不在计薪期间）` : ""}`);
+        if (missing.length > 0) toast.warning(`${missing.length} 人薪资设置待完善，本次未生成工资`);
         swrMutate(`/api/payroll?month=${selectedMonth}`);
       } else {
         toast.error(data.error || "生成失败");
@@ -240,11 +246,12 @@ export default function PayrollPage() {
 
   return (
     <div className="space-y-6 p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 min-h-screen">
+      <HrWorkflowNav active="payroll" />
       {/* 标题栏 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">工资管理</h1>
-          <p className="text-sm text-slate-400 mt-1">月度工资单生成 · 审批 · 批量付款</p>
+          <h1 className="text-2xl font-bold text-slate-100">每月发工资</h1>
+          <p className="text-sm text-slate-400 mt-1">选择工资所属月份 · 生成草稿 · 核实考勤和奖扣 · 审批 · 发放登记</p>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -260,10 +267,25 @@ export default function PayrollPage() {
             className="flex items-center gap-1.5 rounded-lg bg-primary-500 hover:bg-primary-600 px-4 py-2 text-sm text-white disabled:opacity-50"
           >
             <Sparkles className="h-4 w-4" />
-            {generateLoading ? "生成中..." : "生成工资单"}
+            {generateLoading ? "生成中..." : "生成当月工资草稿"}
           </button>
         </div>
       </div>
+
+      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-slate-300">
+        人员入职及薪资标准请到 <Link href="/hr/employees" className="text-primary-300 underline">员工入职与档案</Link> 维护。
+        本页只处理所选月份的工资；生成草稿不记账。草稿沿用现有计薪方式预填，需核实实际考勤、满勤奖和奖扣后再审批；发放登记不等于银行自动转账。
+      </div>
+      {salaryWarnings?.month === selectedMonth && salaryWarnings.employees.length > 0 && (
+        <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          <p>以下 {salaryWarnings.employees.length} 人本次未生成工资，请先完善薪资设置，再重新生成；已存在的工资单不会覆盖。</p>
+          <ul className="mt-2 list-disc pl-5">
+            {salaryWarnings.employees.map((employee) => <li key={employee.employeeId}>{employee.employeeName}：{employee.reason}</li>)}
+          </ul>
+          <Link href="/hr/employees" className="mt-2 inline-block underline">前往薪资设置</Link>
+        </div>
+      )}
+      {payrollError && <p role="alert" className="text-rose-300">工资数据加载失败，请刷新重试，当前不代表实际工资合计。</p>}
 
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -338,7 +360,7 @@ export default function PayrollPage() {
           <tbody className="divide-y divide-slate-800">
             {filtered.length === 0 ? (
               <tr><td colSpan={14} className="px-4 py-12 text-center text-slate-500">
-                {payrolls.length === 0 ? `${selectedMonth}月暂无工资单，点击「生成工资单」自动创建` : "没有符合条件的工资单"}
+                {payrollLoading ? "正在加载工资单…" : payrollError ? "工资单加载失败" : payrolls.length === 0 ? `${selectedMonth}月暂无工资单，请先完善员工薪资设置，再生成当月工资草稿` : "没有符合条件的工资单"}
               </td></tr>
             ) : (
               paginate(filtered, pgPage, pgPageSize).map((r: any) => {

@@ -1,7 +1,8 @@
 "use client";
 
 import { memo } from "react";
-import { Users, Pencil, Trash2 } from "lucide-react";
+import { Users, Pencil, Trash2, Wallet } from "lucide-react";
+import { hasSalarySettings } from "@/lib/employee-profile";
 import { ActionButton } from "@/components/ui";
 import { EmptyState } from "@/components/ui";
 import type { Employee } from "./types";
@@ -9,12 +10,14 @@ import type { Employee } from "./types";
 interface EmployeesTableProps {
   employees: Employee[];
   onEdit: (employee: Employee) => void;
+  onSalary: (employee: Employee) => void;
   onDelete: (id: string) => void;
 }
 
 function EmployeesTableComponent({
   employees,
   onEdit,
+  onSalary,
   onDelete,
 }: EmployeesTableProps) {
   if (employees.length === 0) {
@@ -22,7 +25,7 @@ function EmployeesTableComponent({
       <EmptyState
         icon={Users}
         title="暂无员工"
-        description="点击右上角「新增员工」开始添加"
+        description="点击右上角「员工入职」建立档案，再单独维护薪资设置"
       />
     );
   }
@@ -67,7 +70,7 @@ function EmployeesTableComponent({
             )}
             <div className="flex items-center justify-between">
               <span className="text-slate-400">入职日期：</span>
-              <span className="text-slate-300">{employee.joinDate}</span>
+              <span className="text-slate-300">{employee.joinDate.slice(0, 10)}</span>
             </div>
             {employee.phone && (
               <div className="flex items-center justify-between">
@@ -75,16 +78,25 @@ function EmployeesTableComponent({
                 <span className="text-slate-300">{employee.phone}</span>
               </div>
             )}
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">薪资档案：</span>
+              <span className={hasSalarySettings(employee) ? "text-emerald-300" : "text-amber-300"}>
+                {hasSalarySettings(employee) ? "已设置" : "待设置（暂不生成工资）"}
+              </span>
+            </div>
           </div>
 
-          <div className="flex gap-2 mt-4 pt-4 border-t border-slate-800">
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-800">
             <ActionButton
               onClick={() => onEdit(employee)}
               variant="secondary"
               size="sm"
               icon={Pencil}
             >
-              编辑
+              人员资料
+            </ActionButton>
+            <ActionButton onClick={() => onSalary(employee)} variant="secondary" size="sm" icon={Wallet}>
+              薪资设置
             </ActionButton>
             <ActionButton
               onClick={() => onDelete(employee.id)}
