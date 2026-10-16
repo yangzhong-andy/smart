@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { deductStockForOrder, restoreStockForCancelledOrder } from "@/lib/tiktok-stock-deduct";
 import {
   refreshAccessToken,
@@ -27,6 +28,10 @@ export const maxDuration = 60;
  * 同步数据，每个店铺使用对应的 App Key/Secret
  */
 export async function POST(request: NextRequest) {
+  return withResourceDiagnostics("tiktok.sync", (scope) => syncWithDiagnostics(request, scope));
+}
+
+async function syncWithDiagnostics(request: NextRequest, scope: ResourceScope) {
   try {
     const body = await request.json().catch(() => ({}));
     const { dataType = "all", days = 7 } = body;
@@ -38,6 +43,7 @@ export async function POST(request: NextRequest) {
     const shops = await prisma.tikTokShopSetting.findMany({
       where: { status: "active", accessToken: { not: null } },
     });
+    scope.checkpoint("reference_data_loaded", { shops: shops.length });
 
     if (shops.length === 0) {
       return NextResponse.json({ error: "没有已授权的店铺" }, { status: 400 });
@@ -262,6 +268,7 @@ export async function POST(request: NextRequest) {
                 pageToken = nextPageToken;
               }
               console.log(`[TikTok Sync] ${shop.shopName} 第${seg+1}/${totalSegments}段(${pageCount}页) 累计${count}条`);
+              scope.checkpoint("orders_saved", { orders: count, pages: pageCount });
             }
             result.orders = count;
             let warehouseDeducted = 0;
@@ -287,6 +294,7 @@ export async function POST(request: NextRequest) {
               reversed: warehouseReversed,
               errors: warehouseErrors,
             };
+            scope.checkpoint("warehouse_done", { dates: warehouseBusinessDates.size, failed: warehouseErrors });
             console.log(`[TikTok Sync] ${shop.shopName} 订单同步完成: ${count}条`);
           } catch (e: any) {
             result.ordersError = e.message;
@@ -545,6 +553,7 @@ export async function POST(request: NextRequest) {
         console.error(`[TikTok Sync] ${shop.shopName} 同步失败:`, e.message);
       }
       results.push(result);
+      scope.checkpoint("shop_done", { shops: results.length });
     }
 
     // The accounts page caches the full cash-flow list.  Clear it after a

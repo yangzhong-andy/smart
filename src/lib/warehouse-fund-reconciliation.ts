@@ -1,6 +1,7 @@
 import { Prisma, WarehouseFundEntryType } from "@prisma/client";
 import * as jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { getAuthSecret } from "@/lib/auth-secret";
 import { recordWarehouseFundEntry } from "@/lib/warehouse-funds";
 import type { ProfitOrderDetailRow } from "@/lib/profit-report-types";
@@ -283,6 +284,10 @@ export async function reconcileWarehouseFees(rows: WarehouseFeeRow[]) {
  * idempotent warehouse ledger writer below changes balances.
  */
 export async function reconcileWarehouseFeesForDate(origin: string, date: string, shopId: string) {
+  return withResourceDiagnostics("warehouse.tiktok.reconcile", (scope) => reconcileTikTokDateWithDiagnostics(origin, date, shopId, scope));
+}
+
+async function reconcileTikTokDateWithDiagnostics(origin: string, date: string, shopId: string, scope: ResourceScope) {
   const params = new URLSearchParams({
     startDate: date,
     endDate: date,
@@ -291,6 +296,7 @@ export async function reconcileWarehouseFeesForDate(origin: string, date: string
     shopId,
     autoWarehouseDebit: "0",
   });
+  scope.checkpoint("report_requested");
   const response = await fetch(
     `${internalReportOrigin(origin)}/api/profit-report?${params.toString()}`,
     await internalReportRequest(),
@@ -299,6 +305,7 @@ export async function reconcileWarehouseFeesForDate(origin: string, date: string
   if (!response.ok) throw new Error(report?.error || `${date} 仓库扣费读取利润核算失败`);
 
   const orders = Array.isArray(report?.orders) ? report.orders as WarehouseFeeRow[] : [];
+  scope.checkpoint("report_loaded", { orders: orders.length });
   const shipped = orders.filter((row) => isWarehouseShippedStatus(row.status));
   const result = await reconcileWarehouseFees(shipped);
   let reversed = 0;
@@ -306,6 +313,7 @@ export async function reconcileWarehouseFeesForDate(origin: string, date: string
     const reversal = await reverseWarehouseFeeForOrder(row.orderId);
     if (!(reversal as any).skipped) reversed += 1;
   }
+  scope.checkpoint("warehouse_done", { orders: orders.length, failed: result.errors });
   return {
     orders: orders.length,
     shipped: shipped.length,

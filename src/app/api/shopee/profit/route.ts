@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { requireApiUser } from "@/lib/api-auth";
 import { getFinanceRates } from "@/lib/exchange";
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
@@ -141,6 +142,10 @@ function normalizeDimensions(values: unknown[]) {
 }
 
 export async function GET(request: NextRequest) {
+  return withResourceDiagnostics("shopee.profit", (scope) => reportWithDiagnostics(request, scope));
+}
+
+async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope) {
   const auth = await requireApiUser(request);
   if (auth.response) return auth.response;
 
@@ -278,6 +283,7 @@ export async function GET(request: NextRequest) {
     })),
   ]);
 
+  scope.checkpoint("reference_data_loaded", { orders: orders.length, shops: shops.length });
   const rateMap = (rates || {}) as Record<string, unknown>;
   const firstMileCosts = calculateFirstMileUnitCosts(logisticsCosts, (amount, currency) => (
     number(amount) * rateToCny(currency, rateMap)
@@ -958,6 +964,7 @@ export async function GET(request: NextRequest) {
     ...(rates?.BRL ? [] : ["未取得 BRL/CNY 汇率，金额暂不能可靠换算。"]),
   ];
 
+  scope.checkpoint("report_ready", { rows: calculatedRows.length });
   return NextResponse.json({
     platform: "SHOPEE",
     filters: { shopId: shopId || null, countryCode: requestedCountry || null, startDate, endDate, groupBy, status: status || null, keyword: keyword || null, currency: "CNY" },

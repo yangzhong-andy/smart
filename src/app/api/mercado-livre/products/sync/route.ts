@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { syncMercadoLivreProducts } from "@/lib/mercado-livre-product-sync";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,10 @@ async function canSync(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  return withResourceDiagnostics("mercado.products.sync", (scope) => syncWithDiagnostics(request, scope));
+}
+
+async function syncWithDiagnostics(request: NextRequest, scope: ResourceScope) {
   if (!(await canSync(request))) {
     return NextResponse.json({ error: "没有权限同步 Mercado Livre 商品数据" }, { status: 403 });
   }
@@ -22,6 +27,7 @@ export async function POST(request: NextRequest) {
       accountId: body.accountId ? String(body.accountId) : undefined,
       visitDays: body.visitDays ? Number(body.visitDays) : undefined,
     });
+    scope.checkpoint("finished", { shops: result.accounts, failed: result.errors.length });
     return NextResponse.json(
       {
         success: result.errors.length === 0,

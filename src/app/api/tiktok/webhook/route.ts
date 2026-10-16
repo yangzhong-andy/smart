@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { getOrderDetail } from "@/lib/tiktok-shop-api";
 import { deductStockForOrder, restoreStockForCancelledOrder } from "@/lib/tiktok-stock-deduct";
 import {
@@ -63,6 +64,10 @@ async function getWebhookCredentials(shopId: string | null): Promise<{ appKey: s
  * 收到订单状态变化推送后，自动拉取完整订单详情并存入数据库
  */
 export async function POST(request: NextRequest) {
+  return withResourceDiagnostics("tiktok.webhook.receive", () => receiveWithDiagnostics(request));
+}
+
+async function receiveWithDiagnostics(request: NextRequest) {
   const startTime = Date.now();
 
   try {
@@ -164,6 +169,10 @@ export async function POST(request: NextRequest) {
  * 处理事件：拉取完整订单详情并存储
  */
 async function processEvent(typeNum: number, shopId: string | null, orderId: string | null, orderData: any, origin: string) {
+  return withResourceDiagnostics("tiktok.webhook.process", (scope) => processEventWithDiagnostics(typeNum, shopId, orderId, orderData, origin, scope));
+}
+
+async function processEventWithDiagnostics(typeNum: number, shopId: string | null, orderId: string | null, orderData: any, origin: string, scope: ResourceScope) {
   if (!shopId || !orderId) return;
 
   // 只处理订单相关事件
@@ -219,6 +228,7 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
         },
       });
       await clearCacheByPrefix("profit-report");
+      scope.checkpoint("orders_saved", { orders: 1 });
       console.log(`[TikTok Webhook] ✅ 订单 ${orderId} 已实时更新: ${o.status}`);
 
       // Post the warehouse debit from the same per-order profit calculation.
@@ -237,7 +247,9 @@ async function processEvent(typeNum: number, shopId: string | null, orderId: str
           console.log(
             `[TikTok Warehouse] 订单 ${orderId} 自动扣费：新增 ${warehouseResult.deducted || 0}，重复 ${warehouseResult.duplicate || 0}，冲正 ${warehouseResult.reversed || 0}`,
           );
+          scope.checkpoint("warehouse_done", { failed: warehouseResult.errors || 0 });
         } catch (warehouseError: any) {
+          scope.checkpoint("warehouse_done", { failed: 1 });
           console.error(`[TikTok Warehouse] 订单 ${orderId} 自动扣费失败:`, warehouseError?.message || warehouseError);
         }
       }

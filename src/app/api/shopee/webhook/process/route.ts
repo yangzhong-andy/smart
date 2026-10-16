@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { syncShopeeOrderBySn } from "@/lib/shopee-order-sync";
 import { reconcileShopeeWarehouseFeeForOrder } from "@/lib/warehouse-fund-reconciliation";
 import {
@@ -125,10 +126,15 @@ async function recoverLostPushMessages() {
 }
 
 export async function POST(request: NextRequest) {
+  return withResourceDiagnostics("shopee.webhook.process", (scope) => processWithDiagnostics(request, scope));
+}
+
+async function processWithDiagnostics(request: NextRequest, scope: ResourceScope) {
   if (!(await canProcess(request))) {
     return NextResponse.json({ error: "没有权限处理 Shopee 推送" }, { status: 403 });
   }
   const recovery = await recoverLostPushMessages();
+  scope.checkpoint("recovery_done", { rows: recovery.recovered, pages: recovery.confirmedPages, failed: recovery.errors.length });
   const events = await prisma.shopeeWebhookLog.findMany({
     where: { status: { in: ["pending", "failed"] }, attempts: { lt: MAX_ATTEMPTS } },
     orderBy: { receivedAt: "asc" },
@@ -136,6 +142,7 @@ export async function POST(request: NextRequest) {
     select: { id: true, appConfigId: true, shopId: true, orderSn: true },
   });
   let processed = 0;
+  scope.checkpoint("events_loaded", { selected: events.length });
   let failed = 0;
   let ignored = 0;
   for (const event of events) {
@@ -193,6 +200,7 @@ export async function POST(request: NextRequest) {
     }
   }
   const success = failed === 0 && recovery.errors.length === 0;
+  scope.checkpoint("finished", { processed, failed });
   return NextResponse.json({
     success,
     recovery,

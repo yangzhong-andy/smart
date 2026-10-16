@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { generateCacheKey, getCache, setCache } from "@/lib/redis";
 import { fetchExchangeRates, getRateToCNY } from "@/lib/exchange";
 import {
@@ -369,6 +370,10 @@ function chunks<T>(items: T[], size: number): T[][] {
 }
 
 export async function GET(request: NextRequest) {
+  return withResourceDiagnostics("profit.report", (scope) => reportWithDiagnostics(request, scope));
+}
+
+async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const requestedPlatform = normalizeCommercePlatform(searchParams.get("platform") || "TIKTOK");
@@ -410,6 +415,7 @@ export async function GET(request: NextRequest) {
         countryCode: requestedCountryCode,
         includeOrders,
       });
+      scope.checkpoint("report_ready");
       return NextResponse.json(response, { headers: { "x-profit-cache": "BYPASS" } });
     }
     if (requestedPlatform !== "TIKTOK") {
@@ -430,6 +436,7 @@ export async function GET(request: NextRequest) {
     if (cacheable) {
       const cached = await getCache<ProfitReportResponse>(cacheKey);
       if (cached) {
+        scope.checkpoint("cache_hit");
         return NextResponse.json(cached, { headers: { "x-profit-cache": "HIT" } });
       }
     }
@@ -580,6 +587,7 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    scope.checkpoint("reference_data_loaded", { orders: ordersRaw.length, shops: shops.length });
     const shopById = new Map(allShops.map((shop) => [shop.shopId, shop]));
     const businessDateByOrderId = new Map<string, string>();
     const businessDateForOrder = (order: (typeof ordersRaw)[number]) => {
@@ -687,6 +695,7 @@ export async function GET(request: NextRequest) {
         select: { orderId: true, currency: true, rawData: true },
       }),
     ]);
+    scope.checkpoint("financials_loaded", { rows: orderFinancials.length });
     const linkedStatementIds = [...new Set(orderFinancials.flatMap((row) => row.statementIds))];
     const linkedStatements = linkedStatementIds.length > 0
       ? await prisma.tikTokStatement.findMany({
@@ -2166,6 +2175,7 @@ export async function GET(request: NextRequest) {
       generatedAt: new Date().toISOString(),
     };
 
+    scope.checkpoint("report_ready", { orders: ordersRaw.length });
     if (cacheable) await setCache(cacheKey, response, PROFIT_REPORT_CACHE_TTL_SECONDS);
     return NextResponse.json(response, { headers: { "x-profit-cache": cacheable ? "MISS" : "BYPASS" } });
   } catch (error: any) {
