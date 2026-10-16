@@ -659,6 +659,16 @@ export default function Sidebar() {
         )}
       </div>
 
+      <details className="relative z-50 mx-3 mt-3 rounded-lg border border-cyan-500/20 bg-slate-900/90 text-sm">
+        <summary className="cursor-pointer px-3 py-3 text-cyan-300" title="系统切换">
+          {isCollapsed ? '切换' : '系统切换 · Smart ERP'}
+        </summary>
+        <div className={`rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl ${isCollapsed ? 'absolute left-0 top-full w-56' : ''}`}>
+          <span className="block rounded px-3 py-2 text-slate-300" aria-current="true">Smart ERP（当前系统）</span>
+          <a href="/supplier-tax/" className="block rounded px-3 py-3 text-cyan-300 hover:bg-cyan-500/10 focus:bg-cyan-500/10">供应商发票与出口退税</a>
+        </div>
+      </details>
+
       {/* 导航菜单 */}
       <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-2 relative z-10 pointer-events-auto">
         <style jsx>{`

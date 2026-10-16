@@ -21,6 +21,14 @@ const nextConfig = {
   },
   compress: true,
   poweredByHeader: false,
+  async rewrites() {
+    return {
+      beforeFiles: [
+        { source: '/supplier-tax', destination: 'http://127.0.0.1:3220/supplier-tax' },
+        { source: '/supplier-tax/:path*', destination: 'http://127.0.0.1:3220/supplier-tax/:path*' },
+      ],
+    };
+  },
 };
 
 export default nextConfig;

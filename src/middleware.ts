@@ -100,6 +100,11 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
+  // This independently authenticated app owns only its mounted URL namespace.
+  if (pathname === "/supplier-tax" || pathname.startsWith("/supplier-tax/")) {
+    return NextResponse.next();
+  }
+
   if (pathname === "/login") return NextResponse.next();
 
   const isPublicApi =
