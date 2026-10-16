@@ -6,6 +6,8 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { NextRequest, NextResponse } from "next/server";
 import * as profile from "./employee-profile";
+import * as confirmation from "./employee-confirmation";
+import * as salary from "./employee-salary";
 
 // All persistence/auth/cache adapters are isolated. No database or external cache is contacted.
 function loadRoute(file: string, prisma: unknown, extra: Record<string, unknown> = {}) {
@@ -17,12 +19,14 @@ function loadRoute(file: string, prisma: unknown, extra: Record<string, unknown>
     "next/server": { NextRequest, NextResponse },
     "@/lib/prisma": { prisma }, "@prisma/client": {},
     "@/lib/employee-profile": profile,
+    "@/lib/employee-confirmation": confirmation,
+    "@/lib/employee-salary": salary,
     "@/lib/redis": { clearCacheByPrefix: async (prefix: string) => { cleared.push(prefix); } },
     "@/lib/api-auth": { requireApiUser: async () => ({ user: { id: "admin" }, response: null }) },
     "next-auth": { getServerSession: async () => ({ user: { role: "ADMIN" } }) },
     "@/lib/auth-options": { authOptions: {} }, ...extra,
   };
-  runInNewContext(code, { exports, Date, URL, Set, console, require: (id: string) => {
+  runInNewContext(code, { exports, Date, Error, URL, Set, console, require: (id: string) => {
     if (!(id in dependencies)) throw new Error(`Unexpected dependency: ${id}`);
     return dependencies[id];
   } });
@@ -43,7 +47,9 @@ test("onboarding creates personnel only, stores unconfigured salary as null, and
   const response = await route.POST(request("employees", { name: "新员工", department: "采购部", position: "采购", joinDate: "2026-10-14", status: "试用期" }));
   assert.equal(response.status, 200);
   assert.equal(created.status, "PROBATION");
-  for (const field of profile.SALARY_MONEY_FIELDS) assert.equal(created[field], null);
+  for (const field of [...profile.SALARY_MONEY_FIELDS, ...profile.PROBATION_SALARY_FIELDS]) assert.equal(created[field], null);
+  assert.equal(created.probationStartDate.toISOString().slice(0, 10), "2026-10-14");
+  assert.equal(created.confirmationDate, undefined);
   assert.deepEqual(route.cleared, ["employees"]);
 });
 
@@ -58,7 +64,7 @@ test("onboarding requires allowed role and rejects invalid salary before persist
 
 test("personnel editing and salary editing update disjoint fields and invalidate employee cache", async () => {
   const writes: any[] = [];
-  const route = loadRoute("employees/[id]/route.ts", { employee: { update: async ({ data }: any) => {
+  const route = loadRoute("employees/[id]/route.ts", { employee: { findUnique: async () => employee, update: async ({ data }: any) => {
     writes.push(plain(data)); return { ...employee, ...data };
   } } });
   const personnel = profile.personnelSettings({ ...employee, name: "更新姓名", joinDate: "2026-10-01", status: "在职" });
@@ -73,6 +79,76 @@ test("personnel editing and salary editing update disjoint fields and invalidate
   assert.equal("name" in writes[1], false);
   assert.equal("status" in writes[1], false);
   assert.deepEqual(route.cleared, ["employees", "employees"]);
+});
+
+test("employee writes explicitly allow SUPER_ADMIN and ordinary users remain denied", async () => {
+  for (const file of ["employees/route.ts", "employees/[id]/route.ts"]) {
+    for (const role of ["SUPER_ADMIN", "ADMIN", "MANAGER", "USER"]) {
+      const route = loadRoute(file, { employee: {
+        create: async ({ data }: any) => ({ ...employee, ...data }),
+        update: async ({ data }: any) => ({ ...employee, ...data }),
+        delete: async () => employee,
+      } }, { "@/lib/api-auth": { requireApiUser: async (_: unknown, options: { roles: string[] }) =>
+        options.roles.includes(role) ? { response: null, user: { role } } : { response: NextResponse.json({}, { status: 403 }) } } });
+      const isPost = file === "employees/route.ts";
+      const res = isPost ? await route.POST(request("employees", { name: "员工", joinDate: "2026-10-01" }))
+        : await route.PUT(request("employees/emp", { baseSalary: 0 }, "PUT"), { params: { id: "emp" } });
+      assert.equal(res.status, role === "USER" ? 403 : 200, `${file}: ${role}`);
+      if (!isPost) assert.equal((await route.DELETE(request("employees/emp", {}, "DELETE"), { params: { id: "emp" } })).status, role === "USER" ? 403 : 200);
+    }
+  }
+});
+
+test("confirmation edits validate existing personnel, persist actual date and never write payroll", async () => {
+  let written: any;
+  const trial = { ...employee, status: "PROBATION", probationStartDate: stamp };
+  const route = loadRoute("employees/[id]/route.ts", { employee: {
+    findUnique: async () => trial,
+    update: async ({ data }: any) => { written = data; return { ...trial, ...data }; },
+  } });
+  const res = await route.PUT(request("employees/emp", { confirmationDate: "2026-10-11" }, "PUT"), { params: { id: "emp" } });
+  assert.equal(res.status, 200);
+  assert.equal(written.status, "ACTIVE");
+  assert.equal(written.confirmationDate.toISOString(), "2026-10-11T00:00:00.000Z");
+  assert.equal("baseSalary" in written, false);
+  const invalid = await route.PUT(request("employees/emp", { status: "ACTIVE" }, "PUT"), { params: { id: "emp" } });
+  assert.equal(invalid.status, 400);
+});
+
+test("generated wages apply half-month salary snapshots without halving social insurance", async () => {
+  for (const [day, expectedBase, expectedBonus] of [[5, 4000, 200], [10, 4000, 200], [11, 3500, 150], [15, 3500, 150], [20, 3500, 150], [21, 3000, 100], [25, 3000, 100], [31, 3000, 100]]) {
+    let written: any;
+    const route = loadRoute("payroll/generate/route.ts", {
+      employee: { findMany: async () => [{ ...employee, baseSalary: 4000, fullAttendanceBonus: 200,
+        probationStartDate: stamp, confirmationDate: new Date(`2026-10-${String(day).padStart(2, "0")}T00:00:00Z`),
+        probationBaseSalary: 3000, probationPositionSalary: 0, probationFullAttendanceBonus: 100,
+        pensionInsurance: 300, unemploymentInsurance: 20, medicalInsurance: 80 }] },
+      payroll: { findMany: async () => [], create: async ({ data }: any) => { written = plain(data); return data; } },
+      commissionRecord: { findMany: async () => [{ employeeId: "emp", amount: 200 }] },
+    });
+    assert.equal((await route.POST(request("payroll/generate", { month: "2026-10" }))).status, 200);
+    assert.equal(written.baseSalary, expectedBase);
+    assert.equal(written.fullAttendance, expectedBonus);
+    assert.equal(written.pension, 300);
+    assert.equal(written.netSalary, expectedBase + expectedBonus + 200 - 400);
+    assert.equal(written.salarySnapshot.version, "confirmation-half-month-v1");
+    assert.equal(written.salarySnapshot.probation.baseSalary, 3000);
+    assert.equal(written.salarySnapshot.regular.baseSalary, 4000);
+  }
+});
+
+test("missing probation settings and partial-employment half-month cases require review, not invented wages", async () => {
+  const route = loadRoute("payroll/generate/route.ts", {
+    employee: { findMany: async () => [
+      { ...employee, id: "missing-trial", status: "PROBATION" },
+      { ...employee, id: "partial", joinDate: new Date("2026-10-02"), probationStartDate: new Date("2026-10-02"),
+        confirmationDate: new Date("2026-10-15"), probationBaseSalary: 2000, probationPositionSalary: 0, probationFullAttendanceBonus: 0 },
+    ] }, payroll: { findMany: async () => [] }, commissionRecord: { findMany: async () => [] },
+  });
+  const result = await (await route.POST(request("payroll/generate", { month: "2026-10" }))).json();
+  assert.equal(result.created, 0);
+  assert.match(result.missingSalary[0].reason, /试用期薪资/);
+  assert.match(result.missingSalary[1].reason, /人工核实半月工资/);
 });
 
 test("payroll generation skips unconfigured staff, preserves existing wages and honors zero settings", async () => {

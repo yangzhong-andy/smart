@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
-import { hasSalarySettings } from "@/lib/employee-profile";
+import { salaryForMonth } from "@/lib/employee-salary";
 
 export const dynamic = "force-dynamic";
 
@@ -111,14 +111,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (!hasSalarySettings(emp) || emp.restDays >= monthDays) {
+      let salary;
+      try {
+        salary = salaryForMonth(month, emp);
+        if (emp.restDays >= monthDays) throw new Error("休息天数不能大于或等于当月天数");
+      } catch (error) {
         missingSalary.push({ employeeId: emp.id, employeeName: emp.name,
-          reason: !hasSalarySettings(emp) ? "薪资档案未完整设置" : "休息天数不能大于或等于当月天数" });
+          reason: error instanceof Error ? error.message : "薪资档案未完整设置" });
         continue;
       }
       // Zero is an explicit setting, not a request to substitute an old default salary.
-      const baseSalary = Number(emp.baseSalary);
-      const positionSalary = Number(emp.positionSalary);
+      const baseSalary = salary.baseSalary;
+      const positionSalary = salary.positionSalary;
       const actualSalary = baseSalary + positionSalary;
       const restDays = emp.restDays;
       const payableDays = monthDays - restDays;
@@ -128,6 +132,11 @@ export async function POST(request: NextRequest) {
 
       // 判断是否整月在职
       const isFullMonth = workStart.getTime() === monthStart.getTime() && workEnd.getTime() === monthEnd.getTime();
+      if (salary.rule === "HALF" && !isFullMonth) {
+        missingSalary.push({ employeeId: emp.id, employeeName: emp.name,
+          reason: "转正当月同时有入离职，需人工核实半月工资与在职区间的折算口径，本次暂不自动生成" });
+        continue;
+      }
 
       let actualAttendDays: number;
       let fullAttendanceAmt: number;
@@ -135,7 +144,7 @@ export async function POST(request: NextRequest) {
       if (isFullMonth) {
         // 整月在职：全勤
         actualAttendDays = payableDays;
-        fullAttendanceAmt = Number(emp.fullAttendanceBonus);
+        fullAttendanceAmt = salary.fullAttendanceBonus;
       } else {
         // 非整月（入职/离职）：按比例折算
         actualAttendDays = Math.max(1, Math.round(payableDays * inMonthDays / monthDays));
@@ -169,6 +178,10 @@ export async function POST(request: NextRequest) {
           actualSalary,
           fullAttendance: fullAttendanceAmt,
           totalSalary,
+          salarySnapshot: { ...salary.snapshot, employment: {
+            workStart: workStart.toISOString().slice(0, 10), workEnd: workEnd.toISOString().slice(0, 10),
+            isFullMonth, actualAttendDays, payableDays,
+          } },
           monthDays,
           workHourStandard: 8,
           restDays,

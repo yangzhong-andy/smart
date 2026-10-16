@@ -26,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const fmt = (n: number) => new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+const fmtSetting = (n: number | null | undefined) => n == null ? "未设置" : fmt(n);
 
 const arrayFetcher = async (url: string) => {
   const r = await fetch(url);
@@ -101,7 +102,7 @@ export default function PayrollPage() {
         const missing = Array.isArray(data.missingSalary) ? data.missingSalary : [];
         setSalaryWarnings({ month: selectedMonth, employees: missing });
         toast.success(`已生成 ${data.created} 条工资草稿${data.skipped > 0 ? `（跳过 ${data.skipped} 人：已生成或不在计薪期间）` : ""}`);
-        if (missing.length > 0) toast.warning(`${missing.length} 人薪资设置待完善，本次未生成工资`);
+        if (missing.length > 0) toast.warning(`${missing.length} 人需完善设置或核实计薪，本次未生成工资`);
         swrMutate(`/api/payroll?month=${selectedMonth}`);
       } else {
         toast.error(data.error || "生成失败");
@@ -278,7 +279,7 @@ export default function PayrollPage() {
       </div>
       {salaryWarnings?.month === selectedMonth && salaryWarnings.employees.length > 0 && (
         <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-          <p>以下 {salaryWarnings.employees.length} 人本次未生成工资，请先完善薪资设置，再重新生成；已存在的工资单不会覆盖。</p>
+          <p>以下 {salaryWarnings.employees.length} 人本次未生成工资，请按提示完善设置或核实计薪规则；已存在的工资单不会覆盖。</p>
           <ul className="mt-2 list-disc pl-5">
             {salaryWarnings.employees.map((employee) => <li key={employee.employeeId}>{employee.employeeName}：{employee.reason}</li>)}
           </ul>
@@ -371,7 +372,18 @@ export default function PayrollPage() {
                     <td className="px-3 py-2 text-center">
                       <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} className="rounded" />
                     </td>
-                    <td className="px-3 py-2 text-slate-100 font-medium">{r.employeeName}</td>
+                    <td className="px-3 py-2 text-slate-100 font-medium">{r.employeeName}
+                      {r.salarySnapshot?.version === "confirmation-half-month-v1" && <details className="mt-1 max-w-xs text-xs font-normal text-slate-400">
+                        <summary className="cursor-pointer text-blue-300">{r.salarySnapshot.label}</summary>
+                        <div className="mt-2 space-y-1 whitespace-normal">
+                          <p>实际转正：{r.salarySnapshot.confirmationDate || "尚未确认"}</p>
+                          <p>试用期占比 {r.salarySnapshot.probationWeight * 100}%，转正占比 {r.salarySnapshot.regularWeight * 100}%</p>
+                          <p>试用期：底薪 {fmtSetting(r.salarySnapshot.probation.baseSalary)}／岗位 {fmtSetting(r.salarySnapshot.probation.positionSalary)}／满勤 {fmtSetting(r.salarySnapshot.probation.fullAttendanceBonus)}</p>
+                          <p>转正：底薪 {fmtSetting(r.salarySnapshot.regular.baseSalary)}／岗位 {fmtSetting(r.salarySnapshot.regular.positionSalary)}／满勤 {fmtSetting(r.salarySnapshot.regular.fullAttendanceBonus)}</p>
+                          <p>生成时标准快照；社保按月扣款，不分段。考勤及奖扣仍需核实。</p>
+                        </div>
+                      </details>}
+                    </td>
                     <td className="px-3 py-2 text-slate-400 text-xs">{r.department}</td>
                     <td className="px-3 py-2 text-right text-slate-300">{fmt(r.totalSalary)}</td>
                     <td className="px-3 py-2 text-center">

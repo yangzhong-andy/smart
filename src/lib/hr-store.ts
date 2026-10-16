@@ -23,6 +23,9 @@ export type Employee = {
   
   // 离职日期
   leaveDate?: string;
+  probationStartDate?: string;
+  expectedConfirmationDate?: string;
+  confirmationDate?: string;
 
   // 状态
   status: "在职" | "离职" | "试用期";
@@ -34,6 +37,9 @@ export type Employee = {
   baseSalary?: number;
   positionSalary?: number;
   fullAttendanceBonus?: number;
+  probationBaseSalary?: number;
+  probationPositionSalary?: number;
+  probationFullAttendanceBonus?: number;
   pensionInsurance?: number;
   unemploymentInsurance?: number;
   medicalInsurance?: number;

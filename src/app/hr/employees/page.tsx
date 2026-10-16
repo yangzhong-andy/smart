@@ -16,7 +16,7 @@ import { EmployeesFilters } from "./components/EmployeesFilters";
 import { EmployeesTable } from "./components/EmployeesTable";
 import { EmployeeFormDialog } from "./components/EmployeeFormDialog";
 import { HrWorkflowNav } from "../components/HrWorkflowNav";
-import { employeeStatusLabel, hasSalarySettings, parseSalarySettings, personnelSettings } from "@/lib/employee-profile";
+import { employeeStatusLabel, hasSalarySettings, hasProbationSalarySettings, parseSalarySettings, personnelSettings } from "@/lib/employee-profile";
 import type {
   DepartmentFromAPI,
   EmployeeFormState,
@@ -41,9 +41,12 @@ const initialForm: EmployeeFormState = {
   position: "",
   joinDate: "",
   leaveDate: "",
+  probationStartDate: "",
+  expectedConfirmationDate: "",
+  confirmationDate: "",
   phone: "",
   email: "",
-  status: "在职",
+  status: "试用期",
   notes: "",
   bankAccount: "",
   bankName: "",
@@ -51,6 +54,9 @@ const initialForm: EmployeeFormState = {
   baseSalary: "",
   positionSalary: "",
   fullAttendanceBonus: "",
+  probationBaseSalary: "",
+  probationPositionSalary: "",
+  probationFullAttendanceBonus: "",
   pensionInsurance: "",
   unemploymentInsurance: "",
   medicalInsurance: "",
@@ -187,6 +193,9 @@ export default function EmployeesPage() {
         position: employee.position,
         joinDate: employee.joinDate.slice(0, 10),
         leaveDate: employee.leaveDate || "",
+        probationStartDate: employee.probationStartDate || "",
+        expectedConfirmationDate: employee.expectedConfirmationDate || "",
+        confirmationDate: employee.confirmationDate || "",
         phone: employee.phone || "",
         email: employee.email || "",
         status: employee.status,
@@ -197,6 +206,9 @@ export default function EmployeesPage() {
         baseSalary: employee.baseSalary == null ? "" : String(employee.baseSalary),
         positionSalary: employee.positionSalary == null ? "" : String(employee.positionSalary),
         fullAttendanceBonus: employee.fullAttendanceBonus == null ? "" : String(employee.fullAttendanceBonus),
+        probationBaseSalary: employee.probationBaseSalary == null ? "" : String(employee.probationBaseSalary),
+        probationPositionSalary: employee.probationPositionSalary == null ? "" : String(employee.probationPositionSalary),
+        probationFullAttendanceBonus: employee.probationFullAttendanceBonus == null ? "" : String(employee.probationFullAttendanceBonus),
         pensionInsurance: employee.pensionInsurance == null ? "" : String(employee.pensionInsurance),
         unemploymentInsurance: employee.unemploymentInsurance == null ? "" : String(employee.unemploymentInsurance),
         medicalInsurance: employee.medicalInsurance == null ? "" : String(employee.medicalInsurance),
@@ -243,6 +255,8 @@ export default function EmployeesPage() {
     try {
       const payload = formSection === "salary" ? parseSalarySettings({ ...form }) : personnelSettings({ ...form });
       if (formSection === "salary" && !hasSalarySettings(payload)) throw new Error("请完整填写薪资项目，未发生项目请填 0");
+      if (formSection === "salary" && (editingEmployee?.probationStartDate || editingEmployee?.status === "试用期")
+        && !hasProbationSalarySettings(payload)) throw new Error("请完整填写试用期薪资项目，未发生项目请填 0");
       if (formSection === "personnel" && !form.joinDate) throw new Error("请填写入职日期");
       if (formSection === "personnel" && form.leaveDate && form.leaveDate < form.joinDate) throw new Error("离职日期不能早于入职日期");
       const res = await fetch(editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees", {
@@ -250,7 +264,10 @@ export default function EmployeesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await res.json();
+      const responseText = await res.text();
+      let result;
+      try { result = responseText ? JSON.parse(responseText) : null; } catch { result = null; }
+      if (!result) throw new Error(`服务器返回异常（HTTP ${res.status}），请刷新列表确认是否保存，避免重复提交`);
       if (!res.ok) throw new Error(result.error || "保存失败，请重试");
       await mutateEmployees();
       toast.success(formSection === "salary" ? "薪资设置已保存，不影响已生成的工资单" : editingEmployee ? "人员资料已更新，薪资未改动" : "入职档案已建立，请单独维护薪资设置");
@@ -316,7 +333,7 @@ export default function EmployeesPage() {
       />
 
       <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-slate-300">
-        先办理入职，再通过员工卡片的「薪资设置」维护工资标准和收款资料。每月到「每月发工资」核算、审批和登记发放；薪资设置不会回改已生成的工资单。
+        先办理入职，再分别设置试用期和转正工资。预计转正日期不会自动转正，填写实际转正日期后确认。每月到「每月发工资」核算审批；薪资设置不会回改已生成的工资单。
       </div>
 
       <EmployeeStats stats={stats} departments={departments} />

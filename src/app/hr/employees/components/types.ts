@@ -20,6 +20,9 @@ export interface EmployeeFormState {
   position: string;
   joinDate: string;
   leaveDate: string;
+  probationStartDate: string;
+  expectedConfirmationDate: string;
+  confirmationDate: string;
   phone: string;
   email: string;
   status: "在职" | "离职" | "试用期";
@@ -31,6 +34,9 @@ export interface EmployeeFormState {
   baseSalary: string;
   positionSalary: string;
   fullAttendanceBonus: string;
+  probationBaseSalary: string;
+  probationPositionSalary: string;
+  probationFullAttendanceBonus: string;
   pensionInsurance: string;
   unemploymentInsurance: string;
   medicalInsurance: string;

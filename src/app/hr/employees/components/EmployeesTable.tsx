@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { Users, Pencil, Trash2, Wallet } from "lucide-react";
-import { hasSalarySettings } from "@/lib/employee-profile";
+import { hasSalarySettings, hasProbationSalarySettings } from "@/lib/employee-profile";
 import { ActionButton } from "@/components/ui";
 import { EmptyState } from "@/components/ui";
 import type { Employee } from "./types";
@@ -72,6 +72,10 @@ function EmployeesTableComponent({
               <span className="text-slate-400">入职日期：</span>
               <span className="text-slate-300">{employee.joinDate.slice(0, 10)}</span>
             </div>
+            {(employee.expectedConfirmationDate || employee.confirmationDate) && <div className="flex items-center justify-between">
+              <span className="text-slate-400">{employee.confirmationDate ? "实际转正：" : "预计转正："}</span>
+              <span className="text-slate-300">{employee.confirmationDate || employee.expectedConfirmationDate}</span>
+            </div>}
             {employee.phone && (
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">手机：</span>
@@ -81,9 +85,15 @@ function EmployeesTableComponent({
             <div className="flex items-center justify-between">
               <span className="text-slate-400">薪资档案：</span>
               <span className={hasSalarySettings(employee) ? "text-emerald-300" : "text-amber-300"}>
-                {hasSalarySettings(employee) ? "已设置" : "待设置（暂不生成工资）"}
+                {hasSalarySettings(employee) ? "转正标准已设置" : "转正标准待设置"}
               </span>
             </div>
+            {(employee.probationStartDate || employee.status === "试用期") && <div className="flex items-center justify-between">
+              <span className="text-slate-400">试用期薪资：</span>
+              <span className={hasProbationSalarySettings(employee) ? "text-emerald-300" : "text-amber-300"}>
+                {hasProbationSalarySettings(employee) ? "已设置" : "待设置（试用期工资暂停生成）"}
+              </span>
+            </div>}
           </div>
 
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-800">

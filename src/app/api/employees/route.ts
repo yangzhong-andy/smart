@@ -4,6 +4,7 @@ import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 import { initialSalarySettings } from '@/lib/employee-profile'
 import { requireApiUser } from '@/lib/api-auth'
+import { parseEmploymentSettings } from '@/lib/employee-confirmation'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     // 生成缓存键
     const cacheKey = generateCacheKey(
       CACHE_KEY_PREFIX,
-      'personnel-salary-v1',
+      'personnel-confirmation-v2',
       status || 'all',
       department || 'all',
       String(page),
@@ -54,6 +55,8 @@ export async function GET(request: NextRequest) {
           baseSalary: true, positionSalary: true, fullAttendanceBonus: true,
           pensionInsurance: true, unemploymentInsurance: true, medicalInsurance: true,
           restDays: true,
+          probationStartDate: true, expectedConfirmationDate: true, confirmationDate: true,
+          probationBaseSalary: true, probationPositionSalary: true, probationFullAttendanceBonus: true,
         },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
@@ -88,6 +91,12 @@ export async function GET(request: NextRequest) {
         unemploymentInsurance: e.unemploymentInsurance != null ? Number(e.unemploymentInsurance) : undefined,
         medicalInsurance: e.medicalInsurance != null ? Number(e.medicalInsurance) : undefined,
         restDays: e.restDays,
+        probationStartDate: e.probationStartDate?.toISOString().slice(0, 10),
+        expectedConfirmationDate: e.expectedConfirmationDate?.toISOString().slice(0, 10),
+        confirmationDate: e.confirmationDate?.toISOString().slice(0, 10),
+        probationBaseSalary: e.probationBaseSalary ?? undefined,
+        probationPositionSalary: e.probationPositionSalary ?? undefined,
+        probationFullAttendanceBonus: e.probationFullAttendanceBonus ?? undefined,
         createdAt: e.createdAt.toISOString(),
         updatedAt: e.updatedAt.toISOString()
       })),
@@ -111,12 +120,14 @@ export async function GET(request: NextRequest) {
 // POST - 创建新员工（清除缓存）
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireApiUser(request, { roles: ['ADMIN', 'MANAGER'] })
+    const auth = await requireApiUser(request, { roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] })
     if (auth.response) return auth.response
     const body = await request.json()
     let salary
+    let employment
     try {
       salary = initialSalarySettings(body)
+      employment = parseEmploymentSettings(body)
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : '薪资格式不正确' }, { status: 400 })
     }
@@ -143,6 +154,7 @@ export async function POST(request: NextRequest) {
         notes: body.notes || null,
         leaveDate: body.leaveDate ? new Date(body.leaveDate) : null,
         ...salary,
+        ...employment,
       }
     })
 

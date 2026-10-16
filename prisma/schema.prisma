@@ -281,6 +281,9 @@ model Employee {
   phone                  String?
   email                  String?
   status                 EmploymentStatus   @default(ACTIVE)
+  probationStartDate     DateTime?          @db.Date
+  expectedConfirmationDate DateTime?        @db.Date
+  confirmationDate       DateTime?          @db.Date
   responsibleInfluencers String[]
   responsibleSuppliers   String[]
   responsibleStores      String[]
@@ -292,6 +295,9 @@ model Employee {
   baseSalary             Float?             @default(2200)
   positionSalary         Float?             @default(0)
   fullAttendanceBonus    Float?             @default(200)
+  probationBaseSalary    Float?
+  probationPositionSalary Float?
+  probationFullAttendanceBonus Float?
   pensionInsurance       Float?             @default(323.44)
   unemploymentInsurance  Float?             @default(20.22)
   medicalInsurance       Float?             @default(88.66)
@@ -3727,6 +3733,7 @@ model Payroll {
   actualSalary   Float @default(0)
   fullAttendance Float @default(0)
   totalSalary    Float @default(0)
+  salarySnapshot Json? // 生成时的试用/转正标准及适用规则，不随员工档案变动
 
   // 考勤
   monthDays        Int     @default(31)

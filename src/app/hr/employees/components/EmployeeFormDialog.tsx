@@ -84,6 +84,15 @@ export function EmployeeFormDialog({
                 <option value="离职">离职</option>
               </select>
             </label>
+            {(["probationStartDate", "expectedConfirmationDate", "confirmationDate"] as const).map((field) => (
+              <label key={field} className="space-y-1">
+                <span className="text-sm text-slate-300">{{ probationStartDate: "试用期开始日期（默认入职日）", expectedConfirmationDate: "预计转正日期", confirmationDate: "实际转正日期（填写即确认转正）" }[field]}</span>
+                <input type="date" value={form[field]} onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value,
+                  ...(field === "confirmationDate" && e.target.value && f.status !== "离职" ? { status: "在职" as const } : {}) }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100" style={{ colorScheme: "dark" }} />
+              </label>
+            ))}
+            <p className="col-span-2 text-xs text-amber-300">预计日期不自动转正；实际转正日期确认后按工资规则生效。21号及以后（含31号）转正，当月仍按试用期工资，次月改为转正工资。</p>
             <label className="space-y-1">
               <span className="text-sm text-slate-300">手机号</span>
               <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none focus:border-primary-400" />
@@ -97,19 +106,24 @@ export function EmployeeFormDialog({
           {/* 薪资档案 */}
           {section === "salary" && <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-4 space-y-3">
             <div className="text-sm font-medium text-slate-300">薪资档案 · 人民币 <span className="text-xs text-slate-500">（新生成的工资草稿带入此标准）</span></div>
+            {(["试用期", "转正"] as const).map((stage) => (
+              <div key={stage} className="space-y-2 rounded border border-slate-700 p-3">
+                <h3 className="text-sm text-slate-200">{stage}工资标准</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  {(stage === "试用期" ? ["probationBaseSalary", "probationPositionSalary", "probationFullAttendanceBonus"] as const
+                    : ["baseSalary", "positionSalary", "fullAttendanceBonus"] as const).map((field, index) => (
+                    <label key={field} className="space-y-1">
+                      <span className="text-xs text-slate-400">{["基础薪资", "岗位薪资", "满勤奖"][index]}</span>
+                      <input type="number" min="0" step="0.01" value={form[field]} onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className="text-xs text-amber-300">1—10号转正：整月转正标准；11—20号：试用期和转正标准各50%；21号以后：当月试用期、次月转正。满勤奖仍需核实考勤，个人社保按月单独设置，不拆半。</p>
+            <div className="text-sm text-slate-300">每月个人社保（不随转正分段）</div>
             <div className="grid grid-cols-3 gap-3">
-              <label className="space-y-1">
-                <span className="text-xs text-slate-400">基础薪资</span>
-                <input type="number" step="0.01" value={form.baseSalary} onChange={(e) => setForm((f) => ({ ...f, baseSalary: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400" />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-400">岗位薪资</span>
-                <input type="number" step="0.01" value={form.positionSalary} onChange={(e) => setForm((f) => ({ ...f, positionSalary: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400" />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-400">满勤奖</span>
-                <input type="number" step="0.01" value={form.fullAttendanceBonus} onChange={(e) => setForm((f) => ({ ...f, fullAttendanceBonus: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400" />
-              </label>
               <label className="space-y-1">
                 <span className="text-xs text-slate-400">养老(个人)</span>
                 <input type="number" step="0.01" value={form.pensionInsurance} onChange={(e) => setForm((f) => ({ ...f, pensionInsurance: e.target.value }))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary-400" />

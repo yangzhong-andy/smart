@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 import { DepartmentEnum, EmploymentStatus } from '@prisma/client'
 import { clearCacheByPrefix } from '@/lib/redis'
 import { parseSalarySettings } from '@/lib/employee-profile'
+import { requireApiUser } from '@/lib/api-auth'
+import { EMPLOYMENT_DATE_FIELDS, parseEmploymentSettings } from '@/lib/employee-confirmation'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,6 +35,9 @@ export async function GET(
       phone: employee.phone || undefined,
       email: employee.email || undefined,
       status: employee.status,
+      probationStartDate: employee.probationStartDate?.toISOString().slice(0, 10),
+      expectedConfirmationDate: employee.expectedConfirmationDate?.toISOString().slice(0, 10),
+      confirmationDate: employee.confirmationDate?.toISOString().slice(0, 10),
       responsibleInfluencers: employee.responsibleInfluencers || [],
       responsibleSuppliers: employee.responsibleSuppliers || [],
       responsibleStores: employee.responsibleStores || [],
@@ -56,20 +59,19 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    // 🔐 权限检查
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 })
-    }
-    const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
-      return NextResponse.json({ error: '没有权限' }, { status: 403 })
-    }
+    const auth = await requireApiUser(request, { roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] })
+    if (auth.response) return auth.response
 
     const body = await request.json()
     let salary
+    let employment = {}
     try {
       salary = parseSalarySettings(body)
+      if ([...EMPLOYMENT_DATE_FIELDS, 'joinDate', 'leaveDate', 'status'].some(key => body[key] !== undefined)) {
+        const current = await prisma.employee.findUnique({ where: { id: params.id } })
+        if (!current) return NextResponse.json({ error: '员工不存在' }, { status: 404 })
+        employment = parseEmploymentSettings(body, current)
+      }
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : '薪资格式不正确' }, { status: 400 })
     }
@@ -93,6 +95,7 @@ export async function PUT(
     if (body.notes !== undefined) updateData.notes = body.notes || null
     if (body.leaveDate !== undefined) updateData.leaveDate = body.leaveDate ? new Date(body.leaveDate) : null
     Object.assign(updateData, salary)
+    Object.assign(updateData, employment)
 
     const employee = await prisma.employee.update({
       where: { id: params.id },
@@ -131,15 +134,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    // 🔐 权限检查
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 })
-    }
-    const userRole = session.user?.role
-    if (userRole !== 'ADMIN' && userRole !== 'MANAGER') {
-      return NextResponse.json({ error: '没有权限' }, { status: 403 })
-    }
+    const auth = await requireApiUser(request, { roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] })
+    if (auth.response) return auth.response
 
     await prisma.employee.delete({
       where: { id: params.id }
