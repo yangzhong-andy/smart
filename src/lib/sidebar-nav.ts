@@ -127,6 +127,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
       { label: "流水明细", href: "/finance/cash-flow" },
       { label: "出口退税管理", href: "/finance/export-tax" },
       { label: "多平台利润汇总", href: "/finance/platform-profit-summary" },
+      { label: "经营与财务分析", href: "/finance/reports" },
       { label: "精细利润核算", href: "/finance/profit" },
       { label: "账户列表", href: "/finance/accounts" },
       { label: "内部划拨", href: "/finance/transfer" },

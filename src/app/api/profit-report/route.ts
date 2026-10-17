@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { financeReportContext } from "@/lib/finance-report-context";
 import { prisma } from "@/lib/prisma";
 import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
 import { generateCacheKey, getCache, setCache } from "@/lib/redis";
@@ -432,7 +433,7 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
       selectedShopId || "all",
       requestedCountryCode || "all",
     );
-    const cacheable = !includeOrders && !includeSamples && !noCache;
+    const cacheable = !financeReportContext() && !includeOrders && !includeSamples && !noCache;
     if (cacheable) {
       const cached = await getCache<ProfitReportResponse>(cacheKey);
       if (cached) {
@@ -716,7 +717,8 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
         })
       : [];
 
-    const externalRates = await fetchExchangeRates().catch(() => null);
+    const reportContext = financeReportContext();
+    const externalRates = reportContext ? null : await fetchExchangeRates().catch(() => null);
     const rateTotals = new Map<string, { total: number; count: number }>();
     for (const account of accounts) {
       const currency = (account.currency || "CNY").toUpperCase();
@@ -729,12 +731,18 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
     }
     const rates: Record<string, number> = { CNY: 1, RMB: 1 };
     for (const currency of ["USD", "JPY", "BRL"] as const) {
-      const liveRate = externalRates ? getRateToCNY(currency, externalRates.rates) : 0;
+      const liveRate = reportContext ? reportContext.rates[currency] || 0 : externalRates ? getRateToCNY(currency, externalRates.rates) : 0;
       const accountRate = rateTotals.get(currency);
       rates[currency] = round(liveRate || (accountRate ? accountRate.total / accountRate.count : 0), currency === "JPY" ? 6 : 4);
     }
     for (const [currency, value] of rateTotals) {
       if (!rates[currency]) rates[currency] = round(value.total / value.count, 4);
+    }
+    if (reportContext) {
+      // Do not let legacy per-account averages override a conflicting/missing
+      // valuation rate rejected by the management reporting layer.
+      for (const key of Object.keys(rates)) delete rates[key];
+      Object.assign(rates, reportContext.rates);
     }
     const missingCurrencies = new Set<string>();
     const toCny = (value: unknown, currency: string | null | undefined) => {

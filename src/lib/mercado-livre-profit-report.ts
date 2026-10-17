@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { financeReportContext } from "@/lib/finance-report-context";
 import { fetchExchangeRates, getRateToCNY } from "@/lib/exchange";
 import { calculateFirstMileUnitCosts } from "@/lib/first-mile-logistics";
 import { orderBusinessDate, orderTimeZone, relativeBusinessDate } from "@/lib/order-business-time";
@@ -284,6 +285,9 @@ async function loadMercadoLivrePaymentFees(
 ) {
   const feesByOrder = new Map<string, MercadoLivrePaymentFeeBreakdown>();
   const warnings: string[] = [];
+  if (financeReportContext()) {
+    return { feesByOrder, warnings: ["仅使用系统订单/结算数据：未调用 Mercado Pago 实时支付费用接口，未落库的支付费用待核对。"] };
+  }
   const ordersByAccount = new Map<string, Array<{ order: typeof orders[number]; paymentIds: string[] }>>();
   for (const order of orders) {
     const paymentIds = paymentIdsFromRawData(order.rawData);
@@ -453,14 +457,16 @@ export async function buildMercadoLivreProfitReport(input: MercadoLivreReportInp
     }),
   ]);
 
-  const externalRates = await fetchExchangeRates().catch(() => null);
+  const reportContext = financeReportContext();
+  const externalRates = reportContext ? null : await fetchExchangeRates().catch(() => null);
   const rates: Record<string, number> = { CNY: 1, RMB: 1 };
   // Logistics bills may be recorded in USD while Mercado Livre sales are in
   // BRL. Keep every supported finance currency available for the same
   // first-mile allocation path used by the Shopee/TikTok reports.
   for (const currency of ["USD", "JPY", "BRL"] as const) {
-    rates[currency] = round(externalRates ? getRateToCNY(currency, externalRates.rates) : 0, 4);
+    rates[currency] = round(reportContext ? reportContext.rates[currency] || 0 : externalRates ? getRateToCNY(currency, externalRates.rates) : 0, 4);
   }
+  if (reportContext) Object.assign(rates, reportContext.rates);
   const missingCurrencies = new Set<string>();
   const toCny = (value: unknown, currency: string | null | undefined) => {
     const code = String(currency || "BRL").toUpperCase();

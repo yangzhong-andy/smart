@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { financeReportContext } from "@/lib/finance-report-context";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { withResourceDiagnostics, type ResourceScope } from "@/lib/resource-diagnostics";
@@ -8,7 +9,7 @@ import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fe
 import { addBusinessDays, businessDateUtcRange, orderBusinessDate, relativeBusinessDate } from "@/lib/order-business-time";
 import { normalizeCountryCode } from "@/lib/profit-schemes";
 import { calculateFirstMileUnitCosts } from "@/lib/first-mile-logistics";
-import { allocateShopeeAdExpenseByOrderCount, getShopeeDailyAdPerformance } from "@/lib/shopee-ads";
+import { allocateShopeeAdExpenseByOrderCount, getShopeeDailyAdPerformance, type ShopeeDailyAdPerformance } from "@/lib/shopee-ads";
 import { calculateShopeeMerchandiseSubtotal } from "@/lib/shopee-gmv";
 import {
   calculateShopeeFinalAffiliateCommission,
@@ -157,7 +158,7 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
   const groupBy = (["day", "week", "month"].includes(params.get("groupBy") || "") ? params.get("groupBy") : "day") as GroupBy;
   const allShops = await prisma.shopeeShopSetting.findMany({
     where: { status: "active" },
-    select: { id: true, shopId: true, shopName: true, region: true, currency: true },
+    select: { id: true, shopId: true, shopName: true, region: true, currency: true, storeId: true },
     orderBy: { createdAt: "asc" },
   });
   const shops = allShops.filter((shop) => (
@@ -220,7 +221,7 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
         shopSetting: { select: { region: true } },
       },
     }),
-    getFinanceRates(),
+    financeReportContext() ? Promise.resolve(financeReportContext()!.rates) : getFinanceRates(),
     prisma.profitSkuMapping.findMany({ where: { platform: "SHOPEE", enabled: true }, include: { components: { include: { variant: { select: { id: true, skuId: true, costPrice: true, weightKg: true, lengthCm: true, widthCm: true, heightCm: true } } } } } }),
     prisma.productVariant.findMany({ select: { id: true, skuId: true, costPrice: true, weightKg: true, lengthCm: true, widthCm: true, heightCm: true } }),
     prisma.logisticsCost.findMany({
@@ -267,6 +268,25 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
     }),
     Promise.all(shops.map(async (shop) => {
       try {
+        if (financeReportContext()) {
+          if (!shop.storeId || allShops.filter((entry) => entry.storeId === shop.storeId).length !== 1) {
+            return { shop, rows: [], error: "仅用系统数据：店铺归属缺失/不唯一，无法可靠分配系统广告消耗；不是零广告费" };
+          }
+          const savedAds = await prisma.adConsumption.findMany({
+            where: { storeId: shop.storeId, date: { gte: new Date(`${startDate}T00:00:00Z`), lt: new Date(`${addBusinessDays(endDate, 1)}T00:00:00Z`) } },
+            select: { date: true, amount: true, currency: true }, take: 10_001,
+          });
+          if (savedAds.length > 10_000) throw new Error("系统广告记录超过单次保护线，请缩短期间");
+          const daily = new Map<string, ShopeeDailyAdPerformance>();
+          for (const row of savedAds) {
+            if (row.currency.toUpperCase() !== (shop.currency || "BRL").toUpperCase()) continue;
+            const date = row.date.toISOString().slice(0, 10);
+            const current = daily.get(date) || { date, expense: 0, broadGmv: 0, broadOrders: 0, broadItemSold: 0, impressions: 0, clicks: 0, broadRoas: 0 };
+            current.expense += number(row.amount);
+            daily.set(date, current);
+          }
+          return { shop, rows: [...daily.values()], error: "仅用系统已保存且同币种的店铺广告消耗；未向官方核验完整性，不同币种未混加，广告成本仍为暂估" };
+        }
         // Shopee's advertising API rejects a range that ends on a future
         // business date. This can happen when the browser date is already
         // the next day in China while Brazil is still on the previous day.

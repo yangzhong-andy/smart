@@ -134,6 +134,7 @@ import {
   type DepartmentAccessRuntimeOptions,
 } from "@/lib/permissions";
 import { useDepartmentAccess } from "@/components/DepartmentAccessContext";
+import { canReadCompanyReports } from "@/lib/company-reports";
 
 import { LucideIcon } from "lucide-react";
 
@@ -324,6 +325,7 @@ const navItems: NavItem[] = [
       { label: "流水明细", labelEn: "", icon: Wallet, href: "/finance/cash-flow" },
       { label: "出口退税管理", labelEn: "", icon: Wallet, href: "/finance/export-tax" },
       { label: "多平台利润汇总", labelEn: "", icon: Wallet, href: "/finance/platform-profit-summary" },
+      { label: "经营与财务分析", labelEn: "", icon: Wallet, href: "/finance/reports" },
       { label: "精细利润核算", labelEn: "", icon: Wallet, href: "/finance/profit" },
       { label: "账户列表", labelEn: "", icon: Wallet, href: "/finance/accounts" },
       { label: "内部划拨", labelEn: "", icon: Wallet, href: "/finance/transfer" },
@@ -416,6 +418,9 @@ export default function Sidebar() {
   const departmentCode = session?.user?.departmentCode ?? null;
   const departmentName = session?.user?.departmentName ?? null;
   const allowedLabels = getAllowedNavLabels(departmentCode, departmentName, departmentAccessOpts);
+  const showCompanyReportsShortcut = canReadCompanyReports({ role: session?.user?.role || "", departmentCode })
+    && (!allowedLabels || allowedLabels.includes("财务中心"))
+    && filterSidebarNavChildren("财务中心", [{ label: "经营与财务分析", href: "/finance/reports" }], departmentCode, departmentName, departmentAccessOpts).length > 0;
   const visibleNavItems = useMemo(() => {
     if (!allowedLabels || !Array.isArray(allowedLabels)) return navItems;
     const filtered = navItems.filter((item) => allowedLabels.includes(item.label));
@@ -665,6 +670,7 @@ export default function Sidebar() {
         </summary>
         <div className={`rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl ${isCollapsed ? 'absolute left-0 top-full w-56' : ''}`}>
           <span className="block rounded px-3 py-2 text-slate-300" aria-current="true">Smart ERP（当前系统）</span>
+          {showCompanyReportsShortcut && <Link prefetch={false} href="/finance/reports" aria-current={pathname === "/finance/reports" ? "page" : undefined} className="block rounded px-3 py-3 text-cyan-300 hover:bg-cyan-500/10 focus:bg-cyan-500/10">经营与财务分析（本系统）</Link>}
           <a href="/supplier-tax/" className="block rounded px-3 py-3 text-cyan-300 hover:bg-cyan-500/10 focus:bg-cyan-500/10">供应商发票与出口退税</a>
         </div>
       </details>
