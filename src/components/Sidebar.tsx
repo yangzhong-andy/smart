@@ -670,7 +670,7 @@ export default function Sidebar() {
         </summary>
         <div className={`rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl ${isCollapsed ? 'absolute left-0 top-full w-56' : ''}`}>
           <span className="block rounded px-3 py-2 text-slate-300" aria-current="true">Smart ERP（当前系统）</span>
-          {showCompanyReportsShortcut && <Link prefetch={false} href="/finance/reports" aria-current={pathname === "/finance/reports" ? "page" : undefined} className="block rounded px-3 py-3 text-cyan-300 hover:bg-cyan-500/10 focus:bg-cyan-500/10">经营与财务分析（本系统）</Link>}
+          {showCompanyReportsShortcut && <a href="/company-finance/" className="block rounded px-3 py-3 text-cyan-300 hover:bg-cyan-500/10 focus:bg-cyan-500/10">经营与财务分析</a>}
           <a href="/supplier-tax/" className="block rounded px-3 py-3 text-cyan-300 hover:bg-cyan-500/10 focus:bg-cyan-500/10">供应商发票与出口退税</a>
         </div>
       </details>

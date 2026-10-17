@@ -101,7 +101,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // This independently authenticated app owns only its mounted URL namespace.
-  if (pathname === "/supplier-tax" || pathname.startsWith("/supplier-tax/")) {
+  if (pathname === "/supplier-tax" || pathname.startsWith("/supplier-tax/")
+    || pathname === "/company-finance" || pathname.startsWith("/company-finance/")) {
     return NextResponse.next();
   }
 

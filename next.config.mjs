@@ -26,6 +26,8 @@ const nextConfig = {
       beforeFiles: [
         { source: '/supplier-tax', destination: 'http://127.0.0.1:3220/supplier-tax' },
         { source: '/supplier-tax/:path*', destination: 'http://127.0.0.1:3220/supplier-tax/:path*' },
+        { source: '/company-finance', destination: 'http://127.0.0.1:3240/company-finance' },
+        { source: '/company-finance/:path*', destination: 'http://127.0.0.1:3240/company-finance/:path*' },
       ],
     };
   },
