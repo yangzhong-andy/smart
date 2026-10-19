@@ -1863,16 +1863,29 @@ export default function AdAgenciesPage() {
             return a;
           });
 
-          const updatedConsumptions = consumptions.filter((c) => c.id !== id);
-          await saveAdConsumptions(updatedConsumptions);
-          mutateConsumptions(); // 删除完成后再触发 SWR 重新拉取
-          mutateAdAccounts();
-          await saveAdAccounts(updatedAccounts);
+          const response = await fetch(`/api/ad-consumptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+          if (!response.ok) {
+            const result = await response.json().catch(() => null);
+            throw new Error(result?.error || `删除消耗记录失败（HTTP ${response.status}）`);
+          }
+          const updatedAccount = updatedAccounts.find((account) => account.id === consumption.adAccountId);
+          if (updatedAccount) {
+            const balanceResponse = await fetch(`/api/ad-accounts/${encodeURIComponent(updatedAccount.id)}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ currentBalance: updatedAccount.currentBalance }),
+            });
+            if (!balanceResponse.ok) {
+              const result = await balanceResponse.json().catch(() => null);
+              throw new Error(`消耗记录已删除，但广告账户余额更新失败：${result?.error || balanceResponse.status}`);
+            }
+          }
+          await Promise.all([mutateConsumptions(), mutateAdAccounts()]);
           setConfirmDialog(null);
           toast.success("消耗记录删除成功");
         } catch (e) {
           console.error("删除消耗记录失败", e);
-          toast.error("操作失败，请重试");
+          toast.error(e instanceof Error ? e.message : "操作失败，请重试");
         }
       }
     });
