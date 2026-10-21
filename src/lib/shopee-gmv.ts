@@ -48,24 +48,45 @@ export function calculateShopeeMerchandiseSubtotal(input: ShopeeGmvInput): {
   const rawData = record(input.settlement?.rawData);
   const buyerPayment = record(rawData?.buyer_payment_info);
   const orderIncome = record(rawData?.order_income);
-  const productPrice = amount(buyerPayment?.merchant_subtotal);
-  const shopeeVoucher = amount(buyerPayment?.shopee_voucher);
-  if (productPrice !== null) {
-    return result(productPrice - Math.abs(shopeeVoucher ?? 0), "OFFICIAL_MERCHANDISE_SUBTOTAL");
+  // Prefer Shopee's final merchandise subtotal when the official detail
+  // provides it. It already includes the checkout discounts.
+  const explicitSubtotal = amount(
+    buyerPayment?.merchandise_subtotal
+      ?? orderIncome?.merchandise_subtotal,
+  );
+  if (explicitSubtotal !== null) {
+    return result(explicitSubtotal, "OFFICIAL_MERCHANDISE_SUBTOTAL");
   }
 
-  const incomeProductPrice = amount(orderIncome?.order_selling_price);
-  const incomeShopeeVoucher = amount(orderIncome?.voucher_from_shopee);
-  if (incomeProductPrice !== null) {
+  const productPrice = amount(buyerPayment?.merchant_subtotal);
+  // Brazil buyer-payment fields: PIX discount plus seller/Shopee vouchers.
+  // seller_discount is the list-price reduction already reflected in
+  // merchant_subtotal and must not be deducted a second time.
+  const pixDiscount = amount(buyerPayment?.discount_pix);
+  const sellerVoucher = amount(buyerPayment?.seller_voucher);
+  const shopeeVoucher = amount(buyerPayment?.shopee_voucher);
+  if (productPrice !== null) {
     return result(
-      incomeProductPrice - Math.abs(incomeShopeeVoucher ?? 0),
+      productPrice
+        - Math.abs(pixDiscount ?? 0)
+        - Math.abs(sellerVoucher ?? 0)
+        - Math.abs(shopeeVoucher ?? 0),
       "OFFICIAL_MERCHANDISE_SUBTOTAL",
     );
   }
 
-  const explicitSubtotal = amount(buyerPayment?.merchandise_subtotal);
-  if (explicitSubtotal !== null) {
-    return result(explicitSubtotal, "OFFICIAL_MERCHANDISE_SUBTOTAL");
+  const incomeProductPrice = amount(orderIncome?.order_selling_price);
+  const incomePixDiscount = amount(orderIncome?.pix_discount);
+  const incomeSellerVoucher = amount(orderIncome?.voucher_from_seller);
+  const incomeShopeeVoucher = amount(orderIncome?.voucher_from_shopee);
+  if (incomeProductPrice !== null) {
+    return result(
+      incomeProductPrice
+        - Math.abs(incomePixDiscount ?? 0)
+        - Math.abs(incomeSellerVoucher ?? 0)
+        - Math.abs(incomeShopeeVoucher ?? 0),
+      "OFFICIAL_MERCHANDISE_SUBTOTAL",
+    );
   }
 
   const orderTotal = amount(input.order.totalAmount);

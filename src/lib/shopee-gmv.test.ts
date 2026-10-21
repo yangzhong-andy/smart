@@ -41,6 +41,46 @@ test("calculates GMV as Product Price less the Shopee Voucher", () => {
   assert.equal(gmv.amount, 62.5);
 });
 
+test("uses the official Merchandise Subtotal when it is provided", () => {
+  const gmv = calculateShopeeMerchandiseSubtotal({
+    settlement: {
+      rawData: {
+        buyer_payment_info: {
+          merchant_subtotal: 119.9,
+          merchandise_subtotal: 97.96,
+          discount_pix: -5.15,
+          seller_voucher: -16.79,
+        },
+      },
+    },
+    order: {},
+  });
+
+  assert.deepEqual(gmv, {
+    amount: 97.96,
+    source: "OFFICIAL_MERCHANDISE_SUBTOTAL",
+  });
+});
+
+test("reconstructs Merchandise Subtotal from PIX and voucher discounts", () => {
+  const gmv = calculateShopeeMerchandiseSubtotal({
+    settlement: {
+      rawData: {
+        buyer_payment_info: {
+          merchant_subtotal: 119.9,
+          discount_pix: -5.15,
+          seller_voucher: -16.79,
+          shopee_voucher: 0,
+        },
+        order_income: { seller_discount: 176.1 },
+      },
+    },
+    order: {},
+  });
+
+  assert.equal(gmv.amount, 97.96);
+});
+
 test("uses the order income Product Price and Shopee Voucher fields when needed", () => {
   const gmv = calculateShopeeMerchandiseSubtotal({
     settlement: {
