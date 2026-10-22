@@ -3,7 +3,13 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 import { clearCacheByPrefix } from '@/lib/redis'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const PATCH = withEmployeeOperationAudit(auditedPATCH, "products", "PATCH");
+export const PUT = withEmployeeOperationAudit(auditedPUT, "products", "PUT");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "products", "DELETE");
 
 const mockStore: any[] = (global as any).__mockProducts || []
 ;(global as any).__mockProducts = mockStore
@@ -53,7 +59,7 @@ function toIsoString(v: unknown): string {
 }
 
 // PATCH - 仅更新变体字段（单价、库存等），不碰 SPU/图片/供应商，保存更快
-export async function PATCH(
+async function auditedPATCH(
   request: NextRequest,
   { params }: { params: { skuId: string } }
 ) {
@@ -106,7 +112,7 @@ export async function PATCH(
 }
 
 // PUT - 更新产品（全量，含 SPU/图片/供应商）
-export async function PUT(
+async function auditedPUT(
   request: NextRequest,
   { params }: { params: { skuId: string } }
 ) {
@@ -382,7 +388,7 @@ export async function PUT(
 }
 
 // DELETE - 删除产品
-export async function DELETE(
+async function auditedDELETE(
   request: NextRequest,
   { params }: { params: { skuId: string } }
 ) {

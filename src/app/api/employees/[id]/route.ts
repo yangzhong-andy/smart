@@ -6,7 +6,12 @@ import { parseSalarySettings } from '@/lib/employee-profile'
 import { requireApiUser } from '@/lib/api-auth'
 import { EMPLOYMENT_DATE_FIELDS, parseEmploymentSettings } from '@/lib/employee-confirmation'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const PUT = withEmployeeOperationAudit(auditedPUT, "employees", "PUT");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "employees", "DELETE");
 
 // GET - 获取单个员工
 export async function GET(
@@ -54,7 +59,7 @@ export async function GET(
 }
 
 // PUT - 更新员工
-export async function PUT(
+async function auditedPUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -129,7 +134,7 @@ export async function PUT(
 }
 
 // DELETE - 删除员工
-export async function DELETE(
+async function auditedDELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {

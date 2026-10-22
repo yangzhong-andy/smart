@@ -5,10 +5,14 @@ import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import { clearCacheByPrefix } from '@/lib/redis';
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
 
+export const PUT = withEmployeeOperationAudit(auditedPUT, "users", "PUT");
+
 // PUT - 更新用户（仅管理员）
-export async function PUT(
+async function auditedPUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {

@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix, getCache, setCache, generateCacheKey } from "@/lib/redis";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = "force-dynamic";
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "payroll", "POST");
 const CACHE_TTL = 300;
 
 // GET /api/payroll?month=2026-05&department=电商部&status=Draft
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/payroll - 创建单条工资单
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   try {
     const body = await request.json();
 

@@ -7,7 +7,12 @@ import { summarizeCashFlows } from "@/lib/cash-flow-summary";
 import type { Prisma } from "@prisma/client";
 import { isWarehouseRechargeCategory } from "@/lib/warehouse-funds";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic';
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "cashFlow", "POST");
+export const PATCH = withEmployeeOperationAudit(auditedPATCH, "cashFlow", "PATCH");
 
 const TYPE_MAP: Record<string, CashFlowType> = {
   income: CashFlowType.INCOME,
@@ -292,7 +297,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST - 创建（清除缓存）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   const auth = await requireApiUser(request);
   if (auth.response) return auth.response;
 
@@ -414,7 +419,7 @@ export async function POST(request: NextRequest) {
 }
 
 // PATCH - 快速更新单个字段（storeId/storeName/platform）
-export async function PATCH(request: NextRequest) {
+async function auditedPATCH(request: NextRequest) {
   const auth = await requireApiUser(request);
   if (auth.response) return auth.response;
 

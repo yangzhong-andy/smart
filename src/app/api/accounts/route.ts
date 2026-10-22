@@ -7,7 +7,11 @@ import { AccountType, CashFlowType } from '@prisma/client'
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from '@/lib/redis'
 import { serverError } from '@/lib/api-response'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "accounts", "POST");
 
 // 辅助：权限检查
 async function requireAuth() {
@@ -136,7 +140,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST - 创建账户（需要登录，清除缓存）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   const authError = await requireAuth()
   if (authError) return authError
   try {

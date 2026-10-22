@@ -6,14 +6,18 @@ import { clearCacheByPrefix } from "@/lib/redis";
 import { isWarehouseRechargeCategory, recordWarehouseFundEntry } from "@/lib/warehouse-funds";
 import { normalizeCashFlowExchangeRateToCny } from "@/lib/cash-flow-exchange-rate";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = "force-dynamic";
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "expenseRequests", "POST", "确认付款");
 
 const serializeVoucher = (value: unknown) => {
   if (Array.isArray(value)) return value.length ? JSON.stringify(value) : null;
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+async function auditedPOST(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireApiUser(request, { roles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "FINANCE"] });
   if (auth.response) return auth.response;
 

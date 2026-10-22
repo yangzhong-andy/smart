@@ -4,7 +4,11 @@ import { clearCacheByPrefix } from '@/lib/redis';
 
 const INCOME_REQUESTS_CACHE_PREFIX = 'income-requests';
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic';
+
+export const PUT = withEmployeeOperationAudit(auditedPUT, "incomeRequests", "PUT");
 
 // GET - 获取单个收入申请
 export async function GET(
@@ -58,7 +62,7 @@ export async function GET(
 }
 
 // PUT - 更新收入申请
-export async function PUT(
+async function auditedPUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {

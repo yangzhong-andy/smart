@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = "force-dynamic";
+
+export const PATCH = withEmployeeOperationAudit(auditedPATCH, "payroll", "PATCH");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "payroll", "DELETE");
 
 // GET /api/payroll/[id]
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -16,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 // PATCH /api/payroll/[id] - 更新工资单（支持字段级编辑和状态变更）
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+async function auditedPATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const body = await request.json();
     const data: any = { updatedAt: new Date() };
@@ -110,7 +115,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 }
 
 // DELETE /api/payroll/[id]
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+async function auditedDELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await prisma.payroll.delete({ where: { id: params.id } });
     await clearCacheByPrefix("payroll");

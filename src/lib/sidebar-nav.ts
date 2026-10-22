@@ -158,6 +158,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
     label: "系统设置",
     children: [
       { label: "系统账号管理", href: "/settings/users" },
+      { label: "员工操作日志", href: "/settings/operation-logs" },
       { label: "部门权限", href: "/settings/department-permissions" },
       { label: "本公司信息", href: "/settings/company" },
       { label: "出口公司管理", href: "/settings/exporters" },

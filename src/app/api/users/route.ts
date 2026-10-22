@@ -6,10 +6,15 @@ import { prisma } from '@/lib/prisma'
 import * as bcrypt from 'bcryptjs'
 import { clearCacheByPrefix } from '@/lib/redis';
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
 
+export const POST = withEmployeeOperationAudit(auditedPOST, "users", "POST");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "users", "DELETE");
+
 // POST - 创建用户（仅 SUPER_ADMIN）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
     if (!session || session.user.role !== 'SUPER_ADMIN') {
@@ -140,7 +145,7 @@ export async function GET(request: NextRequest) {
 }
 
 // DELETE - 删除用户（需 ADMIN 或 MANAGER）
-export async function DELETE(request: NextRequest) {
+async function auditedDELETE(request: NextRequest) {
   try {
     // 🔐 权限检查
     const session = await getServerSession(authOptions)

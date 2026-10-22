@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCache, setCache, generateCacheKey, clearCacheByPrefix } from "@/lib/redis";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic';
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "incomeRequests", "POST");
 
 // 缓存配置
 const CACHE_TTL = 300; // 5分钟
@@ -98,7 +102,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST - 创建（清除缓存）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   try {
     const body = await request.json();
     const incomeRequest = await prisma.incomeRequest.create({

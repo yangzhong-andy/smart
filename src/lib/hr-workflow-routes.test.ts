@@ -23,6 +23,7 @@ function loadRoute(file: string, prisma: unknown, extra: Record<string, unknown>
     "@/lib/employee-salary": salary,
     "@/lib/redis": { clearCacheByPrefix: async (prefix: string) => { cleared.push(prefix); } },
     "@/lib/api-auth": { requireApiUser: async () => ({ user: { id: "admin" }, response: null }) },
+    "@/lib/employee-operation-audit": { withEmployeeOperationAudit: (handler: unknown) => handler },
     "next-auth": { getServerSession: async () => ({ user: { role: "ADMIN" } }) },
     "@/lib/auth-options": { authOptions: {} }, ...extra,
   };

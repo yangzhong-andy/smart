@@ -6,7 +6,11 @@ import { initialSalarySettings } from '@/lib/employee-profile'
 import { requireApiUser } from '@/lib/api-auth'
 import { parseEmploymentSettings } from '@/lib/employee-confirmation'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "employees", "POST");
 
 // 缓存配置
 const CACHE_TTL = 600; // 10分钟
@@ -118,7 +122,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST - 创建新员工（清除缓存）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   try {
     const auth = await requireApiUser(request, { roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] })
     if (auth.response) return auth.response

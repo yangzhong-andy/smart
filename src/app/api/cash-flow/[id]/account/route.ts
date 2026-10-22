@@ -4,7 +4,11 @@ import { requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = "force-dynamic";
+
+export const PATCH = withEmployeeOperationAudit(auditedPATCH, "cashFlow", "PATCH", "变更收支账户");
 
 const ACCOUNT_CHANGE_ROLES = ["ADMIN", "SUPER_ADMIN", "FINANCE"];
 
@@ -77,7 +81,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+async function auditedPATCH(
   request: NextRequest,
   { params }: { params: { id: string } },
 ) {

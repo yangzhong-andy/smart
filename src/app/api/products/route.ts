@@ -16,7 +16,11 @@ async function attachOverseasQtyToFlatRows(rows: any[]): Promise<void> {
   }
 }
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "products", "POST");
 
 const mockStore: any[] = (global as any).__mockProducts || []
 ;(global as any).__mockProducts = mockStore
@@ -494,7 +498,7 @@ async function createProductWithVariants(body: any, variantsInput: any[]) {
 }
 
 // POST - 创建新产品（支持单变体或 body.variants 批量创建多变体）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   let body: any
   try {
     body = await request.json()

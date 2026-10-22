@@ -3,13 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 import { salaryForMonth } from "@/lib/employee-salary";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = "force-dynamic";
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "payroll", "POST", "批量生成工资单");
 
 // POST /api/payroll/generate
 // body: { month: "2026-05", department?: "电商部" }
 // 从员工档案自动生成工资单，带入底薪/社保/银行卡，拉取当月提成
 // 根据入职/离职日期自动计算实际出勤天数
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   try {
     const body = await request.json();
     const month = body.month;

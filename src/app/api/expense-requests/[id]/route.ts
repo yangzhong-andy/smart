@@ -7,7 +7,12 @@ import { syncLogisticsMonthlyBills, syncSupplierMonthlyBills } from '@/lib/month
 
 const EXPENSE_REQUESTS_CACHE_PREFIX = 'expense-requests';
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic';
+
+export const PUT = withEmployeeOperationAudit(auditedPUT, "expenseRequests", "PUT");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "expenseRequests", "DELETE");
 
 // GET - 获取单个支出申请
 export async function GET(
@@ -70,7 +75,7 @@ export async function GET(
 }
 
 // PUT - 更新支出申请
-export async function PUT(
+async function auditedPUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -184,7 +189,7 @@ export async function PUT(
 }
 
 /** 删除待审批/草稿支出申请（仅 SUPER_ADMIN，用于清理重复发起等） */
-export async function DELETE(
+async function auditedDELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {

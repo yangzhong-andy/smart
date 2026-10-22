@@ -4,10 +4,14 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth-options'
 import { prisma } from '@/lib/prisma'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
 
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "cashFlow", "DELETE", "清空流水");
+
 // DELETE - 删除所有流水记录（仅 SUPER_ADMIN 可用）
-export async function DELETE(request: NextRequest) {
+async function auditedDELETE(request: NextRequest) {
   try {
     // 🔐 权限检查
     const session = await getServerSession(authOptions)

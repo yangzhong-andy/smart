@@ -7,10 +7,15 @@ import { clearCacheByPrefix } from '@/lib/redis'
 import { AccountType, AccountCategory } from '@prisma/client'
 import { handlePrismaError } from '@/lib/api-response'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
 
+export const PUT = withEmployeeOperationAudit(auditedPUT, "accounts", "PUT");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "accounts", "DELETE");
+
 // PUT - 更新账户
-export async function PUT(
+async function auditedPUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -124,7 +129,7 @@ export async function PUT(
 }
 
 // DELETE - 删除账户
-export async function DELETE(
+async function auditedDELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {

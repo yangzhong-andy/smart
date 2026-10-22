@@ -3,7 +3,11 @@ import { requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { clearCacheByPrefix } from "@/lib/redis";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = "force-dynamic";
+
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "cashFlow", "DELETE", "删除凭证");
 
 function parseVoucherImages(value: unknown): string[] {
   if (!value) return [];
@@ -61,7 +65,7 @@ export async function GET(
   );
 }
 
-export async function DELETE(
+async function auditedDELETE(
   request: NextRequest,
   { params }: { params: { id: string } },
 ) {

@@ -257,6 +257,29 @@ model User {
   @@index([departmentId])
 }
 
+// Server-side employee write-operation audit. Never store request bodies,
+// credentials, payroll amounts, tokens, or response payloads here.
+model EmployeeOperationLog {
+  id             String   @id @default(uuid())
+  actorUserId    String
+  actorName      String
+  actorEmail     String
+  actorRole      String
+  departmentName String?
+  module         String
+  action         String
+  method         String
+  path           String
+  targetId       String?
+  status         String
+  httpStatus     Int
+  occurredAt     DateTime @default(now())
+
+  @@index([occurredAt(sort: Desc)])
+  @@index([actorUserId, occurredAt(sort: Desc)])
+  @@index([module, occurredAt(sort: Desc)])
+}
+
 // Shared account-card layout for the current application database. The
 // application databases are tenant-isolated, so one row is shared by all
 // users in that tenant while selectedGroup remains a per-browser preference.

@@ -363,6 +363,7 @@ const navItems: NavItem[] = [
     icon: Settings,
     children: [
       { label: "系统账号管理", labelEn: "", icon: Users, href: "/settings/users" },
+      { label: "员工操作日志", labelEn: "", icon: Shield, href: "/settings/operation-logs" },
       { label: "部门权限", labelEn: "", icon: Shield, href: "/settings/department-permissions" },
       { label: "本公司信息", labelEn: "", icon: Building2, href: "/settings/company" },
       { label: "出口公司管理", labelEn: "", icon: Building2, href: "/settings/exporters" },
@@ -556,7 +557,7 @@ export default function Sidebar() {
       departmentName,
       departmentAccessOpts
     );
-    return filtered.some((child) => child.href === pathname);
+    return filtered.some((child) => child.href === pathname && (child.href !== "/settings/operation-logs" || session?.user?.role === "SUPER_ADMIN"));
   };
 
   const getOrderedChildren = (item: NavItem): NavItem[] => {
@@ -568,8 +569,8 @@ export default function Sidebar() {
       departmentName,
       departmentAccessOpts
     );
-    const base =
-      filtered.length > 0 ? filtered : item.children;
+    const base = (filtered.length > 0 ? filtered : item.children)
+      .filter((child) => child.href !== "/settings/operation-logs" || session?.user?.role === "SUPER_ADMIN");
     const order = customChildOrder[item.label];
     if (!Array.isArray(order) || order.length === 0) return base;
     const map = new Map(base.map((child) => [child.href || `__${child.label}`, child]));
@@ -958,7 +959,7 @@ export default function Sidebar() {
                       departmentCode,
                       departmentName,
                       departmentAccessOpts
-                    ).map((child) => {
+                    ).filter((child) => child.href !== "/settings/operation-logs" || session?.user?.role === "SUPER_ADMIN").map((child) => {
                       const isApprovalLink = child.href === "/finance/approval";
                       const active = isActive(child.href);
                       const sectionHeader = child.section && child.section !== lastSection ? child.section : null;

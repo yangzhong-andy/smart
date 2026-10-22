@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { clearCacheByPrefix } from '@/lib/redis'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "products", "DELETE");
 
 /**
  * DELETE 删除整个产品（SPU）及其全部变体（SKU）
  * 会级联删除 ProductVariant、ProductSupplier 等关联数据
  */
-export async function DELETE(
+async function auditedDELETE(
   request: NextRequest,
   { params }: { params: { productId: string } }
 ) {

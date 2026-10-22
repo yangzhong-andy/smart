@@ -10,7 +10,11 @@ import {
   serializeVoucher,
 } from "@/lib/procurement-payment-voucher";
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic';
+
+export const POST = withEmployeeOperationAudit(auditedPOST, "expenseRequests", "POST");
 
 // 缓存配置
 const CACHE_TTL = 180; // 3分钟
@@ -238,7 +242,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST - 创建（清除缓存）
-export async function POST(request: NextRequest) {
+async function auditedPOST(request: NextRequest) {
   const auth = await requireApiUser(request);
   if (auth.response) return auth.response;
 

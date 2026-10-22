@@ -5,7 +5,13 @@ import { prisma } from '@/lib/prisma'
 import { CashFlowType, CashFlowStatus } from '@prisma/client'
 import { clearCacheByPrefix } from '@/lib/redis'
 
+import { withEmployeeOperationAudit } from "@/lib/employee-operation-audit";
+
 export const dynamic = 'force-dynamic'
+
+export const PUT = withEmployeeOperationAudit(auditedPUT, "cashFlow", "PUT");
+export const PATCH = withEmployeeOperationAudit(auditedPATCH, "cashFlow", "PATCH");
+export const DELETE = withEmployeeOperationAudit(auditedDELETE, "cashFlow", "DELETE");
 
 const CACHE_KEY_PREFIX = 'cash-flow'
 
@@ -40,7 +46,7 @@ function mergeVoucherImages(existing: unknown, incoming: unknown): string | null
 }
 
 // PUT - 更新流水
-export async function PUT(
+async function auditedPUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -132,7 +138,7 @@ export async function PUT(
 }
 
 // PATCH - 仅更新凭证（用于补充付款凭证/转账凭证）
-export async function PATCH(
+async function auditedPATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -224,7 +230,7 @@ export async function PATCH(
 }
 
 // DELETE - 删除流水
-export async function DELETE(
+async function auditedDELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
