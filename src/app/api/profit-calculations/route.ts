@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { badRequest, serverError } from "@/lib/api-response";
 import { requireApiUser } from "@/lib/api-auth";
-import { calculateProfitEstimate, isProfitEstimatePlatform, type ProfitEstimateInput } from "@/lib/profit-estimate";
+import { calculateProfitEstimate, isProfitEstimatePlatform, isShopeeFeeMode, type ProfitEstimateInput } from "@/lib/profit-estimate";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +83,9 @@ export async function POST(request: NextRequest) {
       return badRequest("请填写有效的商品名称");
     }
     if (!isProfitEstimatePlatform(body.platform)) return badRequest("请选择有效平台");
+    if (body.platform === "SHOPEE" && body.shopeeFeeMode != null && !isShopeeFeeMode(body.shopeeFeeMode)) {
+      return badRequest("虾皮店铺费率方案无效");
+    }
     const required = ["salePriceBrl", "exchangeRate", "purchaseCostCny", "firstLegCny", "adCostCny"];
     if (required.some((key) => !Number.isFinite(Number(body[key])) || Number(body[key]) < 0)
       || Number(body.salePriceBrl) <= 0 || Number(body.exchangeRate) <= 0
@@ -98,12 +101,13 @@ export async function POST(request: NextRequest) {
     const optionalNumber = (value: unknown) => value == null || value === "" ? 0 : Number(value);
     const input: ProfitEstimateInput = {
       platform: body.platform,
+      shopeeFeeMode: body.platform === "SHOPEE" ? body.shopeeFeeMode || "MANUAL" : undefined,
       quantity: Number(body.quantity), salePriceBrl: Number(body.salePriceBrl),
       discountSalePriceBrl: optionalNumber(body.discountSalePriceBrl),
       exchangeRate: Number(body.exchangeRate), purchaseCostCny: Number(body.purchaseCostCny),
       firstLegCny: Number(body.firstLegCny), adCostCny: Number(body.adCostCny),
       weightKg: optionalNumber(body.weightKg), warehouseFeeBrl: optionalNumber(body.warehouseFeeBrl),
-      platformFeePercent: body.platform === "TIKTOK" ? 0 : optionalNumber(body.platformFeePercent),
+      platformFeePercent: body.platform === "TIKTOK" || body.platform === "SHOPEE" && body.shopeeFeeMode === "CNPJ_LOCAL" ? 0 : optionalNumber(body.platformFeePercent),
       fulfillmentFeeBrl: optionalNumber(body.fulfillmentFeeBrl),
       lastMileFeeBrl: optionalNumber(body.lastMileFeeBrl), affiliateFeeBrl: optionalNumber(body.affiliateFeeBrl),
       taxPercent: optionalNumber(body.taxPercent),

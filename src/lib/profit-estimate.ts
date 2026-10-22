@@ -1,5 +1,19 @@
 export const PROFIT_ESTIMATE_PLATFORMS = ["TIKTOK", "SHOPEE", "MERCADO_LIVRE"] as const;
 export type ProfitEstimatePlatform = typeof PROFIT_ESTIMATE_PLATFORMS[number];
+export const SHOPEE_FEE_MODES = ["CNPJ_LOCAL", "MANUAL"] as const;
+export type ShopeeFeeMode = typeof SHOPEE_FEE_MODES[number];
+
+export function isShopeeFeeMode(value: unknown): value is ShopeeFeeMode {
+  return typeof value === "string" && SHOPEE_FEE_MODES.includes(value as ShopeeFeeMode);
+}
+
+export function shopeeCnpjLocalFeeTier(unitPriceBrl: number): { ratePercent: number; fixedFeePerItemBrl: number } {
+  const price = Math.max(0, Number.isFinite(unitPriceBrl) ? unitPriceBrl : 0);
+  if (price < 80) return { ratePercent: 20, fixedFeePerItemBrl: 4.5 };
+  if (price < 100) return { ratePercent: 14, fixedFeePerItemBrl: 16 };
+  if (price < 200) return { ratePercent: 14, fixedFeePerItemBrl: 20 };
+  return { ratePercent: 14, fixedFeePerItemBrl: 26 };
+}
 
 export const PROFIT_ESTIMATE_LABELS: Record<ProfitEstimatePlatform, string> = {
   TIKTOK: "TikTok Shop 巴西",
@@ -13,6 +27,7 @@ export function isProfitEstimatePlatform(value: unknown): value is ProfitEstimat
 
 export type ProfitEstimateInput = {
   platform: ProfitEstimatePlatform;
+  shopeeFeeMode?: ShopeeFeeMode;
   quantity: number;
   salePriceBrl: number;
   discountSalePriceBrl?: number | null;
@@ -63,10 +78,14 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const tiktokPercentageFeeBrl = input.platform === "TIKTOK" ? gmvBrl * tiktokCommissionRatePercent / 100 : 0;
   const tiktokFixedFeeBrl = input.platform === "TIKTOK" ? tiktokFixedFeePerItemBrl * quantity : 0;
   const tiktokCommissionBrl = tiktokPercentageFeeBrl + tiktokFixedFeeBrl;
+  const shopeeTier = input.platform === "SHOPEE" && input.shopeeFeeMode === "CNPJ_LOCAL"
+    ? shopeeCnpjLocalFeeTier(effectiveSale) : null;
+  const shopeePercentageFeeBrl = shopeeTier ? gmvBrl * shopeeTier.ratePercent / 100 : 0;
+  const shopeeFixedFeeBrl = shopeeTier ? shopeeTier.fixedFeePerItemBrl * quantity : 0;
   const platformFeeBrl = input.platform === "TIKTOK"
     ? tiktokPercentageFeeBrl
-    : gmvBrl * nonnegative(input.platformFeePercent) / 100;
-  const fulfillmentFeeBrl = tiktokFixedFeeBrl + nonnegative(input.fulfillmentFeeBrl);
+    : shopeeTier ? shopeePercentageFeeBrl : gmvBrl * nonnegative(input.platformFeePercent) / 100;
+  const fulfillmentFeeBrl = tiktokFixedFeeBrl + shopeeFixedFeeBrl + nonnegative(input.fulfillmentFeeBrl);
   const lastMileFeeBrl = nonnegative(input.lastMileFeeBrl);
   const settlementBrl = gmvBrl - platformFeeBrl - fulfillmentFeeBrl - lastMileFeeBrl;
   const settlementCny = settlementBrl * rate;
@@ -94,6 +113,10 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   return {
     quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokCommissionBrl,
     tiktokCommissionRatePercent, tiktokFixedFeePerItemBrl, tiktokPercentageFeeBrl, tiktokFixedFeeBrl,
+    shopeeFeeMode: input.platform === "SHOPEE" ? input.shopeeFeeMode || "MANUAL" : null,
+    shopeeCommissionRatePercent: shopeeTier?.ratePercent ?? null,
+    shopeeFixedFeePerItemBrl: shopeeTier?.fixedFeePerItemBrl ?? null,
+    shopeePercentageFeeBrl, shopeeFixedFeeBrl,
     fulfillmentFeeBrl, lastMileFeeBrl, settlementBrl,
     settlementCny, purchaseCostCny, firstLegCny, warehouseFeeBrl, warehouseFeeCny,
     adCostCny, affiliateFeeBrl, affiliateFeeCny, taxCostCny, invoiceFeeCny, remittanceFeeCny, nonAdCostCny,

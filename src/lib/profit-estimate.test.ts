@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateProfitEstimate, estimatedWarehouseFeeBrl } from "./profit-estimate";
+import { calculateProfitEstimate, estimatedWarehouseFeeBrl, shopeeCnpjLocalFeeTier } from "./profit-estimate";
 
 const base = {
   platform: "TIKTOK" as const, quantity: 1, salePriceBrl: 100, exchangeRate: 1.35,
@@ -48,6 +48,40 @@ test("Shopee and Mercado Livre use explicit estimated fees and last mile", () =>
     assert.equal(result.lastMileFeeBrl, 5);
     assert.equal(result.taxCostCny, 2.7);
   }
+});
+
+test("Shopee CNPJ local commission tiers split percentage and fixed per-item charge", () => {
+  const cases = [
+    { price: 79.99, percent: 20, fixed: 4.5 },
+    { price: 80, percent: 14, fixed: 16 },
+    { price: 99.99, percent: 14, fixed: 16 },
+    { price: 100, percent: 14, fixed: 20 },
+    { price: 199.99, percent: 14, fixed: 20 },
+    { price: 200, percent: 14, fixed: 26 },
+  ];
+  for (const { price, percent, fixed } of cases) {
+    assert.deepEqual(shopeeCnpjLocalFeeTier(price), { ratePercent: percent, fixedFeePerItemBrl: fixed });
+    const result = calculateProfitEstimate({ ...base, platform: "SHOPEE", shopeeFeeMode: "CNPJ_LOCAL",
+      salePriceBrl: price, quantity: 2, platformFeePercent: 99 });
+    assert.equal(result.platformFeeBrl, price * 2 * percent / 100);
+    assert.equal(result.fulfillmentFeeBrl, fixed * 2);
+    assert.equal(result.settlementBrl, result.gmvBrl - result.platformFeeBrl - result.fulfillmentFeeBrl);
+  }
+});
+
+test("Shopee CNPJ tier uses discount price; manual and other platforms stay unchanged", () => {
+  const discounted = calculateProfitEstimate({ ...base, platform: "SHOPEE", shopeeFeeMode: "CNPJ_LOCAL",
+    salePriceBrl: 100, discountSalePriceBrl: 79.99, quantity: 1 });
+  assert.equal(discounted.shopeeCommissionRatePercent, 20);
+  assert.equal(discounted.shopeeFixedFeePerItemBrl, 4.5);
+  const manual = calculateProfitEstimate({ ...base, platform: "SHOPEE", shopeeFeeMode: "MANUAL",
+    platformFeePercent: 12, fulfillmentFeeBrl: 3 });
+  assert.equal(manual.platformFeeBrl, 12);
+  assert.equal(manual.fulfillmentFeeBrl, 3);
+  const mercado = calculateProfitEstimate({ ...base, platform: "MERCADO_LIVRE", shopeeFeeMode: "CNPJ_LOCAL",
+    platformFeePercent: 12 });
+  assert.equal(mercado.platformFeeBrl, 12);
+  assert.equal(mercado.fulfillmentFeeBrl, 0);
 });
 
 test("ad ROI and break-even ROI are distinct and zero ad spend is safe", () => {

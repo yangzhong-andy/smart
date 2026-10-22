@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Calculator, CircleAlert, Plus, Save, Search, Trash2 } from "lucide-react";
 import {
   calculateProfitEstimate, estimatedWarehouseFeeBrl, PROFIT_ESTIMATE_LABELS,
-  PROFIT_ESTIMATE_PLATFORMS, type ProfitEstimatePlatform,
+  PROFIT_ESTIMATE_PLATFORMS, type ProfitEstimatePlatform, type ShopeeFeeMode,
 } from "@/lib/profit-estimate";
 import { compressImage } from "@/lib/image-utils";
 
@@ -23,7 +23,7 @@ type HistoryItem = {
   id: string; platform: ProfitEstimatePlatform; productName: string; skuId: string | null;
   grossRevenueBrl: number; settlementBrl: number; exchangeRate: number;
   netProfitCny: number; roi: number; breakEvenRoi: number; createdAt: string;
-  inputSnapshot: { version?: number } | null;
+  inputSnapshot: { version?: number; inputs?: { shopeeFeeMode?: ShopeeFeeMode } } | null;
 };
 type EstimateForm = {
   productName: string; purchaseCostCny: string; weightKg: string; firstLegCny: string;
@@ -71,6 +71,7 @@ function NumberField({ label, value, onChange, hint, step = "0.01" }: {
 
 export default function ProfitCalculationPage() {
   const [platform, setPlatform] = useState<ProfitEstimatePlatform>("TIKTOK");
+  const [shopeeFeeMode, setShopeeFeeMode] = useState<ShopeeFeeMode>("CNPJ_LOCAL");
   const [tab, setTab] = useState<"estimate" | "selection">("estimate");
   const [selectedId, setSelectedId] = useState("");
   const [selectedCatalog, setSelectedCatalog] = useState<ProductOption | null>(null);
@@ -129,7 +130,7 @@ export default function ProfitCalculationPage() {
   const updateForm = <K extends keyof EstimateForm>(key: K, value: EstimateForm[K]) => setForm((current) => ({ ...current, [key]: value }));
   const updateSelection = <K extends keyof SelectionForm>(key: K, value: SelectionForm[K]) => setSelectionForm((current) => ({ ...current, [key]: value }));
   const calculation = useMemo(() => calculateProfitEstimate({
-    platform, quantity: num(form.quantity), salePriceBrl: num(form.salePriceBrl),
+    platform, shopeeFeeMode, quantity: num(form.quantity), salePriceBrl: num(form.salePriceBrl),
     discountSalePriceBrl: num(form.discountSalePriceBrl), exchangeRate: num(form.exchangeRate),
     purchaseCostCny: num(form.purchaseCostCny), firstLegCny: num(form.firstLegCny),
     adCostCny: num(form.adCostCny), weightKg: num(form.weightKg),
@@ -139,10 +140,10 @@ export default function ProfitCalculationPage() {
     taxPercent: num(form.taxPercent), invoiceFeePercent: num(form.invoiceFeePercent),
     remittanceFeePercent: num(form.remittanceFeePercent), isCommissionFree: false,
     targetRoi: num(form.targetRoi),
-  }), [form, platform]);
+  }), [form, platform, shopeeFeeMode]);
 
   const changePlatform = (value: ProfitEstimatePlatform) => {
-    setPlatform(value); setSelectedId(""); setForm(blankEstimate(value));
+    setPlatform(value); setShopeeFeeMode("CNPJ_LOCAL"); setSelectedId(""); setForm(blankEstimate(value));
     setSelectedCatalog(null); setCatalogSearch(""); setCatalogQuery("");
     setEditingSelectionId(null); setSelectionForm(blankSelection); setSelectionImage(null); setImageDataUrl(undefined); setManualExchangeRate(false);
   };
@@ -237,7 +238,7 @@ export default function ProfitCalculationPage() {
       const selected = selections.find((item) => item.id === selectedId);
       const response = await fetch("/api/profit-calculations", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          platform, selectionItemId: selectedId || null, productId: selectedCatalog?.id || selected?.productVariantId || null,
+          platform, shopeeFeeMode, selectionItemId: selectedId || null, productId: selectedCatalog?.id || selected?.productVariantId || null,
           productName: form.productName.trim(), ...Object.fromEntries(Object.entries(form).filter(([key]) => key !== "productName").map(([key, value]) => [key, value === "" ? null : num(value)])),
           isCommissionFree: false, shippingMode,
         }),
@@ -257,8 +258,8 @@ export default function ProfitCalculationPage() {
 
   const breakdown: Array<[string, number, string]> = [
     ["商品销售额", calculation.gmvBrl, "BRL"],
-    [platform === "TIKTOK" ? `平台佣金（${calculation.tiktokCommissionRatePercent}%）` : "平台佣金", -calculation.platformFeeBrl, "BRL"],
-    [platform === "TIKTOK" ? `履约费（含 R$${calculation.tiktokFixedFeePerItemBrl} × ${calculation.quantity} 件）` : "履约费", -calculation.fulfillmentFeeBrl, "BRL"],
+    [platform === "TIKTOK" ? `平台佣金（${calculation.tiktokCommissionRatePercent}%）` : calculation.shopeeCommissionRatePercent != null ? `平台佣金（${calculation.shopeeCommissionRatePercent}%）` : "平台佣金", -calculation.platformFeeBrl, "BRL"],
+    [platform === "TIKTOK" ? `履约费（含 R$${calculation.tiktokFixedFeePerItemBrl} × ${calculation.quantity} 件）` : calculation.shopeeFixedFeePerItemBrl != null ? `履约费（含 R$${calculation.shopeeFixedFeePerItemBrl} × ${calculation.quantity} 件）` : "履约费", -calculation.fulfillmentFeeBrl, "BRL"],
     ["尾程物流费", -calculation.lastMileFeeBrl, "BRL"],
     ["预计结算额", calculation.settlementBrl, "BRL"], ["采购成本", -calculation.purchaseCostCny, "CNY"],
     ["头程物流", -calculation.firstLegCny, "CNY"], ["海外仓费", -calculation.warehouseFeeCny, "CNY"],
@@ -397,8 +398,14 @@ export default function ProfitCalculationPage() {
               <div className="flex gap-2"><input type="number" min="0" step="0.01" className={fieldClass} value={form.warehouseFeeBrl} onChange={(event) => updateForm("warehouseFeeBrl", event.target.value)} />
                 <button className="mt-1 shrink-0 rounded-lg border border-slate-600 px-2 text-xs text-cyan-300" onClick={() => updateForm("warehouseFeeBrl", String(estimatedWarehouseFeeBrl(num(form.weightKg), num(form.quantity))))}>按重量估算</button></div>
             </label>
-            {platform !== "TIKTOK" && <NumberField label="平台佣金率 %" value={form.platformFeePercent} onChange={(value) => updateForm("platformFeePercent", value)} hint="请依据该平台商品类目/店铺费率填写，默认 0 不代表免佣" />}
-            <NumberField label={platform === "TIKTOK" ? "额外履约费 BRL/单（每件固定费自动计入）" : "履约费 BRL/单"} value={form.fulfillmentFeeBrl} onChange={(value) => updateForm("fulfillmentFeeBrl", value)} />
+            {platform === "SHOPEE" && <label className={labelClass}>虾皮店铺费率方案
+              <select className={fieldClass} value={shopeeFeeMode} onChange={(event) => setShopeeFeeMode(event.target.value as ShopeeFeeMode)}>
+                <option value="CNPJ_LOCAL">CNPJ 公司本土店（按售价分档）</option>
+                <option value="MANUAL">其他店铺 / 手动填写</option>
+              </select>
+            </label>}
+            {platform !== "TIKTOK" && !(platform === "SHOPEE" && shopeeFeeMode === "CNPJ_LOCAL") && <NumberField label="平台佣金率 %" value={form.platformFeePercent} onChange={(value) => updateForm("platformFeePercent", value)} hint="请依据该平台商品类目/店铺费率填写，默认 0 不代表免佣" />}
+            <NumberField label={platform === "TIKTOK" || platform === "SHOPEE" && shopeeFeeMode === "CNPJ_LOCAL" ? "额外履约费 BRL/单（每件固定费自动计入）" : "履约费 BRL/单"} value={form.fulfillmentFeeBrl} onChange={(value) => updateForm("fulfillmentFeeBrl", value)} />
             <NumberField label="尾程物流费 BRL/单" value={form.lastMileFeeBrl} onChange={(value) => updateForm("lastMileFeeBrl", value)} />
             <NumberField label="达人/联盟佣金 BRL/单" value={form.affiliateFeeBrl} onChange={(value) => updateForm("affiliateFeeBrl", value)} />
             <NumberField label="税费率 %（按 GMV）" value={form.taxPercent} onChange={(value) => updateForm("taxPercent", value)} />
@@ -407,6 +414,7 @@ export default function ProfitCalculationPage() {
             <NumberField label="目标广告 ROI" value={form.targetRoi} onChange={(value) => updateForm("targetRoi", value)} hint="ROI = GMV ÷ 广告消耗；不填则不推演目标利润" />
           </div>
           {platform === "TIKTOK" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">按卖家折扣后单件售价分档：低于 R$50 为平台佣金 10%＋履约费 R$4/件；R$50 及以上为平台佣金 6%＋履约费 R$6/件。不另加 6% SFP。</p>}
+          {platform === "SHOPEE" && shopeeFeeMode === "CNPJ_LOCAL" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">CNPJ 公司本土店（按你提供的费率估算）：单件售价 ≤ R$79.99 为 20%＋R$4.50/件；R$80–99.99 为 14%＋R$16/件；R$100–199.99 为 14%＋R$20/件；≥ R$200 为 14%＋R$26/件。百分比归平台佣金，固定金额归履约费；分档按折扣后售价（未填则按售价）。其他店铺请切换手动方案。</p>}
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400"><span>履约模式：</span>
             <button onClick={() => setShippingMode("SFP")} className={`rounded-md px-3 py-1.5 ${shippingMode === "SFP" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>自发货</button>
             <button onClick={() => setShippingMode("WAREHOUSE_3PL")} className={`rounded-md px-3 py-1.5 ${shippingMode === "WAREHOUSE_3PL" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>海外仓</button>
@@ -432,13 +440,13 @@ export default function ProfitCalculationPage() {
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm"><h3 className="mb-2 text-slate-400">核算拆解</h3>
             {breakdown.map(([label, value, unit]) => <div key={label} className="flex justify-between gap-2 border-t border-slate-800/60 py-1.5"><span>{label}</span><span className="tabular-nums">{value < 0 ? "−" : ""}{money(Math.abs(value))} {unit}</span></div>)}
           </div>
-          {(platform !== "TIKTOK" && num(form.platformFeePercent) === 0 || num(form.lastMileFeeBrl) === 0) && <div className="flex gap-2 rounded-lg border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-300"><CircleAlert size={15} className="shrink-0" />部分平台/尾程费用为 0。若尚未拿到报价，利润可能偏高。</div>}
+          {((platform === "MERCADO_LIVRE" || platform === "SHOPEE" && shopeeFeeMode === "MANUAL") && num(form.platformFeePercent) === 0 || num(form.lastMileFeeBrl) === 0) && <div className="flex gap-2 rounded-lg border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-300"><CircleAlert size={15} className="shrink-0" />部分平台/尾程费用为 0。若尚未拿到报价，利润可能偏高。</div>}
         </aside>
       </div>
       <section className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="mb-3 text-lg font-semibold">测算历史 · {PROFIT_ESTIMATE_LABELS[platform]}</h2>
         {historyError && <p className="text-sm text-rose-300">历史加载失败：{historyError.message}</p>}
         <table className="min-w-[760px] w-full text-left text-sm"><thead className="border-b border-slate-700 text-slate-400"><tr><th className="py-2">商品</th><th>GMV</th><th>预计结算</th><th>净利润</th><th>保本 ROI</th><th>口径</th><th>时间</th><th className="text-right">操作</th></tr></thead>
-          <tbody>{history.filter((row) => (row.platform || "TIKTOK") === platform).map((row) => <tr key={row.id} className="border-b border-slate-800/70"><td className="py-3">{row.productName}<div className="text-xs text-slate-500">{row.skuId || ""}</div></td><td>R$ {money(row.grossRevenueBrl)}</td><td>R$ {money(row.settlementBrl)}</td><td>¥{money(row.netProfitCny)}</td><td>{row.breakEvenRoi.toFixed(2)}</td><td className="text-xs text-slate-500">{row.inputSnapshot?.version === 2 ? "预测 v2" : "旧版测算"}</td><td className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleString("zh-CN")}</td><td className="text-right"><button onClick={() => deleteHistory(row.id)} className="inline-flex items-center gap-1 text-rose-400"><Trash2 size={14} />删除</button></td></tr>)}</tbody>
+          <tbody>{history.filter((row) => (row.platform || "TIKTOK") === platform).map((row) => <tr key={row.id} className="border-b border-slate-800/70"><td className="py-3">{row.productName}<div className="text-xs text-slate-500">{row.skuId || ""}</div></td><td>R$ {money(row.grossRevenueBrl)}</td><td>R$ {money(row.settlementBrl)}</td><td>¥{money(row.netProfitCny)}</td><td>{row.breakEvenRoi.toFixed(2)}</td><td className="text-xs text-slate-500">{row.inputSnapshot?.inputs?.shopeeFeeMode === "CNPJ_LOCAL" ? "虾皮 CNPJ 分档" : row.inputSnapshot?.version === 2 ? "预测 v2" : "旧版测算"}</td><td className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleString("zh-CN")}</td><td className="text-right"><button onClick={() => deleteHistory(row.id)} className="inline-flex items-center gap-1 text-rose-400"><Trash2 size={14} />删除</button></td></tr>)}</tbody>
         </table>
       </section>
     </>}
