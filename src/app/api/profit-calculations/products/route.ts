@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
         id: true,
         skuId: true,
         costPrice: true,
+        currency: true,
         weightKg: true,
         product: {
           select: {
@@ -35,7 +36,8 @@ export async function GET(request: NextRequest) {
         id: item.id,
         skuId: item.skuId,
         name: item.product.name,
-        purchaseCostCny: item.costPrice == null ? 0 : Number(item.costPrice),
+        purchaseCostCny: item.currency === "CNY" && item.costPrice != null ? Number(item.costPrice) : 0,
+        costCurrency: item.currency,
         weightKg: item.weightKg == null ? null : Number(item.weightKg),
       }))
     );

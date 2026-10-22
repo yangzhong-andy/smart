@@ -10,7 +10,8 @@ import {
 } from "@/lib/profit-estimate";
 import { compressImage } from "@/lib/image-utils";
 
-type ProductOption = { id: string; skuId: string; name: string; purchaseCostCny: number; weightKg: number | null };
+type ProductOption = { id: string; skuId: string; name: string; purchaseCostCny: number; costCurrency: string; weightKg: number | null };
+type ProductDetail = ProductOption & { imageUrl: string | null };
 type SelectionItem = {
   id: string; platform: ProfitEstimatePlatform; name: string; sellerSku: string | null;
   imageUrl: string | null;
@@ -72,6 +73,9 @@ export default function ProfitCalculationPage() {
   const [platform, setPlatform] = useState<ProfitEstimatePlatform>("TIKTOK");
   const [tab, setTab] = useState<"estimate" | "selection">("estimate");
   const [selectedId, setSelectedId] = useState("");
+  const [selectedCatalog, setSelectedCatalog] = useState<ProductOption | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogQuery, setCatalogQuery] = useState("");
   const [form, setForm] = useState<EstimateForm>(() => blankEstimate("TIKTOK"));
   const [shippingMode, setShippingMode] = useState<"SFP" | "WAREHOUSE_3PL">("SFP");
   const [manualExchangeRate, setManualExchangeRate] = useState(false);
@@ -94,12 +98,30 @@ export default function ProfitCalculationPage() {
     `/api/profit-calculations/products?q=${encodeURIComponent(productSearch)}`, fetcher,
     { revalidateOnFocus: false, dedupingInterval: 10000 },
   );
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCatalogQuery(catalogSearch.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [catalogSearch]);
+  const { data: catalogProducts = [], error: catalogError } = useSWR<ProductOption[]>(
+    tab === "estimate" ? `/api/profit-calculations/products?q=${encodeURIComponent(catalogQuery)}` : null,
+    fetcher, { revalidateOnFocus: false, dedupingInterval: 10000 },
+  );
+  const { data: selectedCatalogDetail, error: catalogDetailError } = useSWR<ProductDetail>(
+    selectedCatalog ? `/api/profit-calculations/products/${encodeURIComponent(selectedCatalog.id)}` : null,
+    fetcher, { revalidateOnFocus: false },
+  );
   const { data: financeRates } = useSWR<{ success: boolean; data?: { BRL?: number; USD?: number } }>(
     "/api/finance-rates", fetcher, { revalidateOnFocus: false },
   );
   const systemBrlRate = financeRates?.success && Number(financeRates.data?.BRL) > 0 ? Number(financeRates.data?.BRL) : null;
   const usdRate = financeRates?.success && Number(financeRates.data?.USD) > 0 ? Number(financeRates.data?.USD) : null;
   const selectedCandidate = selectedId ? selections.find((item) => item.id === selectedId) : null;
+  const catalogOptions = selectedCatalog && !catalogProducts.some((item) => item.id === selectedCatalog.id)
+    ? [selectedCatalog, ...catalogProducts] : catalogProducts;
+  const selectedProduct = selectedCandidate || selectedCatalog;
+  const selectedProductImage = selectedCandidate?.imageUrl
+    ? `${selectedCandidate.imageUrl}?v=${encodeURIComponent(selectedCandidate.updatedAt)}`
+    : selectedCatalog && selectedCatalogDetail?.id === selectedCatalog.id ? selectedCatalogDetail.imageUrl : null;
   useEffect(() => {
     if (systemBrlRate && !manualExchangeRate) setForm((current) => ({ ...current, exchangeRate: systemBrlRate.toFixed(4) }));
   }, [manualExchangeRate, systemBrlRate]);
@@ -121,6 +143,7 @@ export default function ProfitCalculationPage() {
 
   const changePlatform = (value: ProfitEstimatePlatform) => {
     setPlatform(value); setSelectedId(""); setForm(blankEstimate(value));
+    setSelectedCatalog(null); setCatalogSearch(""); setCatalogQuery("");
     setEditingSelectionId(null); setSelectionForm(blankSelection); setSelectionImage(null); setImageDataUrl(undefined); setManualExchangeRate(false);
   };
   const acceptSelectionImage = async (file?: File) => {
@@ -138,13 +161,26 @@ export default function ProfitCalculationPage() {
     finally { setImageBusy(false); }
   };
   const selectCandidate = (id: string) => {
-    setSelectedId(id);
+    setSelectedId(id); setSelectedCatalog(null);
     const row = selections.find((item) => item.id === id);
-    if (!row) return;
+    if (!row) {
+      setForm((current) => ({ ...current, productName: "", purchaseCostCny: "0", weightKg: "", firstLegCny: "0", salePriceBrl: "0" }));
+      return;
+    }
     setForm((current) => ({ ...current, productName: row.name,
       purchaseCostCny: String(row.purchaseCostCny), weightKg: row.weightKg == null ? "" : String(row.weightKg),
-      firstLegCny: String(row.firstLegCny), salePriceBrl: row.targetPriceBrl == null ? current.salePriceBrl : String(row.targetPriceBrl),
+      firstLegCny: String(row.firstLegCny), salePriceBrl: row.targetPriceBrl == null ? "0" : String(row.targetPriceBrl),
     }));
+  };
+  const selectEstimateCatalogProduct = (id: string) => {
+    const item = catalogOptions.find((product) => product.id === id);
+    if (!item) return;
+    setSelectedId(""); setSelectedCatalog(item);
+    setForm((current) => ({ ...current, productName: item.name, purchaseCostCny: String(item.purchaseCostCny),
+      weightKg: item.weightKg == null ? "" : String(item.weightKg), firstLegCny: "0", salePriceBrl: "0",
+    }));
+    if (item.costCurrency !== "CNY") toast.warning(`该 SKU 成本币种为 ${item.costCurrency}，请手动填写人民币采购成本`);
+    else if (item.purchaseCostCny <= 0) toast.warning("该 SKU 尚无采购成本，请手动填写后再测算");
   };
   const selectCatalogProduct = (id: string) => {
     const item = products.find((product) => product.id === id);
@@ -192,7 +228,7 @@ export default function ProfitCalculationPage() {
     await refreshSelections(); toast.success("已删除选品记录");
   };
   const saveEstimate = async () => {
-    if (!form.productName.trim()) { toast.error("请从价格选品表选择商品，或填写商品名称"); return; }
+    if (!form.productName.trim()) { toast.error("请选择商品，或填写商品名称"); return; }
     if (num(form.exchangeRate) <= 0 || num(form.salePriceBrl) <= 0 || num(form.quantity) < 1) {
       toast.error("售价、汇率和件数必须大于 0"); return;
     }
@@ -201,7 +237,7 @@ export default function ProfitCalculationPage() {
       const selected = selections.find((item) => item.id === selectedId);
       const response = await fetch("/api/profit-calculations", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          platform, selectionItemId: selectedId || null, productId: selected?.productVariantId || null,
+          platform, selectionItemId: selectedId || null, productId: selectedCatalog?.id || selected?.productVariantId || null,
           productName: form.productName.trim(), ...Object.fromEntries(Object.entries(form).filter(([key]) => key !== "productName").map(([key, value]) => [key, value === "" ? null : num(value)])),
           isCommissionFree: false, shippingMode,
         }),
@@ -316,21 +352,37 @@ export default function ProfitCalculationPage() {
         <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">测算参数</h2><span className="text-xs text-amber-300">手填费用均为预测值，官方结算后以实际报表为准</span></div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className={labelClass}>从价格选品表选择商品
-              <select className={fieldClass} value={selectedId} onChange={(event) => selectCandidate(event.target.value)}><option value="">手工录入</option>
-                {selections.filter((row) => row.status !== "REJECTED").map((row) => <option key={row.id} value={row.id}>{row.name} · {row.sellerSku || row.linkedSku || "无 SKU"}</option>)}
+            <label className={`${labelClass} md:col-span-2`}>搜索系统内部商品（名称或 SKU）
+              <input className={fieldClass} value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="默认显示最近 100 个 SKU；输入关键词搜索更多" />
+              {catalogError && <span className="mt-1 block text-rose-300">内部商品加载失败：{catalogError.message}</span>}
+            </label>
+            <label className={labelClass}>从选品表或系统内部商品选择
+              <select className={fieldClass} value={selectedId ? `selection:${selectedId}` : selectedCatalog ? `catalog:${selectedCatalog.id}` : ""} onChange={(event) => {
+                const value = event.target.value;
+                if (value.startsWith("selection:")) selectCandidate(value.slice(10));
+                else if (value.startsWith("catalog:")) selectEstimateCatalogProduct(value.slice(8));
+                else selectCandidate("");
+              }}><option value="">手工录入</option>
+                <optgroup label="价格选品表">
+                  {selections.filter((row) => row.status !== "REJECTED").map((row) => <option key={row.id} value={`selection:${row.id}`}>{row.name} · {row.sellerSku || row.linkedSku || "无 SKU"}</option>)}
+                </optgroup>
+                <optgroup label="系统内部商品 / SKU">
+                  {catalogOptions.map((item) => <option key={item.id} value={`catalog:${item.id}`}>{item.name} · {item.skuId}</option>)}
+                </optgroup>
               </select>
             </label>
             <label className={labelClass}>商品名称<input className={fieldClass} value={form.productName} onChange={(event) => updateForm("productName", event.target.value)} /></label>
-            {selectedCandidate && <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 md:col-span-2">
-              {selectedCandidate.imageUrl ? <img
-                src={`${selectedCandidate.imageUrl}?v=${encodeURIComponent(selectedCandidate.updatedAt)}`}
-                alt={selectedCandidate.name}
+            {selectedProduct && <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 md:col-span-2">
+              {selectedProductImage ? <img
+                src={selectedProductImage}
+                alt={selectedProduct.name}
                 className="h-20 w-20 shrink-0 rounded-md border border-slate-700 bg-slate-900 object-contain"
-              /> : <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-700 text-center text-xs text-slate-500">暂无图片</div>}
-              <div className="min-w-0 text-sm"><div className="truncate font-medium text-slate-200">{selectedCandidate.name}</div>
-                <div className="mt-1 text-xs text-slate-500">{selectedCandidate.sellerSku || selectedCandidate.linkedSku || "未录 SKU"}</div>
-                {!selectedCandidate.imageUrl && <div className="mt-1 text-xs text-slate-500">可在价格选品表格中上传产品图片</div>}
+              /> : <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-700 text-center text-xs text-slate-500">{selectedCatalog && !selectedCatalogDetail && !catalogDetailError ? "加载图片中" : "暂无图片"}</div>}
+              <div className="min-w-0 text-sm"><div className="truncate font-medium text-slate-200">{selectedProduct.name}</div>
+                <div className="mt-1 text-xs text-slate-500">{selectedCandidate ? selectedCandidate.sellerSku || selectedCandidate.linkedSku || "未录 SKU" : selectedCatalog?.skuId}</div>
+                {selectedCandidate && !selectedProductImage && <div className="mt-1 text-xs text-slate-500">可在价格选品表格中上传产品图片</div>}
+                {selectedCatalog && selectedCatalog.costCurrency !== "CNY" && <div className="mt-1 text-xs text-amber-300">成本币种为 {selectedCatalog.costCurrency}，人民币成本需手填</div>}
+                {selectedCatalog && selectedCatalog.costCurrency === "CNY" && selectedCatalog.purchaseCostCny <= 0 && <div className="mt-1 text-xs text-amber-300">系统 SKU 尚无采购成本，请手填</div>}
               </div>
             </div>}
             <NumberField label="售价 BRL/件" value={form.salePriceBrl} onChange={(value) => updateForm("salePriceBrl", value)} />
