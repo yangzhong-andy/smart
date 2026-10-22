@@ -2312,9 +2312,17 @@ model ProfitSelectionItem {
   updatedAt        DateTime            @updatedAt
   productVariant   ProductVariant?     @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
   calculations     ProfitCalculation[]
+  image            ProfitSelectionImage?
 
   @@index([platform, status, updatedAt])
   @@index([productVariantId])
+}
+
+model ProfitSelectionImage {
+  itemId    String @id
+  mimeType  String
+  data      Bytes
+  item      ProfitSelectionItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 }
 
 model ProxyIpDedicatedLine {

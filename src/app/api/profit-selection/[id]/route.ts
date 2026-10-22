@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/api-auth";
 import { isProfitEstimatePlatform } from "@/lib/profit-estimate";
 import { serverError } from "@/lib/api-response";
+import { parseSelectionImage } from "@/lib/profit-selection-image";
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireApiUser(request);
@@ -26,6 +27,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       const variant = await prisma.productVariant.findUnique({ where: { id: String(body.productVariantId) }, select: { id: true } });
       if (!variant) return NextResponse.json({ error: "关联的商品 SKU 不存在" }, { status: 400 });
     }
+    const image = body.imageDataUrl ? parseSelectionImage(body.imageDataUrl) : null;
     const updated = await prisma.profitSelectionItem.update({ where: { id: params.id }, data: {
       ...(body.platform != null ? { platform: body.platform } : {}),
       ...(body.name != null ? { name: String(body.name).trim() } : {}),
@@ -33,10 +35,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       ...(body.productVariantId !== undefined ? { productVariantId: body.productVariantId ? String(body.productVariantId) : null } : {}),
       ...(body.status != null ? { status: body.status } : {}),
       ...(body.notes !== undefined ? { notes: String(body.notes || "").trim().slice(0, 2000) || null } : {}),
+      ...(image ? { image: { upsert: { create: image, update: image } } } :
+        body.imageDataUrl === null ? { image: { delete: true } } : {}),
       ...numbers,
     } });
     return NextResponse.json({ id: updated.id });
   } catch (error) {
+    if (error instanceof Error && error.message.includes("图片")) return NextResponse.json({ error: error.message }, { status: 400 });
     return serverError("更新价格选品失败", error);
   }
 }

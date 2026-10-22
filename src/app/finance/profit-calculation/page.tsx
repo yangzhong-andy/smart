@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Calculator, CircleAlert, Plus, Save, Search, Trash2 } from "lucide-react";
@@ -8,10 +8,12 @@ import {
   calculateProfitEstimate, estimatedWarehouseFeeBrl, PROFIT_ESTIMATE_LABELS,
   PROFIT_ESTIMATE_PLATFORMS, type ProfitEstimatePlatform,
 } from "@/lib/profit-estimate";
+import { compressImage } from "@/lib/image-utils";
 
 type ProductOption = { id: string; skuId: string; name: string; purchaseCostCny: number; weightKg: number | null };
 type SelectionItem = {
   id: string; platform: ProfitEstimatePlatform; name: string; sellerSku: string | null;
+  imageUrl: string | null;
   productVariantId: string | null; linkedSku: string | null; purchaseCostCny: number;
   weightKg: number | null; targetPriceBrl: number | null; firstLegCny: number;
   status: string; notes: string | null; updatedAt: string;
@@ -75,6 +77,10 @@ export default function ProfitCalculationPage() {
   const [manualExchangeRate, setManualExchangeRate] = useState(false);
   const [selectionForm, setSelectionForm] = useState<SelectionForm>(blankSelection);
   const [editingSelectionId, setEditingSelectionId] = useState<string | null>(null);
+  const [selectionImage, setSelectionImage] = useState<string | null>(null);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null | undefined>(undefined);
+  const [imageBusy, setImageBusy] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [productSearch, setProductSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -114,7 +120,21 @@ export default function ProfitCalculationPage() {
 
   const changePlatform = (value: ProfitEstimatePlatform) => {
     setPlatform(value); setSelectedId(""); setForm(blankEstimate(value));
-    setEditingSelectionId(null); setSelectionForm(blankSelection); setManualExchangeRate(false);
+    setEditingSelectionId(null); setSelectionForm(blankSelection); setSelectionImage(null); setImageDataUrl(undefined); setManualExchangeRate(false);
+  };
+  const acceptSelectionImage = async (file?: File) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+      toast.error("请选择 JPG、PNG、WebP 或 GIF 图片"); return;
+    }
+    if (file.size > 10 * 1024 * 1024) { toast.error("原图不能超过 10 MB"); return; }
+    setImageBusy(true);
+    try {
+      const dataUrl = await compressImage(file, { maxWidth: 1200, maxHeight: 1200, quality: 0.78, maxSizeKB: 250, outputFormat: "jpeg" });
+      if (dataUrl.length > 410_000) throw new Error("压缩后图片超过 300 KB，请换一张图片");
+      setSelectionImage(dataUrl); setImageDataUrl(dataUrl);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "图片处理失败"); }
+    finally { setImageBusy(false); }
   };
   const selectCandidate = (id: string) => {
     setSelectedId(id);
@@ -135,25 +155,27 @@ export default function ProfitCalculationPage() {
   };
   const saveSelection = async () => {
     if (!selectionForm.name.trim()) { toast.error("请填写选品名称"); return; }
+    if (imageBusy) { toast.error("图片仍在处理中，请稍候"); return; }
     setSaving(true);
     try {
       const endpoint = editingSelectionId ? `/api/profit-selection/${editingSelectionId}` : "/api/profit-selection";
       const response = await fetch(endpoint, { method: editingSelectionId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          ...selectionForm, platform, purchaseCostCny: num(selectionForm.purchaseCostCny),
+          ...selectionForm, platform, imageDataUrl, purchaseCostCny: num(selectionForm.purchaseCostCny),
           firstLegCny: num(selectionForm.firstLegCny), weightKg: selectionForm.weightKg === "" ? null : num(selectionForm.weightKg),
           targetPriceBrl: selectionForm.targetPriceBrl === "" ? null : num(selectionForm.targetPriceBrl),
         }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "保存失败");
-      await refreshSelections(); setEditingSelectionId(null); setSelectionForm(blankSelection);
+      await refreshSelections(); setEditingSelectionId(null); setSelectionForm(blankSelection); setSelectionImage(null); setImageDataUrl(undefined);
       toast.success("选品记录已保存");
     } catch (error) { toast.error(error instanceof Error ? error.message : "保存失败"); }
     finally { setSaving(false); }
   };
   const editSelection = (row: SelectionItem) => {
     setEditingSelectionId(row.id);
+    setSelectionImage(row.imageUrl ? `${row.imageUrl}?v=${encodeURIComponent(row.updatedAt)}` : null); setImageDataUrl(undefined);
     setSelectionForm({ name: row.name, sellerSku: row.sellerSku || "", productVariantId: row.productVariantId || "",
       purchaseCostCny: String(row.purchaseCostCny), weightKg: row.weightKg == null ? "" : String(row.weightKg),
       targetPriceBrl: row.targetPriceBrl == null ? "" : String(row.targetPriceBrl), firstLegCny: String(row.firstLegCny),
@@ -230,6 +252,26 @@ export default function ProfitCalculationPage() {
         <h2 className="text-lg font-semibold">{editingSelectionId ? "编辑候选商品" : "新增候选商品"}</h2>
         <p className="mt-1 text-xs text-slate-400">可关联主商品库 SKU，也可以先手动登记尚未建档的选品。各平台的候选商品分开管理。</p>
         <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-4">
+          <div className="md:col-span-3 xl:col-span-4">
+            <div className={labelClass}>产品图片（可选）</div>
+            <div tabIndex={0} onPaste={(event) => {
+              const file = Array.from(event.clipboardData.items).find((item) => item.kind === "file" && item.type.startsWith("image/"))?.getAsFile();
+              if (file) { event.preventDefault(); void acceptSelectionImage(file); }
+            }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+              event.preventDefault(); void acceptSelectionImage(event.dataTransfer.files[0]);
+            }} className="mt-1 flex min-h-28 items-center gap-4 rounded-lg border border-dashed border-slate-600 bg-slate-950 p-3 outline-none focus:border-cyan-500">
+              {selectionImage && <img src={selectionImage} alt="候选商品预览" className="h-20 w-20 rounded-md object-cover" />}
+              <div className="space-y-2 text-xs text-slate-400">
+                <p>点击此区域后按 Ctrl+V 粘贴图片，也可拖入或选择文件</p>
+                <button type="button" disabled={imageBusy} onClick={() => imageInputRef.current?.click()} className="rounded-md border border-slate-600 px-3 py-1.5 text-cyan-300 disabled:opacity-50">{imageBusy ? "处理图片中…" : "选择图片"}</button>
+                {selectionImage && <button type="button" onClick={() => { setSelectionImage(null); setImageDataUrl(null); }} className="ml-2 text-rose-300">移除图片</button>}
+                <p>支持 JPG、PNG、WebP、GIF，自动压缩；最多 300 KB</p>
+              </div>
+              <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(event) => {
+                void acceptSelectionImage(event.target.files?.[0]); event.target.value = "";
+              }} />
+            </div>
+          </div>
           <label className={labelClass}>搜索主商品库 SKU
             <div className="relative"><Search size={15} className="absolute left-3 top-4 text-slate-500" />
               <input className={`${fieldClass} pl-9`} value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="商品名或 SKU" /></div>
@@ -248,15 +290,15 @@ export default function ProfitCalculationPage() {
           <NumberField label="头程物流 CNY/件" value={selectionForm.firstLegCny} onChange={(value) => updateSelection("firstLegCny", value)} />
           <label className={`${labelClass} md:col-span-3 xl:col-span-4`}>备注<input className={fieldClass} value={selectionForm.notes} onChange={(event) => updateSelection("notes", event.target.value)} placeholder="供应商、价格依据、待核事项" /></label>
         </div>
-        <div className="mt-4 flex gap-2"><button disabled={saving} onClick={saveSelection} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white disabled:opacity-50"><Plus size={15} />{editingSelectionId ? "保存修改" : "加入选品表"}</button>
-          {editingSelectionId && <button onClick={() => { setEditingSelectionId(null); setSelectionForm(blankSelection); }} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300">取消编辑</button>}</div>
+        <div className="mt-4 flex gap-2"><button disabled={saving || imageBusy} onClick={saveSelection} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white disabled:opacity-50"><Plus size={15} />{editingSelectionId ? "保存修改" : "加入选品表"}</button>
+          {editingSelectionId && <button onClick={() => { setEditingSelectionId(null); setSelectionForm(blankSelection); setSelectionImage(null); setImageDataUrl(undefined); }} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300">取消编辑</button>}</div>
       </section>
       <section className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-5">
         <h2 className="mb-4 text-lg font-semibold">{PROFIT_ESTIMATE_LABELS[platform]} · 价格选品表格</h2>
         <table className="min-w-[850px] w-full text-left text-sm"><thead className="border-b border-slate-700 text-slate-400"><tr>
           <th className="py-2">商品 / SKU</th><th>状态</th><th>采购成本</th><th>目标售价</th><th>头程/件</th><th>重量</th><th>更新</th><th className="text-right">操作</th>
         </tr></thead><tbody>{selections.map((row) => <tr key={row.id} className="border-b border-slate-800/70">
-          <td className="py-3"><div>{row.name}</div><div className="text-xs text-slate-500">{row.sellerSku || row.linkedSku || "未录 SKU"}</div></td>
+          <td className="py-3"><div className="flex items-center gap-2">{row.imageUrl && <img src={`${row.imageUrl}?v=${encodeURIComponent(row.updatedAt)}`} alt="" className="h-10 w-10 rounded object-cover" />}<div><div>{row.name}</div><div className="text-xs text-slate-500">{row.sellerSku || row.linkedSku || "未录 SKU"}</div></div></div></td>
           <td>{row.status === "SHORTLIST" ? "入选" : row.status === "REJECTED" ? "淘汰" : "待评估"}</td>
           <td>¥{money(row.purchaseCostCny)}</td><td>{row.targetPriceBrl == null ? "待定" : `R$ ${money(row.targetPriceBrl)}`}</td>
           <td>¥{money(row.firstLegCny)}</td><td>{row.weightKg == null ? "-" : `${row.weightKg} kg`}</td>
