@@ -14,7 +14,7 @@ import {
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
 import { createWarehouseResolver } from "@/lib/profit-warehouse-mapping";
 import { calculateProfitAdCost } from "@/lib/profit-ad-costs";
-import { tiktokAffiliateCommissionCost } from "@/lib/profit-affiliate-commissions";
+import { tiktokAffiliateCommissionCost, tiktokAffiliateProfitCostCny } from "@/lib/profit-affiliate-commissions";
 import { tiktokShopProductDiscountOriginal } from "@/lib/profit-gmv";
 import { usTikTokProfitInput } from "@/lib/profit-us-tiktok";
 import { selectActiveProfitScheme } from "@/lib/profit-scheme-resolution";
@@ -44,7 +44,7 @@ import { buildMercadoLivreProfitReport } from "@/lib/mercado-livre-profit-report
 
 export const dynamic = "force-dynamic";
 
-const PROFIT_REPORT_CACHE_PREFIX = "profit-report-tier-fee-split-v3";
+const PROFIT_REPORT_CACHE_PREFIX = "profit-report-affiliate-sign-v4";
 const PROFIT_REPORT_CACHE_TTL_SECONDS = 180;
 
 type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage" | "components"> & {
@@ -1520,7 +1520,7 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
                   affiliateCommissionAmount: orderProfitScheme.definitions.some(
                     (component) => component.code === "AFFILIATE_COMMISSION" && component.includeInProfit,
                   )
-                    ? (affiliateOriginalByCurrency[financial.currency.toUpperCase()] || 0)
+                    ? -(affiliateOriginalByCurrency[financial.currency.toUpperCase()] || 0)
                     : 0,
                 }
               : null,
@@ -1606,12 +1606,9 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
       const influencerRule = activeShopRule(order.shopId, "INFLUENCER_COMMISSION", businessDate);
       const taxCostCny = taxRule ? gmvCny * number(taxRule.ratePercent) / 100 : 0;
       const taxCostOriginal = taxRule ? productAmount * number(taxRule.ratePercent) / 100 : 0;
-      // Settlement payloads store affiliate commissions as negative debits,
-      // while profit metrics represent costs as positive amounts that are
-      // subtracted by the component calculator. Keep originalAmounts signed
-      // for audit, but normalize the metric value here.
-      const affiliateCommissionCny = Object.entries(affiliateOriginalByCurrency)
-        .reduce((sum, [currency, amount]) => sum - toCny(amount, currency), 0);
+      // The settlement parser already converted negative debits to positive
+      // costs. Subtracting here again would turn a cost into extra profit.
+      const affiliateCommissionCny = tiktokAffiliateProfitCostCny(affiliateOriginalByCurrency, toCny);
       const influencerCommissionCny = influencerRule ? gmvCny * number(influencerRule.ratePercent) / 100 : 0;
       influencerTeamCommissionCny += influencerCommissionCny;
       let orderProductCost = 0;

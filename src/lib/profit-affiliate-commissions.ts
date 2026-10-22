@@ -33,3 +33,12 @@ export function tiktokAffiliateCommissionCost(
     total: organic + ads || 0,
   };
 }
+
+/** Parsed settlement commissions are already positive costs; retain negative reversals. */
+export function tiktokAffiliateProfitCostCny(
+  costsByCurrency: Record<string, number>,
+  convertToCny: (amount: number, currency: string) => number,
+): number {
+  return Object.entries(costsByCurrency)
+    .reduce((sum, [currency, costAmount]) => sum + convertToCny(costAmount, currency), 0);
+}
