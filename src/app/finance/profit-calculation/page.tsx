@@ -99,6 +99,7 @@ export default function ProfitCalculationPage() {
   );
   const systemBrlRate = financeRates?.success && Number(financeRates.data?.BRL) > 0 ? Number(financeRates.data?.BRL) : null;
   const usdRate = financeRates?.success && Number(financeRates.data?.USD) > 0 ? Number(financeRates.data?.USD) : null;
+  const selectedCandidate = selectedId ? selections.find((item) => item.id === selectedId) : null;
   useEffect(() => {
     if (systemBrlRate && !manualExchangeRate) setForm((current) => ({ ...current, exchangeRate: systemBrlRate.toFixed(4) }));
   }, [manualExchangeRate, systemBrlRate]);
@@ -319,6 +320,17 @@ export default function ProfitCalculationPage() {
               </select>
             </label>
             <label className={labelClass}>商品名称<input className={fieldClass} value={form.productName} onChange={(event) => updateForm("productName", event.target.value)} /></label>
+            {selectedCandidate && <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 md:col-span-2">
+              {selectedCandidate.imageUrl ? <img
+                src={`${selectedCandidate.imageUrl}?v=${encodeURIComponent(selectedCandidate.updatedAt)}`}
+                alt={selectedCandidate.name}
+                className="h-20 w-20 shrink-0 rounded-md border border-slate-700 bg-slate-900 object-contain"
+              /> : <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-700 text-center text-xs text-slate-500">暂无图片</div>}
+              <div className="min-w-0 text-sm"><div className="truncate font-medium text-slate-200">{selectedCandidate.name}</div>
+                <div className="mt-1 text-xs text-slate-500">{selectedCandidate.sellerSku || selectedCandidate.linkedSku || "未录 SKU"}</div>
+                {!selectedCandidate.imageUrl && <div className="mt-1 text-xs text-slate-500">可在价格选品表格中上传产品图片</div>}
+              </div>
+            </div>}
             <NumberField label="售价 BRL/件" value={form.salePriceBrl} onChange={(value) => updateForm("salePriceBrl", value)} />
             <NumberField label="折扣后售价 BRL/件（留空按售价）" value={form.discountSalePriceBrl} onChange={(value) => updateForm("discountSalePriceBrl", value)} />
             <NumberField label="件数" value={form.quantity} onChange={(value) => updateForm("quantity", value)} step="1" />
