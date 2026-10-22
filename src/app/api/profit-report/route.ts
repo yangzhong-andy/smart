@@ -44,7 +44,7 @@ import { buildMercadoLivreProfitReport } from "@/lib/mercado-livre-profit-report
 
 export const dynamic = "force-dynamic";
 
-const PROFIT_REPORT_CACHE_PREFIX = "profit-report-tier-commission-v2";
+const PROFIT_REPORT_CACHE_PREFIX = "profit-report-tier-fee-split-v3";
 const PROFIT_REPORT_CACHE_TTL_SECONDS = 180;
 
 type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage" | "components"> & {
@@ -594,14 +594,22 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
       countryCode: string,
       definitions: ProfitSchemeComponentInput[],
     ) => {
-      if (countryCode !== "BR" || definitions.some((item) => item.code === "AFFILIATE_COMMISSION")) {
-        return definitions;
-      }
+      if (countryCode !== "BR") return definitions;
+      const labelled = definitions.map((item) => {
+        if (item.code === "PLATFORM_FEE" && item.label === "TikTok平台佣金（含每件费）") {
+          return { ...item, label: "TikTok平台佣金（百分比）" };
+        }
+        if (item.code === "FULFILLMENT_FEE" && ["其他履约服务费", "SFP服务费及每件成交费"].includes(item.label)) {
+          return { ...item, label: "每件履约费／其他履约服务费" };
+        }
+        return item;
+      });
+      if (labelled.some((item) => item.code === "AFFILIATE_COMMISSION")) return labelled;
       const affiliate = defaultProfitComponents("BR", "TIKTOK")
         .find((item) => item.code === "AFFILIATE_COMMISSION");
       return affiliate
-        ? [...definitions, affiliate].sort((left, right) => left.sortOrder - right.sortOrder)
-        : definitions;
+        ? [...labelled, affiliate].sort((left, right) => left.sortOrder - right.sortOrder)
+        : labelled;
     };
     const resolveProfitSchemeUncached = (shopId: string, businessDate: string) => {
       const store = shopStore.get(shopId);

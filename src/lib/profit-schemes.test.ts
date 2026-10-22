@@ -17,6 +17,8 @@ test("provides Brazil TikTok labels without changing source keys", () => {
   const components = defaultProfitComponents("BR", "TIKTOK");
   assert.match(components.find((item) => item.code === "GMV")?.label || "", /TikTok商品补贴/);
   assert.equal(components.find((item) => item.code === "GMV")?.sourceKey, "gmvCny");
+  assert.equal(components.find((item) => item.code === "PLATFORM_FEE")?.label, "TikTok平台佣金（百分比）");
+  assert.equal(components.find((item) => item.code === "FULFILLMENT_FEE")?.label, "每件履约费／其他履约服务费");
   const affiliate = components.find((item) => item.code === "AFFILIATE_COMMISSION");
   assert.equal(affiliate?.sourceKey, "affiliateCommissionCny");
   assert.equal(affiliate?.includeInProfit, true);
