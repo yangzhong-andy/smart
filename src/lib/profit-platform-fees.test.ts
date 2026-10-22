@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateEstimatedProfitFees, roundProfitFee } from "./profit-platform-fees";
+import { calculateEstimatedProfitFees, roundProfitFee, tiktokSellerDiscountedTierLines } from "./profit-platform-fees";
 
 const tiers = [
   {
@@ -66,6 +66,51 @@ test("BRL 50 belongs to the high-value tier", () => {
   assert.equal(result.platformFeeCny, 3);
   assert.equal(result.fulfillmentFeeCny, 9);
   assert.equal(result.totalCny, 12);
+});
+
+test("commission uses the seller-price line instead of allocating unrelated order GMV", () => {
+  const result = calculateEstimatedProfitFees({
+    orderAmount: 45,
+    gmvCny: 65,
+    totalQty: 1,
+    orderLines: [{ unitAmount: 45, quantity: 1 }],
+    fulfillmentRatePercent: 6,
+    fixedPerOrder: 0,
+    fixedPerUnit: 0,
+    currency: "BRL",
+    tiers,
+    convertToCny: (amount) => amount,
+  });
+  assert.equal(result.platformFeeCny, 4.5);
+  assert.equal(result.fulfillmentFeeCny, 7.9); // SFP 65 × 6% + R$4/unit
+  assert.equal(result.totalCny, 12.4);
+});
+
+test("TikTok seller-discounted price restores platform subsidy before choosing the tier", () => {
+  const lines = tiktokSellerDiscountedTierLines(
+    [{ unitSalePrice: 44.5, qty: 1, lineValue: 44.5 }],
+    [{ original_price: "148", seller_discount: "97.89" }],
+    5.61,
+  );
+  assert.equal(roundProfitFee(lines[0].unitAmount), 50.11);
+  const result = calculate(50.11, 1, lines);
+  assert.equal(roundProfitFee(result.platformFeeCny), 3.01);
+  assert.equal(roundProfitFee(result.fulfillmentFeeCny), 9.01);
+});
+
+test("mixed TikTok items use their own seller discounts, not an order-level subsidy allocation", () => {
+  const lines = tiktokSellerDiscountedTierLines([
+    { unitSalePrice: 45.3, qty: 1, lineValue: 45.3 },
+    { unitSalePrice: 88.57, qty: 1, lineValue: 88.57 },
+  ], [
+    { original_price: "148", seller_discount: "94.89" },
+    { original_price: "296", seller_discount: "194.2" },
+  ], 21.04);
+  assert.equal(roundProfitFee(lines[0].unitAmount), 53.11);
+  assert.equal(roundProfitFee(lines[1].unitAmount), 101.8);
+  const result = calculate(154.91, 2, lines);
+  assert.equal(roundProfitFee(result.platformFeeCny), 9.29);
+  assert.equal(roundProfitFee(result.fulfillmentFeeCny), 21.29);
 });
 
 test("a high order total still uses the low tier when each unit is below BRL 50", () => {

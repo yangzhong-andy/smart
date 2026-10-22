@@ -49,6 +49,34 @@ export function findProfitPlatformFeeTier(
   });
 }
 
+/** TikTok's sale_price includes platform discounts; use seller discount fields when present. */
+export function tiktokSellerDiscountedTierLines(
+  lines: Array<{ unitSalePrice: number; qty: number; lineValue: number }>,
+  rawItems: unknown[],
+  platformProductDiscount: number,
+) {
+  const totalLineValue = lines.reduce((sum, line) => sum + Math.max(0, line.lineValue), 0);
+  const totalQty = lines.reduce((sum, line) => sum + Math.max(1, line.qty), 0);
+  return lines.map((line, index) => {
+    const raw = rawItems[index] && typeof rawItems[index] === "object"
+      ? rawItems[index] as Record<string, unknown> : null;
+    const original = raw?.original_price == null ? NaN : Number(raw.original_price);
+    const sellerDiscount = raw?.seller_discount == null ? NaN : Number(raw.seller_discount);
+    const directSellerPrice = Number.isFinite(original) && Number.isFinite(sellerDiscount)
+      && original >= sellerDiscount && sellerDiscount >= 0
+      ? original - sellerDiscount : null;
+    const quantity = Math.max(1, line.qty);
+    const lineShare = totalLineValue > 0
+      ? Math.max(0, line.lineValue) / totalLineValue
+      : quantity / Math.max(1, totalQty);
+    return {
+      unitAmount: Math.max(0, directSellerPrice
+        ?? line.unitSalePrice + Math.max(0, platformProductDiscount) * lineShare / quantity),
+      quantity,
+    };
+  });
+}
+
 export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBreakdown {
   // TikTok's settlement groups SFP and per-item charges under service fees.
   // Keep those charges in the fulfillment column; the platform column is
@@ -77,16 +105,17 @@ export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBre
   const pricedLines = orderLines.length > 0
     ? orderLines
     : [{ unitAmount: fallbackUnitAmount, quantity: Math.max(0, input.totalQty) }];
-  const totalLineAmount = pricedLines.reduce((sum, line) => sum + line.unitAmount * line.quantity, 0);
   let platformFeeCny = 0;
   let perItemServiceFeeCny = 0;
   for (const line of pricedLines) {
     const tier = findProfitPlatformFeeTier(line.unitAmount, input.tiers);
     if (!tier) return { platformFeeCny: 0, fulfillmentFeeCny: 0, totalCny: 0 };
-    const lineShare = totalLineAmount > 0
-      ? (line.unitAmount * line.quantity) / totalLineAmount
-      : line.quantity / Math.max(input.totalQty, 1);
-    platformFeeCny += input.gmvCny * lineShare * tier.platformRatePercent / 100;
+    // Compute commission from each seller-discounted unit price. Allocating
+    // order GMV by line share can shift mixed-price orders across fee tiers.
+    platformFeeCny += input.convertToCny(
+      line.unitAmount * line.quantity * tier.platformRatePercent / 100,
+      tier.currency,
+    );
     perItemServiceFeeCny += input.convertToCny(tier.perUnitFee * line.quantity, tier.currency);
   }
   const fulfillmentFeeCny = sfpFeeCny + fixedOrderAndUnitFeeCny + perItemServiceFeeCny;

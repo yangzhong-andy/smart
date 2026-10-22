@@ -8,6 +8,7 @@ import {
   allocateActualFeeTotal,
   calculateEstimatedProfitFees,
   roundProfitFee,
+  tiktokSellerDiscountedTierLines,
   type ProfitFeeBreakdown,
 } from "@/lib/profit-platform-fees";
 import { calculateWarehouseFulfillmentFee } from "@/lib/warehouse-fulfillment-fees";
@@ -340,28 +341,6 @@ function productAmountOriginal(
   if (lineTotal > 0) return lineTotal;
   const shipping = number(payment?.shipping_fee ?? raw?.shipping_fee);
   return Math.max(0, number(order.totalAmount) - Math.max(0, shipping));
-}
-
-/**
- * TikTok-funded product discounts are part of Brazil GMV and also belong to
- * the SKU price used for the platform commission tier. The order payload
- * stores the discount once at order level, so callers allocate it across
- * lines by their pre-discount product value.
- */
-function platformTierLines(
-  lines: Array<{ unitSalePrice: number; qty: number; lineValue: number }>,
-  productDiscountOriginal: number,
-) {
-  const totalLineValue = lines.reduce((sum, line) => sum + Math.max(0, line.lineValue), 0);
-  return lines.map((line) => {
-    const lineShare = totalLineValue > 0 ? Math.max(0, line.lineValue) / totalLineValue : 0;
-    const quantity = Math.max(1, line.qty);
-    const allocatedDiscount = productDiscountOriginal * lineShare;
-    return {
-      unitAmount: Math.max(0, line.unitSalePrice + allocatedDiscount / quantity),
-      quantity,
-    };
-  });
 }
 
 function chunks<T>(items: T[], size: number): T[][] {
@@ -1429,6 +1408,11 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
       const productDiscountOriginal = shop?.region === "BR" && orderCurrency === "BRL"
         ? tiktokShopProductDiscountOriginal(order.rawData)
         : 0;
+      const platformFeeLines = tiktokSellerDiscountedTierLines(
+        fallbackLines,
+        parseLineItems(order.rawData),
+        productDiscountOriginal,
+      );
       const isCancelled = order.status === "CANCELLED";
       const exclusionReason = isCancelled
         ? "已取消订单，不计入店铺利润"
@@ -1543,10 +1527,11 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
       const estimatedFeeBreakdown = platformRule
         ? platformRuleCost(
             platformRule,
-            productAmount,
+            platformFeeLines.reduce((sum, line) => sum + line.unitAmount * line.quantity, 0)
+              || productAmount,
             gmvCny,
             totalQty,
-            platformTierLines(fallbackLines, productDiscountOriginal),
+            platformFeeLines,
           )
         : null;
       let platformFeeCny = 0;
