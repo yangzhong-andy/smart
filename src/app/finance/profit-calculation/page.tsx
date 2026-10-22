@@ -30,7 +30,7 @@ type EstimateForm = {
   adCostCny: string; salePriceBrl: string; discountSalePriceBrl: string; exchangeRate: string;
   quantity: string; warehouseFeeBrl: string; platformFeePercent: string;
   fulfillmentFeeBrl: string; lastMileFeeBrl: string; affiliateFeeBrl: string; taxPercent: string;
-  invoiceFeePercent: string; remittanceFeePercent: string; targetRoi: string;
+  returnRatePercent: string; remittanceFeePercent: string; targetRoi: string;
 };
 type SelectionForm = {
   name: string; sellerSku: string; productVariantId: string; purchaseCostCny: string;
@@ -55,7 +55,7 @@ function blankEstimate(platform: ProfitEstimatePlatform): EstimateForm {
     productName: "", purchaseCostCny: "0", weightKg: "", firstLegCny: "0", adCostCny: "0",
     salePriceBrl: "0", discountSalePriceBrl: "", exchangeRate: "1.35", quantity: "1",
     warehouseFeeBrl: "0", platformFeePercent: "0", fulfillmentFeeBrl: "0", lastMileFeeBrl: "0", affiliateFeeBrl: "0",
-    taxPercent: "0", invoiceFeePercent: platform === "TIKTOK" ? "6" : "0",
+    taxPercent: "0", returnRatePercent: "0",
     remittanceFeePercent: platform === "TIKTOK" ? "1" : "0", targetRoi: "",
   };
 }
@@ -137,7 +137,7 @@ export default function ProfitCalculationPage() {
     warehouseFeeBrl: num(form.warehouseFeeBrl), platformFeePercent: num(form.platformFeePercent),
     fulfillmentFeeBrl: num(form.fulfillmentFeeBrl), lastMileFeeBrl: num(form.lastMileFeeBrl),
     affiliateFeeBrl: num(form.affiliateFeeBrl),
-    taxPercent: num(form.taxPercent), invoiceFeePercent: num(form.invoiceFeePercent),
+    taxPercent: num(form.taxPercent), returnRatePercent: num(form.returnRatePercent),
     remittanceFeePercent: num(form.remittanceFeePercent), isCommissionFree: false,
     targetRoi: num(form.targetRoi),
   }), [form, platform, shopeeFeeMode]);
@@ -233,6 +233,9 @@ export default function ProfitCalculationPage() {
     if (num(form.exchangeRate) <= 0 || num(form.salePriceBrl) <= 0 || num(form.quantity) < 1) {
       toast.error("售价、汇率和件数必须大于 0"); return;
     }
+    if (!Number.isFinite(Number(form.returnRatePercent)) || num(form.returnRatePercent) < 0 || num(form.returnRatePercent) > 100) {
+      toast.error("退货率须在 0% 到 100% 之间"); return;
+    }
     setSaving(true);
     try {
       const selected = selections.find((item) => item.id === selectedId);
@@ -265,7 +268,7 @@ export default function ProfitCalculationPage() {
     ["头程物流", -calculation.firstLegCny, "CNY"], ["海外仓费", -calculation.warehouseFeeCny, "CNY"],
     ["广告费", -calculation.adCostCny, "CNY"], ["税费", -calculation.taxCostCny, "CNY"],
     ["达人佣金", -calculation.affiliateFeeCny, "CNY"],
-    ["开票费", -calculation.invoiceFeeCny, "CNY"], ["回款手续费", -calculation.remittanceFeeCny, "CNY"],
+    [`预计退货损失（${num(form.returnRatePercent)}%）`, -calculation.returnLossCny, "CNY"], ["回款手续费", -calculation.remittanceFeeCny, "CNY"],
   ];
 
   return <div className="min-h-screen space-y-5 bg-slate-950 p-4 text-slate-100 md:p-6">
@@ -409,7 +412,7 @@ export default function ProfitCalculationPage() {
             <NumberField label="尾程物流费 BRL/单" value={form.lastMileFeeBrl} onChange={(value) => updateForm("lastMileFeeBrl", value)} />
             <NumberField label="达人/联盟佣金 BRL/单" value={form.affiliateFeeBrl} onChange={(value) => updateForm("affiliateFeeBrl", value)} />
             <NumberField label="税费率 %（按 GMV）" value={form.taxPercent} onChange={(value) => updateForm("taxPercent", value)} />
-            <NumberField label="开票费率 %（按预计结算额）" value={form.invoiceFeePercent} onChange={(value) => updateForm("invoiceFeePercent", value)} />
+            <NumberField label="退货率 %（按预计结算额扣减）" value={form.returnRatePercent} onChange={(value) => updateForm("returnRatePercent", value)} hint="预计退货损失会扣减利润；预计结算额仍显示退货前金额" />
             <NumberField label="回款手续费率 %（按预计结算额）" value={form.remittanceFeePercent} onChange={(value) => updateForm("remittanceFeePercent", value)} />
             <NumberField label="目标广告 ROI" value={form.targetRoi} onChange={(value) => updateForm("targetRoi", value)} hint="ROI = GMV ÷ 广告消耗；不填则不推演目标利润" />
           </div>
@@ -446,7 +449,7 @@ export default function ProfitCalculationPage() {
       <section className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="mb-3 text-lg font-semibold">测算历史 · {PROFIT_ESTIMATE_LABELS[platform]}</h2>
         {historyError && <p className="text-sm text-rose-300">历史加载失败：{historyError.message}</p>}
         <table className="min-w-[760px] w-full text-left text-sm"><thead className="border-b border-slate-700 text-slate-400"><tr><th className="py-2">商品</th><th>GMV</th><th>预计结算</th><th>净利润</th><th>保本 ROI</th><th>口径</th><th>时间</th><th className="text-right">操作</th></tr></thead>
-          <tbody>{history.filter((row) => (row.platform || "TIKTOK") === platform).map((row) => <tr key={row.id} className="border-b border-slate-800/70"><td className="py-3">{row.productName}<div className="text-xs text-slate-500">{row.skuId || ""}</div></td><td>R$ {money(row.grossRevenueBrl)}</td><td>R$ {money(row.settlementBrl)}</td><td>¥{money(row.netProfitCny)}</td><td>{row.breakEvenRoi.toFixed(2)}</td><td className="text-xs text-slate-500">{row.inputSnapshot?.inputs?.shopeeFeeMode === "CNPJ_LOCAL" ? "虾皮 CNPJ 分档" : row.inputSnapshot?.version === 2 ? "预测 v2" : "旧版测算"}</td><td className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleString("zh-CN")}</td><td className="text-right"><button onClick={() => deleteHistory(row.id)} className="inline-flex items-center gap-1 text-rose-400"><Trash2 size={14} />删除</button></td></tr>)}</tbody>
+          <tbody>{history.filter((row) => (row.platform || "TIKTOK") === platform).map((row) => <tr key={row.id} className="border-b border-slate-800/70"><td className="py-3">{row.productName}<div className="text-xs text-slate-500">{row.skuId || ""}</div></td><td>R$ {money(row.grossRevenueBrl)}</td><td>R$ {money(row.settlementBrl)}</td><td>¥{money(row.netProfitCny)}</td><td>{row.breakEvenRoi.toFixed(2)}</td><td className="text-xs text-slate-500">{row.inputSnapshot?.version === 3 ? "预测 v3 · 含退货率" : row.inputSnapshot?.inputs?.shopeeFeeMode === "CNPJ_LOCAL" ? "虾皮 CNPJ 分档" : row.inputSnapshot?.version === 2 ? "预测 v2" : "旧版测算"}</td><td className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleString("zh-CN")}</td><td className="text-right"><button onClick={() => deleteHistory(row.id)} className="inline-flex items-center gap-1 text-rose-400"><Trash2 size={14} />删除</button></td></tr>)}</tbody>
         </table>
       </section>
     </>}

@@ -42,7 +42,7 @@ export type ProfitEstimateInput = {
   lastMileFeeBrl: number;
   affiliateFeeBrl: number;
   taxPercent: number;
-  invoiceFeePercent: number;
+  returnRatePercent: number;
   remittanceFeePercent: number;
   isCommissionFree: boolean;
   targetRoi?: number | null;
@@ -97,10 +97,10 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const firstLegCny = nonnegative(input.firstLegCny) * quantity;
   const adCostCny = nonnegative(input.adCostCny) * quantity;
   const taxCostCny = gmvCny * nonnegative(input.taxPercent) / 100;
-  const invoiceFeeCny = Math.max(0, settlementCny) * nonnegative(input.invoiceFeePercent) / 100;
+  const returnLossCny = Math.max(0, settlementCny) * Math.min(100, nonnegative(input.returnRatePercent)) / 100;
   const remittanceFeeCny = Math.max(0, settlementCny) * nonnegative(input.remittanceFeePercent) / 100;
   const nonAdCostCny = purchaseCostCny + firstLegCny + warehouseFeeCny + affiliateFeeCny + taxCostCny
-    + invoiceFeeCny + remittanceFeeCny;
+    + returnLossCny + remittanceFeeCny;
   const contributionBeforeAdsCny = settlementCny - nonAdCostCny;
   const netProfitCny = contributionBeforeAdsCny - adCostCny;
   const profitRate = gmvCny > 0 ? netProfitCny / gmvCny * 100 : 0;
@@ -119,7 +119,7 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
     shopeePercentageFeeBrl, shopeeFixedFeeBrl,
     fulfillmentFeeBrl, lastMileFeeBrl, settlementBrl,
     settlementCny, purchaseCostCny, firstLegCny, warehouseFeeBrl, warehouseFeeCny,
-    adCostCny, affiliateFeeBrl, affiliateFeeCny, taxCostCny, invoiceFeeCny, remittanceFeeCny, nonAdCostCny,
+    adCostCny, affiliateFeeBrl, affiliateFeeCny, taxCostCny, returnLossCny, remittanceFeeCny, nonAdCostCny,
     contributionBeforeAdsCny, netProfitCny, netProfitBrl: rate > 0 ? netProfitCny / rate : 0,
     profitRate, adRoi, breakEvenRoi, breakEvenAdCostCny: Math.max(0, contributionBeforeAdsCny),
     targetAdBudgetCny, expectedProfitCny, expectedProfitBrl: expectedProfitCny == null || rate <= 0

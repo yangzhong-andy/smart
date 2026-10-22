@@ -6,7 +6,7 @@ const base = {
   platform: "TIKTOK" as const, quantity: 1, salePriceBrl: 100, exchangeRate: 1.35,
   purchaseCostCny: 30, firstLegCny: 5, adCostCny: 10, warehouseFeeBrl: 3.5,
   platformFeePercent: 0, fulfillmentFeeBrl: 0, lastMileFeeBrl: 0, affiliateFeeBrl: 0, taxPercent: 0,
-  invoiceFeePercent: 6, remittanceFeePercent: 1, isCommissionFree: true,
+  returnRatePercent: 0, remittanceFeePercent: 1, isCommissionFree: true,
 };
 
 test("TikTok BR uses one price-tier commission without extra SFP or exemption switch", () => {
@@ -99,4 +99,15 @@ test("affiliate commission is a profit cost outside estimated settlement", () =>
   assert.equal(withAffiliate.settlementBrl, withoutAffiliate.settlementBrl);
   assert.equal(withAffiliate.affiliateFeeCny, 6.75);
   assert.equal(withAffiliate.netProfitCny, withoutAffiliate.netProfitCny - 6.75);
+});
+
+test("return rate deducts expected settlement loss from profit without changing pre-return settlement", () => {
+  const withoutReturns = calculateProfitEstimate({ ...base, platform: "SHOPEE", shopeeFeeMode: "CNPJ_LOCAL",
+    salePriceBrl: 100, quantity: 2, exchangeRate: 1.3 });
+  const withReturns = calculateProfitEstimate({ ...base, platform: "SHOPEE", shopeeFeeMode: "CNPJ_LOCAL",
+    salePriceBrl: 100, quantity: 2, exchangeRate: 1.3, returnRatePercent: 5 });
+  assert.equal(withReturns.settlementBrl, withoutReturns.settlementBrl);
+  assert.equal(withReturns.returnLossCny, withoutReturns.settlementBrl * 1.3 * 0.05);
+  assert.equal(withReturns.netProfitCny, withoutReturns.netProfitCny - withReturns.returnLossCny);
+  assert.equal(withReturns.breakEvenAdCostCny, withoutReturns.breakEvenAdCostCny - withReturns.returnLossCny);
 });

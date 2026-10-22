@@ -92,6 +92,10 @@ export async function POST(request: NextRequest) {
       || Number(body.quantity) < 1 || Number(body.quantity) > 10000) {
       return badRequest("售价、汇率、数量及成本必须是有效的非负数字");
     }
+    if (body.returnRatePercent != null && body.returnRatePercent !== ""
+      && (!Number.isFinite(Number(body.returnRatePercent)) || Number(body.returnRatePercent) < 0 || Number(body.returnRatePercent) > 100)) {
+      return badRequest("退货率须在 0% 到 100% 之间");
+    }
     const selectionItemId = body.selectionItemId ? String(body.selectionItemId) : null;
     const selected = selectionItemId ? await prisma.profitSelectionItem.findUnique({ where: { id: selectionItemId } }) : null;
     if (selectionItemId && (!selected || selected.platform !== body.platform)) return badRequest("选品商品与平台不匹配");
@@ -111,7 +115,7 @@ export async function POST(request: NextRequest) {
       fulfillmentFeeBrl: optionalNumber(body.fulfillmentFeeBrl),
       lastMileFeeBrl: optionalNumber(body.lastMileFeeBrl), affiliateFeeBrl: optionalNumber(body.affiliateFeeBrl),
       taxPercent: optionalNumber(body.taxPercent),
-      invoiceFeePercent: optionalNumber(body.invoiceFeePercent),
+      returnRatePercent: optionalNumber(body.returnRatePercent),
       remittanceFeePercent: optionalNumber(body.remittanceFeePercent),
       isCommissionFree: false, targetRoi: optionalNumber(body.targetRoi),
     };
@@ -124,7 +128,7 @@ export async function POST(request: NextRequest) {
       data: {
         platform: input.platform,
         selectionItemId,
-        inputSnapshot: { version: 2, basis: "ESTIMATE", inputs: input, result },
+        inputSnapshot: { version: 3, basis: "ESTIMATE", inputs: input, result },
         productId,
         productName,
         purchaseCostCny: input.purchaseCostCny,
