@@ -78,11 +78,12 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const gmvCny = gmvBrl * rate;
 
   // The TikTok BR tier contains a percentage commission and a fixed per-item
-  // fulfillment charge. Split their display, but never add another 6% SFP fee.
+  // charge. SFP is a separate, fixed 6% fulfillment service fee.
   const tiktokCommissionRatePercent = effectiveSale < 50 ? 10 : 6;
   const tiktokFixedFeePerItemBrl = effectiveSale < 50 ? 4 : 6;
   const tiktokPercentageFeeBrl = input.platform === "TIKTOK" ? gmvBrl * tiktokCommissionRatePercent / 100 : 0;
   const tiktokFixedFeeBrl = input.platform === "TIKTOK" ? tiktokFixedFeePerItemBrl * quantity : 0;
+  const tiktokSfpFeeBrl = input.platform === "TIKTOK" ? gmvBrl * 6 / 100 : 0;
   const tiktokCommissionBrl = tiktokPercentageFeeBrl + tiktokFixedFeeBrl;
   const shopeeTier = input.platform === "SHOPEE" && input.shopeeFeeMode === "CNPJ_LOCAL"
     ? shopeeCnpjLocalFeeTier(effectiveSale) : null;
@@ -91,7 +92,7 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const platformFeeBrl = input.platform === "TIKTOK"
     ? tiktokPercentageFeeBrl
     : shopeeTier ? shopeePercentageFeeBrl : gmvBrl * nonnegative(input.platformFeePercent) / 100;
-  const fulfillmentFeeBrl = tiktokFixedFeeBrl + shopeeFixedFeeBrl + nonnegative(input.fulfillmentFeeBrl);
+  const fulfillmentFeeBrl = tiktokSfpFeeBrl + tiktokFixedFeeBrl + shopeeFixedFeeBrl + nonnegative(input.fulfillmentFeeBrl);
   const lastMileFeeBrl = nonnegative(input.lastMileFeeBrl);
   const settlementBrl = gmvBrl - platformFeeBrl - fulfillmentFeeBrl - lastMileFeeBrl;
   const settlementCny = settlementBrl * rate;
@@ -117,7 +118,7 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const expectedProfitCny = targetAdBudgetCny == null ? null : contributionBeforeAdsCny - targetAdBudgetCny;
 
   return {
-    quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokCommissionBrl,
+    quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokCommissionBrl, tiktokSfpFeeBrl,
     tiktokCommissionRatePercent, tiktokFixedFeePerItemBrl, tiktokPercentageFeeBrl, tiktokFixedFeeBrl,
     shopeeFeeMode: input.platform === "SHOPEE" ? input.shopeeFeeMode || "MANUAL" : null,
     shopeeCommissionRatePercent: shopeeTier?.ratePercent ?? null,

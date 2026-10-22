@@ -216,14 +216,15 @@ export async function POST(request: NextRequest) {
       if (!shopId || !["TIKTOK", "SHOPEE", "MERCADO_LIVRE"].includes(platform) || !SHOP_COST_TYPES.has(costType) || ratePercent < 0 || ratePercent > 100 || fixedPerOrder < 0 || fixedPerUnit < 0) {
         return NextResponse.json({ error: "店铺成本规则参数无效" }, { status: 400 });
       }
-      const effectiveRatePercent = platform === "TIKTOK" && costType === "PLATFORM_FULFILLMENT" && tiers.length > 0
-        ? 0 : ratePercent;
       const shop = platform === "SHOPEE"
         ? await prisma.shopeeShopSetting.findFirst({ where: { shopId, status: "active" }, select: { shopId: true } })
         : platform === "MERCADO_LIVRE"
           ? await prisma.mercadoLivreAccount.findFirst({ where: { userId: shopId, status: "active" }, select: { userId: true } })
-          : await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true } });
+          : await prisma.tikTokShopSetting.findUnique({ where: { shopId }, select: { shopId: true, region: true } });
       if (!shop) return NextResponse.json({ error: "店铺不存在" }, { status: 400 });
+      const effectiveRatePercent = platform === "TIKTOK" && costType === "PLATFORM_FULFILLMENT"
+        && tiers.length > 0 && "region" in shop && String(shop.region || "").toUpperCase() === "BR"
+        ? 6 : ratePercent;
       const rule = await prisma.$transaction(async (tx) => {
         const saved = await tx.profitShopCostRule.upsert({
           where: {

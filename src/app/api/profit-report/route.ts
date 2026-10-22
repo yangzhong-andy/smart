@@ -44,7 +44,7 @@ import { buildMercadoLivreProfitReport } from "@/lib/mercado-livre-profit-report
 
 export const dynamic = "force-dynamic";
 
-const PROFIT_REPORT_CACHE_PREFIX = "profit-report-affiliate-sign-v4";
+const PROFIT_REPORT_CACHE_PREFIX = "profit-report-tiktok-sfp-v5";
 const PROFIT_REPORT_CACHE_TTL_SECONDS = 180;
 
 type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage" | "components"> & {
@@ -1558,8 +1558,9 @@ async function reportWithDiagnostics(request: NextRequest, scope: ResourceScope)
       } else {
         let feeBreakdown: ProfitFeeBreakdown;
         if (orderCountryCode === "BR") {
-          // Brazil uses the fixed SKU-tier business rule. The settlement fee
-          // total can include affiliate commission and must not overwrite it.
+          // Brazil uses the SKU-tier commission, fixed per-item fee, and
+          // separate SFP percentage. The settlement fee total can include
+          // affiliate commission and must not overwrite these components.
           feeBreakdown = estimatedFeeBreakdown || { platformFeeCny: 0, fulfillmentFeeCny: 0, totalCny: 0 };
         } else if (financial) {
           const financialReference = {

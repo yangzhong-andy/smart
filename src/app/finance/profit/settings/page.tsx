@@ -186,6 +186,8 @@ export default function ProfitSettingsPage() {
     storeId: null,
   }));
   const switchRules = switchData?.rules ?? [];
+  const isBrazilTikTokShop = shopForm.platform === "TIKTOK"
+    && Boolean(data?.shops.some((shop) => shop.platform === "TIKTOK" && shop.id === shopForm.shopId && shop.region?.toUpperCase() === "BR"));
 
   const applyWarehousePreset = (preset: string) => {
     setWarehousePreset(preset);
@@ -250,7 +252,7 @@ export default function ProfitSettingsPage() {
         body: JSON.stringify({
           kind: "shop",
           ...shopForm,
-          ratePercent: isPlatform && shopForm.platform === "TIKTOK" ? 0 : Number(shopForm.ratePercent || 0),
+          ratePercent: isPlatform && isBrazilTikTokShop ? 6 : Number(shopForm.ratePercent || 0),
           fixedPerOrder: Number(shopForm.fixedPerOrder || 0),
           fixedPerUnit: Number(shopForm.fixedPerUnit || 0),
           tiers,
@@ -432,14 +434,14 @@ export default function ProfitSettingsPage() {
             <Field label="备注"><input value={shopForm.notes} onChange={(event) => setShopForm({ ...shopForm, notes: event.target.value })} className="input" /></Field>
           </div>
           {shopForm.costType === "PLATFORM_FULFILLMENT" && <div className="mt-4 grid gap-3 border-t border-slate-800 pt-4 sm:grid-cols-3 xl:grid-cols-5">
-            {shopForm.platform !== "TIKTOK" && <Field label="额外履约费率 (%)"><input type="number" min="0" value={shopForm.ratePercent} onChange={(event) => setShopForm({ ...shopForm, ratePercent: event.target.value })} className="input" /></Field>}
+            <Field label={isBrazilTikTokShop ? "SFP 服务费率 (%)" : "额外履约费率 (%)"}><input type="number" min="0" step="0.01" value={isBrazilTikTokShop ? "6" : shopForm.ratePercent} readOnly={isBrazilTikTokShop} onChange={(event) => setShopForm({ ...shopForm, ratePercent: event.target.value })} className="input" /></Field>
             <Field label={`卖家折扣后单件售价分界 (${shopForm.currency})`}><input type="number" min="0" value={shopForm.threshold} onChange={(event) => setShopForm({ ...shopForm, threshold: event.target.value })} className="input" /></Field>
             <Field label="低价档平台佣金 (%)"><input type="number" min="0" value={shopForm.lowerPlatformRate} onChange={(event) => setShopForm({ ...shopForm, lowerPlatformRate: event.target.value })} className="input" /></Field>
             <Field label={`低价档每件履约费 (${shopForm.currency})`}><input type="number" min="0" value={shopForm.lowerUnitFee} onChange={(event) => setShopForm({ ...shopForm, lowerUnitFee: event.target.value })} className="input" /></Field>
             <Field label="高价档平台佣金 (%)"><input type="number" min="0" value={shopForm.upperPlatformRate} onChange={(event) => setShopForm({ ...shopForm, upperPlatformRate: event.target.value })} className="input" /></Field>
             <Field label={`高价档每件履约费 (${shopForm.currency})`}><input type="number" min="0" value={shopForm.upperUnitFee} onChange={(event) => setShopForm({ ...shopForm, upperUnitFee: event.target.value })} className="input" /></Field>
           </div>}
-          {shopForm.costType === "PLATFORM_FULFILLMENT" && shopForm.platform === "TIKTOK" && <p className="mt-2 text-xs text-amber-300">TikTok 分档百分比计平台佣金，每件固定额计履约费；不额外叠加 6% SFP。</p>}
+          {shopForm.costType === "PLATFORM_FULFILLMENT" && isBrazilTikTokShop && <p className="mt-2 text-xs text-amber-300">巴西 TikTok 分档百分比计平台佣金，每件固定额计履约费，并另计固定 6% SFP 服务费。</p>}
           <button type="button" onClick={saveShopRule} disabled={saving} className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"><Save className="h-4 w-4" />保存店铺规则</button>
 
           <RuleTable rows={data.shopRules} shops={data.shops} onDelete={(id) => deleteRule("shop", id)} />
@@ -578,7 +580,8 @@ function PackagingFeeTierEditor({
 
 function formatShopRule(rule: any): string {
   if (!rule.platformFeeTiers?.length) return `${rule.ratePercent}%`;
-  const extra = Number(rule.ratePercent) > 0 ? `额外履约费 ${rule.ratePercent}%；` : "";
+  const extra = Number(rule.ratePercent) > 0
+    ? `${rule.platform === "TIKTOK" ? "SFP 服务费" : "额外履约费"} ${rule.ratePercent}%；` : "";
   return extra + rule.platformFeeTiers.map((tier: any) => (
     `${tier.maxOrderAmount != null ? `<${tier.maxOrderAmount}` : `≥${tier.minOrderAmount}`}：平台佣金 ${tier.platformRatePercent}% + 履约费 ${tier.perUnitFee} ${tier.currency}/件`
   )).join("；");
@@ -586,11 +589,11 @@ function formatShopRule(rule: any): string {
 
 function formatShopRuleNotes(rule: any): string {
   if (rule.platform === "TIKTOK" && rule.platformFeeTiers?.length) {
-    if (rule.notes === "2026-07-15 起：按卖家折扣后单件售价分档；佣金含每件费，不另加 6%") {
-      return "按卖家折扣后单件售价分档；百分比计佣金、每件费计履约；不另加 6% SFP";
+    if (rule.notes === "2026-07-15 起：按卖家折扣后单件售价分档；佣金百分比 + 每件费，另计 6% SFP") {
+      return "按卖家折扣后单件售价分档；百分比计佣金、每件费计履约；另计 6% SFP";
     }
-    if (rule.notes === "2026-07-15 前：单一佣金 6% + R$4/件") {
-      return "2026-07-15 前：佣金 6% + 履约费 R$4/件；不另加 6% SFP";
+    if (rule.notes === "2026-07-15 前：佣金 6% + R$4/件，另计 6% SFP") {
+      return "2026-07-15 前：佣金 6% + 履约费 R$4/件；另计 6% SFP";
     }
   }
   return rule.notes || "-";

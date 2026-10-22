@@ -262,7 +262,7 @@ export default function ProfitCalculationPage() {
   const breakdown: Array<[string, number, "BRL" | "CNY"]> = [
     ["商品销售额", calculation.gmvBrl, "BRL"],
     [platform === "TIKTOK" ? `平台佣金（${calculation.tiktokCommissionRatePercent}%）` : calculation.shopeeCommissionRatePercent != null ? `平台佣金（${calculation.shopeeCommissionRatePercent}%）` : "平台佣金", -calculation.platformFeeBrl, "BRL"],
-    [platform === "TIKTOK" ? `履约费（含 R$${calculation.tiktokFixedFeePerItemBrl} × ${calculation.quantity} 件）` : calculation.shopeeFixedFeePerItemBrl != null ? `履约费（含 R$${calculation.shopeeFixedFeePerItemBrl} × ${calculation.quantity} 件）` : "履约费", -calculation.fulfillmentFeeBrl, "BRL"],
+    [platform === "TIKTOK" ? `SFP 服务费（6%）＋每件费（R$${calculation.tiktokFixedFeePerItemBrl} × ${calculation.quantity} 件）` : calculation.shopeeFixedFeePerItemBrl != null ? `履约费（含 R$${calculation.shopeeFixedFeePerItemBrl} × ${calculation.quantity} 件）` : "履约费", -calculation.fulfillmentFeeBrl, "BRL"],
     ["尾程物流费", -calculation.lastMileFeeBrl, "BRL"],
     ["预计结算额", calculation.settlementBrl, "BRL"], ["采购成本", -calculation.purchaseCostCny, "CNY"],
     ["头程物流", -calculation.firstLegCny, "CNY"], ["海外仓费", -calculation.warehouseFeeCny, "CNY"],
@@ -416,7 +416,7 @@ export default function ProfitCalculationPage() {
             <NumberField label="回款手续费率 %（按预计结算额）" value={form.remittanceFeePercent} onChange={(value) => updateForm("remittanceFeePercent", value)} />
             <NumberField label="目标广告 ROI" value={form.targetRoi} onChange={(value) => updateForm("targetRoi", value)} hint="ROI = GMV ÷ 广告消耗；不填则不推演目标利润" />
           </div>
-          {platform === "TIKTOK" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">按卖家折扣后单件售价分档：低于 R$50 为平台佣金 10%＋履约费 R$4/件；R$50 及以上为平台佣金 6%＋履约费 R$6/件。不另加 6% SFP。</p>}
+          {platform === "TIKTOK" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">按卖家折扣后单件售价分档：低于 R$50 为平台佣金 10%＋每件费 R$4；R$50 及以上为平台佣金 6%＋每件费 R$6。两档均另计卖家折扣后商品金额 6% 的 SFP 服务费。</p>}
           {platform === "SHOPEE" && shopeeFeeMode === "CNPJ_LOCAL" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">CNPJ 公司本土店（按你提供的费率估算）：单件售价 ≤ R$79.99 为 20%＋R$4.50/件；R$80–99.99 为 14%＋R$16/件；R$100–199.99 为 14%＋R$20/件；≥ R$200 为 14%＋R$26/件。百分比归平台佣金，固定金额归履约费；分档按折扣后售价（未填则按售价）。其他店铺请切换手动方案。</p>}
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400"><span>履约模式：</span>
             <button onClick={() => setShippingMode("SFP")} className={`rounded-md px-3 py-1.5 ${shippingMode === "SFP" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>自发货</button>

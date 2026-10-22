@@ -79,9 +79,11 @@ export function tiktokSellerDiscountedTierLines(
 
 export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBreakdown {
   // Keep the tiered percentage in platform commission and the per-item fixed
-  // charge in fulfillment. A configured fulfillment rate is separate; current
-  // Brazil TikTok tier rules set it to zero to avoid an extra 6% SFP charge.
-  const sfpFeeCny = input.gmvCny * input.fulfillmentRatePercent / 100;
+  // charge in fulfillment. TikTok SFP uses the seller-discounted merchandise
+  // amount, which can differ from report GMV when TikTok funds a discount.
+  const sfpFeeCny = input.tiers.length > 0
+    ? input.convertToCny(input.orderAmount * input.fulfillmentRatePercent / 100, input.currency)
+    : input.gmvCny * input.fulfillmentRatePercent / 100;
   const fixedOrderAndUnitFeeCny = input.convertToCny(
     input.fixedPerOrder + input.fixedPerUnit * input.totalQty,
     input.currency,

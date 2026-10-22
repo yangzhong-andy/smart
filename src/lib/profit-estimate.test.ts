@@ -9,15 +9,15 @@ const base = {
   returnRatePercent: 0, remittanceFeePercent: 1, isCommissionFree: true,
 };
 
-test("TikTok BR uses one price-tier commission without extra SFP or exemption switch", () => {
+test("TikTok BR splits tier commission, fixed fee, and separate 6% SFP", () => {
   const high = calculateProfitEstimate(base);
   const low = calculateProfitEstimate({ ...base, discountSalePriceBrl: 49, quantity: 2 });
   assert.equal(high.platformFeeBrl, 6);
-  assert.equal(high.fulfillmentFeeBrl, 6);
-  assert.equal(high.settlementBrl, 88);
+  assert.equal(high.fulfillmentFeeBrl, 12);
+  assert.equal(high.settlementBrl, 82);
   assert.equal(low.platformFeeBrl, 9.8);
-  assert.equal(low.fulfillmentFeeBrl, 8);
-  assert.equal(low.settlementBrl, 80.2);
+  assert.ok(Math.abs(low.fulfillmentFeeBrl - 13.88) < 1e-9);
+  assert.ok(Math.abs(low.settlementBrl - 74.32) < 1e-9);
   assert.equal(calculateProfitEstimate({ ...base, isCommissionFree: false, platformFeePercent: 99 }).platformFeeBrl, 6);
 });
 
@@ -27,15 +27,16 @@ test("TikTok commission breakdown preserves the same total and settlement", () =
   assert.equal(high.tiktokPercentageFeeBrl, 4.2);
   assert.equal(high.tiktokFixedFeeBrl, 6);
   assert.equal(high.platformFeeBrl, high.tiktokPercentageFeeBrl);
-  assert.equal(high.fulfillmentFeeBrl, high.tiktokFixedFeeBrl);
-  assert.equal(high.platformFeeBrl + high.fulfillmentFeeBrl, high.tiktokCommissionBrl);
-  assert.equal(high.settlementBrl, 59.8);
+  assert.equal(high.fulfillmentFeeBrl, high.tiktokSfpFeeBrl + high.tiktokFixedFeeBrl);
+  assert.ok(Math.abs(high.platformFeeBrl + high.fulfillmentFeeBrl - high.tiktokCommissionBrl - high.tiktokSfpFeeBrl) < 1e-9);
+  assert.ok(Math.abs(high.settlementBrl - 55.6) < 1e-9);
 
   const low = calculateProfitEstimate({ ...base, salePriceBrl: 49, quantity: 2 });
   assert.equal(low.tiktokCommissionRatePercent, 10);
   assert.equal(low.tiktokPercentageFeeBrl, 9.8);
   assert.equal(low.tiktokFixedFeeBrl, 8);
-  assert.equal(low.platformFeeBrl + low.fulfillmentFeeBrl, 17.8);
+  assert.ok(Math.abs(low.tiktokSfpFeeBrl - 5.88) < 1e-9);
+  assert.ok(Math.abs(low.platformFeeBrl + low.fulfillmentFeeBrl - 23.68) < 1e-9);
 });
 
 test("Shopee and Mercado Livre use explicit estimated fees and last mile", () => {
@@ -98,7 +99,7 @@ test("affiliate commission is a profit cost outside estimated settlement", () =>
   const withAffiliate = calculateProfitEstimate({ ...base, affiliateFeeBrl: 5 });
   assert.equal(withAffiliate.settlementBrl, withoutAffiliate.settlementBrl);
   assert.equal(withAffiliate.affiliateFeeCny, 6.75);
-  assert.equal(withAffiliate.netProfitCny, withoutAffiliate.netProfitCny - 6.75);
+  assert.ok(Math.abs(withAffiliate.netProfitCny - (withoutAffiliate.netProfitCny - 6.75)) < 1e-9);
 });
 
 test("return rate deducts expected settlement loss from profit without changing pre-return settlement", () => {
