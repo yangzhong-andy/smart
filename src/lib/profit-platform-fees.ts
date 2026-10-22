@@ -78,9 +78,9 @@ export function tiktokSellerDiscountedTierLines(
 }
 
 export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBreakdown {
-  // TikTok's settlement groups SFP and per-item charges under service fees.
-  // Keep those charges in the fulfillment column; the platform column is
-  // reserved for the percentage commission only.
+  // A tiered rule with no separate fulfillment rate is one commission:
+  // percentage plus its per-item charge. Keep legacy dated rules with an
+  // explicit fulfillment rate reproducible for historical periods.
   const sfpFeeCny = input.gmvCny * input.fulfillmentRatePercent / 100;
   const fixedOrderAndUnitFeeCny = input.convertToCny(
     input.fixedPerOrder + input.fixedPerUnit * input.totalQty,
@@ -118,7 +118,10 @@ export function calculateEstimatedProfitFees(input: EstimateInput): ProfitFeeBre
     );
     perItemServiceFeeCny += input.convertToCny(tier.perUnitFee * line.quantity, tier.currency);
   }
-  const fulfillmentFeeCny = sfpFeeCny + fixedOrderAndUnitFeeCny + perItemServiceFeeCny;
+  const singleTierCommission = input.fulfillmentRatePercent === 0;
+  if (singleTierCommission) platformFeeCny += perItemServiceFeeCny;
+  const fulfillmentFeeCny = sfpFeeCny + fixedOrderAndUnitFeeCny
+    + (singleTierCommission ? 0 : perItemServiceFeeCny);
   return {
     platformFeeCny,
     fulfillmentFeeCny,

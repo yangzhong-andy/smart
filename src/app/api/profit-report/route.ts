@@ -44,7 +44,7 @@ import { buildMercadoLivreProfitReport } from "@/lib/mercado-livre-profit-report
 
 export const dynamic = "force-dynamic";
 
-const PROFIT_REPORT_CACHE_PREFIX = "profit-report";
+const PROFIT_REPORT_CACHE_PREFIX = "profit-report-tier-commission-v2";
 const PROFIT_REPORT_CACHE_TTL_SECONDS = 180;
 
 type MutableMetric = Omit<ProfitMetricRow, "grossProfitCny" | "contributionProfitCny" | "margin" | "roas" | "productCoverage" | "logisticsCoverage" | "settlementCoverage" | "components"> & {

@@ -71,7 +71,6 @@ export default function ProfitCalculationPage() {
   const [tab, setTab] = useState<"estimate" | "selection">("estimate");
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<EstimateForm>(() => blankEstimate("TIKTOK"));
-  const [isCommissionFree, setIsCommissionFree] = useState(true);
   const [shippingMode, setShippingMode] = useState<"SFP" | "WAREHOUSE_3PL">("SFP");
   const [manualExchangeRate, setManualExchangeRate] = useState(false);
   const [selectionForm, setSelectionForm] = useState<SelectionForm>(blankSelection);
@@ -109,9 +108,9 @@ export default function ProfitCalculationPage() {
     fulfillmentFeeBrl: num(form.fulfillmentFeeBrl), lastMileFeeBrl: num(form.lastMileFeeBrl),
     affiliateFeeBrl: num(form.affiliateFeeBrl),
     taxPercent: num(form.taxPercent), invoiceFeePercent: num(form.invoiceFeePercent),
-    remittanceFeePercent: num(form.remittanceFeePercent), isCommissionFree,
+    remittanceFeePercent: num(form.remittanceFeePercent), isCommissionFree: false,
     targetRoi: num(form.targetRoi),
-  }), [form, platform, isCommissionFree]);
+  }), [form, platform]);
 
   const changePlatform = (value: ProfitEstimatePlatform) => {
     setPlatform(value); setSelectedId(""); setForm(blankEstimate(value));
@@ -181,7 +180,7 @@ export default function ProfitCalculationPage() {
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({
           platform, selectionItemId: selectedId || null, productId: selected?.productVariantId || null,
           productName: form.productName.trim(), ...Object.fromEntries(Object.entries(form).filter(([key]) => key !== "productName").map(([key, value]) => [key, value === "" ? null : num(value)])),
-          isCommissionFree, shippingMode,
+          isCommissionFree: false, shippingMode,
         }),
       });
       const body = await response.json();
@@ -198,7 +197,7 @@ export default function ProfitCalculationPage() {
   };
 
   const breakdown: Array<[string, number, string]> = [
-    ["商品销售额", calculation.gmvBrl, "BRL"], ["平台佣金/物流佣金", -calculation.platformFeeBrl, "BRL"],
+    ["商品销售额", calculation.gmvBrl, "BRL"], [platform === "TIKTOK" ? "平台佣金（含每件费）" : "平台佣金", -calculation.platformFeeBrl, "BRL"],
     ["履约费", -calculation.fulfillmentFeeBrl, "BRL"], ["尾程物流费", -calculation.lastMileFeeBrl, "BRL"],
     ["预计结算额", calculation.settlementBrl, "BRL"], ["采购成本", -calculation.purchaseCostCny, "CNY"],
     ["头程物流", -calculation.firstLegCny, "CNY"], ["海外仓费", -calculation.warehouseFeeCny, "CNY"],
@@ -290,7 +289,7 @@ export default function ProfitCalculationPage() {
               <div className="flex gap-2"><input type="number" min="0" step="0.01" className={fieldClass} value={form.warehouseFeeBrl} onChange={(event) => updateForm("warehouseFeeBrl", event.target.value)} />
                 <button className="mt-1 shrink-0 rounded-lg border border-slate-600 px-2 text-xs text-cyan-300" onClick={() => updateForm("warehouseFeeBrl", String(estimatedWarehouseFeeBrl(num(form.weightKg), num(form.quantity))))}>按重量估算</button></div>
             </label>
-            <NumberField label="平台佣金率 %（TikTok 为基础规则外追加）" value={form.platformFeePercent} onChange={(value) => updateForm("platformFeePercent", value)} hint={platform === "TIKTOK" ? "现有巴西测算规则另计 6% SFP 物流佣金；免佣无效再加 6% + R$4/件" : "请依据该平台商品类目/店铺费率填写，默认 0 不代表免佣"} />
+            {platform !== "TIKTOK" && <NumberField label="平台佣金率 %" value={form.platformFeePercent} onChange={(value) => updateForm("platformFeePercent", value)} hint="请依据该平台商品类目/店铺费率填写，默认 0 不代表免佣" />}
             <NumberField label="履约费 BRL/单" value={form.fulfillmentFeeBrl} onChange={(value) => updateForm("fulfillmentFeeBrl", value)} />
             <NumberField label="尾程物流费 BRL/单" value={form.lastMileFeeBrl} onChange={(value) => updateForm("lastMileFeeBrl", value)} />
             <NumberField label="达人/联盟佣金 BRL/单" value={form.affiliateFeeBrl} onChange={(value) => updateForm("affiliateFeeBrl", value)} />
@@ -299,11 +298,7 @@ export default function ProfitCalculationPage() {
             <NumberField label="回款手续费率 %（按预计结算额）" value={form.remittanceFeePercent} onChange={(value) => updateForm("remittanceFeePercent", value)} />
             <NumberField label="目标广告 ROI" value={form.targetRoi} onChange={(value) => updateForm("targetRoi", value)} hint="ROI = GMV ÷ 广告消耗；不填则不推演目标利润" />
           </div>
-          {platform === "TIKTOK" && <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm">
-            <span className="text-slate-400">TikTok 巴西免佣任务：</span>
-            <button className={`rounded-md px-3 py-1.5 ${isCommissionFree ? "bg-emerald-600" : "bg-slate-800"}`} onClick={() => setIsCommissionFree(true)}>有效</button>
-            <button className={`rounded-md px-3 py-1.5 ${!isCommissionFree ? "bg-rose-600" : "bg-slate-800"}`} onClick={() => setIsCommissionFree(false)}>无效</button>
-          </div>}
+          {platform === "TIKTOK" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">按卖家折扣后单件售价分档：低于 R$50 为 10%＋R$4/件；R$50 及以上为 6%＋R$6/件。这是一项佣金，不另加 6% SFP。</p>}
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400"><span>履约模式：</span>
             <button onClick={() => setShippingMode("SFP")} className={`rounded-md px-3 py-1.5 ${shippingMode === "SFP" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>自发货</button>
             <button onClick={() => setShippingMode("WAREHOUSE_3PL")} className={`rounded-md px-3 py-1.5 ${shippingMode === "WAREHOUSE_3PL" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>海外仓</button>

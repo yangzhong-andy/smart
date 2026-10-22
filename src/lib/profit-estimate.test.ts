@@ -9,14 +9,14 @@ const base = {
   invoiceFeePercent: 6, remittanceFeePercent: 1, isCommissionFree: true,
 };
 
-test("TikTok BR preserves the exemption-dependent planning fees", () => {
-  const free = calculateProfitEstimate(base);
-  const paid = calculateProfitEstimate({ ...base, isCommissionFree: false });
-  assert.equal(free.platformFeeBrl, 6);
-  assert.equal(free.settlementBrl, 94);
-  assert.equal(paid.platformFeeBrl, 16);
-  assert.equal(paid.settlementBrl, 84);
-  assert.ok(paid.netProfitCny < free.netProfitCny);
+test("TikTok BR uses one price-tier commission without extra SFP or exemption switch", () => {
+  const high = calculateProfitEstimate(base);
+  const low = calculateProfitEstimate({ ...base, discountSalePriceBrl: 49, quantity: 2 });
+  assert.equal(high.platformFeeBrl, 12);
+  assert.equal(high.settlementBrl, 88);
+  assert.equal(low.platformFeeBrl, 17.8);
+  assert.equal(low.settlementBrl, 80.2);
+  assert.equal(calculateProfitEstimate({ ...base, isCommissionFree: false, platformFeePercent: 99 }).platformFeeBrl, 12);
 });
 
 test("Shopee and Mercado Livre use explicit estimated fees and last mile", () => {

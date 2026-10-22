@@ -103,13 +103,13 @@ export async function POST(request: NextRequest) {
       exchangeRate: Number(body.exchangeRate), purchaseCostCny: Number(body.purchaseCostCny),
       firstLegCny: Number(body.firstLegCny), adCostCny: Number(body.adCostCny),
       weightKg: optionalNumber(body.weightKg), warehouseFeeBrl: optionalNumber(body.warehouseFeeBrl),
-      platformFeePercent: optionalNumber(body.platformFeePercent),
+      platformFeePercent: body.platform === "TIKTOK" ? 0 : optionalNumber(body.platformFeePercent),
       fulfillmentFeeBrl: optionalNumber(body.fulfillmentFeeBrl),
       lastMileFeeBrl: optionalNumber(body.lastMileFeeBrl), affiliateFeeBrl: optionalNumber(body.affiliateFeeBrl),
       taxPercent: optionalNumber(body.taxPercent),
       invoiceFeePercent: optionalNumber(body.invoiceFeePercent),
       remittanceFeePercent: optionalNumber(body.remittanceFeePercent),
-      isCommissionFree: Boolean(body.isCommissionFree), targetRoi: optionalNumber(body.targetRoi),
+      isCommissionFree: false, targetRoi: optionalNumber(body.targetRoi),
     };
     if (Object.values(input).some((value) => typeof value === "number" && (!Number.isFinite(value) || value < 0))) {
       return badRequest("费用、费率和目标 ROI 必须是有效的非负数字");

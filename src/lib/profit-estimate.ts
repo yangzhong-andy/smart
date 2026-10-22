@@ -56,14 +56,14 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const gmvBrl = effectiveSale * quantity;
   const gmvCny = gmvBrl * rate;
 
-  // TikTok BR's current planning rule retains its 6% SFP fee and the
-  // exemption-dependent 6% + BRL 4/unit. Other platforms use explicit
-  // estimates; their actual commission is sourced from settlement reports.
-  const tiktokSfpFeeBrl = input.platform === "TIKTOK" ? gmvBrl * 0.06 : 0;
-  const tiktokExtraFeeBrl = input.platform === "TIKTOK" && !input.isCommissionFree
-    ? gmvBrl * 0.06 + 4 * quantity : 0;
-  const platformFeeBrl = tiktokSfpFeeBrl + tiktokExtraFeeBrl
-    + gmvBrl * nonnegative(input.platformFeePercent) / 100;
+  // TikTok BR charges one tiered commission on the seller-discounted unit
+  // price. The fixed per-item amount belongs to the same fee, not an extra SFP.
+  const tiktokCommissionBrl = input.platform === "TIKTOK"
+    ? gmvBrl * (effectiveSale < 50 ? 0.10 : 0.06) + (effectiveSale < 50 ? 4 : 6) * quantity
+    : 0;
+  const platformFeeBrl = input.platform === "TIKTOK"
+    ? tiktokCommissionBrl
+    : gmvBrl * nonnegative(input.platformFeePercent) / 100;
   const fulfillmentFeeBrl = nonnegative(input.fulfillmentFeeBrl);
   const lastMileFeeBrl = nonnegative(input.lastMileFeeBrl);
   const settlementBrl = gmvBrl - platformFeeBrl - fulfillmentFeeBrl - lastMileFeeBrl;
@@ -90,8 +90,8 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const expectedProfitCny = targetAdBudgetCny == null ? null : contributionBeforeAdsCny - targetAdBudgetCny;
 
   return {
-    quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokSfpFeeBrl,
-    tiktokExtraFeeBrl, fulfillmentFeeBrl, lastMileFeeBrl, settlementBrl,
+    quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokCommissionBrl,
+    fulfillmentFeeBrl, lastMileFeeBrl, settlementBrl,
     settlementCny, purchaseCostCny, firstLegCny, warehouseFeeBrl, warehouseFeeCny,
     adCostCny, affiliateFeeBrl, affiliateFeeCny, taxCostCny, invoiceFeeCny, remittanceFeeCny, nonAdCostCny,
     contributionBeforeAdsCny, netProfitCny, netProfitBrl: rate > 0 ? netProfitCny / rate : 0,
