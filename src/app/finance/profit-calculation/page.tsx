@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { Calculator, CircleAlert, Plus, Save, Search, Trash2 } from "lucide-react";
 import {
-  calculateProfitEstimate, estimatedWarehouseFeeBrl, PROFIT_ESTIMATE_LABELS,
+  calculateProfitEstimate, estimatedWarehouseFeeBrl, estimateGmvSharePercent, PROFIT_ESTIMATE_LABELS,
   PROFIT_ESTIMATE_PLATFORMS, type ProfitEstimatePlatform, type ShopeeFeeMode,
 } from "@/lib/profit-estimate";
 import { compressImage } from "@/lib/image-utils";
@@ -259,7 +259,7 @@ export default function ProfitCalculationPage() {
     await refreshHistory(); toast.success("已删除");
   };
 
-  const breakdown: Array<[string, number, string]> = [
+  const breakdown: Array<[string, number, "BRL" | "CNY"]> = [
     ["商品销售额", calculation.gmvBrl, "BRL"],
     [platform === "TIKTOK" ? `平台佣金（${calculation.tiktokCommissionRatePercent}%）` : calculation.shopeeCommissionRatePercent != null ? `平台佣金（${calculation.shopeeCommissionRatePercent}%）` : "平台佣金", -calculation.platformFeeBrl, "BRL"],
     [platform === "TIKTOK" ? `履约费（含 R$${calculation.tiktokFixedFeePerItemBrl} × ${calculation.quantity} 件）` : calculation.shopeeFixedFeePerItemBrl != null ? `履约费（含 R$${calculation.shopeeFixedFeePerItemBrl} × ${calculation.quantity} 件）` : "履约费", -calculation.fulfillmentFeeBrl, "BRL"],
@@ -440,8 +440,12 @@ export default function ProfitCalculationPage() {
             <div className="mt-2 flex justify-between"><span>目标 ROI 下利润</span><span>{calculation.expectedProfitCny == null ? "—" : `¥${money(calculation.expectedProfitCny)}`}</span></div>
             {usdRate && <div className="mt-2 text-xs text-slate-500">保本广告预算约 USD {money(calculation.breakEvenAdCostCny / usdRate)}；系统汇率 {usdRate.toFixed(4)} CNY/USD</div>}
           </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm"><h3 className="mb-2 text-slate-400">核算拆解</h3>
-            {breakdown.map(([label, value, unit]) => <div key={label} className="flex justify-between gap-2 border-t border-slate-800/60 py-1.5"><span>{label}</span><span className="tabular-nums">{value < 0 ? "−" : ""}{money(Math.abs(value))} {unit}</span></div>)}
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm"><h3 className="mb-1 text-slate-400">核算拆解</h3>
+            <p className="mb-2 text-xs text-slate-500">括号内为占 GMV 比例，费用按绝对值计算；GMV 为 0 时不计算占比。</p>
+            {breakdown.map(([label, value, unit]) => {
+              const share = estimateGmvSharePercent(value, unit === "BRL" ? calculation.gmvBrl : calculation.gmvCny);
+              return <div key={label} className="flex justify-between gap-2 border-t border-slate-800/60 py-1.5"><span>{label}</span><span className="text-right tabular-nums">{value < 0 ? "−" : ""}{money(Math.abs(value))} {unit} <span className="whitespace-nowrap text-slate-400">（{share == null ? "—" : `${money(share)}%`}）</span></span></div>;
+            })}
           </div>
           {((platform === "MERCADO_LIVRE" || platform === "SHOPEE" && shopeeFeeMode === "MANUAL") && num(form.platformFeePercent) === 0 || num(form.lastMileFeeBrl) === 0) && <div className="flex gap-2 rounded-lg border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-300"><CircleAlert size={15} className="shrink-0" />部分平台/尾程费用为 0。若尚未拿到报价，利润可能偏高。</div>}
         </aside>

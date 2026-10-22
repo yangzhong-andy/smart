@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateProfitEstimate, estimatedWarehouseFeeBrl, shopeeCnpjLocalFeeTier } from "./profit-estimate";
+import { calculateProfitEstimate, estimatedWarehouseFeeBrl, estimateGmvSharePercent, shopeeCnpjLocalFeeTier } from "./profit-estimate";
 
 const base = {
   platform: "TIKTOK" as const, quantity: 1, salePriceBrl: 100, exchangeRate: 1.35,
@@ -110,4 +110,13 @@ test("return rate deducts expected settlement loss from profit without changing 
   assert.equal(withReturns.returnLossCny, withoutReturns.settlementBrl * 1.3 * 0.05);
   assert.equal(withReturns.netProfitCny, withoutReturns.netProfitCny - withReturns.returnLossCny);
   assert.equal(withReturns.breakEvenAdCostCny, withoutReturns.breakEvenAdCostCny - withReturns.returnLossCny);
+});
+
+test("breakdown shares use the matching currency GMV and show no share for zero GMV", () => {
+  const result = calculateProfitEstimate({ ...base, platform: "SHOPEE", shopeeFeeMode: "CNPJ_LOCAL",
+    salePriceBrl: 100, exchangeRate: 1.5 });
+  assert.equal(estimateGmvSharePercent(result.gmvBrl, result.gmvBrl), 100);
+  assert.ok(Math.abs((estimateGmvSharePercent(-result.platformFeeBrl, result.gmvBrl) ?? 0) - 14) < 1e-10);
+  assert.equal(estimateGmvSharePercent(-result.purchaseCostCny, result.gmvCny), 20);
+  assert.equal(estimateGmvSharePercent(-4, 0), null);
 });

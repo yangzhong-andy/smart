@@ -52,6 +52,12 @@ function nonnegative(value: number | null | undefined): number {
   return Number.isFinite(value) ? Math.max(0, Number(value)) : 0;
 }
 
+/** Cost shares use the absolute deduction amount; the displayed amount retains its sign. */
+export function estimateGmvSharePercent(amount: number, gmv: number): number | null {
+  return Number.isFinite(amount) && Number.isFinite(gmv) && gmv > 0
+    ? Math.abs(amount) / gmv * 100 : null;
+}
+
 export function estimatedWarehouseFeeBrl(weightKg: number, quantity: number): number {
   const weight = nonnegative(weightKg);
   if (!weight) return 0;
