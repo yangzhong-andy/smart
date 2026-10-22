@@ -93,6 +93,7 @@ model ProductVariant {
   pendingInboundItems    PendingInboundItem[]
   product                Product                        @relation(fields: [productId], references: [id], onDelete: Cascade)
   profitCalculations     ProfitCalculation[]
+  profitSelectionItems   ProfitSelectionItem[]
   profitSkuComponents    ProfitSkuMappingComponent[]
   warehouseSkuComponents WarehouseSkuMappingComponent[]
   contractItems          PurchaseContractItem[]
@@ -2261,6 +2262,9 @@ model ReplenishmentPolicyChange {
 
 model ProfitCalculation {
   id                  String             @id @default(uuid())
+  platform            String             @default("TIKTOK")
+  selectionItemId     String?
+  inputSnapshot       Json?
   productId           String?
   productName         String
   purchaseCostCny     Decimal            @db.Decimal(18, 2)
@@ -2282,9 +2286,35 @@ model ProfitCalculation {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   product             ProductVariant?    @relation(fields: [productId], references: [id])
+  selectionItem       ProfitSelectionItem? @relation(fields: [selectionItemId], references: [id], onDelete: SetNull)
 
   @@index([productId])
+  @@index([platform, createdAt])
+  @@index([selectionItemId])
   @@index([createdAt])
+}
+
+// Editable price-selection candidates. A candidate can be linked to an
+// existing SKU or kept as a sourcing idea before the SKU is created.
+model ProfitSelectionItem {
+  id               String              @id @default(uuid())
+  platform         String
+  name             String
+  sellerSku        String?
+  productVariantId String?
+  purchaseCostCny  Decimal             @default(0) @db.Decimal(18, 2)
+  weightKg         Decimal?            @db.Decimal(10, 3)
+  targetPriceBrl   Decimal?            @db.Decimal(18, 2)
+  firstLegCny      Decimal             @default(0) @db.Decimal(18, 2)
+  status           String              @default("CANDIDATE")
+  notes            String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  productVariant   ProductVariant?     @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  calculations     ProfitCalculation[]
+
+  @@index([platform, status, updatedAt])
+  @@index([productVariantId])
 }
 
 model ProxyIpDedicatedLine {

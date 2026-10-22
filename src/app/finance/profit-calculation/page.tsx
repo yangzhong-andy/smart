@@ -1,605 +1,343 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import useSWR, { mutate } from "swr";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
-import { Calculator, CircleAlert, Gem, Package, Save, Trash2 } from "lucide-react";
+import { Calculator, CircleAlert, Plus, Save, Search, Trash2 } from "lucide-react";
+import {
+  calculateProfitEstimate, estimatedWarehouseFeeBrl, PROFIT_ESTIMATE_LABELS,
+  PROFIT_ESTIMATE_PLATFORMS, type ProfitEstimatePlatform,
+} from "@/lib/profit-estimate";
 
-type ProductOption = {
-  id: string;
-  skuId: string;
-  name: string;
-  purchaseCostCny: number;
-  weightKg: number | null;
+type ProductOption = { id: string; skuId: string; name: string; purchaseCostCny: number; weightKg: number | null };
+type SelectionItem = {
+  id: string; platform: ProfitEstimatePlatform; name: string; sellerSku: string | null;
+  productVariantId: string | null; linkedSku: string | null; purchaseCostCny: number;
+  weightKg: number | null; targetPriceBrl: number | null; firstLegCny: number;
+  status: string; notes: string | null; updatedAt: string;
 };
-
 type HistoryItem = {
-  id: string;
-  productName: string;
-  skuId: string | null;
-  isCommissionFree: boolean;
-  /** 营业额(BRL)，接口由 有效售价×件数 推算 */
-  grossRevenueBrl: number;
-  exchangeRate: number;
-  netProfitCny: number;
-  settlementBrl: number;
-  breakEvenRoi: number;
-  createdAt: string;
+  id: string; platform: ProfitEstimatePlatform; productName: string; skuId: string | null;
+  grossRevenueBrl: number; settlementBrl: number; exchangeRate: number;
+  netProfitCny: number; roi: number; breakEvenRoi: number; createdAt: string;
+  inputSnapshot: { version?: number } | null;
 };
-
-type ShippingMode = "SFP" | "WAREHOUSE_3PL";
+type EstimateForm = {
+  productName: string; purchaseCostCny: string; weightKg: string; firstLegCny: string;
+  adCostCny: string; salePriceBrl: string; discountSalePriceBrl: string; exchangeRate: string;
+  quantity: string; warehouseFeeBrl: string; platformFeePercent: string;
+  fulfillmentFeeBrl: string; lastMileFeeBrl: string; affiliateFeeBrl: string; taxPercent: string;
+  invoiceFeePercent: string; remittanceFeePercent: string; targetRoi: string;
+};
+type SelectionForm = {
+  name: string; sellerSku: string; productVariantId: string; purchaseCostCny: string;
+  weightKg: string; targetPriceBrl: string; firstLegCny: string;
+  status: string; notes: string;
+};
 
 const fetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`请求失败: ${res.status}`);
-  return res.json();
+  const response = await fetch(url);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error || `请求失败 (${response.status})`);
+  return body;
 };
+const money = (value: number) => Number.isFinite(value) ? value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+const num = (value: string) => Number(value || 0);
+const fieldClass = "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500";
+const labelClass = "text-xs text-slate-400";
+const blankSelection: SelectionForm = { name: "", sellerSku: "", productVariantId: "", purchaseCostCny: "0", weightKg: "", targetPriceBrl: "", firstLegCny: "0", status: "CANDIDATE", notes: "" };
 
-const num = (value: number) => (Number.isFinite(value) ? value : 0);
-const money = (value: number | null | undefined) =>
-  num(Number(value ?? 0)).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const usdMoney = (value: number | null | undefined, usdRate: number) =>
-  money(num(Number(value ?? 0)) / (usdRate > 0 ? usdRate : 1));
-const inputClassName =
-  "mt-1.5 w-full rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-2.5 text-sm text-slate-100 outline-none transition-all focus:border-cyan-500/70 focus:ring-2 focus:ring-cyan-500/20";
-const labelClassName = "text-xs tracking-wide text-slate-400";
+function blankEstimate(platform: ProfitEstimatePlatform): EstimateForm {
+  return {
+    productName: "", purchaseCostCny: "0", weightKg: "", firstLegCny: "0", adCostCny: "0",
+    salePriceBrl: "0", discountSalePriceBrl: "", exchangeRate: "1.35", quantity: "1",
+    warehouseFeeBrl: "0", platformFeePercent: "0", fulfillmentFeeBrl: "0", lastMileFeeBrl: "0", affiliateFeeBrl: "0",
+    taxPercent: "0", invoiceFeePercent: platform === "TIKTOK" ? "6" : "0",
+    remittanceFeePercent: platform === "TIKTOK" ? "1" : "0", targetRoi: "",
+  };
+}
 
-function get3PLBaseFeeByWeight(weightKg: number): number {
-  if (weightKg <= 0) return 0;
-  if (weightKg <= 1) return 3.5;
-  if (weightKg <= 3) return 4.3;
-  if (weightKg <= 6) return 5;
-  if (weightKg <= 10) return 8;
-  if (weightKg <= 20) return 14;
-  if (weightKg <= 30) return 20;
-  if (weightKg <= 40) return 30;
-  if (weightKg <= 50) return 33;
-  if (weightKg <= 60) return 40;
-  if (weightKg <= 70) return 47;
-  return 47;
+function NumberField({ label, value, onChange, hint, step = "0.01" }: {
+  label: string; value: string; onChange: (value: string) => void; hint?: string; step?: string;
+}) {
+  return <label className={labelClass}>{label}
+    <input type="number" min="0" step={step} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass} />
+    {hint && <span className="mt-1 block text-[11px] text-slate-500">{hint}</span>}
+  </label>;
 }
 
 export default function ProfitCalculationPage() {
-  const { data: products = [] } = useSWR<ProductOption[]>("/api/profit-calculations/products", fetcher, {
-    revalidateOnFocus: false,
-  });
-  const { data: history = [] } = useSWR<HistoryItem[]>("/api/profit-calculations", fetcher, {
-    revalidateOnFocus: false,
-  });
-  const { data: financeRates } = useSWR<{ success: boolean; data?: { USD?: number } }>("/api/finance-rates", fetcher, {
-    revalidateOnFocus: false,
-  });
-
-  const [productId, setProductId] = useState("");
-  const [productName, setProductName] = useState("");
-  const [purchaseCostCny, setPurchaseCostCny] = useState<number | "">(0);
-  const [weightKg, setWeightKg] = useState<number | "">("");
-  const [firstLegShippingCny, setFirstLegShippingCny] = useState<number | "">(0);
-  /** 留空则按 6%；有值则按「结算额(CNY)×该百分比」摊到每件成本 */
-  const [invoiceFeePercentManual, setInvoiceFeePercentManual] = useState<number | "">("");
-  const [adCostCny, setAdCostCny] = useState<number | "">(0);
-  /** 留空则按 1%；有值则按「结算额(CNY)×该百分比」摊到每件成本 */
-  const [remittanceFeePercentManual, setRemittanceFeePercentManual] = useState<number | "">("");
-  const [salePriceBrl, setSalePriceBrl] = useState<number | "">(0);
-  const [discountSalePriceBrl, setDiscountSalePriceBrl] = useState<number | "">("");
-  const [exchangeRate, setExchangeRate] = useState<number | "">(1.35);
-  /** 留空则用系统汇率接口，否则用手填 1 USD = ? CNY */
-  const [usdManualRate, setUsdManualRate] = useState<number | "">("");
-  const [quantity, setQuantity] = useState<number | "">(1);
-  const [shippingMode, setShippingMode] = useState<ShippingMode>("SFP");
+  const [platform, setPlatform] = useState<ProfitEstimatePlatform>("TIKTOK");
+  const [tab, setTab] = useState<"estimate" | "selection">("estimate");
+  const [selectedId, setSelectedId] = useState("");
+  const [form, setForm] = useState<EstimateForm>(() => blankEstimate("TIKTOK"));
   const [isCommissionFree, setIsCommissionFree] = useState(true);
-  const [targetRoi, setTargetRoi] = useState<number | "">("");
-  const apiUsdRate =
-    financeRates?.success && Number(financeRates?.data?.USD) > 0 ? Number(financeRates?.data?.USD) : 7.2;
-  const usdRate =
-    usdManualRate !== "" && Number.isFinite(Number(usdManualRate)) && Number(usdManualRate) > 0
-      ? num(Number(usdManualRate))
-      : apiUsdRate;
+  const [shippingMode, setShippingMode] = useState<"SFP" | "WAREHOUSE_3PL">("SFP");
+  const [manualExchangeRate, setManualExchangeRate] = useState(false);
+  const [selectionForm, setSelectionForm] = useState<SelectionForm>(blankSelection);
+  const [editingSelectionId, setEditingSelectionId] = useState<string | null>(null);
+  const [productSearch, setProductSearch] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const calculated = useMemo(() => {
-    const qty = Math.max(1, Math.trunc(num(Number(quantity))));
-    const sale = num(Number(salePriceBrl));
-    const discountSale = discountSalePriceBrl === "" ? 0 : num(Number(discountSalePriceBrl));
-    const effectiveSale = discountSale > 0 ? discountSale : sale;
-    const rate = num(Number(exchangeRate));
-    const purchase = num(Number(purchaseCostCny));
-    const firstLeg = num(Number(firstLegShippingCny));
-    const ad = num(Number(adCostCny));
-    const weight = num(weightKg === "" ? 0 : Number(weightKg));
-    // 业务口径：SFP 与海外仓取件费可同时存在，因此海外仓操作费不再受发货模式限制
-    const warehouseBaseFeePerOrder = get3PLBaseFeeByWeight(weight);
-    const warehouseExtraByQty = qty > 1 ? (qty - 1) * 1.5 : 0;
-    // 同一订单多件：基础费只收一次，再叠加加件费
-    const warehouseRawFee = warehouseBaseFeePerOrder + warehouseExtraByQty;
-    const warehouseFee = warehouseRawFee;
-    const warehouseFeeCny = warehouseFee * rate;
+  const { data: selections = [], error: selectionError, mutate: refreshSelections } = useSWR<SelectionItem[]>(
+    `/api/profit-selection?platform=${platform}`, fetcher, { revalidateOnFocus: false },
+  );
+  const { data: history = [], error: historyError, mutate: refreshHistory } = useSWR<HistoryItem[]>(
+    `/api/profit-calculations?platform=${platform}`, fetcher, { revalidateOnFocus: false },
+  );
+  const { data: products = [] } = useSWR<ProductOption[]>(
+    `/api/profit-calculations/products?q=${encodeURIComponent(productSearch)}`, fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 10000 },
+  );
+  const { data: financeRates } = useSWR<{ success: boolean; data?: { BRL?: number; USD?: number } }>(
+    "/api/finance-rates", fetcher, { revalidateOnFocus: false },
+  );
+  const systemBrlRate = financeRates?.success && Number(financeRates.data?.BRL) > 0 ? Number(financeRates.data?.BRL) : null;
+  const usdRate = financeRates?.success && Number(financeRates.data?.USD) > 0 ? Number(financeRates.data?.USD) : null;
+  useEffect(() => {
+    if (systemBrlRate && !manualExchangeRate) setForm((current) => ({ ...current, exchangeRate: systemBrlRate.toFixed(4) }));
+  }, [manualExchangeRate, systemBrlRate]);
 
-    const sfpCommission = effectiveSale * 0.06 * qty;
-    const extraPlatformRateFee = isCommissionFree ? 0 : effectiveSale * 0.06 * qty;
-    const extraPlatformFixedFee = isCommissionFree ? 0 : 4 * qty;
-    const extraPlatformFee = extraPlatformRateFee + extraPlatformFixedFee;
-    // 业务口径：海外仓费不在结算额(BRL)扣减，单独在净利润阶段按 CNY 成本计入
-    const settlementBrl = effectiveSale * qty - sfpCommission - extraPlatformFee;
-    const settlementCny = settlementBrl * rate;
-    const DEFAULT_INVOICE_FEE_PERCENT = 6;
-    const invoiceFeePercentUsed =
-      invoiceFeePercentManual !== "" &&
-      Number.isFinite(Number(invoiceFeePercentManual)) &&
-      Number(invoiceFeePercentManual) >= 0
-        ? num(Number(invoiceFeePercentManual))
-        : DEFAULT_INVOICE_FEE_PERCENT;
-    const invoiceFeeTotalCny = settlementCny * (invoiceFeePercentUsed / 100);
-    const invoiceFeePerPieceCny = qty > 0 ? invoiceFeeTotalCny / qty : 0;
-    const invoiceFee = invoiceFeePerPieceCny;
-    const DEFAULT_REMITTANCE_FEE_PERCENT = 1;
-    const remittanceFeePercentUsed =
-      remittanceFeePercentManual !== "" &&
-      Number.isFinite(Number(remittanceFeePercentManual)) &&
-      Number(remittanceFeePercentManual) >= 0
-        ? num(Number(remittanceFeePercentManual))
-        : DEFAULT_REMITTANCE_FEE_PERCENT;
-    const remittanceFeeTotalCny = settlementCny * (remittanceFeePercentUsed / 100);
-    const remittanceFeePerPieceCny = qty > 0 ? remittanceFeeTotalCny / qty : 0;
-    const remittanceFee = remittanceFeePerPieceCny;
+  const updateForm = <K extends keyof EstimateForm>(key: K, value: EstimateForm[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const updateSelection = <K extends keyof SelectionForm>(key: K, value: SelectionForm[K]) => setSelectionForm((current) => ({ ...current, [key]: value }));
+  const calculation = useMemo(() => calculateProfitEstimate({
+    platform, quantity: num(form.quantity), salePriceBrl: num(form.salePriceBrl),
+    discountSalePriceBrl: num(form.discountSalePriceBrl), exchangeRate: num(form.exchangeRate),
+    purchaseCostCny: num(form.purchaseCostCny), firstLegCny: num(form.firstLegCny),
+    adCostCny: num(form.adCostCny), weightKg: num(form.weightKg),
+    warehouseFeeBrl: num(form.warehouseFeeBrl), platformFeePercent: num(form.platformFeePercent),
+    fulfillmentFeeBrl: num(form.fulfillmentFeeBrl), lastMileFeeBrl: num(form.lastMileFeeBrl),
+    affiliateFeeBrl: num(form.affiliateFeeBrl),
+    taxPercent: num(form.taxPercent), invoiceFeePercent: num(form.invoiceFeePercent),
+    remittanceFeePercent: num(form.remittanceFeePercent), isCommissionFree,
+    targetRoi: num(form.targetRoi),
+  }), [form, platform, isCommissionFree]);
 
-    const totalCostCny = (purchase + firstLeg + ad + invoiceFee + remittanceFee) * qty;
-    const totalCostWithWarehouseCny = totalCostCny + warehouseFeeCny;
-    const grossRevenueCny = effectiveSale * qty * rate;
-    const netProfitCny = settlementBrl * rate - totalCostWithWarehouseCny;
-    const netProfitBrl = rate > 0 ? netProfitCny / rate : 0;
-
-    const roi = totalCostWithWarehouseCny > 0 ? grossRevenueCny / totalCostWithWarehouseCny : 0;
-    // 保本 ROI = 营业额 / 净利润（净利润≠0）
-    const breakEvenRoi =
-      netProfitCny !== 0 && Number.isFinite(netProfitCny) ? grossRevenueCny / netProfitCny : 0;
-    const profitRate = grossRevenueCny > 0 ? (netProfitCny / grossRevenueCny) * 100 : 0;
-
-    // 目标 ROI 预期利润 = 净利润 - 目标ROI对应金额
-    const expectedProfitCny =
-      targetRoi === "" || !Number.isFinite(Number(targetRoi)) || Number(targetRoi) <= 0
-        ? null
-        : netProfitCny - grossRevenueCny / Number(targetRoi);
-    const expectedProfitBrl =
-      expectedProfitCny == null || rate <= 0 ? null : expectedProfitCny / rate;
-    // 目标 ROI 对应金额 = 营业额(CNY) / 目标ROI
-    const targetAdBudgetCny =
-      targetRoi === "" || !Number.isFinite(Number(targetRoi)) || Number(targetRoi) <= 0
-        ? null
-        : grossRevenueCny / Number(targetRoi);
-    // 展示用：营业额 ÷ 保本ROI（保本ROI = 营业额/净利润时，该值等于净利润）
-    const breakEvenAdCostCny = breakEvenRoi !== 0 ? grossRevenueCny / breakEvenRoi : 0;
-
-    return {
-      qty,
-      effectiveSale,
-      sfpCommission,
-      extraPlatformRateFee,
-      extraPlatformFixedFee,
-      extraPlatformFee,
-      warehouseBaseFeePerOrder,
-      warehouseExtraByQty,
-      warehouseRawFee,
-      warehouseFee,
-      warehouseFeeCny,
-      settlementCny,
-      totalCostCny,
-      totalCostWithWarehouseCny,
-      invoiceFeePercentUsed,
-      invoiceFeePerPieceCny,
-      invoiceFeeTotalCny,
-      remittanceFeePercentUsed,
-      remittanceFeePerPieceCny,
-      remittanceFeeTotalCny,
-      grossRevenueCny,
-      settlementBrl,
-      netProfitBrl,
-      netProfitCny,
-      roi,
-      breakEvenRoi,
-      profitRate,
-      expectedProfitCny,
-      expectedProfitBrl,
-      targetAdBudgetCny,
-      breakEvenAdCostCny,
-    };
-  }, [
-    quantity,
-    salePriceBrl,
-    discountSalePriceBrl,
-    exchangeRate,
-    purchaseCostCny,
-    firstLegShippingCny,
-    adCostCny,
-    isCommissionFree,
-    targetRoi,
-    weightKg,
-    invoiceFeePercentManual,
-    remittanceFeePercentManual,
-  ]);
-
-  const warning = calculated.netProfitCny < 0 || calculated.roi < calculated.breakEvenRoi;
-
-  const onSelectProduct = (id: string) => {
-    setProductId(id);
-    const selected = products.find((item) => item.id === id);
-    if (!selected) return;
-    setProductName(selected.name);
-    setPurchaseCostCny(selected.purchaseCostCny || 0);
-    setWeightKg(selected.weightKg ?? "");
-    setInvoiceFeePercentManual("");
-    setRemittanceFeePercentManual("");
+  const changePlatform = (value: ProfitEstimatePlatform) => {
+    setPlatform(value); setSelectedId(""); setForm(blankEstimate(value));
+    setEditingSelectionId(null); setSelectionForm(blankSelection); setManualExchangeRate(false);
   };
-
-  const saveCalculation = async () => {
-    if (!productName.trim()) {
-      toast.error("请先填写商品名称");
-      return;
-    }
-
-    const payload = {
-      productId: productId || null,
-      productName,
-      purchaseCostCny: num(Number(purchaseCostCny)),
-      weightKg: weightKg === "" ? null : num(weightKg),
-      firstLegShippingCny: num(Number(firstLegShippingCny)),
-      adCostCny: num(Number(adCostCny)),
-      salePriceBrl: calculated.effectiveSale,
-      exchangeRate: num(Number(exchangeRate)),
-      quantity: calculated.qty,
-      shippingMode,
-      isCommissionFree,
-      warehouseFeeBrl: calculated.warehouseFee,
-      targetRoi: targetRoi === "" ? null : Number(targetRoi),
-      settlementBrl: calculated.settlementBrl,
-      netProfitCny: calculated.netProfitCny,
-      roi: calculated.roi,
-      breakEvenRoi: calculated.breakEvenRoi,
-      expectedProfitCny: calculated.expectedProfitCny,
-    };
-
-    const res = await fetch("/api/profit-calculations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+  const selectCandidate = (id: string) => {
+    setSelectedId(id);
+    const row = selections.find((item) => item.id === id);
+    if (!row) return;
+    setForm((current) => ({ ...current, productName: row.name,
+      purchaseCostCny: String(row.purchaseCostCny), weightKg: row.weightKg == null ? "" : String(row.weightKg),
+      firstLegCny: String(row.firstLegCny), salePriceBrl: row.targetPriceBrl == null ? current.salePriceBrl : String(row.targetPriceBrl),
+    }));
+  };
+  const selectCatalogProduct = (id: string) => {
+    const item = products.find((product) => product.id === id);
+    if (!item) { updateSelection("productVariantId", ""); return; }
+    setSelectionForm((current) => ({ ...current, productVariantId: id, name: item.name,
+      sellerSku: item.skuId, purchaseCostCny: String(item.purchaseCostCny),
+      weightKg: item.weightKg == null ? "" : String(item.weightKg),
+    }));
+  };
+  const saveSelection = async () => {
+    if (!selectionForm.name.trim()) { toast.error("请填写选品名称"); return; }
+    setSaving(true);
+    try {
+      const endpoint = editingSelectionId ? `/api/profit-selection/${editingSelectionId}` : "/api/profit-selection";
+      const response = await fetch(endpoint, { method: editingSelectionId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          ...selectionForm, platform, purchaseCostCny: num(selectionForm.purchaseCostCny),
+          firstLegCny: num(selectionForm.firstLegCny), weightKg: selectionForm.weightKg === "" ? null : num(selectionForm.weightKg),
+          targetPriceBrl: selectionForm.targetPriceBrl === "" ? null : num(selectionForm.targetPriceBrl),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "保存失败");
+      await refreshSelections(); setEditingSelectionId(null); setSelectionForm(blankSelection);
+      toast.success("选品记录已保存");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "保存失败"); }
+    finally { setSaving(false); }
+  };
+  const editSelection = (row: SelectionItem) => {
+    setEditingSelectionId(row.id);
+    setSelectionForm({ name: row.name, sellerSku: row.sellerSku || "", productVariantId: row.productVariantId || "",
+      purchaseCostCny: String(row.purchaseCostCny), weightKg: row.weightKg == null ? "" : String(row.weightKg),
+      targetPriceBrl: row.targetPriceBrl == null ? "" : String(row.targetPriceBrl), firstLegCny: String(row.firstLegCny),
+      status: row.status, notes: row.notes || "",
     });
-
-    if (!res.ok) {
-      toast.error("保存失败");
-      return;
+    setTab("selection");
+  };
+  const deleteSelection = async (row: SelectionItem) => {
+    if (!window.confirm(`确定删除选品记录“${row.name}”？历史测算不会删除。`)) return;
+    const response = await fetch(`/api/profit-selection/${row.id}`, { method: "DELETE" });
+    if (!response.ok) { toast.error("删除失败"); return; }
+    if (selectedId === row.id) setSelectedId("");
+    await refreshSelections(); toast.success("已删除选品记录");
+  };
+  const saveEstimate = async () => {
+    if (!form.productName.trim()) { toast.error("请从价格选品表选择商品，或填写商品名称"); return; }
+    if (num(form.exchangeRate) <= 0 || num(form.salePriceBrl) <= 0 || num(form.quantity) < 1) {
+      toast.error("售价、汇率和件数必须大于 0"); return;
     }
-
-    await mutate("/api/profit-calculations");
-    toast.success("测算已保存");
+    setSaving(true);
+    try {
+      const selected = selections.find((item) => item.id === selectedId);
+      const response = await fetch("/api/profit-calculations", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          platform, selectionItemId: selectedId || null, productId: selected?.productVariantId || null,
+          productName: form.productName.trim(), ...Object.fromEntries(Object.entries(form).filter(([key]) => key !== "productName").map(([key, value]) => [key, value === "" ? null : num(value)])),
+          isCommissionFree, shippingMode,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "保存失败");
+      await refreshHistory(); toast.success("预测测算已存档");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "保存失败"); }
+    finally { setSaving(false); }
+  };
+  const deleteHistory = async (id: string) => {
+    if (!window.confirm("确定删除这条测算历史？")) return;
+    const response = await fetch(`/api/profit-calculations/${id}`, { method: "DELETE" });
+    if (!response.ok) { toast.error("删除失败"); return; }
+    await refreshHistory(); toast.success("已删除");
   };
 
-  const removeHistory = async (id: string) => {
-    const res = await fetch(`/api/profit-calculations/${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      toast.error("删除失败");
-      return;
-    }
-    await mutate("/api/profit-calculations");
-    toast.success("已删除");
-  };
+  const breakdown: Array<[string, number, string]> = [
+    ["商品销售额", calculation.gmvBrl, "BRL"], ["平台佣金/物流佣金", -calculation.platformFeeBrl, "BRL"],
+    ["履约费", -calculation.fulfillmentFeeBrl, "BRL"], ["尾程物流费", -calculation.lastMileFeeBrl, "BRL"],
+    ["预计结算额", calculation.settlementBrl, "BRL"], ["采购成本", -calculation.purchaseCostCny, "CNY"],
+    ["头程物流", -calculation.firstLegCny, "CNY"], ["海外仓费", -calculation.warehouseFeeCny, "CNY"],
+    ["广告费", -calculation.adCostCny, "CNY"], ["税费", -calculation.taxCostCny, "CNY"],
+    ["达人佣金", -calculation.affiliateFeeCny, "CNY"],
+    ["开票费", -calculation.invoiceFeeCny, "CNY"], ["回款手续费", -calculation.remittanceFeeCny, "CNY"],
+  ];
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-6 space-y-6">
-      <div className="rounded-xl border border-slate-800/50 bg-gradient-to-r from-slate-900/90 to-slate-800/60 p-5 shadow-xl">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-cyan-300 mb-1">
-              <Calculator size={16} />
-              <span className="text-xs tracking-[0.2em] uppercase">Ops Profit Tool</span>
-            </div>
-            <h1 className="text-2xl font-bold text-slate-100">利润测算中心</h1>
-            <p className="text-sm text-slate-400 mt-1">商品联动、实时利润测算、ROI 推演与历史存档</p>
-          </div>
-          {warning && (
-            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300 flex items-center gap-2">
-              <CircleAlert size={14} />
-              风险预警中
-            </div>
-          )}
+  return <div className="min-h-screen space-y-5 bg-slate-950 p-4 text-slate-100 md:p-6">
+    <header className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+      <div className="flex items-center gap-2 text-cyan-300"><Calculator size={18} /><span className="text-xs tracking-[0.18em]">OPS PROFIT TOOL</span></div>
+      <h1 className="mt-2 text-2xl font-semibold">跨平台利润测算</h1>
+      <p className="mt-1 text-sm text-slate-400">价格选品 → 费用预测 → 利润与广告保本点。这里是预测，不替代实际利润核算与官方结算单。</p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="text-xs text-slate-400">平台
+          <select className={`${fieldClass} min-w-[220px]`} value={platform} onChange={(event) => changePlatform(event.target.value as ProfitEstimatePlatform)}>
+            {PROFIT_ESTIMATE_PLATFORMS.map((value) => <option key={value} value={value}>{PROFIT_ESTIMATE_LABELS[value]}</option>)}
+          </select>
+        </label>
+        <div className="flex rounded-lg border border-slate-700 p-1 text-sm">
+          <button className={`rounded-md px-3 py-2 ${tab === "estimate" ? "bg-cyan-600 text-white" : "text-slate-400"}`} onClick={() => setTab("estimate")}>利润测算</button>
+          <button className={`rounded-md px-3 py-2 ${tab === "selection" ? "bg-cyan-600 text-white" : "text-slate-400"}`} onClick={() => setTab("selection")}>价格选品表格</button>
         </div>
       </div>
+    </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-5 space-y-5 shadow-xl backdrop-blur-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className={labelClassName}>
-              商品选择
-              <select value={productId} onChange={(e) => onSelectProduct(e.target.value)} className={inputClassName}>
-                <option value="">请选择商品</option>
-                {products.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} ({item.skuId})
-                  </option>
-                ))}
+    {selectionError && <p className="rounded-lg border border-rose-600/40 bg-rose-950/30 p-3 text-sm text-rose-300">选品表加载失败：{selectionError.message}</p>}
+    {tab === "selection" ? <>
+      <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 className="text-lg font-semibold">{editingSelectionId ? "编辑候选商品" : "新增候选商品"}</h2>
+        <p className="mt-1 text-xs text-slate-400">可关联主商品库 SKU，也可以先手动登记尚未建档的选品。各平台的候选商品分开管理。</p>
+        <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-4">
+          <label className={labelClass}>搜索主商品库 SKU
+            <div className="relative"><Search size={15} className="absolute left-3 top-4 text-slate-500" />
+              <input className={`${fieldClass} pl-9`} value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="商品名或 SKU" /></div>
+            <select className={fieldClass} value={products.some((item) => item.id === selectionForm.productVariantId) ? selectionForm.productVariantId : ""} onChange={(event) => selectCatalogProduct(event.target.value)}>
+              <option value="">不关联主商品库</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.skuId}</option>)}
+            </select>
+          </label>
+          <label className={labelClass}>候选商品名称<input className={fieldClass} value={selectionForm.name} onChange={(event) => updateSelection("name", event.target.value)} /></label>
+          <label className={labelClass}>SKU / 选品编号<input className={fieldClass} value={selectionForm.sellerSku} onChange={(event) => updateSelection("sellerSku", event.target.value)} /></label>
+          <label className={labelClass}>状态<select className={fieldClass} value={selectionForm.status} onChange={(event) => updateSelection("status", event.target.value)}>
+            <option value="CANDIDATE">待评估</option><option value="SHORTLIST">入选</option><option value="REJECTED">淘汰</option>
+          </select></label>
+          <NumberField label="采购成本 CNY/件" value={selectionForm.purchaseCostCny} onChange={(value) => updateSelection("purchaseCostCny", value)} />
+          <NumberField label="重量 kg/件" value={selectionForm.weightKg} onChange={(value) => updateSelection("weightKg", value)} step="0.001" />
+          <NumberField label="目标售价 BRL/件" value={selectionForm.targetPriceBrl} onChange={(value) => updateSelection("targetPriceBrl", value)} />
+          <NumberField label="头程物流 CNY/件" value={selectionForm.firstLegCny} onChange={(value) => updateSelection("firstLegCny", value)} />
+          <label className={`${labelClass} md:col-span-3 xl:col-span-4`}>备注<input className={fieldClass} value={selectionForm.notes} onChange={(event) => updateSelection("notes", event.target.value)} placeholder="供应商、价格依据、待核事项" /></label>
+        </div>
+        <div className="mt-4 flex gap-2"><button disabled={saving} onClick={saveSelection} className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm text-white disabled:opacity-50"><Plus size={15} />{editingSelectionId ? "保存修改" : "加入选品表"}</button>
+          {editingSelectionId && <button onClick={() => { setEditingSelectionId(null); setSelectionForm(blankSelection); }} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300">取消编辑</button>}</div>
+      </section>
+      <section className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 className="mb-4 text-lg font-semibold">{PROFIT_ESTIMATE_LABELS[platform]} · 价格选品表格</h2>
+        <table className="min-w-[850px] w-full text-left text-sm"><thead className="border-b border-slate-700 text-slate-400"><tr>
+          <th className="py-2">商品 / SKU</th><th>状态</th><th>采购成本</th><th>目标售价</th><th>头程/件</th><th>重量</th><th>更新</th><th className="text-right">操作</th>
+        </tr></thead><tbody>{selections.map((row) => <tr key={row.id} className="border-b border-slate-800/70">
+          <td className="py-3"><div>{row.name}</div><div className="text-xs text-slate-500">{row.sellerSku || row.linkedSku || "未录 SKU"}</div></td>
+          <td>{row.status === "SHORTLIST" ? "入选" : row.status === "REJECTED" ? "淘汰" : "待评估"}</td>
+          <td>¥{money(row.purchaseCostCny)}</td><td>{row.targetPriceBrl == null ? "待定" : `R$ ${money(row.targetPriceBrl)}`}</td>
+          <td>¥{money(row.firstLegCny)}</td><td>{row.weightKg == null ? "-" : `${row.weightKg} kg`}</td>
+          <td className="text-xs text-slate-500">{new Date(row.updatedAt).toLocaleDateString("zh-CN")}</td>
+          <td className="space-x-3 text-right"><button className="text-cyan-300" onClick={() => { selectCandidate(row.id); setTab("estimate"); }}>测算</button>
+            <button className="text-slate-300" onClick={() => editSelection(row)}>编辑</button>
+            <button className="text-rose-400" onClick={() => deleteSelection(row)}>删除</button></td>
+        </tr>)}</tbody></table>{!selections.length && <div className="py-8 text-center text-sm text-slate-500">暂无选品。先添加候选商品，再从利润测算中直接选取。</div>}
+      </section>
+    </> : <>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
+        <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">测算参数</h2><span className="text-xs text-amber-300">手填费用均为预测值，官方结算后以实际报表为准</span></div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className={labelClass}>从价格选品表选择商品
+              <select className={fieldClass} value={selectedId} onChange={(event) => selectCandidate(event.target.value)}><option value="">手工录入</option>
+                {selections.filter((row) => row.status !== "REJECTED").map((row) => <option key={row.id} value={row.id}>{row.name} · {row.sellerSku || row.linkedSku || "无 SKU"}</option>)}
               </select>
             </label>
-            <label className={labelClassName}>
-              商品名称
-              <input value={productName} onChange={(e) => setProductName(e.target.value)} className={inputClassName} />
+            <label className={labelClass}>商品名称<input className={fieldClass} value={form.productName} onChange={(event) => updateForm("productName", event.target.value)} /></label>
+            <NumberField label="售价 BRL/件" value={form.salePriceBrl} onChange={(value) => updateForm("salePriceBrl", value)} />
+            <NumberField label="折扣后售价 BRL/件（留空按售价）" value={form.discountSalePriceBrl} onChange={(value) => updateForm("discountSalePriceBrl", value)} />
+            <NumberField label="件数" value={form.quantity} onChange={(value) => updateForm("quantity", value)} step="1" />
+            <NumberField label="汇率 1 BRL = ? CNY" value={form.exchangeRate} onChange={(value) => { setManualExchangeRate(true); updateForm("exchangeRate", value); }} step="0.0001" hint={systemBrlRate ? `系统当前 ${systemBrlRate.toFixed(4)}；手动修改仅用于本次测算` : "系统汇率未取到，请核对手填汇率"} />
+            <NumberField label="采购成本 CNY/件" value={form.purchaseCostCny} onChange={(value) => updateForm("purchaseCostCny", value)} />
+            <NumberField label="头程物流 CNY/件" value={form.firstLegCny} onChange={(value) => updateForm("firstLegCny", value)} />
+            <NumberField label="广告分摊 CNY/件" value={form.adCostCny} onChange={(value) => updateForm("adCostCny", value)} />
+            <NumberField label="重量 kg/件" value={form.weightKg} onChange={(value) => updateForm("weightKg", value)} step="0.001" />
+            <label className={labelClass}>海外仓操作费 BRL/单
+              <div className="flex gap-2"><input type="number" min="0" step="0.01" className={fieldClass} value={form.warehouseFeeBrl} onChange={(event) => updateForm("warehouseFeeBrl", event.target.value)} />
+                <button className="mt-1 shrink-0 rounded-lg border border-slate-600 px-2 text-xs text-cyan-300" onClick={() => updateForm("warehouseFeeBrl", String(estimatedWarehouseFeeBrl(num(form.weightKg), num(form.quantity))))}>按重量估算</button></div>
             </label>
-            <label className={labelClassName}>
-              采购成本(CNY/件)
-              <input type="number" value={purchaseCostCny} onChange={(e) => setPurchaseCostCny(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              重量(kg，可选)
-              <input type="number" value={weightKg} onChange={(e) => setWeightKg(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              头程物流费(CNY/件)
-              <input type="number" value={firstLegShippingCny} onChange={(e) => setFirstLegShippingCny(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              广告分摊(CNY/件)
-              <input type="number" value={adCostCny} onChange={(e) => setAdCostCny(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              财务开票费用（结算额 CNY × 比例，默认 6%）
-              <div className="mt-1.5 flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={invoiceFeePercentManual}
-                  onChange={(e) => setInvoiceFeePercentManual(e.target.value === "" ? "" : Number(e.target.value))}
-                  className={`${inputClassName} flex-1 mt-0`}
-                  placeholder="留空按 6%"
-                />
-                <span className="shrink-0 text-sm text-slate-400 pb-0.5">%</span>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                当前按结算额 × <span className="text-cyan-400/90">{calculated.invoiceFeePercentUsed}%</span>
-                ，折合{" "}
-                <span className="text-cyan-400/90">{money(calculated.invoiceFeePerPieceCny)}</span> /件，合计{" "}
-                {money(calculated.invoiceFeeTotalCny)} CNY
-                {invoiceFeePercentManual === "" ? "（未填比例，按 6%）" : "（自定义比例）"}
-              </div>
-            </label>
-            <label className={labelClassName}>
-              回款三方平台手续费（结算额 CNY × 比例，默认 1%）
-              <div className="mt-1.5 flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={remittanceFeePercentManual}
-                  onChange={(e) => setRemittanceFeePercentManual(e.target.value === "" ? "" : Number(e.target.value))}
-                  className={`${inputClassName} flex-1 mt-0`}
-                  placeholder="留空按 1%"
-                />
-                <span className="shrink-0 text-sm text-slate-400 pb-0.5">%</span>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                当前按结算额 × <span className="text-cyan-400/90">{calculated.remittanceFeePercentUsed}%</span>
-                ，折合{" "}
-                <span className="text-cyan-400/90">{money(calculated.remittanceFeePerPieceCny)}</span> /件，合计{" "}
-                {money(calculated.remittanceFeeTotalCny)} CNY
-                {remittanceFeePercentManual === "" ? "（未填比例，按 1%）" : "（自定义比例）"}
-              </div>
-            </label>
-            <label className={labelClassName}>
-              售价(BRL)
-              <input type="number" value={salePriceBrl} onChange={(e) => setSalePriceBrl(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              商品折扣价(BRL)
-              <input
-                type="number"
-                value={discountSalePriceBrl}
-                onChange={(e) => setDiscountSalePriceBrl(e.target.value === "" ? "" : Number(e.target.value))}
-                className={inputClassName}
-                placeholder="不填则按原售价计算"
-              />
-            </label>
-            <label className={labelClassName}>
-              汇率(BRL→CNY)
-              <input type="number" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              美元汇率(1 USD = ? CNY)
-              <input
-                type="number"
-                value={usdManualRate}
-                onChange={(e) => setUsdManualRate(e.target.value === "" ? "" : Number(e.target.value))}
-                className={inputClassName}
-                placeholder={`留空用系统 ${apiUsdRate.toFixed(4)}`}
-              />
-              <div className="mt-1 text-[11px] text-slate-500">
-                当前生效：{usdRate.toFixed(4)} CNY/USD
-                {usdManualRate !== "" && Number(usdManualRate) > 0 ? "（手动）" : "（系统/默认）"}
-              </div>
-            </label>
-            <label className={labelClassName}>
-              件数
-              <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
-            <label className={labelClassName}>
-              目标 ROI
-              <input type="number" value={targetRoi} onChange={(e) => setTargetRoi(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
-            </label>
+            <NumberField label="平台佣金率 %（TikTok 为基础规则外追加）" value={form.platformFeePercent} onChange={(value) => updateForm("platformFeePercent", value)} hint={platform === "TIKTOK" ? "现有巴西测算规则另计 6% SFP 物流佣金；免佣无效再加 6% + R$4/件" : "请依据该平台商品类目/店铺费率填写，默认 0 不代表免佣"} />
+            <NumberField label="履约费 BRL/单" value={form.fulfillmentFeeBrl} onChange={(value) => updateForm("fulfillmentFeeBrl", value)} />
+            <NumberField label="尾程物流费 BRL/单" value={form.lastMileFeeBrl} onChange={(value) => updateForm("lastMileFeeBrl", value)} />
+            <NumberField label="达人/联盟佣金 BRL/单" value={form.affiliateFeeBrl} onChange={(value) => updateForm("affiliateFeeBrl", value)} />
+            <NumberField label="税费率 %（按 GMV）" value={form.taxPercent} onChange={(value) => updateForm("taxPercent", value)} />
+            <NumberField label="开票费率 %（按预计结算额）" value={form.invoiceFeePercent} onChange={(value) => updateForm("invoiceFeePercent", value)} />
+            <NumberField label="回款手续费率 %（按预计结算额）" value={form.remittanceFeePercent} onChange={(value) => updateForm("remittanceFeePercent", value)} />
+            <NumberField label="目标广告 ROI" value={form.targetRoi} onChange={(value) => updateForm("targetRoi", value)} hint="ROI = GMV ÷ 广告消耗；不填则不推演目标利润" />
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 p-3">
-              <div className="text-xs text-slate-400 mb-2">发货模式（SFP可叠加海外仓费用）</div>
-              <div className="flex gap-2">
-                <button onClick={() => setShippingMode("SFP")} className={`px-3 py-2 rounded-md text-sm transition-all ${shippingMode === "SFP" ? "bg-blue-500 text-white shadow-lg shadow-blue-500/25" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>SFP自发货</button>
-                <button onClick={() => setShippingMode("WAREHOUSE_3PL")} className={`px-3 py-2 rounded-md text-sm transition-all ${shippingMode === "WAREHOUSE_3PL" ? "bg-blue-500 text-white shadow-lg shadow-blue-500/25" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>3PL海外仓</button>
-              </div>
-            </div>
-            <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 p-3">
-              <div className="text-xs text-slate-400 mb-2">免佣任务状态</div>
-              <div className="flex gap-2">
-                <button onClick={() => setIsCommissionFree(true)} className={`px-3 py-2 rounded-md text-sm transition-all ${isCommissionFree ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>有效</button>
-                <button onClick={() => setIsCommissionFree(false)} className={`px-3 py-2 rounded-md text-sm transition-all ${!isCommissionFree ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>无效</button>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                有效=仅收6%物流佣金；无效=6%物流佣金+6%平台佣金+4 BRL/件
-              </div>
-            </div>
-            <label className={labelClassName}>
-              海外仓操作费(BRL，按汇率折算CNY)
-              <div className={`${inputClassName} flex items-center justify-between`}>
-                <span className="text-slate-300">自动计算</span>
-                <div className="text-right leading-tight">
-                  <div className="font-semibold text-cyan-300">{money(calculated.warehouseFee)} BRL</div>
-                  <div className="text-[11px] text-emerald-300">{money(calculated.warehouseFeeCny)} CNY</div>
-                </div>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                基础费 {money(calculated.warehouseBaseFeePerOrder)}
-                {calculated.warehouseExtraByQty > 0 ? ` + 加件费 ${money(calculated.warehouseExtraByQty)}` : ""}
-                ，折算CNY {money(calculated.warehouseFeeCny)}
-              </div>
-            </label>
+          {platform === "TIKTOK" && <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm">
+            <span className="text-slate-400">TikTok 巴西免佣任务：</span>
+            <button className={`rounded-md px-3 py-1.5 ${isCommissionFree ? "bg-emerald-600" : "bg-slate-800"}`} onClick={() => setIsCommissionFree(true)}>有效</button>
+            <button className={`rounded-md px-3 py-1.5 ${!isCommissionFree ? "bg-rose-600" : "bg-slate-800"}`} onClick={() => setIsCommissionFree(false)}>无效</button>
+          </div>}
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400"><span>履约模式：</span>
+            <button onClick={() => setShippingMode("SFP")} className={`rounded-md px-3 py-1.5 ${shippingMode === "SFP" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>自发货</button>
+            <button onClick={() => setShippingMode("WAREHOUSE_3PL")} className={`rounded-md px-3 py-1.5 ${shippingMode === "WAREHOUSE_3PL" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>海外仓</button>
+            <span className="text-xs">费用仍按上方填写值计算，模式用于存档说明。</span>
           </div>
-
-          <button onClick={saveCalculation} className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-white font-medium shadow-lg shadow-cyan-500/20 hover:from-cyan-600 hover:to-blue-700 transition-all">
-            <Save size={16} />
-            保存测算
-          </button>
-        </div>
-
-        <div className={`rounded-xl border p-5 space-y-4 shadow-xl ${warning ? "border-rose-500/60 bg-gradient-to-br from-rose-950/30 to-slate-900/70" : "border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40"}`}>
-          <div className="text-slate-100 font-semibold flex items-center gap-2">
-            <Gem size={16} className="text-violet-300" />
-            测算仪表盘
+          <button disabled={saving} onClick={saveEstimate} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"><Save size={16} />保存预测测算</button>
+        </section>
+        <aside className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
+          <h2 className="text-lg font-semibold">测算仪表盘</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ["GMV", calculation.gmvBrl, "BRL"], ["预计结算", calculation.settlementBrl, "BRL"],
+              ["预计净利润", calculation.netProfitCny, "CNY"], ["利润率", calculation.profitRate, "%"],
+            ] as Array<[string, number, string]>).map(([label, value, unit]) => <div key={label} className="rounded-lg border border-slate-800 bg-slate-950 p-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-lg font-semibold text-cyan-300">{money(value)} {unit}</div></div>)}
           </div>
-          <div className="rounded-lg bg-slate-950/70 border border-slate-800/80 p-3">
-            <div className="text-xs text-slate-400">结算额(BRL)</div>
-            <div className="text-xl font-bold text-cyan-300">{money(calculated.settlementBrl)} BRL</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">{money(calculated.settlementBrl * Number(exchangeRate || 0))} CNY</div>
-            <div className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-              计算：售价 {money(calculated.effectiveSale)} × {calculated.qty} - SFP物流佣金(必扣) {money(calculated.sfpCommission)} - 平台额外费 {money(calculated.extraPlatformFee)}
-              {!isCommissionFree && (
-                <span>
-                  （平台额外费率 {money(calculated.extraPlatformRateFee)} + 固定费 {money(calculated.extraPlatformFixedFee)}）
-                </span>
-              )}
-            </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm"><div className="text-slate-400">广告保本与目标</div>
+            <div className="mt-2 flex justify-between"><span>保本广告预算</span><span>¥{money(calculation.breakEvenAdCostCny)}</span></div>
+            <div className="mt-2 flex justify-between"><span>保本 ROI</span><span>{calculation.breakEvenRoi > 0 ? calculation.breakEvenRoi.toFixed(2) : "无法保本"}</span></div>
+            <div className="mt-2 flex justify-between"><span>当前广告 ROI</span><span>{calculation.adRoi > 0 ? calculation.adRoi.toFixed(2) : "未填广告费"}</span></div>
+            <div className="mt-2 flex justify-between"><span>目标 ROI 下利润</span><span>{calculation.expectedProfitCny == null ? "—" : `¥${money(calculation.expectedProfitCny)}`}</span></div>
+            {usdRate && <div className="mt-2 text-xs text-slate-500">保本广告预算约 USD {money(calculation.breakEvenAdCostCny / usdRate)}；系统汇率 {usdRate.toFixed(4)} CNY/USD</div>}
           </div>
-          <div className="rounded-lg bg-slate-950/70 border border-slate-800/80 p-3">
-            <div className="text-xs text-slate-400">净利润(BRL)</div>
-            <div className={`text-xl font-bold ${calculated.netProfitCny < 0 ? "text-rose-400" : "text-emerald-300"}`}>{money(calculated.netProfitBrl)} BRL</div>
-            <div className="mt-0.5 text-[11px] text-slate-500">{money(calculated.netProfitCny)} CNY</div>
-            <div className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-              计算：结算额折算 {money(calculated.settlementCny)} - 基础成本(含广告/开票/回款三方平台手续费) {money(calculated.totalCostCny)} - 海外仓费折算 {money(calculated.warehouseFeeCny)}
-            </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm"><h3 className="mb-2 text-slate-400">核算拆解</h3>
+            {breakdown.map(([label, value, unit]) => <div key={label} className="flex justify-between gap-2 border-t border-slate-800/60 py-1.5"><span>{label}</span><span className="tabular-nums">{value < 0 ? "−" : ""}{money(Math.abs(value))} {unit}</span></div>)}
           </div>
-          <div className="rounded-lg bg-slate-950/70 border border-slate-800/80 p-3">
-            <div className="text-xs text-slate-400">利润率(%)</div>
-            <div className="text-xl font-bold text-slate-100">{calculated.profitRate.toFixed(2)}%</div>
-            {calculated.profitRate > 20 && <span className="inline-flex items-center gap-1 mt-2 text-xs rounded-full px-2 py-0.5 bg-emerald-500/20 text-emerald-300"><Package size={12} />优选</span>}
-            <div className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-              计算：净利润 {money(calculated.netProfitCny)} / 营业额 {money(calculated.grossRevenueCny)} × 100
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-2 text-sm">
-            <div className="rounded-lg bg-slate-950/70 border border-slate-800/80 p-3">
-              <div className="text-xs text-slate-400">保本 ROI</div>
-              <div className="text-slate-100 font-semibold">{calculated.breakEvenRoi.toFixed(4)}</div>
-              <div className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                计算：营业额 {money(calculated.grossRevenueCny)} / 净利润 {money(calculated.netProfitCny)}
-              </div>
-              <div className="mt-1 text-[11px] leading-relaxed text-amber-300">
-                保本ROI对应的广告消耗金额：{usdMoney(calculated.breakEvenAdCostCny, usdRate)} USD
-              </div>
-              <div className="text-[11px] text-slate-500">{money(calculated.breakEvenAdCostCny)} CNY</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div className="min-w-0 rounded-lg bg-slate-950/70 border border-slate-800/80 p-3">
-              <div className="text-xs text-slate-400">目标 ROI 预期利润(BRL)</div>
-              <div className="text-xl font-bold text-violet-300 break-words">
-                {calculated.expectedProfitBrl == null ? "-" : `${money(calculated.expectedProfitBrl)} BRL`}
-              </div>
-              {calculated.expectedProfitCny != null && <div className="mt-1 text-[11px] text-slate-500">{money(calculated.expectedProfitCny)} CNY</div>}
-              {calculated.expectedProfitCny != null && (
-                <div className="mt-1.5 text-[11px] leading-relaxed text-slate-500 break-words">
-                  计算：净利润 {money(calculated.netProfitCny)} - 目标ROI对应金额 {money(calculated.targetAdBudgetCny)}
-                </div>
-              )}
-              {calculated.expectedProfitCny == null && <div className="mt-1 text-[11px] text-slate-500">请先填写目标 ROI</div>}
-            </div>
-            <div className="min-w-0 rounded-lg bg-slate-950/70 border border-slate-800/80 p-3">
-              <div className="text-xs text-slate-400">目标 ROI 对应金额(USD)</div>
-              <div className="text-xl font-bold text-amber-300 break-words">
-                {calculated.targetAdBudgetCny == null ? "-" : `${usdMoney(calculated.targetAdBudgetCny, usdRate)} USD`}
-              </div>
-              {calculated.targetAdBudgetCny != null && (
-                <>
-                  <div className="mt-1 text-[11px] text-slate-500">{money(calculated.targetAdBudgetCny)} CNY</div>
-                  <div className="text-[11px] text-slate-500">{money(calculated.targetAdBudgetCny / Number(exchangeRate || 1))} BRL</div>
-                  <div className="mt-1.5 text-[11px] leading-relaxed text-slate-500 break-words">
-                    计算：营业额 {money(calculated.grossRevenueCny)} / 目标ROI {Number(targetRoi)}
-                  </div>
-                </>
-              )}
-              {calculated.targetAdBudgetCny == null && <div className="mt-1 text-[11px] text-slate-500">请先填写有效目标 ROI</div>}
-              <div className="mt-1 text-[11px] text-slate-500 break-words">
-                USD 换算按 1 USD = {usdRate.toFixed(4)} CNY
-                {usdManualRate !== "" && Number(usdManualRate) > 0 ? "（手动）" : "（系统/默认）"}
-              </div>
-            </div>
-          </div>
-          {warning && <div className="text-xs text-rose-300">预警：净利润为负或 ROI 低于保本 ROI。</div>}
-        </div>
+          {(platform !== "TIKTOK" && num(form.platformFeePercent) === 0 || num(form.lastMileFeeBrl) === 0) && <div className="flex gap-2 rounded-lg border border-amber-700/50 bg-amber-950/20 p-3 text-xs text-amber-300"><CircleAlert size={15} className="shrink-0" />部分平台/尾程费用为 0。若尚未拿到报价，利润可能偏高。</div>}
+        </aside>
       </div>
-
-      <div className="rounded-xl border border-slate-800/50 bg-gradient-to-br from-slate-900/80 to-slate-800/40 p-5 shadow-xl backdrop-blur-sm">
-        <h2 className="text-lg font-semibold text-slate-100 mb-4">测算历史</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-slate-400 border-b border-slate-800/80">
-                <th className="text-left py-2">商品</th>
-                <th className="text-left py-2">SKU</th>
-                <th className="text-left py-2">营业额(BRL)</th>
-                <th className="text-left py-2">结算额(BRL)</th>
-                <th className="text-left py-2">净利润(BRL/CNY)</th>
-                <th className="text-left py-2">免佣任务状态</th>
-                <th className="text-left py-2">保本ROI</th>
-                <th className="text-left py-2">时间</th>
-                <th className="text-right py-2">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((row) => (
-                <tr key={row.id} className="border-b border-slate-800/50 text-slate-200 hover:bg-slate-800/30 transition-all">
-                  <td className="py-2">{row.productName}</td>
-                  <td>{row.skuId || "-"}</td>
-                  <td>{money(row.grossRevenueBrl)}</td>
-                  <td>{money(row.settlementBrl)}</td>
-                  <td className={row.netProfitCny < 0 ? "text-rose-400" : "text-emerald-300"}>
-                    <div className="leading-tight">
-                      <div className="font-medium">
-                        {money(
-                          row.exchangeRate > 0 ? num(row.netProfitCny) / num(row.exchangeRate) : 0
-                        )}{" "}
-                        BRL
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-normal">{money(row.netProfitCny)} CNY</div>
-                    </div>
-                  </td>
-                  <td className={row.isCommissionFree ? "text-emerald-300" : "text-rose-300"}>{row.isCommissionFree ? "有效" : "无效"}</td>
-                  <td>{row.breakEvenRoi.toFixed(4)}</td>
-                  <td>{new Date(row.createdAt).toLocaleString("zh-CN")}</td>
-                  <td className="text-right">
-                    <button onClick={() => removeHistory(row.id)} className="inline-flex items-center gap-1 text-rose-400 hover:text-rose-300 transition-colors">
-                      <Trash2 size={14} />
-                      删除
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+      <section className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="mb-3 text-lg font-semibold">测算历史 · {PROFIT_ESTIMATE_LABELS[platform]}</h2>
+        {historyError && <p className="text-sm text-rose-300">历史加载失败：{historyError.message}</p>}
+        <table className="min-w-[760px] w-full text-left text-sm"><thead className="border-b border-slate-700 text-slate-400"><tr><th className="py-2">商品</th><th>GMV</th><th>预计结算</th><th>净利润</th><th>保本 ROI</th><th>口径</th><th>时间</th><th className="text-right">操作</th></tr></thead>
+          <tbody>{history.filter((row) => (row.platform || "TIKTOK") === platform).map((row) => <tr key={row.id} className="border-b border-slate-800/70"><td className="py-3">{row.productName}<div className="text-xs text-slate-500">{row.skuId || ""}</div></td><td>R$ {money(row.grossRevenueBrl)}</td><td>R$ {money(row.settlementBrl)}</td><td>¥{money(row.netProfitCny)}</td><td>{row.breakEvenRoi.toFixed(2)}</td><td className="text-xs text-slate-500">{row.inputSnapshot?.version === 2 ? "预测 v2" : "旧版测算"}</td><td className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleString("zh-CN")}</td><td className="text-right"><button onClick={() => deleteHistory(row.id)} className="inline-flex items-center gap-1 text-rose-400"><Trash2 size={14} />删除</button></td></tr>)}</tbody>
+        </table>
+      </section>
+    </>}
+  </div>;
 }

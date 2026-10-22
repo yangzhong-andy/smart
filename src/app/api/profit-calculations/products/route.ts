@@ -1,12 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serverError } from "@/lib/api-response";
+import { requireApiUser } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiUser(request);
+  if (auth.response) return auth.response;
   try {
+    const query = request.nextUrl.searchParams.get("q")?.trim().slice(0, 100);
     const variants = await prisma.productVariant.findMany({
+      where: query ? { OR: [
+        { skuId: { contains: query, mode: "insensitive" } },
+        { product: { name: { contains: query, mode: "insensitive" } } },
+      ] } : undefined,
       select: {
         id: true,
         skuId: true,
@@ -19,7 +27,7 @@ export async function GET() {
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 500,
+      take: 100,
     });
 
     return NextResponse.json(

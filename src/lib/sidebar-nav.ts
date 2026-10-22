@@ -141,7 +141,7 @@ export const SIDEBAR_NAV_STRUCTURE: NavGroup[] = [
     label: "运营工具",
     children: [
       { label: "每日运营报表", href: "/operations/daily-report" },
-      { label: "巴西利润测算", href: "/finance/profit-calculation" },
+      { label: "跨平台利润测算", href: "/finance/profit-calculation" },
       { label: "代理IP管理", href: "/operations/proxy-ip" },
     ],
   },

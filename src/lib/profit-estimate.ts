@@ -1,0 +1,102 @@
+export const PROFIT_ESTIMATE_PLATFORMS = ["TIKTOK", "SHOPEE", "MERCADO_LIVRE"] as const;
+export type ProfitEstimatePlatform = typeof PROFIT_ESTIMATE_PLATFORMS[number];
+
+export const PROFIT_ESTIMATE_LABELS: Record<ProfitEstimatePlatform, string> = {
+  TIKTOK: "TikTok Shop 巴西",
+  SHOPEE: "Shopee 巴西",
+  MERCADO_LIVRE: "Mercado Livre 巴西",
+};
+
+export function isProfitEstimatePlatform(value: unknown): value is ProfitEstimatePlatform {
+  return typeof value === "string" && PROFIT_ESTIMATE_PLATFORMS.includes(value as ProfitEstimatePlatform);
+}
+
+export type ProfitEstimateInput = {
+  platform: ProfitEstimatePlatform;
+  quantity: number;
+  salePriceBrl: number;
+  discountSalePriceBrl?: number | null;
+  exchangeRate: number;
+  purchaseCostCny: number;
+  firstLegCny: number;
+  adCostCny: number;
+  weightKg?: number | null;
+  warehouseFeeBrl?: number | null;
+  platformFeePercent: number;
+  fulfillmentFeeBrl: number;
+  lastMileFeeBrl: number;
+  affiliateFeeBrl: number;
+  taxPercent: number;
+  invoiceFeePercent: number;
+  remittanceFeePercent: number;
+  isCommissionFree: boolean;
+  targetRoi?: number | null;
+};
+
+function nonnegative(value: number | null | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, Number(value)) : 0;
+}
+
+export function estimatedWarehouseFeeBrl(weightKg: number, quantity: number): number {
+  const weight = nonnegative(weightKg);
+  if (!weight) return 0;
+  const base = weight <= 1 ? 3.5 : weight <= 3 ? 4.3 : weight <= 6 ? 5 : weight <= 10 ? 8
+    : weight <= 20 ? 14 : weight <= 30 ? 20 : weight <= 40 ? 30 : weight <= 50 ? 33
+      : weight <= 60 ? 40 : weight <= 70 ? 47 : 47;
+  return base + (Math.max(1, Math.trunc(nonnegative(quantity))) - 1) * 1.5;
+}
+
+/** Planning only. Actual profit continues to use official order/settlement data. */
+export function calculateProfitEstimate(input: ProfitEstimateInput) {
+  const quantity = Math.max(1, Math.trunc(nonnegative(input.quantity)));
+  const rate = nonnegative(input.exchangeRate);
+  const sale = nonnegative(input.salePriceBrl);
+  const discounted = nonnegative(input.discountSalePriceBrl);
+  const effectiveSale = discounted > 0 ? discounted : sale;
+  const gmvBrl = effectiveSale * quantity;
+  const gmvCny = gmvBrl * rate;
+
+  // TikTok BR's current planning rule retains its 6% SFP fee and the
+  // exemption-dependent 6% + BRL 4/unit. Other platforms use explicit
+  // estimates; their actual commission is sourced from settlement reports.
+  const tiktokSfpFeeBrl = input.platform === "TIKTOK" ? gmvBrl * 0.06 : 0;
+  const tiktokExtraFeeBrl = input.platform === "TIKTOK" && !input.isCommissionFree
+    ? gmvBrl * 0.06 + 4 * quantity : 0;
+  const platformFeeBrl = tiktokSfpFeeBrl + tiktokExtraFeeBrl
+    + gmvBrl * nonnegative(input.platformFeePercent) / 100;
+  const fulfillmentFeeBrl = nonnegative(input.fulfillmentFeeBrl);
+  const lastMileFeeBrl = nonnegative(input.lastMileFeeBrl);
+  const settlementBrl = gmvBrl - platformFeeBrl - fulfillmentFeeBrl - lastMileFeeBrl;
+  const settlementCny = settlementBrl * rate;
+  const warehouseFeeBrl = nonnegative(input.warehouseFeeBrl);
+  const warehouseFeeCny = warehouseFeeBrl * rate;
+  const affiliateFeeBrl = nonnegative(input.affiliateFeeBrl);
+  const affiliateFeeCny = affiliateFeeBrl * rate;
+  const purchaseCostCny = nonnegative(input.purchaseCostCny) * quantity;
+  const firstLegCny = nonnegative(input.firstLegCny) * quantity;
+  const adCostCny = nonnegative(input.adCostCny) * quantity;
+  const taxCostCny = gmvCny * nonnegative(input.taxPercent) / 100;
+  const invoiceFeeCny = Math.max(0, settlementCny) * nonnegative(input.invoiceFeePercent) / 100;
+  const remittanceFeeCny = Math.max(0, settlementCny) * nonnegative(input.remittanceFeePercent) / 100;
+  const nonAdCostCny = purchaseCostCny + firstLegCny + warehouseFeeCny + affiliateFeeCny + taxCostCny
+    + invoiceFeeCny + remittanceFeeCny;
+  const contributionBeforeAdsCny = settlementCny - nonAdCostCny;
+  const netProfitCny = contributionBeforeAdsCny - adCostCny;
+  const profitRate = gmvCny > 0 ? netProfitCny / gmvCny * 100 : 0;
+  const adRoi = adCostCny > 0 ? gmvCny / adCostCny : 0;
+  const breakEvenRoi = contributionBeforeAdsCny > 0 ? gmvCny / contributionBeforeAdsCny : 0;
+  const targetRoi = nonnegative(input.targetRoi);
+  const targetAdBudgetCny = targetRoi > 0 ? gmvCny / targetRoi : null;
+  const expectedProfitCny = targetAdBudgetCny == null ? null : contributionBeforeAdsCny - targetAdBudgetCny;
+
+  return {
+    quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokSfpFeeBrl,
+    tiktokExtraFeeBrl, fulfillmentFeeBrl, lastMileFeeBrl, settlementBrl,
+    settlementCny, purchaseCostCny, firstLegCny, warehouseFeeBrl, warehouseFeeCny,
+    adCostCny, affiliateFeeBrl, affiliateFeeCny, taxCostCny, invoiceFeeCny, remittanceFeeCny, nonAdCostCny,
+    contributionBeforeAdsCny, netProfitCny, netProfitBrl: rate > 0 ? netProfitCny / rate : 0,
+    profitRate, adRoi, breakEvenRoi, breakEvenAdCostCny: Math.max(0, contributionBeforeAdsCny),
+    targetAdBudgetCny, expectedProfitCny, expectedProfitBrl: expectedProfitCny == null || rate <= 0
+      ? null : expectedProfitCny / rate,
+  };
+}
