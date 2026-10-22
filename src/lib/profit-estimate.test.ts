@@ -12,11 +12,30 @@ const base = {
 test("TikTok BR uses one price-tier commission without extra SFP or exemption switch", () => {
   const high = calculateProfitEstimate(base);
   const low = calculateProfitEstimate({ ...base, discountSalePriceBrl: 49, quantity: 2 });
-  assert.equal(high.platformFeeBrl, 12);
+  assert.equal(high.platformFeeBrl, 6);
+  assert.equal(high.fulfillmentFeeBrl, 6);
   assert.equal(high.settlementBrl, 88);
-  assert.equal(low.platformFeeBrl, 17.8);
+  assert.equal(low.platformFeeBrl, 9.8);
+  assert.equal(low.fulfillmentFeeBrl, 8);
   assert.equal(low.settlementBrl, 80.2);
-  assert.equal(calculateProfitEstimate({ ...base, isCommissionFree: false, platformFeePercent: 99 }).platformFeeBrl, 12);
+  assert.equal(calculateProfitEstimate({ ...base, isCommissionFree: false, platformFeePercent: 99 }).platformFeeBrl, 6);
+});
+
+test("TikTok commission breakdown preserves the same total and settlement", () => {
+  const high = calculateProfitEstimate({ ...base, salePriceBrl: 70 });
+  assert.equal(high.tiktokCommissionRatePercent, 6);
+  assert.equal(high.tiktokPercentageFeeBrl, 4.2);
+  assert.equal(high.tiktokFixedFeeBrl, 6);
+  assert.equal(high.platformFeeBrl, high.tiktokPercentageFeeBrl);
+  assert.equal(high.fulfillmentFeeBrl, high.tiktokFixedFeeBrl);
+  assert.equal(high.platformFeeBrl + high.fulfillmentFeeBrl, high.tiktokCommissionBrl);
+  assert.equal(high.settlementBrl, 59.8);
+
+  const low = calculateProfitEstimate({ ...base, salePriceBrl: 49, quantity: 2 });
+  assert.equal(low.tiktokCommissionRatePercent, 10);
+  assert.equal(low.tiktokPercentageFeeBrl, 9.8);
+  assert.equal(low.tiktokFixedFeeBrl, 8);
+  assert.equal(low.platformFeeBrl + low.fulfillmentFeeBrl, 17.8);
 });
 
 test("Shopee and Mercado Livre use explicit estimated fees and last mile", () => {

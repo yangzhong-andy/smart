@@ -220,8 +220,10 @@ export default function ProfitCalculationPage() {
   };
 
   const breakdown: Array<[string, number, string]> = [
-    ["商品销售额", calculation.gmvBrl, "BRL"], [platform === "TIKTOK" ? "平台佣金（含每件费）" : "平台佣金", -calculation.platformFeeBrl, "BRL"],
-    ["履约费", -calculation.fulfillmentFeeBrl, "BRL"], ["尾程物流费", -calculation.lastMileFeeBrl, "BRL"],
+    ["商品销售额", calculation.gmvBrl, "BRL"],
+    [platform === "TIKTOK" ? `平台佣金（${calculation.tiktokCommissionRatePercent}%）` : "平台佣金", -calculation.platformFeeBrl, "BRL"],
+    [platform === "TIKTOK" ? `履约费（含 R$${calculation.tiktokFixedFeePerItemBrl} × ${calculation.quantity} 件）` : "履约费", -calculation.fulfillmentFeeBrl, "BRL"],
+    ["尾程物流费", -calculation.lastMileFeeBrl, "BRL"],
     ["预计结算额", calculation.settlementBrl, "BRL"], ["采购成本", -calculation.purchaseCostCny, "CNY"],
     ["头程物流", -calculation.firstLegCny, "CNY"], ["海外仓费", -calculation.warehouseFeeCny, "CNY"],
     ["广告费", -calculation.adCostCny, "CNY"], ["税费", -calculation.taxCostCny, "CNY"],
@@ -344,7 +346,7 @@ export default function ProfitCalculationPage() {
                 <button className="mt-1 shrink-0 rounded-lg border border-slate-600 px-2 text-xs text-cyan-300" onClick={() => updateForm("warehouseFeeBrl", String(estimatedWarehouseFeeBrl(num(form.weightKg), num(form.quantity))))}>按重量估算</button></div>
             </label>
             {platform !== "TIKTOK" && <NumberField label="平台佣金率 %" value={form.platformFeePercent} onChange={(value) => updateForm("platformFeePercent", value)} hint="请依据该平台商品类目/店铺费率填写，默认 0 不代表免佣" />}
-            <NumberField label="履约费 BRL/单" value={form.fulfillmentFeeBrl} onChange={(value) => updateForm("fulfillmentFeeBrl", value)} />
+            <NumberField label={platform === "TIKTOK" ? "额外履约费 BRL/单（每件固定费自动计入）" : "履约费 BRL/单"} value={form.fulfillmentFeeBrl} onChange={(value) => updateForm("fulfillmentFeeBrl", value)} />
             <NumberField label="尾程物流费 BRL/单" value={form.lastMileFeeBrl} onChange={(value) => updateForm("lastMileFeeBrl", value)} />
             <NumberField label="达人/联盟佣金 BRL/单" value={form.affiliateFeeBrl} onChange={(value) => updateForm("affiliateFeeBrl", value)} />
             <NumberField label="税费率 %（按 GMV）" value={form.taxPercent} onChange={(value) => updateForm("taxPercent", value)} />
@@ -352,7 +354,7 @@ export default function ProfitCalculationPage() {
             <NumberField label="回款手续费率 %（按预计结算额）" value={form.remittanceFeePercent} onChange={(value) => updateForm("remittanceFeePercent", value)} />
             <NumberField label="目标广告 ROI" value={form.targetRoi} onChange={(value) => updateForm("targetRoi", value)} hint="ROI = GMV ÷ 广告消耗；不填则不推演目标利润" />
           </div>
-          {platform === "TIKTOK" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">按卖家折扣后单件售价分档：低于 R$50 为 10%＋R$4/件；R$50 及以上为 6%＋R$6/件。这是一项佣金，不另加 6% SFP。</p>}
+          {platform === "TIKTOK" && <p className="mt-4 rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300">按卖家折扣后单件售价分档：低于 R$50 为平台佣金 10%＋履约费 R$4/件；R$50 及以上为平台佣金 6%＋履约费 R$6/件。不另加 6% SFP。</p>}
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400"><span>履约模式：</span>
             <button onClick={() => setShippingMode("SFP")} className={`rounded-md px-3 py-1.5 ${shippingMode === "SFP" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>自发货</button>
             <button onClick={() => setShippingMode("WAREHOUSE_3PL")} className={`rounded-md px-3 py-1.5 ${shippingMode === "WAREHOUSE_3PL" ? "bg-blue-600 text-white" : "bg-slate-800"}`}>海外仓</button>

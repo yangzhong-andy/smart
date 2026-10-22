@@ -56,15 +56,17 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const gmvBrl = effectiveSale * quantity;
   const gmvCny = gmvBrl * rate;
 
-  // TikTok BR charges one tiered commission on the seller-discounted unit
-  // price. The fixed per-item amount belongs to the same fee, not an extra SFP.
-  const tiktokCommissionBrl = input.platform === "TIKTOK"
-    ? gmvBrl * (effectiveSale < 50 ? 0.10 : 0.06) + (effectiveSale < 50 ? 4 : 6) * quantity
-    : 0;
+  // The TikTok BR tier contains a percentage commission and a fixed per-item
+  // fulfillment charge. Split their display, but never add another 6% SFP fee.
+  const tiktokCommissionRatePercent = effectiveSale < 50 ? 10 : 6;
+  const tiktokFixedFeePerItemBrl = effectiveSale < 50 ? 4 : 6;
+  const tiktokPercentageFeeBrl = input.platform === "TIKTOK" ? gmvBrl * tiktokCommissionRatePercent / 100 : 0;
+  const tiktokFixedFeeBrl = input.platform === "TIKTOK" ? tiktokFixedFeePerItemBrl * quantity : 0;
+  const tiktokCommissionBrl = tiktokPercentageFeeBrl + tiktokFixedFeeBrl;
   const platformFeeBrl = input.platform === "TIKTOK"
-    ? tiktokCommissionBrl
+    ? tiktokPercentageFeeBrl
     : gmvBrl * nonnegative(input.platformFeePercent) / 100;
-  const fulfillmentFeeBrl = nonnegative(input.fulfillmentFeeBrl);
+  const fulfillmentFeeBrl = tiktokFixedFeeBrl + nonnegative(input.fulfillmentFeeBrl);
   const lastMileFeeBrl = nonnegative(input.lastMileFeeBrl);
   const settlementBrl = gmvBrl - platformFeeBrl - fulfillmentFeeBrl - lastMileFeeBrl;
   const settlementCny = settlementBrl * rate;
@@ -91,6 +93,7 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
 
   return {
     quantity, effectiveSale, gmvBrl, gmvCny, platformFeeBrl, tiktokCommissionBrl,
+    tiktokCommissionRatePercent, tiktokFixedFeePerItemBrl, tiktokPercentageFeeBrl, tiktokFixedFeeBrl,
     fulfillmentFeeBrl, lastMileFeeBrl, settlementBrl,
     settlementCny, purchaseCostCny, firstLegCny, warehouseFeeBrl, warehouseFeeCny,
     adCostCny, affiliateFeeBrl, affiliateFeeCny, taxCostCny, invoiceFeeCny, remittanceFeeCny, nonAdCostCny,
