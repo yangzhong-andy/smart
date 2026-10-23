@@ -1752,8 +1752,7 @@ export default function ReconciliationPage() {
               </button>
               <button
                 onClick={async () => {
-                  if (paying) return; // 防重复点击
-                  setPaying(true);
+                  if (paying) return;
                   if (!paymentForm.accountId) {
                     toast.error("请选择付款账户");
                     return;
@@ -1768,125 +1767,49 @@ export default function ReconciliationPage() {
                     toast.error("账户不存在");
                     return;
                   }
-
-                  // 检查账户余额
-                  if ((account.originalBalance || 0) < getMonthlyBillPaymentAmount(selectedPendingPaymentBill)) {
-                    toast.error("账户余额不足");
+                  const paymentExRate = selectedPendingPaymentBill.currency !== "CNY"
+                    ? Number(paymentForm.paymentExchangeRate) : 1;
+                  if (!Number.isFinite(paymentExRate) || paymentExRate <= 0) {
+                    toast.error("请填写有效汇率");
                     return;
                   }
-
-                  // 生成财务流水记录
+                  setPaying(true);
                   try {
-                    // 列表接口为避免返回大图片，只提供 hasPaymentApplicationVoucher。
-                    // 真正付款前必须读取完整账单，否则申请凭证不会进入流水。
-                    const detailedPaymentBill = await getBillById(selectedPendingPaymentBill.id);
-                    if (!detailedPaymentBill) {
-                      throw new Error("无法读取完整月账单，已停止付款，请刷新后重试");
-                    }
-                    const applicationVoucher = detailedPaymentBill.paymentApplicationVoucher;
-                    const voucherValue = Array.isArray(paymentForm.voucher) 
-                      ? (paymentForm.voucher.length > 0 ? paymentForm.voucher[0] : "") 
-                      : paymentForm.voucher;
-
-                    // 生成付款单号（格式：PAY-YYYYMMDD-XXXXXX）
-                    const now = new Date();
-                    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-                    const randomStr = Math.random().toString(36).slice(2, 8).toUpperCase();
-                    const paymentVoucherNumber = `PAY-${dateStr}-${randomStr}`;
-
-                    // 将用户选择的日期与当前时间组合，使用完整的日期时间（包括时分秒）
-                    const paymentDateTime = paymentForm.paymentDate 
-                      ? `${paymentForm.paymentDate}T${new Date().toTimeString().slice(0, 8)}`
-                      : new Date().toISOString();
-
-                    const paymentExRate = selectedPendingPaymentBill.currency !== "CNY" ? (parseFloat(paymentForm.paymentExchangeRate) || 0) : 1;
-                    if (selectedPendingPaymentBill.currency !== "CNY" && paymentExRate <= 0) {
-                      toast.error("请填写汇率");
-                      setPaying(false);
-                      return;
-                    }
-                    const newFlow = {
-                      date: paymentDateTime,
-                      exchangeRate: paymentExRate,
-                      summary: `${selectedPendingPaymentBill.billType} - ${selectedPendingPaymentBill.agencyName || selectedPendingPaymentBill.supplierName || selectedPendingPaymentBill.factoryName}`,
-                      category: selectedPendingPaymentBill.billType === "广告" ? "广告费/广告代理费" :
-                               selectedPendingPaymentBill.billType === "物流" ? "物流/海运费" :
-                               selectedPendingPaymentBill.billType === "工厂订单" ? "采购/工厂订单" :
-                               "其他",
-                      type: "expense" as const,
-                      amount: -getMonthlyBillPaymentAmount(selectedPendingPaymentBill),
-                      accountId: paymentForm.accountId,
-                      accountName: account.name,
-                      currency: selectedPendingPaymentBill.currency,
-                      remark: `付款单号：${paymentVoucherNumber} - ${selectedPendingPaymentBill.month} - ${paymentForm.paymentMethod}${paymentForm.remark ? " - " + paymentForm.remark : ""}`,
-                      relatedId: selectedPendingPaymentBill.id,
-                      businessNumber: paymentVoucherNumber,
-                      status: "confirmed" as const,
-                      isReversal: false,
-                      voucher: applicationVoucher || undefined,
-                      paymentVoucher: applicationVoucher || undefined,
-                      transferVoucher: (Array.isArray(paymentForm.transferVoucher)
-                        ? (paymentForm.transferVoucher.length > 0 ? paymentForm.transferVoucher[0] : "")
-                        : paymentForm.transferVoucher) || undefined
-                    };
-                    const createdFlow = await createCashFlow(newFlow);
-// 更新账户余额
-                    // 逻辑：待付款是支出操作 → expense 类型 → 余额减少
-                    const updatedAccounts = bankAccounts.map((a) => {
-                      if (a.id === paymentForm.accountId) {
-                        // 与现金流水页面保持一致：待付款是 expense 类型
-                        const amount = Math.abs(getMonthlyBillPaymentAmount(selectedPendingPaymentBill));
-                        const change = -amount; // expense 类型，change 为负数
-                        const newBalance = (a.originalBalance || 0) + change;
-                        return {
-                          ...a,
-                          originalBalance: newBalance,
-                          rmbBalance: a.currency === "RMB"
-                            ? newBalance
-                            : newBalance * (a.exchangeRate || 1)
-                        };
-                      }
-                      return a;
+                    const response = await fetch(`/api/monthly-bills/${selectedPendingPaymentBill.id}/pay`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        accountId: paymentForm.accountId,
+                        paymentDate: paymentForm.paymentDate,
+                        paymentMethod: paymentForm.paymentMethod,
+                        exchangeRate: paymentExRate,
+                        remark: paymentForm.remark,
+                        transferVoucher: Array.isArray(paymentForm.transferVoucher)
+                          ? paymentForm.transferVoucher[0] || ""
+                          : paymentForm.transferVoucher,
+                      }),
                     });
-                    setBankAccounts(updatedAccounts);
-                    await saveAccounts(updatedAccounts);
-
-                    // 更新账单状态为已支付，保存付款明细
-                    const allBills = await getMonthlyBills();
-                    const updatedBills = allBills.map((b) =>
-                      b.id === selectedPendingPaymentBill.id
-                        ? {
-                            ...b,
-                            status: "Paid" as BillStatus,
-                            paidBy: currentUserName,
-                            paidAt: paymentDateTime,
-                            paymentMethod: paymentForm.paymentMethod,
-                            paymentAccountId: paymentForm.accountId,
-                            paymentAccountName: account.name,
-                            paymentVoucher: paymentForm.transferVoucher,
-                            paymentVoucherNumber: paymentVoucherNumber,
-                            paymentFlowId: createdFlow.id,
-                            paymentRemarks: `付款单号：${paymentVoucherNumber}`
-                          }
-                        : b
-                    );
-                    await saveMonthlyBills(updatedBills);
-                    const refreshedBills = await getMonthlyBills();
-                    mutate("monthly-bills");
-
-                    // 标记相关通知为已读
-                    const relatedNotifications = await findNotificationsByRelated(selectedPendingPaymentBill.id, "monthly_bill");
-                    await Promise.all(relatedNotifications.map((notif) => markNotificationAsRead(notif.id)));
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(result.error || "付款未完成，请刷新账单状态后核对");
 
                     setIsPaymentModalOpen(false);
                     setSelectedPendingPaymentBill(null);
                     setPaymentForm(createInitialPaymentForm());
-                    
-                    toast.success(`付款成功！付款单号：${paymentVoucherNumber}`);
-                    setPaying(false);
-                  } catch (e) {
-                    console.error("Failed to process payment", e);
-                    toast.error("付款失败，请重试");
+                    toast.success(result.alreadyPaid
+                      ? `该账单已付款，付款单号：${result.paymentVoucherNumber || "已记录"}`
+                      : `付款成功！付款单号：${result.paymentVoucherNumber}`);
+                    void Promise.all([
+                      mutate("monthly-bills"),
+                      getAccountsFromAPI().then(setBankAccounts),
+                    ]).catch((error) => console.warn("付款已完成，页面刷新失败", error));
+                    // 通知清理不能影响付款结果或误导用户再次付款。
+                    findNotificationsByRelated(selectedPendingPaymentBill.id, "monthly_bill")
+                      .then((notifications) => Promise.all(notifications.map((notification) => markNotificationAsRead(notification.id))))
+                      .catch((error) => console.warn("付款已完成，通知清理失败", error));
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "付款未完成，请刷新账单状态后核对");
+                    mutate("monthly-bills");
+                  } finally {
                     setPaying(false);
                   }
                 }}
