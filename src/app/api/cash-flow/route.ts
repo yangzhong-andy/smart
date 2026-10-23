@@ -338,6 +338,22 @@ async function auditedPOST(request: NextRequest) {
     const explicitVoucherVal = body.voucher !== undefined ? toVoucherStr(body.voucher) : null;
     const relatedIdVal = body.relatedOrderId ?? body.relatedId ?? null;
     const flow = await prisma.$transaction(async (tx) => {
+      // Older browser tabs used to create a bill's cash flow before marking the
+      // bill Paid. Reject that path, including concurrent requests, so a failed
+      // follow-up save can never create another payment flow.
+      if (relatedIdVal && type === CashFlowType.EXPENSE && body.isReversal !== true) {
+        await tx.$queryRaw<{ locked: number }[]>`
+          SELECT 1 AS "locked" FROM
+          (SELECT pg_advisory_xact_lock(hashtext(${`monthly-bill-payment:${relatedIdVal}`}))) AS lock_guard
+        `;
+        const paymentBill = await tx.monthlyBill.findUnique({
+          where: { id: String(relatedIdVal) },
+          select: { id: true, billCategory: true },
+        });
+        if (paymentBill?.billCategory === "Payable") {
+          throw new Error("月账单付款已改为一次性提交，请刷新页面后从待付款操作");
+        }
+      }
       let paymentVoucherVal = requestPaymentVoucherVal;
       if (!paymentVoucherVal && relatedIdVal && type === CashFlowType.EXPENSE) {
         // 月账单列表接口只返回“是否有凭证”，不会返回大图内容。
@@ -403,6 +419,7 @@ async function auditedPOST(request: NextRequest) {
 
     // 清除资金流缓存
     await clearCacheByPrefix(CACHE_KEY_PREFIX);
+    await clearCacheByPrefix("accounts");
     await clearCacheByPrefix("warehouses");
     await clearCacheByPrefix("warehouse-funds");
 
