@@ -74,35 +74,39 @@ export function calculateProfitEstimate(input: ProfitEstimateInput) {
   const sale = nonnegative(input.salePriceBrl);
   const discounted = nonnegative(input.discountSalePriceBrl);
   const effectiveSale = discounted > 0 ? discounted : sale;
+  // A blank price is an unstarted estimate, not a zero-value order. Do not
+  // accrue fixed platform charges or entered costs before there is a sale.
+  const hasSale = effectiveSale > 0;
+  const billableQuantity = hasSale ? quantity : 0;
   const gmvBrl = effectiveSale * quantity;
   const gmvCny = gmvBrl * rate;
 
   // The TikTok BR tier contains a percentage commission and a fixed per-item
   // charge. SFP is a separate, fixed 6% fulfillment service fee.
-  const tiktokCommissionRatePercent = effectiveSale < 50 ? 10 : 6;
-  const tiktokFixedFeePerItemBrl = effectiveSale < 50 ? 4 : 6;
+  const tiktokCommissionRatePercent = hasSale ? (effectiveSale < 50 ? 10 : 6) : 0;
+  const tiktokFixedFeePerItemBrl = hasSale ? (effectiveSale < 50 ? 4 : 6) : 0;
   const tiktokPercentageFeeBrl = input.platform === "TIKTOK" ? gmvBrl * tiktokCommissionRatePercent / 100 : 0;
-  const tiktokFixedFeeBrl = input.platform === "TIKTOK" ? tiktokFixedFeePerItemBrl * quantity : 0;
+  const tiktokFixedFeeBrl = input.platform === "TIKTOK" ? tiktokFixedFeePerItemBrl * billableQuantity : 0;
   const tiktokSfpFeeBrl = input.platform === "TIKTOK" ? gmvBrl * 6 / 100 : 0;
   const tiktokCommissionBrl = tiktokPercentageFeeBrl + tiktokFixedFeeBrl;
-  const shopeeTier = input.platform === "SHOPEE" && input.shopeeFeeMode === "CNPJ_LOCAL"
+  const shopeeTier = hasSale && input.platform === "SHOPEE" && input.shopeeFeeMode === "CNPJ_LOCAL"
     ? shopeeCnpjLocalFeeTier(effectiveSale) : null;
   const shopeePercentageFeeBrl = shopeeTier ? gmvBrl * shopeeTier.ratePercent / 100 : 0;
-  const shopeeFixedFeeBrl = shopeeTier ? shopeeTier.fixedFeePerItemBrl * quantity : 0;
+  const shopeeFixedFeeBrl = shopeeTier ? shopeeTier.fixedFeePerItemBrl * billableQuantity : 0;
   const platformFeeBrl = input.platform === "TIKTOK"
     ? tiktokPercentageFeeBrl
     : shopeeTier ? shopeePercentageFeeBrl : gmvBrl * nonnegative(input.platformFeePercent) / 100;
-  const fulfillmentFeeBrl = tiktokSfpFeeBrl + tiktokFixedFeeBrl + shopeeFixedFeeBrl + nonnegative(input.fulfillmentFeeBrl);
-  const lastMileFeeBrl = nonnegative(input.lastMileFeeBrl);
+  const fulfillmentFeeBrl = tiktokSfpFeeBrl + tiktokFixedFeeBrl + shopeeFixedFeeBrl + (hasSale ? nonnegative(input.fulfillmentFeeBrl) : 0);
+  const lastMileFeeBrl = hasSale ? nonnegative(input.lastMileFeeBrl) : 0;
   const settlementBrl = gmvBrl - platformFeeBrl - fulfillmentFeeBrl - lastMileFeeBrl;
   const settlementCny = settlementBrl * rate;
-  const warehouseFeeBrl = nonnegative(input.warehouseFeeBrl);
+  const warehouseFeeBrl = hasSale ? nonnegative(input.warehouseFeeBrl) : 0;
   const warehouseFeeCny = warehouseFeeBrl * rate;
-  const affiliateFeeBrl = nonnegative(input.affiliateFeeBrl);
+  const affiliateFeeBrl = hasSale ? nonnegative(input.affiliateFeeBrl) : 0;
   const affiliateFeeCny = affiliateFeeBrl * rate;
-  const purchaseCostCny = nonnegative(input.purchaseCostCny) * quantity;
-  const firstLegCny = nonnegative(input.firstLegCny) * quantity;
-  const adCostCny = nonnegative(input.adCostCny) * quantity;
+  const purchaseCostCny = nonnegative(input.purchaseCostCny) * billableQuantity;
+  const firstLegCny = nonnegative(input.firstLegCny) * billableQuantity;
+  const adCostCny = nonnegative(input.adCostCny) * billableQuantity;
   const taxCostCny = gmvCny * nonnegative(input.taxPercent) / 100;
   const returnLossCny = Math.max(0, settlementCny) * Math.min(100, nonnegative(input.returnRatePercent)) / 100;
   const remittanceFeeCny = Math.max(0, settlementCny) * nonnegative(input.remittanceFeePercent) / 100;

@@ -21,6 +21,20 @@ test("TikTok BR splits tier commission, fixed fee, and separate 6% SFP", () => {
   assert.equal(calculateProfitEstimate({ ...base, isCommissionFree: false, platformFeePercent: 99 }).platformFeeBrl, 6);
 });
 
+test("unstarted estimates show zero amounts even when costs have been entered", () => {
+  for (const platform of ["TIKTOK", "SHOPEE", "MERCADO_LIVRE"] as const) {
+    const result = calculateProfitEstimate({ ...base, platform, shopeeFeeMode: "CNPJ_LOCAL",
+      salePriceBrl: 0, quantity: 2, fulfillmentFeeBrl: 5, lastMileFeeBrl: 3,
+      affiliateFeeBrl: 4, targetRoi: 2 });
+    for (const amount of [result.gmvBrl, result.platformFeeBrl, result.fulfillmentFeeBrl,
+      result.lastMileFeeBrl, result.settlementBrl, result.purchaseCostCny,
+      result.firstLegCny, result.adCostCny, result.affiliateFeeCny,
+      result.netProfitCny, result.netProfitBrl, result.expectedProfitCny]) {
+      assert.equal(amount, 0, `${platform} should stay at zero before a sale price is entered`);
+    }
+  }
+});
+
 test("TikTok commission breakdown preserves the same total and settlement", () => {
   const high = calculateProfitEstimate({ ...base, salePriceBrl: 70 });
   assert.equal(high.tiktokCommissionRatePercent, 6);
